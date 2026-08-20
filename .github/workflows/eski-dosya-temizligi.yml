@@ -29,7 +29,9 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "ftps://$FTP_HOST:21" <<'EOF'
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "ftp://$FTP_HOST:21" <<'EOF'
+          set ftp:ssl-force yes
+          set ftp:ssl-protect-data yes
           set ssl:verify-certificate no
           set cmd:fail-exit no
           cd /public_html
@@ -58,7 +60,9 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "ftps://$FTP_HOST:21" <<'EOF'
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "ftp://$FTP_HOST:21" <<'EOF'
+          set ftp:ssl-force yes
+          set ftp:ssl-protect-data yes
           set ssl:verify-certificate no
           cd /public_html
           ls
