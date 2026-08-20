@@ -1,0 +1,66 @@
+name: (Tek Seferlik) Eski Dosyaları Temizle
+
+# Bu workflow OTOMATİK ÇALIŞMAZ — yalnızca elle, GitHub Actions sekmesinden
+# "Run workflow" ile tetiklenir. Amaç: kaynak kodda artık var olmayan,
+# geçmişte manuel FTP ile yüklenmiş kalıntı dosyaları hosting'ten silmek.
+#
+# Silinecek liste 20.08.2026 tarihli inceleme sırasında cPanel Dosya
+# Yöneticisi'nde GÖRÜLEREK doğrulanmıştır — genel bir "eşleşmeyeni sil"
+# taraması DEĞİLDİR, isim isim sabit bir listedir. dosyalar/, data.sqlite,
+# backups/ bu listede YOKTUR ve asla eklenmemelidir.
+on:
+  workflow_dispatch:
+    inputs:
+      onayla:
+        description: 'Silmeyi onaylamak için tam olarak SIL yazın'
+        required: true
+
+jobs:
+  temizle:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.onayla == 'SIL' }}
+    steps:
+      - name: lftp kur
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
+      - name: Kalıntı dosyaları sil
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "ftps://$FTP_HOST:21" <<'EOF'
+          set ssl:verify-certificate no
+          set cmd:fail-exit no
+          cd /public_html
+          rm -rf testler
+          rm -f _test_import_tf.js
+          rm -f home.html
+          rm -f layout-styles.css
+          rm -f barkod_cozucu.js
+          rm -f icon-192.png
+          rm -f icon-512.png
+          rm -f ARAYUZ_KORUMA.md
+          rm -f GUNCELLEME_NOTLARI.md
+          rm -f GUVENLIK_DENETIMI.md
+          rm -f GUVENLIK_SERTLESTIRME.md
+          rm -f KURULUM.md
+          rm -f MUHENDISLIK_STANDARDI.md
+          rm -f OLCEKLEME_PLANI.md
+          rm -f VPS_KURULUM.md
+          rm -f YEDEKLEME_KURULUM.md
+          bye
+          EOF
+
+      - name: Sonucu doğrula (kalan dosya listesi)
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "ftps://$FTP_HOST:21" <<'EOF'
+          set ssl:verify-certificate no
+          cd /public_html
+          ls
+          bye
+          EOF

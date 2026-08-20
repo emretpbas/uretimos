@@ -1,0 +1,50 @@
+name: GoDaddy'ye Dağıt
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+
+      - name: Node.js kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: terser'ı önceden kur (npx her dosyada tekrar çözmesin)
+        run: npm install terser --no-save
+
+      - name: Üretim derlemesi (dist/ üret)
+        run: node build.js
+
+      - name: dist/ içeriğini FTPS ile GoDaddy'ye senkronize et
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./dist/
+          server-dir: /public_html/
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            dosyalar/**
+            data.sqlite
+            data.sqlite-journal
+            backups/**
+            cgi-bin/**
+            404.shtml
+            .trash_restore
+            error_log
+            .ftpquota
+            .well-known/**

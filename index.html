@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>ÜretimOS — Üretim Yönetim Sistemi</title>
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ÜretimOS">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#eef2f7;--surface:#fff;--surface2:#f6f8fb;--border:#e1e7ef;--border2:#cbd5e1;
+  --text:#0f1729;--text2:#475569;--text3:#64748b;--text4:#94a3b8;
+  --blue:#2563eb;--blue-bg:#eff6ff;--blue-light:#bfdbfe;--blue-text:#1d4ed8;
+  --green:#16a34a;--green-bg:#f0fdf4;--green-text:#15803d;
+  --amber:#d97706;--amber-bg:#fffbeb;--amber-text:#b45309;
+  --red:#dc2626;--red-bg:#fef2f2;--red-text:#b91c1c;--red-light:#fecaca;
+  --purple:#7c3aed;--purple-bg:#f5f3ff;--purple-text:#6d28d9;
+  --teal:#0d9488;--teal-bg:#f0fdfa;--teal-text:#0f766e;
+  --shadow-sm:0 1px 2px rgba(15,23,41,.06);
+  --shadow:0 1px 3px rgba(15,23,41,.08),0 1px 2px rgba(15,23,41,.04);
+  --shadow-md:0 4px 12px rgba(15,23,41,.08),0 2px 4px rgba(15,23,41,.04);
+  --shadow-lg:0 10px 30px rgba(15,23,41,.12);
+  /* ── TİPOGRAFİK ÖLÇEK (1.125 modüler oran, 13px gövde tabanlı) ──
+     Rastgele px değerleri yerine adlandırılmış basamaklar kullanılır. */
+  --fs-2xs:10.5px; --fs-xs:11.5px; --fs-sm:12.5px; --fs-md:13.5px;
+  --fs-lg:15px;    --fs-xl:17px;   --fs-2xl:20px;  --fs-3xl:25px;
+  --lh-sik:1.35;   --lh-normal:1.55; --lh-genis:1.7;
+  --fw-normal:450; --fw-orta:600;  --fw-kalin:700; --fw-agir:800;
+  --ls-baslik:-0.011em; --ls-etiket:0.045em;
+
+  /* ── ARALIK ÖLÇEĞİ (4px tabanlı) ── */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+  --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px;
+
+  /* ── HAREKET ── */
+  --gecis-hizli:.12s cubic-bezier(.4,0,.2,1);
+  --gecis:.2s cubic-bezier(.4,0,.2,1);
+
+  --r:9px;--rlg:14px;
+  --mono:'SF Mono',Consolas,'Cascadia Code',monospace;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;height:100vh;overflow:hidden}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ===== TOPBAR ===== */
+#topbar{height:50px;background:linear-gradient(180deg,#ffffff,#f8fafc);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 16px;position:fixed;top:0;left:0;right:0;z-index:300;box-shadow:var(--shadow-sm)}
+#topbar .logo{font-size:14px;font-weight:800;color:var(--blue);white-space:nowrap;letter-spacing:-.01em}
+#topbar .logo span{color:var(--text3);font-weight:600}
+#topbar .sep{width:1px;height:22px;background:var(--border);flex-shrink:0}
+#breadcrumb{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px}
+#breadcrumb b{color:var(--text);font-weight:700}
+#topbar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+#save-indicator{font-size:10px;color:var(--text3);display:flex;align-items:center;gap:5px}
+#save-indicator .dot{width:6px;height:6px;border-radius:50%;background:var(--green);transition:background .2s}
+#save-indicator.saving .dot{background:var(--amber)}
+
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;font-size:11.5px;font-weight:600;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);color:var(--text);white-space:nowrap;transition:all .14s ease;box-shadow:var(--shadow-sm)}
+.btn:hover{background:var(--surface2);transform:translateY(-1px);box-shadow:var(--shadow)}
+.btn:active{transform:translateY(0)}
+.btn-sm{padding:4px 9px;font-size:10.5px}
+.btn-blue{background:linear-gradient(180deg,var(--blue),var(--blue-text));color:#fff;border-color:var(--blue-text)}
+.btn-blue:hover{background:var(--blue-text)}
+.btn-green{background:linear-gradient(180deg,var(--green),var(--green-text));color:#fff;border-color:var(--green-text)}
+.btn-green:hover{background:var(--green-text)}
+.btn-amber{background:linear-gradient(180deg,var(--amber),var(--amber-text));color:#fff;border-color:var(--amber-text)}
+.btn-purple{background:linear-gradient(180deg,var(--purple),var(--purple-text));color:#fff;border-color:var(--purple-text)}
+.btn-red{color:var(--red-text);border-color:#e0c0be}
+.btn-red:hover{background:var(--red-bg)}
+.btn-ghost{border-color:transparent;background:transparent}
+.btn-ghost:hover{background:var(--bg)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-icon{padding:6px;width:30px;justify-content:center}
+
+/* ===== LAYOUT ===== */
+#layout{display:grid;grid-template-columns:220px 1fr;height:calc(100vh - 50px);margin-top:50px;overflow:hidden}
+
+/* ===== SIDEBAR ===== */
+#sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:10px 0}
+.nav-group{margin-bottom:4px}
+.nav-group-lbl{padding:10px 16px 5px;font-size:9.5px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;color:var(--text2);font-size:12.5px;font-weight:600;border-left:3px solid transparent;transition:background .1s}
+.nav-item:hover{background:var(--bg);color:var(--text)}
+.nav-item.active{background:linear-gradient(90deg,var(--blue-bg),transparent);color:var(--blue-text);border-left-color:var(--blue);font-weight:700}
+.nav-item .nico{width:19px;height:19px;flex-shrink:0;display:flex;align-items:center;justify-content:center;opacity:.75;transition:opacity var(--gecis-hizli)}
+.nav-item:hover .nico,.nav-item.active .nico{opacity:1}
+/* İkon sistemi: satır içi SVG, metnin rengini alır, optik hizalı */
+.ikon{display:inline-block;vertical-align:-.18em;flex-shrink:0}
+.btn .ikon{margin-right:1px}
+/* Erişilebilirlik: klavye ile gezinende görünür odak halkası (WCAG 2.4.7) */
+:where(button,a,input,select,textarea,[tabindex]):focus-visible{
+  outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+.nav-item .nbadge{margin-left:auto;font-size:9.5px;padding:1px 6px;border-radius:9px;background:var(--bg);color:var(--text3);font-weight:700}
+.nav-item.active .nbadge{background:var(--blue-light);color:var(--blue-text)}
+
+/* ===== MAIN ===== */
+#main{overflow-y:auto;padding:22px 26px 60px}
+.page{display:none}
+.page.active{display:block}
+.page-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;gap:14px}
+.page-title{font-size:19px;font-weight:800;letter-spacing:-.01em}
+.page-sub{font-size:12px;color:var(--text3);margin-top:3px}
+.page-acts{display:flex;gap:8px;flex-shrink:0}
+
+/* ===== CARDS / SURFACES ===== */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rlg);padding:16px;box-shadow:var(--shadow)}
+.card+.card{margin-top:14px}
+/* ── AKORDEON KART (açılır/kapanır bölüm) ── */
+.acc-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rlg);box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
+.acc-head{display:flex;align-items:center;gap:10px;padding:13px 16px;cursor:pointer;user-select:none;transition:background .12s}
+.acc-head:hover{background:var(--surface2)}
+.acc-head .acc-ico{width:22px;height:22px;border-radius:6px;background:var(--blue-bg);color:var(--blue-text);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.acc-head .acc-title{font-size:13.5px;font-weight:700;color:var(--text);flex:1}
+.acc-head .acc-sub{font-size:11px;color:var(--text3);font-weight:500}
+.acc-head .acc-chev{transition:transform .2s;color:var(--text3);font-size:13px}
+.acc-card.open .acc-chev{transform:rotate(90deg)}
+.acc-body{display:none;padding:0 16px 16px;border-top:1px solid var(--border)}
+.acc-card.open .acc-body{display:block}
+.acc-head .acc-badge{font-size:10px;padding:2px 8px;border-radius:10px;background:var(--blue-bg);color:var(--blue-text);font-weight:700}
+.card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.card-title{font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text2)}
+
+.grid{display:grid;gap:14px}
+.grid-2{grid-template-columns:1fr 1fr}
+.grid-3{grid-template-columns:1fr 1fr 1fr}
+.grid-4{grid-template-columns:1fr 1fr 1fr 1fr}
+@media (max-width:1100px){.grid-3,.grid-4{grid-template-columns:1fr 1fr}}
+
+/* ===== MOBİL / PWA ===== */
+@media (max-width:768px){
+  #layout{grid-template-columns:1fr}
+  #sidebar{
+    position:fixed;top:50px;left:0;bottom:0;z-index:200;
+    width:260px;transform:translateX(-100%);transition:transform .22s cubic-bezier(.4,0,.2,1);
+    box-shadow:4px 0 24px rgba(0,0,0,.18)
+  }
+  #sidebar.mob-open{transform:translateX(0)}
+  #mob-overlay{display:none;position:fixed;inset:0;z-index:199;background:rgba(0,0,0,.45)}
+  #mob-overlay.mob-open{display:block}
+  #mob-menu-btn{display:flex !important}
+  #main{padding:14px 14px 80px}
+  .page-hdr{flex-direction:column;gap:10px}
+  .page-acts{flex-wrap:wrap}
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+  .frow{flex-direction:column}
+  .modal-box{max-width:100vw !important;margin:8px !important;border-radius:12px}
+  .tbl-wrap{font-size:11px}
+  .dtable th,.dtable td{padding:7px 8px}
+}
+
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--rlg);padding:14px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--blue),var(--teal))}
+.kpi-lbl{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.kpi-val{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.kpi-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.kpi-val.blue{color:var(--blue-text)}.kpi-val.green{color:var(--green-text)}.kpi-val.amber{color:var(--amber-text)}.kpi-val.red{color:var(--red-text)}.kpi-val.purple{color:var(--purple-text)}.kpi-val.gray{color:var(--text3)}
+
+/* ===== FORM ===== */
+.flbl{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:5px;display:block}
+.finput,.fselect,.ftextarea{width:100%;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:12.5px;background:var(--bg);color:var(--text)}
+.finput:focus,.fselect:focus,.ftextarea:focus{outline:2px solid var(--blue-light);outline-offset:-1px;background:var(--surface)}
+.ftextarea{resize:vertical;min-height:60px}
+.fgroup{margin-bottom:12px}
+.frow{display:flex;gap:10px}
+.frow>div{flex:1}
+.fcheck{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2)}
+.fhint{font-size:10.5px;color:var(--text3);margin-top:4px}
+
+/* ===== TABLE ===== */
+table.dtable{width:100%;border-collapse:collapse;font-size:12px}
+table.dtable th{text-align:left;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--text3);border-bottom:1.5px solid var(--border);white-space:nowrap}
+table.dtable td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+table.dtable tr:hover td{background:var(--bg)}
+table.dtable td.r,table.dtable th.r{text-align:right}
+table.dtable td.c,table.dtable th.c{text-align:center}
+table.dtable tr.total-row td{font-weight:800;border-top:2px solid var(--border2);border-bottom:none;background:var(--bg)}
+.tbl-wrap{overflow-x:auto}
+
+/* ===== BADGES / PILLS ===== */
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px}
+.pill-blue{background:var(--blue-bg);color:var(--blue-text)}
+.pill-green{background:var(--green-bg);color:var(--green-text)}
+.pill-amber{background:var(--amber-bg);color:var(--amber-text)}
+.pill-red{background:var(--red-bg);color:var(--red-text)}
+.pill-purple{background:var(--purple-bg);color:var(--purple-text)}
+.pill-gray{background:var(--bg);color:var(--text2);border:1px solid var(--border2)}
+
+.tag-r{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;background:var(--blue-bg);color:var(--blue-text);font-size:9px;font-weight:800}
+.tag-s{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;background:var(--bg);color:var(--text3);font-size:9px;font-weight:800;border:1px solid var(--border2)}
+
+/* ===== EMPTY STATE ===== */
+.empty-state{text-align:center;padding:50px 20px;color:var(--text3)}
+.empty-state .eicon{font-size:30px;margin-bottom:10px;opacity:.5}
+.empty-state .etitle{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:4px}
+.empty-state .edesc{font-size:11.5px;max-width:340px;margin:0 auto}
+
+/* ===== MODAL ===== */
+.modal-overlay{position:fixed;inset:0;background:rgba(20,20,12,.45);display:none;align-items:center;justify-content:center;z-index:10000;padding:20px}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border-radius:14px;width:560px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal.wide{width:880px}
+.modal.xwide{width:1180px}
+.modal-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.modal-title{font-size:14px;font-weight:800}
+.modal-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.modal-x{width:26px;height:26px;border-radius:7px;border:none;background:var(--bg);color:var(--text2);font-size:14px;display:flex;align-items:center;justify-content:center}
+.modal-x:hover{background:var(--border)}
+.modal-body{padding:18px 20px;overflow-y:auto;flex:1}
+.modal-ftr{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
+
+/* ===== TABS ===== */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{padding:9px 14px;font-size:12px;font-weight:700;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab:hover{color:var(--text2)}
+.tab.active{color:var(--blue-text);border-bottom-color:var(--blue)}
+
+/* ===== TOAST ===== */
+#toast-wrap{position:fixed;bottom:18px;right:18px;z-index:600;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--text);color:#fff;padding:10px 16px;border-radius:9px;font-size:12px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.2);display:flex;align-items:center;gap:8px;animation:toastin .2s ease}
+.toast.err{background:var(--red-text)}
+.toast.ok{background:var(--green-text)}
+@keyframes toastin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ===== MISC ===== */
+.hr{height:1px;background:var(--border);margin:14px 0}
+.muted{color:var(--text3)}
+.mono{font-family:var(--mono)}
+.flex-between{display:flex;align-items:center;justify-content:space-between}
+.flex-gap{display:flex;align-items:center;gap:8px}
+.clickable{cursor:pointer}
+.thumb{width:46px;height:46px;border-radius:7px;background:var(--bg);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;font-size:16px;color:var(--text3)}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.swatch{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.15);flex-shrink:0;display:inline-block;vertical-align:middle}
+
+a.linklike{color:var(--blue-text);font-weight:700;cursor:pointer;text-decoration:none}
+a.linklike:hover{text-decoration:underline}
+
+.loading-spin{width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <button id="mob-menu-btn" onclick="App.toggleMobileMenu()" style="display:none;background:none;border:none;cursor:pointer;padding:6px;color:var(--text);font-size:20px;line-height:1;flex-shrink:0">☰</button>
+  <div class="logo" data-i18n-skip>ÜRETİM<span>OS</span></div>
+  <div class="sep"></div>
+  <div id="breadcrumb"></div>
+  <div id="topbar-right">
+    <div id="save-indicator"><span class="dot"></span><span id="save-text">Kayıtlı</span></div>
+    <button class="btn btn-ghost btn-sm" id="btn-dil" onclick="App.toggleDil()" title="Dil / Language">🌐 TR</button>
+    <button class="btn btn-ghost btn-sm" id="btn-bildirim" onclick="App.openBildirimMerkezi()" title="Bildirimler" style="position:relative">🔔<span id="bildirim-rozet" style="display:none;position:absolute;top:-2px;right:-2px;background:#EF4444;color:#fff;border-radius:9px;font-size:9px;min-width:15px;height:15px;line-height:15px;text-align:center;padding:0 3px;font-weight:700"></span></button>
+    <button class="btn btn-ghost btn-sm" id="btn-ayarlar" onclick="App.openSettings()">⚙ <span id="ayarlar-lbl">Ayarlar</span></button>
+  </div>
+</div>
+<div id="mob-overlay" onclick="App.toggleMobileMenu()"></div>
+
+<div id="layout">
+  <div id="sidebar"></div>
+  <div id="main"></div>
+</div>
+
+<div id="toast-wrap"></div>
+<div id="modal-root"></div>
+
+<script src="xlsx.full.min.js?v=24"></script>
+<script src="data.js?v=24"></script>
+<script src="dolap_hesap.js?v=32"></script>
+<script src="dolap_cizim.js?v=32"></script>
+<script src="dolap_render.js?v=32"></script>
+<script src="three.min.js"></script>
+<script src="dolap_3d.js?v=43"></script>
+<script src="cnc_export.js?v=78"></script>
+<script src="dolap_tasarim.js?v=43"></script>
+<script src="masa_hesap.js?v=30"></script>
+<script src="masa_cizim.js?v=30"></script>
+<script src="masa_tasarim.js?v=30"></script>
+<script src="mekan_yerlesim.js?v=41"></script>
+<script src="ikon.js?v=24"></script>
+<script src="i18n.js?v=24"></script>
+<script src="storage.js?v=114"></script>
+<script src="qr_kod.js?v=24"></script>
+<script src="qr_dosya.js?v=36"></script>
+<script src="kontrol_plani.js?v=24"></script>
+<script src="sayim.js?v=24"></script>
+<script src="kanban.js?v=24"></script>
+<script src="kurulum_durumu.js?v=24"></script>
+<script src="toplu_rota.js?v=24"></script>
+<script src="rota_sablon.js?v=24"></script>
+<script src="rehber.js?v=24"></script>
+<script src="tutorial.js?v=24"></script>
+<script src="qr_cozucu.js?v=24"></script>
+<script src="kamera_teshis.js?v=24"></script>
+<script src="is_emri_uretici.js?v=115"></script>
+<script src="page_is_emri_formu.js?v=115"></script>
+<script src="otomasyon_motor.js?v=115"></script>
+<script src="app.js?v=116"></script>
+<script src="page_dashboard.js?v=24"></script>
+<script src="page_hammadde.js?v=87"></script>
+<script src="page_yarimamul.js?v=36"></script>
+<script src="page_rota.js?v=24"></script>
+<script src="page_nesting.js?v=88"></script>
+<script src="page_isemri.js?v=24"></script>
+<script src="page_kartlar.js?v=108"></script>
+<script src="page_qr_etiket.js?v=24"></script>
+<script src="page_recete_agac.js?v=38"></script>
+<script src="page_fiyat.js?v=38"></script>
+<script src="page_satinalma_panel.js?v=38"></script>
+<script src="page_acik_satinalma_siparisleri.js?v=24"></script>
+<script src="page_tedarikci_teklif.js?v=24"></script>
+<script src="page_uretim_panel.js?v=79"></script>
+<script src="page_depo_panel.js?v=79"></script>
+<script src="page_teklif.js?v=91"></script>
+<script src="page_siparis.js?v=40"></script>
+<script src="page_cari_panel.js?v=73"></script>
+<script src="page_sevkiyat_panel.js?v=37"></script>
+<script src="page_bakim_panel.js?v=24"></script>
+<script src="page_kalite_panel.js?v=79"></script>
+<script src="page_uygunsuzluk_dof.js?v=24"></script>
+<script src="page_iade_ambari.js?v=24"></script>
+<script src="page_uretim_ekrani.js?v=24"></script>
+<script src="kpi_motor.js?v=24"></script>
+<script src="kayip_kacak.js?v=73"></script>
+<script src="recete_talep.js?v=73"></script>
+<script src="ai_denetci.js?v=73"></script>
+<script src="analitik_motor.js?v=24"></script>
+<script src="page_analitik.js?v=24"></script>
+<script src="efatura_motor.js?v=24"></script>
+<script src="page_efatura.js?v=24"></script>
+<script src="page_servis.js?v=24"></script>
+<script src="page_isg.js?v=24"></script>
+<script src="page_kpi_panel.js?v=24"></script>
+<script src="page_cek_portfoy.js?v=24"></script>
+<script src="page_operasyon.js?v=24"></script>
+<script src="cizelge_motor.js?v=24"></script>
+<script src="page_cizelge.js?v=24"></script>
+<script src="mrp_motor.js?v=24"></script>
+<script src="page_mrp.js?v=24"></script>
+<script src="page_hat_takip.js?v=79"></script>
+<script src="page_hat_terminal.js?v=79"></script>
+<script src="page_recete_onay.js?v=73"></script>
+<script src="page_malzeme_talep.js?v=79"></script>
+<script src="page_iptal_islemleri.js?v=80"></script>
+<script src="teknik_cizim.js?v=108"></script>
+<script src="montaj_kilavuzu.js?v=108"></script>
+<script src="step_okuyucu.js?v=108"></script>
+<script src="page_step_ice_aktar.js?v=108"></script>
+<script src="page_tiger_aktarim.js?v=89"></script>
+<script src="ag_entegrasyon.js?v=109"></script>
+<script src="page_ag_entegrasyon.js?v=112"></script>
+<script src="crm_motor.js?v=92"></script>
+<script src="page_crm.js?v=92"></script>
+<script src="proje_motor.js?v=94"></script>
+<script src="page_proje.js?v=94"></script>
+<script src="pazarlama_motor.js?v=93"></script>
+<script src="page_pazarlama.js?v=93"></script>
+<script src="proje_teklif_motor.js?v=112"></script>
+<script src="dwg_okuyucu.js?v=106"></script>
+<script src="plan_okuyucu.js?v=106"></script>
+<script src="page_proje_teklif.js?v=112"></script>
+<script src="teklif_takip_motor.js?v=98"></script>
+<script src="teklif_excel.js?v=99"></script>
+<script src="page_teklif_degerlendirme.js?v=98"></script>
+<script src="page_faaliyet_defteri.js?v=79"></script>
+<script src="page_yukleme_onay.js?v=24"></script>
+<script src="page_ik_personel.js?v=24"></script>
+<script src="page_ik_izin.js?v=24"></script>
+<script src="page_ik_tazminat.js?v=24"></script>
+<script src="page_ik_bordro.js?v=24"></script>
+<script src="page_ik_arac.js?v=24"></script>
+<script src="page_kalem_secici.js?v=24"></script>
+<script src="page_cari_secici.js?v=73"></script>
+<script src="page_onaylar.js?v=24"></script>
+<script src="page_yonetim_raporlama.js?v=24"></script>
+<script src="page_ust_yonetim_kokpit.js?v=24"></script>
+<script src="page_muhasebe_panel.js?v=24"></script>
+<script>App.init();</script>
+<script>
+// PWA Service Worker kaydı
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('SW kayıtlı:', reg.scope))
+      .catch(err => console.warn('SW kayıt hatası:', err));
+  });
+}
+</script>
+</body>
+</html>

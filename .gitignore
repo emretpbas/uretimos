@@ -1,0 +1,11 @@
+# Çalışma zamanı verisi — asla repoya girmez, yalnızca canlı sunucuda yaşar
+dosyalar/
+data.sqlite
+backups/
+*.sqlite
+*.sqlite-journal
+
+# Derleme çıktısı
+dist/
+
+node_modules/

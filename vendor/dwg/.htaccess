@@ -1,0 +1,38 @@
+# ════════════════════════════════════════════════════════════════════════════
+# CAD MOTORU KLASÖRÜ — kapsamı DARALTILMIŞ güvenlik politikası
+# ────────────────────────────────────────────────────────────────────────────
+# NEDEN AYRI DOSYA:
+# LibreDWG'nin Emscripten yapıştırıcı kodu `new Function` kullanır (embind).
+# Bu, CSP'de 'unsafe-eval' gerektirir; 'wasm-unsafe-eval' yetmez.
+#
+# 'unsafe-eval'i SİTE GENELİNE vermek XSS korumasını ciddi biçimde zayıflatır:
+# bir XSS açığı bulan saldırgan rastgele kod çalıştırabilir hale gelir.
+# Bu yüzden izin YALNIZCA bu klasöre verilir. DWG çözümlemesi bir Web Worker
+# içinde çalışır ve worker kendi CSP'sini kendi HTTP yanıtından alır —
+# ana uygulama sıkı politikada kalmaya devam eder.
+#
+# Bu klasörde kullanıcı verisi veya kimlik doğrulama yoktur; yalnızca sabit
+# kütüphane dosyaları bulunur. Saldırı yüzeyi bu nedenle dardır.
+# ════════════════════════════════════════════════════════════════════════════
+
+<IfModule mod_headers.c>
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'"
+</IfModule>
+
+# WebAssembly doğru içerik tipiyle sunulmalı
+AddType application/wasm .wasm
+AddType application/javascript .mjs
+
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/wasm application/javascript
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    # Kütüphane sürüm başına sabittir; uzun önbellek indirmeyi bir kereye indirir
+    ExpiresByType application/wasm "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+</IfModule>
+
+# Bu klasörde dizin listelemesi kapalı olsun
+Options -Indexes

@@ -1,0 +1,141 @@
+# ÜretimOS güvenlik kuralları (Apache)
+# SQLite veritabanı ve yedekler web'den İNDİRİLEMEZ olmalı.
+
+<FilesMatch "\.(sqlite|sqlite-wal|sqlite-shm|db)$">
+    Require all denied
+</FilesMatch>
+
+# backups/ klasörünü tamamen kapat
+RedirectMatch 404 ^/?backups/.*$
+
+# Cron yedek betiğine web erişimini engelle (yalnızca komut satırından çalışır).
+# Betiğin kendisi de PHP_SAPI ile korunuyor; bu ikinci katman.
+<FilesMatch "^gunluk_yedek\.php$">
+    Require all denied
+</FilesMatch>
+
+# Dizin listelemeyi kapat
+Options -Indexes
+
+# sw.js ve index.html tarayıcıda ÖNBELLEKLENMESİN — güncellemeler
+# yüklendiği anda tüm kullanıcılara yansısın (Ctrl+Shift+R gerekmesin)
+<FilesMatch "^(sw\.js|index\.html)$">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </IfModule>
+</FilesMatch>
+
+# Teknik dosyalar (QR dosya alanı) yalnızca api.php üzerinden indirilir
+RedirectMatch 404 ^/?dosyalar/.*$
+
+# Test dosyaları web'den çalıştırılamaz (yalnızca komut satırından)
+RedirectMatch 404 ^/?testler/.*$
+
+# ── SIKIŞTIRMA ─────────────────────────────────────────────────────────────
+# JSON ve JS ~%85 sıkışır. Trafiği ve indirme süresini ciddi düşürür.
+# NOT: Bu, sunucu BELLEK sorununu çözmez — yalnızca taşımayı hafifletir.
+# Brotli varsa o tercih edilir (gzip'ten ~%15 daha iyi), yoksa gzip'e düşer.
+<IfModule mod_brotli.c>
+    AddOutputFilterByType BROTLI_COMPRESS application/json application/javascript
+    AddOutputFilterByType BROTLI_COMPRESS text/html text/css text/plain text/xml
+    AddOutputFilterByType BROTLI_COMPRESS image/svg+xml
+</IfModule>
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json application/javascript
+    AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml
+    AddOutputFilterByType DEFLATE image/svg+xml
+    # Zaten sıkıştırılmış dosyaları tekrar sıkıştırmak CPU harcar, fayda vermez
+    <IfModule mod_setenvif.c>
+        SetEnvIfNoCase Request_URI \.(?:gif|jpe?g|png|webp|zip|gz|br|pdf)$ no-gzip dont-vary
+    </IfModule>
+    # Ara sunucuların sıkıştırılmış yanıtı yanlış istemciye vermesini önler
+    <IfModule mod_headers.c>
+        Header append Vary Accept-Encoding
+    </IfModule>
+</IfModule>
+
+# ── STATİK DOSYA ÖNBELLEĞİ ─────────────────────────────────────────────────
+# JS dosyaları index.html'de ?v=NN ile sürümlendiği için uzun süre
+# önbelleklenebilir; sürüm değişince URL değişir ve tarayıcı yeniden indirir.
+# (sw.js ve index.html yukarıda no-store olarak KAPALI tutuluyor — dokunulmaz.)
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType application/javascript "access plus 30 days"
+    ExpiresByType text/css              "access plus 30 days"
+    ExpiresByType image/png             "access plus 30 days"
+    ExpiresByType image/webp            "access plus 30 days"
+    ExpiresByType image/svg+xml         "access plus 30 days"
+    # api.php yanıtları ASLA önbelleklenmez
+    ExpiresByType application/json      "access plus 0 seconds"
+</IfModule>
+
+# api.php için kesin no-store (yanlış veri gösterilmesini engeller)
+<FilesMatch "^api\.php$">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-store, no-cache, must-revalidate"
+    </IfModule>
+</FilesMatch>
+
+# ── GÜVENLİK BAŞLIKLARI (sertleştirme) ─────────────────────────────────────
+# Tarayıcı tabanlı saldırıları (clickjacking, MIME sniffing, downgrade) azaltır.
+<IfModule mod_headers.c>
+    # HTTPS'i zorla hatırlat (1 yıl). NOT: Yalnızca site tam HTTPS ise açık kalmalı.
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    # Sayfanın iframe içine gömülmesini engelle (clickjacking)
+    Header always set X-Frame-Options "SAMEORIGIN"
+    # Tarayıcının MIME türünü tahmin etmesini engelle
+    Header always set X-Content-Type-Options "nosniff"
+    # Referrer bilgisini sınırla
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # Tarayıcı özelliklerini kısıtla. camera=(self): QR tarama için kamera KENDİ
+    # sitemize açık; mikrofon/konum gerekmediğinden kapalı. DİKKAT: camera=()
+    # yazmak kamerayı TAMAMEN kapatır (QR okuyucu çalışmaz) — self şart.
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(self)"
+    # İçerik Güvenlik Politikası — XSS'in etkisini sınırlar.
+    # NOT: 'unsafe-inline' mevcut inline script/style için gerekli; ileride
+    # inline kod nonce'a taşınırsa bu kaldırılıp politika sertleştirilebilir.
+    # connect-src: ŞİRKET İÇİ AĞ entegrasyonu (Logo / Cost uç noktaları).
+    # Varsayılan olarak yalnızca *.local adreslerine izin verilir.
+    #
+    # UÇ NOKTANIZ FARKLI BİR ADRESTEYSE buraya EKLEYİN. Örnekler:
+    #   IP ile      : http://192.168.1.50:8080
+    #   Sunucu adı  : http://logosrv http://logosrv:8080
+    #   Alan adı    : https://api.sirketiniz.com.tr
+    # NOT: CSP'de IP ARALIĞI (192.168.0.0/16) yazılamaz — her adres tek tek
+    # yazılmalıdır. Adres eklenmezse tarayıcı bağlantıyı engeller ve
+    # entegrasyon ekranı "Adrese ulaşılamadı" hatası verir.
+    #
+    # DWG/CAD motoru 'unsafe-eval' ister (Emscripten embind `new Function`).
+    # Bu izin ANA UYGULAMAYA VERİLMEZ — CAD çözümlemesi bir Web Worker'da
+    # çalışır ve izin yalnızca vendor/dwg/.htaccess ile o klasöre verilir.
+    # Böylece XSS koruması ana uygulamada zayıflatılmamış olur.
+    Header always set Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; worker-src 'self'; connect-src 'self' http://*.local https://*.local; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+</IfModule>
+
+# ── HTTPS ZORLAMA ──────────────────────────────────────────────────────────
+# HTTP ile gelen istekleri HTTPS'e yönlendir. NOT: SSL sertifikanız aktif
+# OLMADAN bu satırları açmayın — site erişilemez olur.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+</IfModule>
+
+# ── WebAssembly (CAD motoru) ────────────────────────────────────────────────
+# .wasm dosyası "application/wasm" olarak sunulmalı; aksi halde tarayıcı
+# WebAssembly.instantiateStreaming ile reddeder ve DWG okuma çalışmaz.
+AddType application/wasm .wasm
+# ES modülleri de doğru tiple sunulmalı
+AddType application/javascript .mjs
+
+<IfModule mod_deflate.c>
+  # WASM zaten sıkıştırılmış değildir; gzip'lemek 9,5 MB'ı ~2,5 MB'a indirir
+  AddOutputFilterByType DEFLATE application/wasm
+</IfModule>
+
+<IfModule mod_expires.c>
+  # CAD motoru sürüm başına sabittir; uzun önbellek indirmeyi bir kereye indirir
+  ExpiresByType application/wasm "access plus 1 year"
+</IfModule>
