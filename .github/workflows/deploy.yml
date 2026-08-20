@@ -32,7 +32,11 @@ jobs:
           protocol: ftps
           port: 21
           local-dir: ./dist/
-          server-dir: /public_html/
+          # FTP hesabı zaten /public_html'e kilitli (chroot) — bağlanınca kök
+          # dizin ZATEN public_html'in kendisi. Burada tekrar "/public_html/"
+          # yazmak "public_html/public_html/" adında yanlış bir alt klasör
+          # oluşturur (bu hatayı bir kez yaptık). Kök = "/" olmalı.
+          server-dir: /
           dangerous-clean-slate: false
           exclude: |
             **/.git*

@@ -1,13 +1,21 @@
 name: (Tek Seferlik) Eski Dosyaları Temizle
 
 # Bu workflow OTOMATİK ÇALIŞMAZ — yalnızca elle, GitHub Actions sekmesinden
-# "Run workflow" ile tetiklenir. Amaç: kaynak kodda artık var olmayan,
-# geçmişte manuel FTP ile yüklenmiş kalıntı dosyaları hosting'ten silmek.
+# "Run workflow" ile tetiklenir.
 #
-# Silinecek liste 20.08.2026 tarihli inceleme sırasında cPanel Dosya
-# Yöneticisi'nde GÖRÜLEREK doğrulanmıştır — genel bir "eşleşmeyeni sil"
-# taraması DEĞİLDİR, isim isim sabit bir listedir. dosyalar/, data.sqlite,
-# backups/ bu listede YOKTUR ve asla eklenmemelidir.
+# İKİ AYRI TEMİZLİK:
+#  1) 20.08.2026 tarihli incelemede cPanel Dosya Yöneticisi'nde GÖRÜLEREK
+#     doğrulanmış kalıntı dosyalar (eski testler/, home.html, vb.)
+#  2) deploy.yml'nin İLK sürümündeki bir yapılandırma hatası yüzünden
+#     kazayla oluşan "public_html/public_html/" adlı YİNELENEN klasör
+#     (FTP hesabı zaten /public_html'e kilitliydi, workflow ayrıca
+#     "/public_html/" hedeflediği için içeride bir kopya oluştu — gerçek
+#     site hiç güncellenmedi, kazayla oluşan bu kopyaya yazıldı)
+#
+# NOT: FTP hesabı /public_html'e kilitli (chroot) — bağlanınca kök dizin
+# ZATEN public_html'in kendisidir, ayrıca "cd public_html" YAPILMAZ.
+#
+# dosyalar/, data.sqlite, backups/ bu listede YOKTUR ve asla eklenmemelidir.
 on:
   workflow_dispatch:
     inputs:
@@ -23,7 +31,7 @@ jobs:
       - name: lftp kur
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
 
-      - name: Kalıntı dosyaları sil
+      - name: Kalıntı dosyaları ve yanlışlıkla oluşan kopya klasörü sil
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -34,7 +42,6 @@ jobs:
           set ftp:ssl-protect-data yes
           set ssl:verify-certificate no
           set cmd:fail-exit no
-          cd /public_html
           rm -rf testler
           rm -f _test_import_tf.js
           rm -f home.html
@@ -51,6 +58,7 @@ jobs:
           rm -f OLCEKLEME_PLANI.md
           rm -f VPS_KURULUM.md
           rm -f YEDEKLEME_KURULUM.md
+          rm -rf public_html
           bye
           EOF
 
@@ -64,7 +72,6 @@ jobs:
           set ftp:ssl-force yes
           set ftp:ssl-protect-data yes
           set ssl:verify-certificate no
-          cd /public_html
           ls
           bye
           EOF
