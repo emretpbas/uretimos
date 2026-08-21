@@ -105,23 +105,16 @@ PageModules.is_emri_formu = (() => {
     if (ekBilgi) ekBilgiCiz();
   }
 
-  // ── PARÇA KODU ↔ HAMMADDE/HIRDAVAT/KENAR BANDI/YARI MAMÜL KARTI ──────────
-  // Satırdaki parcaKodu, mevcut bir hammadde (stokKodu) veya yarı mamül (kod)
-  // kartıyla eşleşiyorsa otomatik bağlanır — parcaKartId/parcaKartTipi doldurulur
-  // ve boşsa parça adı karttan alınır. Eşleşme yoksa satır yine de serbest
-  // metin olarak kullanılabilir kalır.
+  // ── PARÇA KODU ↔ YARI MAMÜL KARTI ────────────────────────────────────────
+  // Satırdaki parcaKodu, mevcut bir yarı mamül (kod) kartıyla eşleşiyorsa
+  // otomatik bağlanır — parcaKartId/parcaKartTipi doldurulur ve boşsa parça
+  // adı karttan alınır. Hammadde/hırdavat/plaka/kenar bandı için ayrı
+  // sütunlar var (Plaka Hammadde, PVC/SOFT bant seçicileri) — bu alan
+  // sadece yarı mamül arar, karışıklığı önlemek için.
   async function kartlaEslestir(satir) {
     if (!satir || !satir.parcaKodu) { if (satir) { satir.parcaKartId = null; satir.parcaKartTipi = ''; } return; }
     try {
-      const [hammaddeler, yarimamuller] = await Promise.all([
-        Store.hammaddeler.all(), Store.yarimamuller.all()
-      ]);
-      const h = hammaddeler.find(x => x.stokKodu === satir.parcaKodu);
-      if (h) {
-        satir.parcaKartId = h.id; satir.parcaKartTipi = 'hammadde';
-        if (!satir.parcaAdi) satir.parcaAdi = h.ad || '';
-        return;
-      }
+      const yarimamuller = await Store.yarimamuller.all();
       const y = yarimamuller.find(x => x.kod === satir.parcaKodu);
       if (y) {
         satir.parcaKartId = y.id; satir.parcaKartTipi = 'yarimamul';
@@ -136,31 +129,23 @@ PageModules.is_emri_formu = (() => {
     await Promise.all(form.satirlar.map(kartlaEslestir));
   }
 
-  // Manuel seçim: hammadde/hırdavat/kenar bandı/yarı mamül kartlarından birini
-  // "kalem_secici" ekranı üzerinden seçtirir, satıra bağlar.
+  // Manuel seçim: SADECE yarı mamül kartları arasından — "kalem_secici"
+  // ekranı üzerinden seçtirir, satıra bağlar. (Hammadde/hırdavat/plaka/kenar
+  // bandı için ayrı sütunlar var: Plaka Hammadde, PVC/SOFT bant seçicileri.)
   async function parcaKoduSec(i) {
-    let hammaddeler = [], yarimamuller = [];
-    try {
-      [hammaddeler, yarimamuller] = await Promise.all([
-        Store.hammaddeler.all(), Store.yarimamuller.all()
-      ]);
-    } catch (e) { App.toast('Kartlar yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+    let yarimamuller = [];
+    try { yarimamuller = await Store.yarimamuller.all(); }
+    catch (e) { App.toast('Yarı mamüller yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
 
-    const secenekler = [
-      ...hammaddeler.filter(h => h.stokKodu).map(h => ({
-        grup: h.tip || 'hirdavat', kod: h.stokKodu, ad: h.ad || '',
-        birim: h.birim || '', netFiyat: 0, maliyetYok: true, _id: h.id, _tip: 'hammadde'
-      })),
-      ...yarimamuller.filter(y => y.kod).map(y => ({
-        grup: 'yarimamul', kod: y.kod, ad: y.ad || '',
-        birim: y.birim || '', netFiyat: 0, maliyetYok: true, _id: y.id, _tip: 'yarimamul'
-      }))
-    ];
+    const secenekler = yarimamuller.filter(y => y.kod).map(y => ({
+      grup: 'yarimamul', kod: y.kod, ad: y.ad || '',
+      birim: y.birim || '', netFiyat: 0, maliyetYok: true, _id: y.id, _tip: 'yarimamul'
+    }));
 
     App.goTo('kalem_secici', {
-      baslik: 'Parça Kodu Seç — Hammadde / Hırdavat / Kenar Bandı / Yarı Mamül',
+      baslik: 'Parça Kodu Seç — Yarı Mamül',
       secenekler,
-      gruplar: { plaka: 'Plaka', hirdavat: 'Hırdavat', kenar_bandi: 'Kenar Bandı', sarf: 'Sarf', yarimamul: 'Yarı Mamül' },
+      gruplar: { yarimamul: 'Yarı Mamül' },
       geriDon: () => App.goTo('is_emri_formu'),
       onSecildi: (secim) => {
         const s = form.satirlar[i];
@@ -334,7 +319,7 @@ PageModules.is_emri_formu = (() => {
       <td>${inp('paketAdedi', s.paketAdedi, 'number')}</td>
       <td style="white-space:nowrap">${inp('parcaKodu', s.parcaKodu, null, 66)}<button
         class="btn btn-sm ie-kod-sec" data-i="${i}" style="padding:1px 3px;font-size:9px;margin-left:2px"
-        title="${s.parcaKartId ? 'Hammadde/Yarı Mamül kartına bağlı: ' + App.escapeHtml(s.parcaKartTipi || '') : 'Kart seç (Hammadde/Hırdavat/Kenar Bandı/Yarı Mamül)'}"
+        title="${s.parcaKartId ? 'Yarı mamül kartına bağlı' : 'Yarı mamül kartı seç'}"
         >${s.parcaKartId ? '🔗' : '🔍'}</button></td>
       <td>${inp('parcaAdi', s.parcaAdi)}</td>
       <td style="white-space:nowrap"><button class="btn btn-sm ie-plaka-sec" data-i="${i}"

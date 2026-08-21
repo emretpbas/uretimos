@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v116'; // v116: eksik dosya teshisi (sayfa acilmadiginda sebebi soyler)
+const CACHE_NAME = 'uretimos-v118'; // v118: is emri formu - kart baglama, plaka/bant secimi, dosya ekleme
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
