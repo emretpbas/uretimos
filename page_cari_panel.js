@@ -292,6 +292,7 @@ PageModules.cari_panel = (() => {
         <td class="r">${App.fmtTL(m.bakiye || 0)}</td>
         <td style="display:flex;gap:6px">
           <button class="btn btn-sm btn-ghost cp-detay" data-id="${m.id}">Detay</button>
+          <button class="btn btn-sm cp-is-emirleri" data-id="${m.id}" data-tip="musteri" title="Verilen iş emirleri">📁</button>
           ${alacakliyiz ? `<button class="btn btn-sm btn-green cp-tahsilat-yap" data-id="${m.id}">Tahsilat Yap</button>` : ''}
         </td></tr>`;
     });
@@ -303,6 +304,10 @@ PageModules.cari_panel = (() => {
     main.querySelectorAll('.cp-detay').forEach(b => b.onclick = () => { detayMusteriId = b.dataset.id; render(main); });
     main.querySelectorAll('.cp-tahsilat-yap').forEach(b => b.onclick = () => {
       PageModules.muhasebe_panel.tahsilatYapAc(b.dataset.id, () => render(main));
+    });
+    main.querySelectorAll('.cp-is-emirleri').forEach(b => b.onclick = () => {
+      const m = musteriler.find(x => x.id === b.dataset.id);
+      if (m) QrDosya.tarihliDosyalarAc('musteri', m.id, m.kod || m.id, m.unvan);
     });
   }
 
@@ -726,6 +731,7 @@ PageModules.cari_panel = (() => {
         <td class="r">${App.fmtTL(bakiye)}</td>
         <td style="display:flex;gap:6px">
           <button class="btn btn-sm btn-ghost cp-tedarikci-duzenle" data-id="${t.id}">Düzenle</button>
+          <button class="btn btn-sm cp-is-emirleri" data-id="${t.id}" data-tip="tedarikci" title="Verilen iş emirleri">📁</button>
           ${borcluyuz ? `<button class="btn btn-sm btn-red cp-odeme-yap" data-id="${t.id}">Ödeme Yap</button>` : ''}
         </td></tr>`;
     });
@@ -740,6 +746,10 @@ PageModules.cari_panel = (() => {
     });
     document.querySelectorAll('.cp-odeme-yap').forEach(b => b.onclick = () => {
       PageModules.muhasebe_panel.odemeYapAc(b.dataset.id, () => render(main));
+    });
+    document.querySelectorAll('.cp-is-emirleri').forEach(b => b.onclick = () => {
+      const t = tedarikciler.find(x => x.id === b.dataset.id);
+      if (t) QrDosya.tarihliDosyalarAc('tedarikci', t.id, t.kod || t.id, t.unvan);
     });
   }
 

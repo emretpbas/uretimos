@@ -35,6 +35,7 @@ PageModules.is_emri_formu = (() => {
           <button class="btn" id="ie-temizle">Yeni Form</button>
           <button class="btn btn-blue" id="ie-excel">⤓ Excel</button>
           <button class="btn btn-green" id="ie-pdf">🖨 Antetli PDF</button>
+          <button class="btn" id="ie-logo">🖼 Logo</button>
           <button class="btn" id="ie-karta-ekle">📎 Karta Dosya Olarak Ekle</button>
         </div>
       </div>
@@ -105,6 +106,7 @@ PageModules.is_emri_formu = (() => {
     document.getElementById('ie-excel').onclick = () => excelIndir();
     document.getElementById('ie-pdf').onclick = () => pdfYazdir();
     document.getElementById('ie-karta-ekle').onclick = () => kartaDosyaEkle();
+    document.getElementById('ie-logo').onclick = () => logoSecFormu();
     main.querySelectorAll('.ie-b').forEach(el =>
       el.onchange = () => { form[el.dataset.k] = el.value; });
 
@@ -592,6 +594,43 @@ PageModules.is_emri_formu = (() => {
     } catch (e) { App.toast('Aktarılamadı: ' + ((e && e.message) || e), 'err'); }
   }
 
+  // ── LOGO SEÇ / DEĞİŞTİR ──────────────────────────────────────────────────
+  // Antetli PDF'te kullanılan firma logosu — page_proje_teklif.js ile AYNI
+  // localStorage anahtarını ('uretimos_firma_logo') kullanır, böylece hangi
+  // ekrandan ayarlanırsa ayarlansın her iki çıktıda da aynı logo görünür.
+  function logoSecFormu() {
+    const mevcut = (() => { try { return localStorage.getItem('uretimos_firma_logo'); } catch (e) { return null; } })();
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:10px">Antetli PDF çıktısında görünecek logo. En fazla 400 KB, PNG veya JPG. Bilgisayarınızda saklanır, sunucuya gönderilmez.</div>
+      <div id="ie-logo-onizle" style="min-height:56px;border:1px dashed var(--border);border-radius:8px;
+        padding:6px;text-align:center;margin-bottom:8px">
+        ${mevcut ? `<img src="${mevcut}" style="max-height:52px;max-width:100%">` : '<span class="muted" style="font-size:11px">Logo yok</span>'}</div>
+      <input type="file" id="ie-logo-sec" accept="image/*" style="font-size:11.5px">
+      <button class="btn btn-sm" id="ie-logo-sil" style="margin-top:5px;${mevcut ? '' : 'display:none'}">Logoyu Kaldır</button>
+    `;
+    App.openModal({ title: '🖼 Antetli PDF Logosu', body, footer: `<button class="btn" id="ie-logo-kapat">Kapat</button>`, wide: true });
+    document.getElementById('ie-logo-kapat').onclick = App.closeModal;
+    document.getElementById('ie-logo-sec').onchange = async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const r = await TeklifExcel.logoOku(f);
+      if (!r.ok) { App.toast(r.hata, 'err'); return; }
+      try {
+        localStorage.setItem('uretimos_firma_logo', r.veri);
+        document.getElementById('ie-logo-onizle').innerHTML = `<img src="${r.veri}" style="max-height:52px;max-width:100%">`;
+        document.getElementById('ie-logo-sil').style.display = '';
+        App.toast('Logo kaydedildi.', 'ok');
+      } catch (x) { App.toast('Logo kaydedilemedi (depolama dolu olabilir).', 'err'); }
+    };
+    document.getElementById('ie-logo-sil').onclick = () => {
+      try { localStorage.removeItem('uretimos_firma_logo'); } catch (e) { }
+      document.getElementById('ie-logo-onizle').innerHTML = '<span class="muted" style="font-size:11px">Logo yok</span>';
+      document.getElementById('ie-logo-sil').style.display = 'none';
+      App.toast('Logo kaldırıldı.', 'ok');
+    };
+  }
+
   // ── KARTA DOSYA OLARAK EKLE ──────────────────────────────────────────────
   // İş emri Excel'ini seçilen bir ürün veya hammadde kartının "Teknik
   // Dosyalar" alanına (QrDosya) yükler — kalem_secici ile kart seçtirir,
@@ -600,12 +639,23 @@ PageModules.is_emri_formu = (() => {
   // birlikte görünür, QR ile de erişilebilir olur.
   async function kartaDosyaEkle() {
     if (!Store.sunucuModu) { App.toast('Dosya alanı yalnızca sunucu (hosting) sürümünde çalışır', 'err'); return; }
-    let urunler = [], hammaddeler = [], yarimamuller = [];
+    let urunler = [], hammaddeler = [], yarimamuller = [], musteriler = [], tedarikciler = [], projeler = [];
     try {
-      [urunler, hammaddeler, yarimamuller] = await Promise.all([
-        Store.urunler.all(), Store.hammaddeler.all(), Store.yarimamuller.all()
+      [urunler, hammaddeler, yarimamuller, musteriler, tedarikciler, projeler] = await Promise.all([
+        Store.urunler.all(), Store.hammaddeler.all(), Store.yarimamuller.all(),
+        Store.musteriler.all(), Store.tedarikciler.all(), Store.projeler.all()
       ]);
     } catch (e) { App.toast('Kartlar yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    // Proje teklif kalemleri: projeler → teklifler → mahaller → kalemler
+    // (mahal alt kalemleri) iç içe saklanır; tek düz listeye açılır.
+    const projeKalemleri = [];
+    projeler.forEach(p => (p.teklifler || []).forEach(t => (t.mahaller || []).forEach(m => (m.kalemler || []).forEach(k => {
+      projeKalemleri.push({
+        grup: 'proje_kalem', kod: k.kod || k.id, ad: `${p.ad} / ${m.ad} — ${k.ad}`,
+        birim: '', netFiyat: 0, maliyetYok: true, _id: k.id, _tip: 'proje_kalem'
+      });
+    }))));
 
     const secenekler = [
       ...urunler.filter(u => u.kod).map(u => ({
@@ -619,13 +669,26 @@ PageModules.is_emri_formu = (() => {
       ...hammaddeler.filter(h => h.stokKodu).map(h => ({
         grup: h.tip || 'hirdavat', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
         netFiyat: 0, maliyetYok: true, _id: h.id, _tip: 'hammadde'
-      }))
+      })),
+      ...musteriler.map(m => ({
+        grup: 'musteri', kod: m.kod || m.id, ad: m.unvan || '', birim: '', netFiyat: 0, maliyetYok: true,
+        _id: m.id, _tip: 'musteri'
+      })),
+      ...tedarikciler.map(t => ({
+        grup: 'tedarikci', kod: t.kod || t.id, ad: t.unvan || '', birim: '', netFiyat: 0, maliyetYok: true,
+        _id: t.id, _tip: 'tedarikci'
+      })),
+      ...projeKalemleri
     ];
 
     App.goTo('kalem_secici', {
       baslik: 'İş Emrini Hangi Karta Dosya Olarak Eklensin?',
       secenekler,
-      gruplar: { urun: 'Bitmiş Ürünler', yarimamul: 'Yarı Mamüller', plaka: 'Plaka', hirdavat: 'Hırdavat', kenar_bandi: 'Kenar Bandı', sarf: 'Sarf' },
+      gruplar: {
+        urun: 'Bitmiş Ürünler', yarimamul: 'Yarı Mamüller', plaka: 'Plaka', hirdavat: 'Hırdavat',
+        kenar_bandi: 'Kenar Bandı', sarf: 'Sarf', musteri: 'Müşteriler', tedarikci: 'Tedarikçiler',
+        proje_kalem: 'Proje Kalemleri (Mahal Alt Kalemleri)'
+      },
       geriDon: () => App.goTo('is_emri_formu'),
       onSecildi: async (secim) => {
         App.goTo('is_emri_formu');

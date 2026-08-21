@@ -263,5 +263,91 @@ const QrDosya = (() => {
     return ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(u);
   }
 
-  return { ac, linkAc, kartDosyalariniSunucuyaAktar, gorselUrl, gorselMi };
+  // ── TARİHE GÖRE KLASÖR AĞACI (Yıl → Ay → Gün) ───────────────────────────
+  // Cari (müşteri/tedarikçi) gibi kartların altına zaman içinde birikmiş
+  // dosyaları (örn. iş emirleri) tıklanabilir klasör hiyerarşisinde gösterir.
+  // İşlem olmayan gün/ay/yıl için hiçbir klasör OLUŞTURULMAZ — sadece dosyası
+  // olan tarihler görünür.
+  const AY_ADLARI = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+  async function tarihliDosyalarAc(tip, refId, kod, ad) {
+    if (!Store.sunucuModu) { App.toast('Dosya alanı yalnızca sunucu (hosting) sürümünde çalışır', 'err'); return; }
+    let kayit;
+    try { kayit = await Store.qrKayitGetir(tip, refId, kod, ad); }
+    catch (e) { App.toast('Dosyalar alınamadı: ' + e.message, 'err'); return; }
+
+    // Yıl → Ay → Gün → [dosyalar] ağacını kur (yalnızca dosyası olan dallar)
+    const agac = {};
+    (kayit.dosyalar || []).forEach(d => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d.tarih || '');
+      if (!m) return;
+      const [, yil, ay, gun] = m;
+      (agac[yil] = agac[yil] || {});
+      (agac[yil][ay] = agac[yil][ay] || {});
+      (agac[yil][ay][gun] = agac[yil][ay][gun] || []).push(d);
+    });
+
+    let yol = [];   // [] kök · [yil] · [yil,ay] · [yil,ay,gun]
+    const body = document.createElement('div');
+    App.openModal({ title: `📁 ${App.escapeHtml(ad || kod)} — Dosyalar`, body, footer: `<button class="btn" id="qd-td-kapat">Kapat</button>`, wide: true });
+    document.getElementById('qd-td-kapat').onclick = App.closeModal;
+
+    const dalDosyaSayisi = (dal) => {
+      if (Array.isArray(dal)) return dal.length;
+      return Object.values(dal).reduce((a, x) => a + dalDosyaSayisi(x), 0);
+    };
+
+    function ciz() {
+      const bcrumb = ['📁 Kök', ...yol.map((y, i) => i === 1 ? AY_ADLARI[+y - 1] : y)]
+        .map((etiket, i) => `<span class="qd-td-crumb" data-derinlik="${i}" style="cursor:pointer;text-decoration:underline">${App.escapeHtml(etiket)}</span>`)
+        .join(' <span class="muted">/</span> ');
+
+      let dal = agac;
+      for (const y of yol) dal = dal[y];
+
+      let icerik = '';
+      if (yol.length < 3) {
+        // Klasör listesi (yıl / ay / gün seviyesi)
+        const anahtarlar = Object.keys(dal).sort((a, b) => yol.length === 1 ? +a - +b : b.localeCompare(a));
+        if (!anahtarlar.length) {
+          icerik = '<div class="muted" style="padding:10px;font-size:11.5px">Bu klasörde dosya yok.</div>';
+        } else {
+          icerik = anahtarlar.map(k => {
+            const etiket = yol.length === 1 ? AY_ADLARI[+k - 1] : (yol.length === 2 ? k : k);
+            const sayi = dalDosyaSayisi(dal[k]);
+            return `<div class="qd-td-klasor" data-k="${k}" style="display:flex;align-items:center;gap:8px;
+              border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer">
+              <span style="font-size:18px">📁</span>
+              <span style="flex:1;font-size:12.5px;font-weight:600">${App.escapeHtml(String(etiket))}</span>
+              <span class="muted" style="font-size:11px">${sayi} dosya</span></div>`;
+          }).join('');
+        }
+      } else {
+        // Gün seviyesi: dosya listesi
+        icerik = dal.map(d => `
+          <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:6px">
+            <div style="font-size:20px">${dosyaIkonu(d.uzanti)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:700;word-break:break-all">${App.escapeHtml(d.ad)}</div>
+              <div class="muted" style="font-size:10px">${boyutYazi(d.boyut)} · ${App.escapeHtml(d.tarih || '')} · ${App.escapeHtml(d.yukleyen || '')}</div>
+            </div>
+            <a class="btn btn-sm" href="${indirUrl(tip, refId, kayit.anahtar, d.id)}" target="_blank" rel="noopener">⬇</a>
+          </div>`).join('') || '<div class="muted" style="padding:10px;font-size:11.5px">Bu günde dosya yok.</div>';
+      }
+
+      body.innerHTML = `<div style="margin-bottom:10px;font-size:12px">${bcrumb}</div>${icerik}`;
+      body.querySelectorAll('.qd-td-crumb').forEach(el => el.onclick = () => {
+        yol = yol.slice(0, +el.dataset.derinlik);
+        ciz();
+      });
+      body.querySelectorAll('.qd-td-klasor').forEach(el => el.onclick = () => {
+        yol = [...yol, el.dataset.k];
+        ciz();
+      });
+    }
+    ciz();
+  }
+
+  return { ac, linkAc, kartDosyalariniSunucuyaAktar, gorselUrl, gorselMi, tarihliDosyalarAc };
 })();
