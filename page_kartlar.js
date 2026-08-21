@@ -68,7 +68,7 @@ PageModules.kartlar = (() => {
       <div class="grid grid-3" id="kt-grid"></div>
     `;
     document.getElementById('kt-new').onclick = () => openForm(null, () => render(main));
-    document.getElementById('kt-new-ym').onclick = () => openYmForm(null, () => render(main));
+    document.getElementById('kt-new-ym').onclick = () => openYmForm(main, null, () => render(main));
     document.getElementById('kt-new-am').onclick = () => openAltMontajForm(null, () => render(main));
     document.getElementById('kt-new-pkt').onclick = () => openPaketForm(null, () => render(main));
     document.getElementById('kt-wizard').onclick = () => openWizard(main);
@@ -305,7 +305,7 @@ PageModules.kartlar = (() => {
 
     document.getElementById('kt-edit').onclick = () => {
       if (tip === 'urun') openForm(kart, () => renderDetay(main, kart, tip));
-      else if (tip === 'yarimamul') openYmForm(kart, () => renderDetay(main, kart, tip));
+      else if (tip === 'yarimamul') openYmForm(main, kart, () => renderDetay(main, kart, tip));
       else if (tip === 'altmontaj') openAltMontajForm(kart, () => renderDetay(main, kart, tip));
       else openPaketForm(kart, () => renderDetay(main, kart, tip));
     };
@@ -2154,9 +2154,9 @@ PageModules.kartlar = (() => {
   // Yarımamül kartı oluşturma/düzenleme formu, Yarı Mamüller sayfasındaki
   // (page_yarimamul.js) AYNI formu (export edilmiş openForm) kullanır —
   // tek bir form mantığı her iki ekrandan da yönetilir, kod tekrarı olmaz.
-  async function openYmForm(yarimamul, onSaved) {
+  async function openYmForm(main, yarimamul, onSaved) {
     const [hammaddeler, rotalar] = await Promise.all([Store.hammaddeler.all(), Store.rotalar.all()]);
-    PageModules.yarimamul.openForm(yarimamul, hammaddeler, rotalar, onSaved);
+    PageModules.yarimamul.openForm(main, yarimamul, hammaddeler, rotalar, onSaved);
   }
 
   // Alt Montaj kartı: yarımamülden BAĞIMSIZ, kendi ID'si ve kodu olan 4.

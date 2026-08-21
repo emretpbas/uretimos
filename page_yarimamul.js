@@ -21,7 +21,7 @@ PageModules.yarimamul = (() => {
 
       <div class="grid grid-3" id="ym-grid"></div>
     `;
-    document.getElementById('ym-new').onclick = () => openForm(null, hammaddeler, rotalar, () => render(main));
+    document.getElementById('ym-new').onclick = () => openForm(main, null, hammaddeler, rotalar, () => render(main));
     document.getElementById('ym-search').oninput = (e) => { searchTxt = e.target.value.toLowerCase(); renderGrid(list); };
     renderGrid(list);
 
@@ -56,19 +56,27 @@ PageModules.yarimamul = (() => {
             <div>Rota: ${rota ? App.escapeHtml(rota.ad) : '<span class="muted">atanmadı</span>'}</div>
             <div>Dosyalar: ${(y.gorseller || []).length} adet</div>
           </div>
-          <button class="btn btn-sm ym-etiket" data-id="${y.id}" style="margin-top:8px;width:100%">🔲 QR Etiketi Yazdır</button>
+          <div class="flex-gap" style="margin-top:8px;gap:6px">
+            <button class="btn btn-sm ym-etiket" data-id="${y.id}" style="flex:1">🔲 QR Etiketi</button>
+            <button class="btn btn-sm ym-agac" data-id="${y.id}" style="flex:1" title="Bu yarı mamülün alt kalemlerini (BOM) ağaç editöründe düzenle">🌳 Ağaç</button>
+          </div>
         </div>`;
       }).join('');
       grid.querySelectorAll('.ym-card').forEach(c => c.onclick = (e) => {
-        if (e.target.classList.contains('ym-etiket')) return;
+        if (e.target.classList.contains('ym-etiket') || e.target.classList.contains('ym-agac')) return;
         const item = list.find(x => x.id === c.dataset.id);
-        openForm(item, hammaddeler, rotalar, () => render(main));
+        openForm(main, item, hammaddeler, rotalar, () => render(main));
       });
       grid.querySelectorAll('.ym-etiket').forEach(b => b.onclick = (e) => {
         e.stopPropagation();
         const item = list.find(x => x.id === b.dataset.id);
         const rota = rotalar.find(r => r.id === item.rotaId);
         yazdirQrEtiketi(item, rota);
+      });
+      grid.querySelectorAll('.ym-agac').forEach(b => b.onclick = (e) => {
+        e.stopPropagation();
+        const item = list.find(x => x.id === b.dataset.id);
+        PageModules.recete_agac.ac(main, item, 'yarimamul', () => render(main));
       });
     }
   }
@@ -111,7 +119,7 @@ PageModules.yarimamul = (() => {
     win.document.close();
   }
 
-  function openForm(item, hammaddeler, rotalar, onSaved) {
+  function openForm(main, item, hammaddeler, rotalar, onSaved) {
     const isEdit = !!item;
     const d = item || { gorseller: [] };
     let gorseller = [...(d.gorseller || [])];
@@ -186,10 +194,19 @@ PageModules.yarimamul = (() => {
     const footer = document.createElement('div');
     footer.innerHTML = `
       ${isEdit ? '<button class="btn btn-red" id="f-del" style="margin-right:auto">Sil</button>' : ''}
+      ${isEdit ? '<button class="btn" id="f-agac">🌳 Ağaç Görünümünde Düzenle</button>' : ''}
       <button class="btn" id="f-cancel">Vazgeç</button>
       <button class="btn btn-blue" id="f-save">${isEdit ? 'Güncelle' : 'Kaydet'}</button>
     `;
     App.openModal({ title: isEdit ? 'Yarı Mamül Düzenle' : 'Yeni Yarı Mamül Oluştur', sub: isEdit ? d.kod : 'Ölçü, hammadde, rota ve teknik resim bilgilerini girin', body, footer, wide: true });
+    // Bu yarı mamülün alt kalemlerini (BOM/reçete) düzenlemek — "Atanan
+    // Hammadde" alanı yalnızca TEK bir hammaddeye bağlanan basit bir
+    // referanstır; birden çok hammadde/yarı mamülden oluşan gerçek ürün
+    // ağacı (reçete) buradan, page_recete_agac.js üzerinden yönetilir.
+    if (isEdit) document.getElementById('f-agac').onclick = () => {
+      App.closeModal();
+      PageModules.recete_agac.ac(main, d, 'yarimamul', () => render(main));
+    };
 
     function renderGorselList() {
       const wrap = document.getElementById('f-gorsel-list');

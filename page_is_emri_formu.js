@@ -211,6 +211,133 @@ PageModules.is_emri_formu = (() => {
     });
   }
 
+  // ── PARÇA KODU: ÜRÜN AĞACINDAN SEÇ ────────────────────────────────────────
+  // parcaKoduSec() düz bir yarı mamül listesinde arattırır; bu fonksiyon
+  // yerine önce bir ürün/yarı mamül/alt montaj/paket KÖKÜ seçtirip, o kartın
+  // reçete ağacını (page_recete_agac.js ile AYNI Store.receteler verisi,
+  // salt-okunur) gezerek içindeki bir YARI MAMÜL alt kalemini parça kodu
+  // olarak seçmeyi sağlar — aynı kod farklı ürünlerde tekrar kullanıldığında
+  // "hangi üründeki hangi parça" bağlamıyla bulmak için.
+  const AGAC_KOK_TIPLERI = [
+    { tip: 'urun', etiket: 'Ürün', koleksiyon: 'urunler' },
+    { tip: 'yarimamul', etiket: 'Yarı Mamül', koleksiyon: 'yarimamuller' },
+    { tip: 'altmontaj', etiket: 'Alt Montaj', koleksiyon: 'altMontajlar' },
+    { tip: 'paket', etiket: 'Paket', koleksiyon: 'paketler' }
+  ];
+  const AGAC_TIP_ETIKET = { urun: 'ÜRN', yarimamul: 'YM', altmontaj: 'AM', paket: 'PKT', hammadde: 'HM' };
+  function agacTipNormalize(t) {
+    return (t === 'hirdavat' || t === 'plaka' || t === 'kenar_bandi') ? 'hammadde' : t;
+  }
+
+  async function parcaKoduAgactanSec(i) {
+    let veri;
+    try {
+      const [receteler, urunler, yarimamuller, altMontajlar, paketler, hammaddeler] = await Promise.all([
+        Store.receteler.all(), Store.urunler.all(), Store.yarimamuller.all(),
+        Store.altMontajlar.all(), Store.paketler.all(), Store.hammaddeler.all()
+      ]);
+      veri = { receteler, urunler, yarimamuller, altMontajlar, paketler, hammaddeler };
+    } catch (e) { App.toast('Ürün ağacı verileri yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    let kokArama = '';
+    let secilenKok = null; // { tip, id }
+
+    const body = document.createElement('div');
+    App.openModal({ title: '🌳 Ürün Ağacından Parça Seç', body, footer: `<button class="btn" id="pa-kapat">Kapat</button>`, wide: true, xwide: true });
+    document.getElementById('pa-kapat').onclick = App.closeModal;
+
+    const listeVeTip = (tip) => tip === 'urun' ? veri.urunler : tip === 'yarimamul' ? veri.yarimamuller
+      : tip === 'altmontaj' ? veri.altMontajlar : tip === 'paket' ? veri.paketler : veri.hammaddeler;
+    const kartBul = (tip, id) => listeVeTip(tip).find(x => x.id === id);
+    const receteBul = (tip, id) => tip === 'urun' ? veri.receteler.find(r => r.urunId === id)
+      : tip === 'yarimamul' ? veri.receteler.find(r => r.yarimamulId === id)
+      : tip === 'altmontaj' ? veri.receteler.find(r => r.altMontajId === id)
+      : veri.receteler.find(r => r.paketId === id);
+
+    function ciz() {
+      if (!secilenKok) {
+        body.innerHTML = `
+          <div class="fhint" style="margin-bottom:8px">Önce bir kök kart seçin — sonra alt kalemlerini gezip içinden bir YARI MAMÜL parçayı seçebilirsiniz.</div>
+          <input class="finput" id="pa-kok-arama" placeholder="Kod veya ad ara…" value="${App.escapeHtml(kokArama)}" style="margin-bottom:10px">
+          <div id="pa-kok-liste" style="max-height:420px;overflow:auto"></div>
+        `;
+        const aramaEl = document.getElementById('pa-kok-arama');
+        aramaEl.oninput = () => { kokArama = aramaEl.value; kokListeCiz(); };
+        aramaEl.focus(); aramaEl.setSelectionRange(aramaEl.value.length, aramaEl.value.length);
+        kokListeCiz();
+      } else {
+        const kokKart = kartBul(secilenKok.tip, secilenKok.id);
+        body.innerHTML = `
+          <button class="btn btn-sm" id="pa-geri" style="margin-bottom:10px">← Farklı Kök Seç</button>
+          <div id="pa-agac" style="border:1px solid var(--border);border-radius:8px;padding:10px;max-height:460px;overflow:auto"></div>
+        `;
+        document.getElementById('pa-geri').onclick = () => { secilenKok = null; ciz(); };
+        const agacEl = document.getElementById('pa-agac');
+        agacEl.innerHTML = kokKart ? dugumCiz(secilenKok.tip, secilenKok.id, [], 0) : '<div class="muted">Kart bulunamadı.</div>';
+        agacEl.querySelectorAll('.pa-sec').forEach(b => b.onclick = () => {
+          const kart = kartBul(b.dataset.tip, b.dataset.id);
+          if (!kart) return;
+          const s = form.satirlar[i];
+          if (s) {
+            s.parcaKodu = kart.kod || '';
+            if (!s.parcaAdi) s.parcaAdi = kart.ad || '';
+            s.parcaKartId = kart.id;
+            s.parcaKartTipi = 'yarimamul';
+          }
+          App.closeModal();
+          App.toast('"' + (kart.kod || kart.ad) + '" parça kodu olarak seçildi.', 'ok');
+          render(document.querySelector('main') || document.body);
+        });
+      }
+    }
+
+    function kokListeCiz() {
+      const el = document.getElementById('pa-kok-liste');
+      const sm = kokArama.trim().toLowerCase();
+      const satirlar = [];
+      AGAC_KOK_TIPLERI.forEach(kt => listeVeTip(kt.tip).forEach(k => {
+        if (sm && !((k.kod || '') + ' ' + (k.ad || '')).toLowerCase().includes(sm)) return;
+        satirlar.push({ tip: kt.tip, etiket: kt.etiket, id: k.id, kod: k.kod || '', ad: k.ad || '' });
+      }));
+      if (!satirlar.length) { el.innerHTML = '<div class="muted" style="padding:10px;font-size:11.5px">Kayıt bulunamadı.</div>'; return; }
+      el.innerHTML = satirlar.slice(0, 300).map(s => `
+        <div class="pa-kok-satir" data-tip="${s.tip}" data-id="${s.id}" style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:5px;cursor:pointer">
+          <span class="pill pill-gray" style="font-size:10px">${s.etiket}</span>
+          <div style="flex:1;min-width:0"><span class="mono" style="font-weight:700;font-size:11.5px">${App.escapeHtml(s.kod)}</span> — <span style="font-size:12px">${App.escapeHtml(s.ad)}</span></div>
+        </div>`).join('');
+      el.querySelectorAll('.pa-kok-satir').forEach(r => r.onclick = () => { secilenKok = { tip: r.dataset.tip, id: r.dataset.id }; ciz(); });
+    }
+
+    // Reçete ağacını salt-okunur gezer — döngü ve 15 seviye sınırı
+    // page_recete_agac.js ile tutarlı. Yalnızca YARI MAMÜL düğümleri
+    // seçilebilir (İş Emri satırının parça kodu her zaman bir yarı mamül
+    // karta bağlanır — bkz. parcaKoduSec/kartlaEslestir).
+    function dugumCiz(tip, id, path, derinlik) {
+      const anahtar = tip + ':' + id;
+      if (path.includes(anahtar)) return `<div class="muted" style="font-size:10.5px;padding:2px 0 2px ${derinlik * 16}px">↻ döngü tespit edildi, atlandı</div>`;
+      if (derinlik > 15) return `<div class="muted" style="font-size:10.5px;padding:2px 0 2px ${derinlik * 16}px">… (15 seviye sınırına ulaşıldı)</div>`;
+      const kart = kartBul(tip, id);
+      const girinti = derinlik * 16;
+      if (!kart) return `<div class="muted" style="font-size:10.5px;padding:2px 0 2px ${girinti}px">(kart bulunamadı: ${tip}-${App.escapeHtml(id)})</div>`;
+      const secilebilir = tip === 'yarimamul';
+      const baslik = `
+        <div style="display:flex;align-items:center;gap:8px;padding:3px 0 3px ${girinti}px">
+          <span class="pill pill-gray" style="font-size:9.5px">${AGAC_TIP_ETIKET[tip] || tip}</span>
+          <span class="mono" style="font-weight:700;font-size:11.5px">${App.escapeHtml(kart.kod || kart.stokKodu || '')}</span>
+          <span style="font-size:11.5px;color:var(--text2)">${App.escapeHtml(kart.ad || '')}</span>
+          ${secilebilir ? `<button class="btn btn-sm btn-blue pa-sec" data-tip="${tip}" data-id="${id}" style="margin-left:auto;padding:1px 8px;font-size:10.5px">Seç</button>` : ''}
+        </div>`;
+      if (tip === 'hammadde') return baslik;
+      const recete = receteBul(tip, id);
+      const kalemler = recete ? recete.kalemler : [];
+      if (!kalemler.length) return baslik;
+      const yeniPath = [...path, anahtar];
+      return baslik + kalemler.map(k => dugumCiz(agacTipNormalize(k.tip), k.refId, yeniPath, derinlik + 1)).join('');
+    }
+
+    ciz();
+  }
+
   // Sadece PLAKA tipi hammaddeler arasından seçim — parçanın hangi plakadan
   // kesildiğini ayrıca izlemek için (parcaKodu'ndan bağımsız). Seçilince
   // kartın KENDİ kalınlığı satıra otomatik yazılır ve kilitlenir (elle
@@ -299,7 +426,7 @@ PageModules.is_emri_formu = (() => {
         <tr>
           <th rowspan="2" style="width:52px">Paket<br>No</th>
           <th rowspan="2" style="width:56px">Paket<br>Adedi</th>
-          <th rowspan="2" style="width:130px">Parç.Kodu</th>
+          <th rowspan="2" style="width:150px">Parç.Kodu</th>
           <th rowspan="2" style="width:100px">Parça Adı</th>
           <th rowspan="2" style="width:130px">Plaka<br>Hammadde</th>
           <th rowspan="2" style="width:64px">Kalınlık</th>
@@ -376,6 +503,7 @@ PageModules.is_emri_formu = (() => {
       };
     });
     el.querySelectorAll('.ie-kod-sec').forEach(b => b.onclick = () => parcaKoduSec(+b.dataset.i));
+    el.querySelectorAll('.ie-kod-agac').forEach(b => b.onclick = () => parcaKoduAgactanSec(+b.dataset.i));
     el.querySelectorAll('.ie-plaka-sec').forEach(b => b.onclick = () => plakaSec(+b.dataset.i));
     el.querySelectorAll('.ie-bant-sec').forEach(b => b.onclick = () => bantSec(+b.dataset.i, b.dataset.grup));
     el.querySelectorAll('.ie-sil').forEach(b => b.onclick = () => {
@@ -409,10 +537,12 @@ PageModules.is_emri_formu = (() => {
     return `<tr>
       <td>${inp('paketNo', s.paketNo)}</td>
       <td>${inp('paketAdedi', s.paketAdedi, 'number')}</td>
-      <td style="white-space:nowrap">${inp('parcaKodu', s.parcaKodu, null, 66)}<button
+      <td style="white-space:nowrap">${inp('parcaKodu', s.parcaKodu, null, 50)}<button
         class="btn btn-sm ie-kod-sec" data-i="${i}" style="padding:2px 4px;font-size:11px;margin-left:2px"
-        title="${s.parcaKartId ? 'Yarı mamül kartına bağlı' : 'Yarı mamül kartı seç'}"
-        >${s.parcaKartId ? '🔗' : '🔍'}</button></td>
+        title="${s.parcaKartId ? 'Yarı mamül kartına bağlı' : 'Yarı mamül kartı seç (liste)'}"
+        >${s.parcaKartId ? '🔗' : '🔍'}</button><button
+        class="btn btn-sm ie-kod-agac" data-i="${i}" style="padding:2px 4px;font-size:11px;margin-left:2px"
+        title="Ürün ağacından (reçeteden) parça seç">🌳</button></td>
       <td>${inp('parcaAdi', s.parcaAdi)}</td>
       <td style="white-space:nowrap"><button class="btn btn-sm ie-plaka-sec" data-i="${i}"
         style="padding:2px 5px;font-size:11px"
