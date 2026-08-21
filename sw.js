@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v122'; // v122: is emri formu - karta ekle/takip et sekmeli hale getirildi
+const CACHE_NAME = 'uretimos-v123'; // v123: is emri formu ekran tablosu yazi/sutun boyutlari buyutuldu
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

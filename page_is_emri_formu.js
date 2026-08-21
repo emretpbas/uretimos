@@ -295,31 +295,31 @@ PageModules.is_emri_formu = (() => {
     const g = (i, k) => `data-i="${i}" data-k="${k}"`;
 
     el.innerHTML = `<div class="tbl-wrap" style="overflow-x:auto">
-      <table class="dtable" style="font-size:10.5px;min-width:1400px">
+      <table class="dtable" style="font-size:13px;min-width:1750px">
         <tr>
-          <th rowspan="2" style="width:44px">Paket<br>No</th>
-          <th rowspan="2" style="width:46px">Paket<br>Adedi</th>
-          <th rowspan="2" style="width:100px">Parç.Kodu</th>
-          <th rowspan="2" style="min-width:130px">Parça Adı</th>
-          <th rowspan="2" style="width:100px">Plaka<br>Hammadde</th>
-          <th rowspan="2" style="width:52px">Kalınlık</th>
-          <th rowspan="2" style="width:80px">Renk</th>
+          <th rowspan="2" style="width:52px">Paket<br>No</th>
+          <th rowspan="2" style="width:56px">Paket<br>Adedi</th>
+          <th rowspan="2" style="width:130px">Parç.Kodu</th>
+          <th rowspan="2" style="min-width:150px">Parça Adı</th>
+          <th rowspan="2" style="width:130px">Plaka<br>Hammadde</th>
+          <th rowspan="2" style="width:64px">Kalınlık</th>
+          <th rowspan="2" style="width:96px">Renk</th>
           <th colspan="3" style="text-align:center">Net Ölçü</th>
           <th colspan="3" style="text-align:center">Kaba Ölçü</th>
-          <th rowspan="2" style="width:56px">Üretim<br>miktarı</th>
-          <th rowspan="2" style="width:40px">Yarı<br>Mamül</th>
-          <th rowspan="2" style="width:36px">Yatar</th>
-          <th rowspan="2" style="width:40px">M.Hiz<br>(+)</th>
+          <th rowspan="2" style="width:68px">Üretim<br>miktarı</th>
+          <th rowspan="2" style="width:52px">Yarı<br>Mamül</th>
+          <th rowspan="2" style="width:46px">Yatar</th>
+          <th rowspan="2" style="width:50px">M.Hiz<br>(+)</th>
           ${['PVC 2mm', 'PVC 1mm', 'PVC 0,40', 'SOFT'].map(x =>
-            `<th colspan="2" style="text-align:center;width:64px">${x}</th>`).join('')}
-          <th rowspan="2" style="min-width:120px">AÇIKLAMALAR</th>
-          <th rowspan="2" style="width:56px">birim m²</th>
-          <th rowspan="2" style="width:30px"></th>
+            `<th colspan="2" style="text-align:center;width:84px">${x}</th>`).join('')}
+          <th rowspan="2" style="min-width:140px">AÇIKLAMALAR</th>
+          <th rowspan="2" style="width:68px">birim m²</th>
+          <th rowspan="2" style="width:34px"></th>
         </tr>
         <tr>
-          <th style="width:36px">Adet</th><th style="width:48px">Boy</th><th style="width:48px">En</th>
-          <th style="width:36px">Adet</th><th style="width:48px">Boy</th><th style="width:48px">En</th>
-          ${'<th style="width:32px">Boy</th><th style="width:32px">En</th>'.repeat(4)}
+          <th style="width:44px">Adet</th><th style="width:56px">Boy</th><th style="width:56px">En</th>
+          <th style="width:44px">Adet</th><th style="width:56px">Boy</th><th style="width:56px">En</th>
+          ${'<th style="width:42px">Boy</th><th style="width:42px">En</th>'.repeat(4)}
         </tr>
         ${form.satirlar.map((s, i) => satirHtml(s, i, g)).join('')}
         <tr style="background:var(--surface2);font-weight:600">
@@ -392,17 +392,17 @@ PageModules.is_emri_formu = (() => {
     const inp = (k, deger, tip, gen, kilitli) =>
       `<input class="finput ie-h" ${g(i, k)} ${tip ? 'type="' + tip + '"' : ''} ${kilitli ? 'disabled' : ''}
         value="${App.escapeHtml(deger == null ? '' : String(deger))}"
-        style="width:${gen || 100}%;font-size:10.5px;padding:2px;text-align:${tip === 'number' ? 'right' : 'left'}${kilitli ? ';opacity:.65' : ''}">`;
+        style="width:${gen || 100}%;font-size:13px;padding:4px 3px;text-align:${tip === 'number' ? 'right' : 'left'}${kilitli ? ';opacity:.65' : ''}">`;
     // Kenar bandı sayısı: bir kenarda en fazla 2 taraf (boy/en) olabilir —
     // 0 = bant yok, 1 = tek taraf, 2 = çift taraf. Başka rakam anlamsızdır.
     const sel012 = (k, deger) =>
-      `<select class="finput ie-h" ${g(i, k)} style="width:100%;font-size:10.5px;padding:2px">
+      `<select class="finput ie-h" ${g(i, k)} style="width:100%;font-size:13px;padding:4px 2px">
         ${[0, 1, 2].map(n => `<option value="${n}" ${+deger === n ? 'selected' : ''}>${n}</option>`).join('')}
       </select>`;
     const bantliGruplar = ['pvc2', 'pvc1', 'pvc040', 'soft'];
     const bant = (ad) => {
       const secBtn = `<button class="btn btn-sm ie-bant-sec"
-        data-i="${i}" data-grup="${ad}" style="padding:0 2px;font-size:8px;vertical-align:middle"
+        data-i="${i}" data-grup="${ad}" style="padding:1px 3px;font-size:10.5px;vertical-align:middle"
         title="${s[ad].bandKartId ? 'Kenar bandı: ' + App.escapeHtml(s[ad].bandKodu || '') : 'Kenar bandı seç'}"
         >${s[ad].bandKartId ? '🔗' : '🔍'}</button>`;
       return `<td style="white-space:nowrap">${sel012(ad + '.boy', s[ad].boy)}${secBtn}</td>
@@ -413,12 +413,12 @@ PageModules.is_emri_formu = (() => {
       <td>${inp('paketNo', s.paketNo)}</td>
       <td>${inp('paketAdedi', s.paketAdedi, 'number')}</td>
       <td style="white-space:nowrap">${inp('parcaKodu', s.parcaKodu, null, 66)}<button
-        class="btn btn-sm ie-kod-sec" data-i="${i}" style="padding:1px 3px;font-size:9px;margin-left:2px"
+        class="btn btn-sm ie-kod-sec" data-i="${i}" style="padding:2px 4px;font-size:11px;margin-left:2px"
         title="${s.parcaKartId ? 'Yarı mamül kartına bağlı' : 'Yarı mamül kartı seç'}"
         >${s.parcaKartId ? '🔗' : '🔍'}</button></td>
       <td>${inp('parcaAdi', s.parcaAdi)}</td>
       <td style="white-space:nowrap"><button class="btn btn-sm ie-plaka-sec" data-i="${i}"
-        style="padding:1px 4px;font-size:9px"
+        style="padding:2px 5px;font-size:11px"
         title="${s.plakaKartId ? 'Plaka: ' + App.escapeHtml(s.plakaKodu || '') + ' (kalınlık kilitli)' : 'Plaka hammadde seç'}"
         >${s.plakaKartId ? '🔗 ' : '🔍 '}${App.escapeHtml(s.plakaKodu ? (s.plakaKodu + (s.plakaAd ? ' — ' + s.plakaAd : '')) : 'Seç')}</button></td>
       <td>${inp('kalinlik', s.kalinlik, 'number', null, kalinlikKilitli)}</td>
