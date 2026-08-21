@@ -7,6 +7,28 @@ PageModules.is_emri_formu = (() => {
   let form = null;      // { baslik, satirlar, kaynak }
   let ekBilgi = null;   // PDF'ten gelen malzeme/ölçü önerileri
 
+  // ── KARTA EKLE / TAKİP ET — sekme tanımları ───────────────────────────────
+  // Her sekme: hangi Store koleksiyonundan okunur, "kod" alanının adı (yoksa
+  // null — müşteri/tedarikçide kod kavramı yok, ünvan kullanılır), ve "+ Yeni
+  // Ekle" ile hangi minimal kayıt oluşturulur (null ise o sekmede oluşturma
+  // yok — Proje Mahalleri, kendi çok adımlı akışı olduğundan buradan
+  // oluşturulamaz, yalnızca mevcutlar arasından seçilir).
+  const KART_TIPLERI = [
+    { key: 'urun', etiket: 'Bitmiş Ürünler', tip: 'urun', koleksiyon: 'urunler', kodAlani: 'kod',
+      yeniOlustur: (kod, ad) => ({ id: App.uid('URN'), kod, ad, tip: 'bitmis_urun', gorseller: [] }) },
+    { key: 'yarimamul', etiket: 'Yarımamüller', tip: 'yarimamul', koleksiyon: 'yarimamuller', kodAlani: 'kod',
+      yeniOlustur: (kod, ad) => ({ id: App.uid('YM'), kod, ad, gorseller: [] }) },
+    { key: 'hammadde', etiket: 'Hammadde / Hırdavat', tip: 'hammadde', koleksiyon: 'hammaddeler', kodAlani: 'stokKodu',
+      yeniOlustur: (kod, ad) => ({ id: App.uid('HM'), tip: 'hirdavat', stokKodu: kod, ad, birim: 'ADET' }) },
+    { key: 'musteri', etiket: 'Müşteriler', tip: 'musteri', koleksiyon: 'musteriler', kodAlani: null,
+      yeniOlustur: (_kod, ad) => ({ id: App.uid('MUS'), unvan: ad }) },
+    { key: 'tedarikci', etiket: 'Tedarikçiler', tip: 'tedarikci', koleksiyon: 'tedarikciler', kodAlani: null,
+      yeniOlustur: (_kod, ad) => ({ id: App.uid('TED'), unvan: ad, kategori: 'hirdavat' }) },
+    { key: 'proje_mahal', etiket: 'Proje Mahalleri', tip: 'proje_kalem', koleksiyon: null, kodAlani: null, yeniOlustur: null }
+  ];
+  let keSekme = KART_TIPLERI[0].key;
+  let keArama = '';
+
   function bosForm() {
     return {
       isEmriIsmi: '', isEmriKodu: IsEmriUretici.isEmriKodu(),
@@ -36,7 +58,7 @@ PageModules.is_emri_formu = (() => {
           <button class="btn btn-blue" id="ie-excel">⤓ Excel</button>
           <button class="btn btn-green" id="ie-pdf">🖨 Antetli PDF</button>
           <button class="btn" id="ie-logo">🖼 Logo</button>
-          <button class="btn" id="ie-karta-ekle">📎 Karta Dosya Olarak Ekle</button>
+          <button class="btn" id="ie-karta-ekle">📎 Karta Ekle / Takip Et</button>
         </div>
       </div>
 
@@ -105,7 +127,7 @@ PageModules.is_emri_formu = (() => {
     };
     document.getElementById('ie-excel').onclick = () => excelIndir();
     document.getElementById('ie-pdf').onclick = () => pdfYazdir();
-    document.getElementById('ie-karta-ekle').onclick = () => kartaDosyaEkle();
+    document.getElementById('ie-karta-ekle').onclick = () => karttaEkleTakipAc();
     document.getElementById('ie-logo').onclick = () => logoSecFormu();
     main.querySelectorAll('.ie-b').forEach(el =>
       el.onchange = () => { form[el.dataset.k] = el.value; });
@@ -637,73 +659,105 @@ PageModules.is_emri_formu = (() => {
   // sonra mevcut sunucu dosya yükleme uçlarını (Store.teknikDosyaYukle)
   // kullanır. Kartın kendi dosya listesinde diğer step/pdf/excel'lerle
   // birlikte görünür, QR ile de erişilebilir olur.
-  async function kartaDosyaEkle() {
+  // Bir sekmenin listesini Store'dan okuyup düz {id,kod,ad} kayıtlarına çevirir.
+  // Proje Mahalleri özel: projeler → teklifler → mahaller → kalemler iç içe
+  // saklanır, buradan tek düz listeye açılır.
+  async function keListeYukle(tipDef) {
+    if (tipDef.key === 'proje_mahal') {
+      const projeler = await Store.projeler.all();
+      const liste = [];
+      projeler.forEach(p => (p.teklifler || []).forEach(t => (t.mahaller || []).forEach(m => (m.kalemler || []).forEach(k => {
+        liste.push({ id: k.id, kod: k.kod || k.id, ad: `${p.ad} / ${m.ad} — ${k.ad}` });
+      }))));
+      return liste;
+    }
+    const kayitlar = await Store[tipDef.koleksiyon].all();
+    return kayitlar
+      .map(x => ({ id: x.id, kod: tipDef.kodAlani ? (x[tipDef.kodAlani] || '') : x.id, ad: x.ad || x.unvan || '' }))
+      .filter(x => !tipDef.kodAlani || x.kod);   // kod alanı olan tiplerde kodu boş olan kart gizlenir
+  }
+
+  // ── KARTA EKLE / TAKİP ET — sekmeli merkez ────────────────────────────────
+  // Her kart tipi (Bitmiş Ürün, Yarı Mamül, Hammadde, Müşteri, Tedarikçi,
+  // Proje Mahalleri) AYRI bir sekmede aranır/seçilir. Her sekmede (Proje
+  // Mahalleri hariç) "+ Yeni Ekle" ile sisteme yeni kart tanımlanabilir.
+  // Her satırdaki 📁 ile o karta daha önce gönderilmiş iş emirleri, tarihe
+  // göre (Yıl→Ay→Gün) gruplanmış klasör gezgininde görülebilir — böylece
+  // hem gönderme hem de geçmişi takip etme AYNI ekrandan yapılır.
+  async function karttaEkleTakipAc() {
     if (!Store.sunucuModu) { App.toast('Dosya alanı yalnızca sunucu (hosting) sürümünde çalışır', 'err'); return; }
-    let urunler = [], hammaddeler = [], yarimamuller = [], musteriler = [], tedarikciler = [], projeler = [];
-    try {
-      [urunler, hammaddeler, yarimamuller, musteriler, tedarikciler, projeler] = await Promise.all([
-        Store.urunler.all(), Store.hammaddeler.all(), Store.yarimamuller.all(),
-        Store.musteriler.all(), Store.tedarikciler.all(), Store.projeler.all()
-      ]);
-    } catch (e) { App.toast('Kartlar yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+    const body = document.createElement('div');
+    App.openModal({ title: '📎 Karta Ekle / Takip Et', body, footer: `<button class="btn" id="ke-kapat">Kapat</button>`, wide: true });
+    document.getElementById('ke-kapat').onclick = App.closeModal;
 
-    // Proje teklif kalemleri: projeler → teklifler → mahaller → kalemler
-    // (mahal alt kalemleri) iç içe saklanır; tek düz listeye açılır.
-    const projeKalemleri = [];
-    projeler.forEach(p => (p.teklifler || []).forEach(t => (t.mahaller || []).forEach(m => (m.kalemler || []).forEach(k => {
-      projeKalemleri.push({
-        grup: 'proje_kalem', kod: k.kod || k.id, ad: `${p.ad} / ${m.ad} — ${k.ad}`,
-        birim: '', netFiyat: 0, maliyetYok: true, _id: k.id, _tip: 'proje_kalem'
-      });
-    }))));
+    async function ciz() {
+      const tipDef = KART_TIPLERI.find(t => t.key === keSekme);
+      body.innerHTML = `
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px">
+          ${KART_TIPLERI.map(t => `<button class="btn btn-sm ke-tab ${t.key === keSekme ? 'btn-blue' : ''}" data-key="${t.key}">${t.etiket}</button>`).join('')}
+        </div>
+        ${tipDef.yeniOlustur ? `
+          <div class="frow" style="margin-bottom:10px">
+            ${tipDef.kodAlani ? `<div class="fgroup"><label class="flbl">Kod</label><input class="finput" id="ke-yeni-kod" placeholder="örn. YM.YENI.001" style="width:160px"></div>` : ''}
+            <div class="fgroup" style="flex:1"><label class="flbl">${tipDef.kodAlani ? 'Ad' : 'Ünvan'}</label><input class="finput" id="ke-yeni-ad" placeholder="ad girin"></div>
+            <div class="fgroup" style="align-self:flex-end"><button class="btn btn-green" id="ke-yeni-ekle">+ Yeni ${tipDef.etiket.replace(/ler$|lar$/, '')} Ekle</button></div>
+          </div>` : `<div class="fhint" style="margin-bottom:10px">Proje mahal/kalem yalnızca Proje Teklif ekranından oluşturulabilir — burada sadece mevcutlar arasından seçilir.</div>`}
+        <input class="finput" id="ke-arama" placeholder="Ara…" value="${App.escapeHtml(keArama)}" style="margin-bottom:8px">
+        <div id="ke-liste" style="max-height:360px;overflow:auto"></div>
+      `;
 
-    const secenekler = [
-      ...urunler.filter(u => u.kod).map(u => ({
-        grup: 'urun', kod: u.kod, ad: u.ad || '', birim: '', netFiyat: 0, maliyetYok: true,
-        _id: u.id, _tip: 'urun'
-      })),
-      ...yarimamuller.filter(y => y.kod).map(y => ({
-        grup: 'yarimamul', kod: y.kod, ad: y.ad || '', birim: y.birim || '', netFiyat: 0, maliyetYok: true,
-        _id: y.id, _tip: 'yarimamul'
-      })),
-      ...hammaddeler.filter(h => h.stokKodu).map(h => ({
-        grup: h.tip || 'hirdavat', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
-        netFiyat: 0, maliyetYok: true, _id: h.id, _tip: 'hammadde'
-      })),
-      ...musteriler.map(m => ({
-        grup: 'musteri', kod: m.kod || m.id, ad: m.unvan || '', birim: '', netFiyat: 0, maliyetYok: true,
-        _id: m.id, _tip: 'musteri'
-      })),
-      ...tedarikciler.map(t => ({
-        grup: 'tedarikci', kod: t.kod || t.id, ad: t.unvan || '', birim: '', netFiyat: 0, maliyetYok: true,
-        _id: t.id, _tip: 'tedarikci'
-      })),
-      ...projeKalemleri
-    ];
+      body.querySelectorAll('.ke-tab').forEach(b => b.onclick = () => { keSekme = b.dataset.key; keArama = ''; ciz(); });
+      const aramaEl = document.getElementById('ke-arama');
+      aramaEl.oninput = () => { keArama = aramaEl.value; listeCiz(); };
+      aramaEl.focus(); aramaEl.setSelectionRange(aramaEl.value.length, aramaEl.value.length);
 
-    App.goTo('kalem_secici', {
-      baslik: 'İş Emrini Hangi Karta Dosya Olarak Eklensin?',
-      secenekler,
-      gruplar: {
-        urun: 'Bitmiş Ürünler', yarimamul: 'Yarı Mamüller', plaka: 'Plaka', hirdavat: 'Hırdavat',
-        kenar_bandi: 'Kenar Bandı', sarf: 'Sarf', musteri: 'Müşteriler', tedarikci: 'Tedarikçiler',
-        proje_kalem: 'Proje Kalemleri (Mahal Alt Kalemleri)'
-      },
-      geriDon: () => App.goTo('is_emri_formu'),
-      onSecildi: async (secim) => {
-        App.goTo('is_emri_formu');
+      const yeniBtn = document.getElementById('ke-yeni-ekle');
+      if (yeniBtn) yeniBtn.onclick = async () => {
+        const kodEl = document.getElementById('ke-yeni-kod');
+        const kod = kodEl ? kodEl.value.trim() : '';
+        const ad = document.getElementById('ke-yeni-ad').value.trim();
+        if (tipDef.kodAlani && !kod) { App.toast('Kod zorunlu', 'err'); return; }
+        if (!ad) { App.toast(tipDef.kodAlani ? 'Ad zorunlu' : 'Ünvan zorunlu', 'err'); return; }
         try {
-          const wb = excelKitabiOlustur();
-          const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-          const dosyaAdi = 'IsEmri_' + (form.isEmriKodu || 'form').replace(/[^\w.-]/g, '_') + '.xlsx';
-          await Store.teknikDosyaYukle({
-            tip: secim._tip, refId: secim._id, kod: secim.kod, ad: secim.ad,
-            dosyaAdi, icerikB64: b64
-          });
-          App.toast('İş emri, "' + secim.kod + '" kartına dosya olarak eklendi.', 'ok');
-        } catch (e) { App.toast('Karta eklenemedi: ' + ((e && e.message) || e), 'err'); }
+          const yeni = tipDef.yeniOlustur(kod, ad);
+          await App.persist(() => Store[tipDef.koleksiyon].upsert(yeni));
+          App.toast('Yeni kart oluşturuldu.', 'ok');
+          keArama = ad; ciz();
+        } catch (e) { App.toast('Oluşturulamadı: ' + ((e && e.message) || e), 'err'); }
+      };
+
+      async function listeCiz() {
+        const liste = await keListeYukle(tipDef);
+        const sm = keArama.trim().toLowerCase();
+        const filtreli = sm ? liste.filter(x => (x.kod + ' ' + x.ad).toLowerCase().includes(sm)) : liste;
+        const el = document.getElementById('ke-liste');
+        if (!filtreli.length) {
+          el.innerHTML = '<div class="muted" style="padding:10px;font-size:11.5px">Kayıt bulunamadı.</div>';
+          return;
+        }
+        el.innerHTML = filtreli.slice(0, 200).map(x => `
+          <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:5px">
+            <div style="flex:1;min-width:0">
+              ${tipDef.kodAlani ? `<span class="mono" style="font-weight:700;font-size:11.5px">${App.escapeHtml(x.kod)}</span> — ` : ''}
+              <span style="font-size:12px">${App.escapeHtml(x.ad)}</span>
+            </div>
+            <button class="btn btn-sm ke-gecmis" data-id="${x.id}" title="Gönderilen iş emirleri (tarihe göre)">📁</button>
+            <button class="btn btn-sm btn-blue ke-ekle" data-id="${x.id}" data-kod="${App.escapeHtml(x.kod)}" data-ad="${App.escapeHtml(x.ad)}">📎 Ekle</button>
+          </div>`).join('');
+        el.querySelectorAll('.ke-gecmis').forEach(b => b.onclick = () => QrDosya.tarihliDosyalarAc(tipDef.tip, b.dataset.id, '', filtreli.find(x => x.id === b.dataset.id).ad));
+        el.querySelectorAll('.ke-ekle').forEach(b => b.onclick = async () => {
+          try {
+            const wb = excelKitabiOlustur();
+            const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+            const dosyaAdi = 'IsEmri_' + (form.isEmriKodu || 'form').replace(/[^\w.-]/g, '_') + '.xlsx';
+            await Store.teknikDosyaYukle({ tip: tipDef.tip, refId: b.dataset.id, kod: b.dataset.kod, ad: b.dataset.ad, dosyaAdi, icerikB64: b64 });
+            App.toast('İş emri, "' + (b.dataset.kod || b.dataset.ad) + '" kartına eklendi.', 'ok');
+          } catch (e) { App.toast('Karta eklenemedi: ' + ((e && e.message) || e), 'err'); }
+        });
       }
-    });
+      listeCiz();
+    }
+    ciz();
   }
 
   // ── ANTETLİ PDF ──────────────────────────────────────────────────────────
