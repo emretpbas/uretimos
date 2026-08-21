@@ -295,37 +295,34 @@ PageModules.is_emri_formu = (() => {
     const g = (i, k) => `data-i="${i}" data-k="${k}"`;
 
     el.innerHTML = `<div class="tbl-wrap" style="overflow-x:auto">
-      <table class="dtable" style="font-size:13px;min-width:1750px">
+      <table class="dtable" style="font-size:13px;min-width:1900px">
         <tr>
           <th rowspan="2" style="width:52px">Paket<br>No</th>
           <th rowspan="2" style="width:56px">Paket<br>Adedi</th>
           <th rowspan="2" style="width:130px">Parç.Kodu</th>
-          <th rowspan="2" style="min-width:150px">Parça Adı</th>
+          <th rowspan="2" style="width:100px">Parça Adı</th>
           <th rowspan="2" style="width:130px">Plaka<br>Hammadde</th>
           <th rowspan="2" style="width:64px">Kalınlık</th>
           <th rowspan="2" style="width:96px">Renk</th>
           <th colspan="3" style="text-align:center">Net Ölçü</th>
           <th colspan="3" style="text-align:center">Kaba Ölçü</th>
           <th rowspan="2" style="width:68px">Üretim<br>miktarı</th>
-          <th rowspan="2" style="width:52px">Yarı<br>Mamül</th>
-          <th rowspan="2" style="width:46px">Yatar</th>
-          <th rowspan="2" style="width:50px">M.Hiz<br>(+)</th>
           ${['PVC 2mm', 'PVC 1mm', 'PVC 0,40', 'SOFT'].map(x =>
-            `<th colspan="2" style="text-align:center;width:84px">${x}</th>`).join('')}
-          <th rowspan="2" style="min-width:140px">AÇIKLAMALAR</th>
+            `<th colspan="3" style="text-align:center;width:150px">${x}</th>`).join('')}
+          <th rowspan="2" style="width:100px">AÇIKLAMALAR</th>
           <th rowspan="2" style="width:68px">birim m²</th>
           <th rowspan="2" style="width:34px"></th>
         </tr>
         <tr>
-          <th style="width:44px">Adet</th><th style="width:56px">Boy</th><th style="width:56px">En</th>
-          <th style="width:44px">Adet</th><th style="width:56px">Boy</th><th style="width:56px">En</th>
-          ${'<th style="width:42px">Boy</th><th style="width:42px">En</th>'.repeat(4)}
+          <th style="width:44px">Adet</th><th style="width:72px">Boy</th><th style="width:72px">En</th>
+          <th style="width:44px">Adet</th><th style="width:72px">Boy</th><th style="width:72px">En</th>
+          ${'<th style="width:50px">Boy</th><th style="width:50px">En</th><th style="width:110px">Kenar Bandı</th>'.repeat(4)}
         </tr>
         ${form.satirlar.map((s, i) => satirHtml(s, i, g)).join('')}
         <tr style="background:var(--surface2);font-weight:600">
           <td colspan="13">TOPLAM</td>
           <td class="r">${ozet.toplamParca}</td>
-          <td colspan="12"></td>
+          <td colspan="13"></td>
           <td class="r">${ozet.toplamM2}</td><td></td>
         </tr>
       </table></div>
@@ -399,14 +396,14 @@ PageModules.is_emri_formu = (() => {
       `<select class="finput ie-h" ${g(i, k)} style="width:100%;font-size:13px;padding:4px 2px">
         ${[0, 1, 2].map(n => `<option value="${n}" ${+deger === n ? 'selected' : ''}>${n}</option>`).join('')}
       </select>`;
-    const bantliGruplar = ['pvc2', 'pvc1', 'pvc040', 'soft'];
     const bant = (ad) => {
-      const secBtn = `<button class="btn btn-sm ie-bant-sec"
-        data-i="${i}" data-grup="${ad}" style="padding:1px 3px;font-size:10.5px;vertical-align:middle"
-        title="${s[ad].bandKartId ? 'Kenar bandı: ' + App.escapeHtml(s[ad].bandKodu || '') : 'Kenar bandı seç'}"
-        >${s[ad].bandKartId ? '🔗' : '🔍'}</button>`;
-      return `<td style="white-space:nowrap">${sel012(ad + '.boy', s[ad].boy)}${secBtn}</td>
-              <td>${sel012(ad + '.en', s[ad].en)}</td>`;
+      const bilgi = s[ad].bandKartId
+        ? `<div class="mono" style="font-weight:700;font-size:11px">${App.escapeHtml(s[ad].bandKodu || '')}</div>${s[ad].bandAd ? `<div class="muted" style="font-weight:400;font-size:10px;white-space:normal;line-height:1.2">${App.escapeHtml(s[ad].bandAd)}</div>` : ''}`
+        : `<span class="muted" style="font-size:11px">🔍 Seç</span>`;
+      return `<td>${sel012(ad + '.boy', s[ad].boy)}</td>
+              <td>${sel012(ad + '.en', s[ad].en)}</td>
+              <td class="ie-bant-sec" data-i="${i}" data-grup="${ad}" style="cursor:pointer;white-space:normal;line-height:1.25;padding:3px 5px"
+                title="${s[ad].bandKartId ? 'Kenar bandını değiştir' : 'Kenar bandı seç'}">${bilgi}</td>`;
     };
     const kalinlikKilitli = !!s.plakaKartId;
     return `<tr>
@@ -430,9 +427,6 @@ PageModules.is_emri_formu = (() => {
       <td>${inp('kabaBoy', s.kabaBoy, 'number')}</td>
       <td>${inp('kabaEn', s.kabaEn, 'number')}</td>
       <td>${inp('uretimMiktari', s.uretimMiktari, 'number')}</td>
-      <td>${inp('yariMamul', s.yariMamul)}</td>
-      <td>${inp('yatar', s.yatar)}</td>
-      <td>${inp('mHiz', s.mHiz)}</td>
       ${bant('pvc2')}${bant('pvc1')}${bant('pvc040')}${bant('soft')}
       <td>${inp('aciklamalar', s.aciklamalar)}</td>
       <td class="r">${s.birimM2}</td>
@@ -574,23 +568,22 @@ PageModules.is_emri_formu = (() => {
     S.push([]);
     S.push([form.grup, form.altBaslik]);
     S.push(['Paket No', 'Paket Adedi', 'Parç.Kodu', 'Parça Adı', 'Plaka Hammadde', 'Kalınlık', 'Renk',
-      'Net Adet', 'Net Boy', 'Net En', 'Kaba Adet', 'Kaba Boy', 'Kaba En',
-      'Üretim miktarı', 'Yarı Mamül', 'Yatar', 'M.Hiz(+)',
-      'PVC2 Boy', 'PVC2 En', 'PVC2 Bant', 'PVC1 Boy', 'PVC1 En', 'PVC1 Bant',
-      'PVC0,40 Boy', 'PVC0,40 En', 'PVC0,40 Bant', 'SOFT Boy', 'SOFT En', 'SOFT Bant',
+      'Net Adet', 'Net Boy', 'Net En', 'Kaba Adet', 'Kaba Boy', 'Kaba En', 'Üretim miktarı',
+      'PVC2 Boy', 'PVC2 En', 'PVC2 Kenar Bandı', 'PVC1 Boy', 'PVC1 En', 'PVC1 Kenar Bandı',
+      'PVC0,40 Boy', 'PVC0,40 En', 'PVC0,40 Kenar Bandı', 'SOFT Boy', 'SOFT En', 'SOFT Kenar Bandı',
       'AÇIKLAMALAR', 'birim m²', 'Bant grubu']);
+    const bantMetni = (grp) => grp.bandKartId ? (grp.bandKodu || '') + (grp.bandAd ? ' — ' + grp.bandAd : '') : '';
     form.satirlar.forEach(s => S.push([
       s.paketNo, s.paketAdedi, s.parcaKodu, s.parcaAdi, s.plakaKodu, s.kalinlik, s.renk,
-      s.netAdet, s.netBoy, s.netEn, s.kabaAdet, s.kabaBoy, s.kabaEn,
-      s.uretimMiktari, s.yariMamul, s.yatar, s.mHiz,
-      s.pvc2.boy, s.pvc2.en, s.pvc2.bandKodu, s.pvc1.boy, s.pvc1.en, s.pvc1.bandKodu,
-      s.pvc040.boy, s.pvc040.en, s.pvc040.bandKodu, s.soft.boy, s.soft.en, s.soft.bandKodu,
+      s.netAdet, s.netBoy, s.netEn, s.kabaAdet, s.kabaBoy, s.kabaEn, s.uretimMiktari,
+      s.pvc2.boy, s.pvc2.en, bantMetni(s.pvc2), s.pvc1.boy, s.pvc1.en, bantMetni(s.pvc1),
+      s.pvc040.boy, s.pvc040.en, bantMetni(s.pvc040), s.soft.boy, s.soft.en, bantMetni(s.soft),
       s.aciklamalar, s.birimM2, s.bantGrup
     ]));
     const oz = IsEmriUretici.ozet(form.satirlar);
     S.push([]);
     S.push(['TOPLAM', '', '', '', '', '', '', '', '', '', '', '', '', oz.toplamParca,
-      ...Array(17).fill(''), oz.toplamM2]);
+      ...Array(13).fill(''), oz.toplamM2]);
     oz.gruplar.forEach(g => S.push([g.grup + (g.ad ? ' — ' + g.ad : ''), g.satir + ' satır', g.m2.toFixed(3) + ' m²']));
     const kb = IsEmriUretici.kenarBandiOzeti(form.satirlar);
     if (kb.length) {
@@ -600,9 +593,10 @@ PageModules.is_emri_formu = (() => {
     }
 
     const ws = XLSX.utils.aoa_to_sheet(S);
-    ws['!cols'] = [{ wch: 9 }, { wch: 9 }, { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 8 }, { wch: 12 },
-      ...Array(6).fill({ wch: 8 }), { wch: 10 }, ...Array(3).fill({ wch: 7 }),
-      ...Array(12).fill({ wch: 7 }), { wch: 24 }, { wch: 9 }, { wch: 9 }];
+    ws['!cols'] = [{ wch: 9 }, { wch: 9 }, { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 8 }, { wch: 12 },
+      ...Array(6).fill({ wch: 8 }), { wch: 10 },
+      ...Array(4).fill([{ wch: 6 }, { wch: 6 }, { wch: 22 }]).flat(),
+      { wch: 20 }, { wch: 9 }, { wch: 9 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'İş Emri');
     return wb;
@@ -746,13 +740,17 @@ PageModules.is_emri_formu = (() => {
           </div>`).join('');
         el.querySelectorAll('.ke-gecmis').forEach(b => b.onclick = () => QrDosya.tarihliDosyalarAc(tipDef.tip, b.dataset.id, '', filtreli.find(x => x.id === b.dataset.id).ad));
         el.querySelectorAll('.ke-ekle').forEach(b => b.onclick = async () => {
+          const taban = 'IsEmri_' + (form.isEmriKodu || 'form').replace(/[^\w.-]/g, '_');
           try {
             const wb = excelKitabiOlustur();
-            const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-            const dosyaAdi = 'IsEmri_' + (form.isEmriKodu || 'form').replace(/[^\w.-]/g, '_') + '.xlsx';
-            await Store.teknikDosyaYukle({ tip: tipDef.tip, refId: b.dataset.id, kod: b.dataset.kod, ad: b.dataset.ad, dosyaAdi, icerikB64: b64 });
-            App.toast('İş emri, "' + (b.dataset.kod || b.dataset.ad) + '" kartına eklendi.', 'ok');
-          } catch (e) { App.toast('Karta eklenemedi: ' + ((e && e.message) || e), 'err'); }
+            const excelB64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+            await Store.teknikDosyaYukle({ tip: tipDef.tip, refId: b.dataset.id, kod: b.dataset.kod, ad: b.dataset.ad, dosyaAdi: taban + '.xlsx', icerikB64: excelB64 });
+          } catch (e) { App.toast('Excel karta eklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+          try {
+            const pdfB64 = await pdfKitabiOlustur();
+            await Store.teknikDosyaYukle({ tip: tipDef.tip, refId: b.dataset.id, kod: b.dataset.kod, ad: b.dataset.ad, dosyaAdi: taban + '.pdf', icerikB64: pdfB64 });
+          } catch (e) { App.toast('Excel eklendi, ancak PDF karta eklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+          App.toast('İş emri (Excel + PDF), "' + (b.dataset.kod || b.dataset.ad) + '" kartına eklendi.', 'ok');
         });
       }
       listeCiz();
@@ -760,16 +758,113 @@ PageModules.is_emri_formu = (() => {
     ciz();
   }
 
-  // ── ANTETLİ PDF ──────────────────────────────────────────────────────────
+  // ── FİRMA BİLGİSİ / LOGO (PDF çıktılarında ortak kullanılır) ──────────────
+  async function firmaBilgisiAl() {
+    let firma = {}, logo = null;
+    try {
+      const fb = await Store.firmaBilgileri.all();
+      firma = (Array.isArray(fb) ? fb[0] : fb) || {};
+    } catch (e) { }
+    try { logo = localStorage.getItem('uretimos_firma_logo'); } catch (e) { }
+    return { firma, logo };
+  }
+
+  // ── PDF ÇALIŞMA KİTABI (KARTA EKLEME İÇİN) ────────────────────────────────
+  // jsPDF + autoTable ile ekrandaki tabloyla aynı sütunları (Yarı Mamül/Yatar/
+  // M.Hiz olmadan, kenar bandı kod+ismiyle) içeren bir PDF üretir; sadece
+  // base64 döner, indirmez/yazdırmaz — "Karta Ekle" bunu Excel ile BİRLİKTE
+  // seçilen karta yükler. Yazdırma/önizleme için ayrı olan pdfYazdir() (aşağıda)
+  // tarayıcının yazdırma diyaloğunu kullanmaya devam ediyor.
+  async function pdfKitabiOlustur() {
+    if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF kütüphanesi yüklenemedi.');
+    if (!form.satirlar.length) throw new Error('Önce satır ekleyin.');
+    const { jsPDF } = window.jspdf;
+    const { firma, logo } = await firmaBilgisiAl();
+    const oz = IsEmriUretici.ozet(form.satirlar);
+    const kb = IsEmriUretici.kenarBandiOzeti(form.satirlar);
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
+    const w = doc.internal.pageSize.getWidth();
+
+    if (logo) {
+      try { doc.addImage(logo, /data:image\/jpe?g/i.test(logo) ? 'JPEG' : 'PNG', 10, 8, 42, 16, undefined, 'FAST'); } catch (e) { }
+    } else if (firma.unvan) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+      doc.text(String(firma.unvan), 10, 17);
+    }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
+    doc.text('İŞ EMRİ', w / 2, 16, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text(['Doküman No : FR.29', 'Yayın Tarihi : 15.10.2007', 'Revizyon No : 01', 'Revizyon Tarihi: 12.12.2012'],
+      w - 10, 7, { align: 'right', lineHeightFactor: 1.4 });
+
+    doc.setFontSize(9);
+    doc.text(`İŞ EMRİ İSMİ: ${form.isEmriIsmi || ''}`, 10, 26);
+    doc.text(`AÇILIŞ TARİHİ: ${form.acilisTarihi || ''}`, 110, 26);
+    doc.text(`İŞ EMRİ KODU: ${form.isEmriKodu || ''}`, 200, 26);
+    doc.text(`Holzma: ${form.holzma || ''}   Ima: ${form.ima || ''}   Rover: ${form.rover || ''}   Delik: ${form.delik || ''}`, 10, 32);
+
+    let y = 36;
+    if (form.grup || form.altBaslik) {
+      doc.setFillColor(190, 190, 190);
+      doc.rect(10, y, w - 20, 6, 'F');
+      doc.setFontSize(9);
+      doc.text(`${form.grup || ''}   ${form.altBaslik || ''}`, 12, y + 4.2);
+      y += 9;
+    }
+
+    const bantHucre = (grp) => grp.bandKartId ? (grp.bandKodu || '') + (grp.bandAd ? '\n' + grp.bandAd : '') : '';
+    doc.autoTable({
+      head: [[
+        'Paket\nNo', 'Paket\nAdedi', 'Parç.\nKodu', 'Parça Adı', 'Plaka\nHammadde', 'Kalın.', 'Renk',
+        'Net\nAdet', 'Net\nBoy', 'Net\nEn', 'Kaba\nAdet', 'Kaba\nBoy', 'Kaba\nEn', 'Üretim\nMiktarı',
+        'PVC2\nBoy', 'PVC2\nEn', 'PVC2 Kenar Bandı', 'PVC1\nBoy', 'PVC1\nEn', 'PVC1 Kenar Bandı',
+        'PVC0,40\nBoy', 'PVC0,40\nEn', 'PVC0,40 Kenar Bandı', 'SOFT\nBoy', 'SOFT\nEn', 'SOFT Kenar Bandı',
+        'AÇIKLAMALAR', 'birim\nm²'
+      ]],
+      body: form.satirlar.map(s => [
+        s.paketNo || '', s.paketAdedi || '', s.parcaKodu || '', s.parcaAdi || '', s.plakaKodu || '', s.kalinlik || '', s.renk || '',
+        s.netAdet || '', s.netBoy || '', s.netEn || '', s.kabaAdet || '', s.kabaBoy || '', s.kabaEn || '', s.uretimMiktari || '',
+        s.pvc2.boy, s.pvc2.en, bantHucre(s.pvc2), s.pvc1.boy, s.pvc1.en, bantHucre(s.pvc1),
+        s.pvc040.boy, s.pvc040.en, bantHucre(s.pvc040), s.soft.boy, s.soft.en, bantHucre(s.soft),
+        s.aciklamalar || '', s.birimM2 || ''
+      ]),
+      foot: [['TOPLAM', '', '', '', '', '', '', '', '', '', '', '', '', String(oz.toplamParca),
+        '', '', '', '', '', '', '', '', '', '', '', '', '', String(oz.toplamM2)]],
+      startY: y, theme: 'grid',
+      styles: { fontSize: 6, cellPadding: 1, valign: 'middle', overflow: 'linebreak' },
+      headStyles: { fillColor: [217, 217, 217], textColor: 20, fontStyle: 'bold', halign: 'center', fontSize: 6 },
+      footStyles: { fillColor: [238, 238, 238], textColor: 0, fontStyle: 'bold', fontSize: 6.5 },
+      margin: { left: 10, right: 10 }
+    });
+
+    let yy = doc.lastAutoTable.finalY + 6;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+    doc.text('Plaka / Kalınlık Bazlı m² Özeti', 10, yy); yy += 4;
+    doc.setFont('helvetica', 'normal');
+    oz.gruplar.forEach(g => {
+      doc.text(`${g.grup}${g.ad ? ' — ' + g.ad : ''} — ${g.satir} satır · ${g.m2.toFixed(3)} m²`, 12, yy);
+      yy += 4;
+    });
+    if (kb.length) {
+      yy += 2;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Kullanılan Kenar Bandı (0,02m fire dahil)', 10, yy); yy += 4;
+      doc.setFont('helvetica', 'normal');
+      kb.forEach(b => { doc.text(`${b.kod}${b.ad ? ' — ' + b.ad : ''} — ${b.metre} m`, 12, yy); yy += 4; });
+    }
+    yy += 5;
+    doc.text(`Hazırlayan: ${form.hazirlayan || '______________'}`, 10, yy);
+    doc.text(`Onaylayan: ${form.onaylayan || '______________'}`, 110, yy);
+    doc.text('Üretim Sorumlusu: ______________', 200, yy);
+
+    return doc.output('datauristring').split(',').pop();
+  }
+
+  // ── ANTETLİ PDF (yazdır/önizle) ────────────────────────────────────────────
   async function pdfYazdir() {
     try {
       if (!form.satirlar.length) { App.toast('Önce satır ekleyin.', 'err'); return; }
-      let firma = {}, logo = null;
-      try {
-        const fb = await Store.firmaBilgileri.all();
-        firma = (Array.isArray(fb) ? fb[0] : fb) || {};
-      } catch (e) { }
-      try { logo = localStorage.getItem('uretimos_firma_logo'); } catch (e) { }
+      const { firma, logo } = await firmaBilgisiAl();
       const oz = IsEmriUretici.ozet(form.satirlar);
       const kb = IsEmriUretici.kenarBandiOzeti(form.satirlar);
       const esc = App.escapeHtml;
@@ -824,15 +919,14 @@ PageModules.is_emri_formu = (() => {
         <th rowspan="2">Parç.Kodu</th><th rowspan="2">Parça Adı</th>
         <th rowspan="2">Plaka<br>Hammadde</th><th rowspan="2">Kalınlık</th><th rowspan="2">Renk</th>
         <th colspan="3">Net Ölçü</th><th colspan="3">Kaba Ölçü</th>
-        <th rowspan="2">Üretim<br>miktarı</th><th rowspan="2">Yarı<br>Mamül</th>
-        <th rowspan="2">Yatar</th><th rowspan="2">M.Hiz<br>(+)</th>
-        <th colspan="2">PVC<br>2 mm</th><th colspan="2">PVC<br>1 mm</th>
-        <th colspan="2">PVC<br>0,40 mm</th><th colspan="2">SOFT</th>
+        <th rowspan="2">Üretim<br>miktarı</th>
+        <th colspan="3">PVC<br>2 mm</th><th colspan="3">PVC<br>1 mm</th>
+        <th colspan="3">PVC<br>0,40 mm</th><th colspan="3">SOFT</th>
         <th rowspan="2">AÇIKLAMALAR</th><th rowspan="2">birim m²</th>
       </tr>
       <tr>
         <th>Adet</th><th>Boy</th><th>En</th><th>Adet</th><th>Boy</th><th>En</th>
-        ${'<th>Boy</th><th>En</th>'.repeat(4)}
+        ${'<th>Boy</th><th>En</th><th>Kenar Bandı</th>'.repeat(4)}
       </tr>
     </thead>
     <tbody>
@@ -843,17 +937,16 @@ PageModules.is_emri_formu = (() => {
         <td class="c">${s.netAdet || ''}</td><td class="r">${s.netBoy || ''}</td><td class="r">${s.netEn || ''}</td>
         <td class="c">${s.kabaAdet || ''}</td><td class="r">${s.kabaBoy || ''}</td><td class="r">${s.kabaEn || ''}</td>
         <td class="c">${s.uretimMiktari || ''}</td>
-        <td class="c">${esc(s.yariMamul)}</td><td class="c">${esc(s.yatar)}</td><td class="c">${esc(s.mHiz)}</td>
         ${['pvc2', 'pvc1', 'pvc040', 'soft'].map(b =>
-          `<td class="c">${esc(s[b].boy)}</td><td class="c">${esc(s[b].en)}</td>`).join('')}
+          `<td class="c">${esc(s[b].boy)}</td><td class="c">${esc(s[b].en)}</td><td>${s[b].bandKartId ? esc(s[b].bandKodu || '') + (s[b].bandAd ? ' — ' + esc(s[b].bandAd) : '') : ''}</td>`).join('')}
         <td>${esc(s.aciklamalar)}</td><td class="r">${s.birimM2 || ''}</td>
       </tr>`).join('')}
       ${Array(Math.max(0, 6 - form.satirlar.length)).fill(
-        '<tr>' + '<td></td>'.repeat(27) + '</tr>').join('')}
+        '<tr>' + '<td></td>'.repeat(28) + '</tr>').join('')}
     </tbody>
     <tfoot><tr>
       <td colspan="13" class="r">TOPLAM</td><td class="c">${oz.toplamParca}</td>
-      <td colspan="12"></td><td class="r">${oz.toplamM2}</td>
+      <td colspan="13"></td><td class="r">${oz.toplamM2}</td>
     </tr></tfoot>
   </table>
   <div style="margin-top:8px;display:flex;gap:16px;font-size:9px;flex-wrap:wrap">

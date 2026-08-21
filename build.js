@@ -26,7 +26,7 @@ const KAYNAK = __dirname;                    // app/ (bu betik app/ içinde çal
 const HEDEF = path.join(__dirname, 'dist');  // dist/ (minify çıktısı)
 
 // Minify EDİLMEYECEK dosyalar (zaten minify veya kütüphane).
-const ATLA = new Set(['three.min.js', 'sw.js', 'build.js', 'pdf.min.js', 'pdf.worker.min.js', 'xlsx.full.min.js']);
+const ATLA = new Set(['three.min.js', 'sw.js', 'build.js', 'pdf.min.js', 'pdf.worker.min.js', 'xlsx.full.min.js', 'jspdf.umd.min.js', 'jspdf.plugin.autotable.min.js']);
 
 // Dağıtıma HİÇ GİRMEYECEK dosyalar: geliştirme/test yardımcıları ve iç
 // mühendislik notları. Kod değil, üretim sunucusunda durmasına gerek yok.

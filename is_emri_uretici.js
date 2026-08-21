@@ -138,7 +138,6 @@ const IsEmriUretici = (() => {
       netAdet: v.adet, netBoy: v.boy, netEn: v.en,
       kabaAdet: v.adet, kabaBoy, kabaEn,
       uretimMiktari,
-      yariMamul: '', yatar: '', mHiz: '',
       // Bant sütunları: her kenar grubunda BOY/EN alanı 0/1/2 — o yöndeki
       // kaç kenarın bu bant tipiyle bantlandığını sayar (uzunluk DEĞİL).
       // bandKartId/bandKodu/bandAd: o grupta kullanılan kenar bandı
