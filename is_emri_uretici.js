@@ -117,6 +117,9 @@ const IsEmriUretici = (() => {
     const b = bantGrubu(v.kalinlik);
     const kabaBoy = v.boy + pay, kabaEn = v.en + pay;
     const netM2 = (v.boy * v.en) / 1e6;
+    // Üretim miktarı (net adet × paket adedi) TÜM aşağı akış hesaplarının
+    // (toplam m², kenar bandı metrajı) çarpanıdır — sadece net adet değil.
+    const uretimMiktari = v.adet * (+ay.paketAdedi || 1);
     return {
       paketNo: ay.paketNo || '',
       paketAdedi: ay.paketAdedi || 1,
@@ -134,7 +137,7 @@ const IsEmriUretici = (() => {
       renk: ay.renk || '',
       netAdet: v.adet, netBoy: v.boy, netEn: v.en,
       kabaAdet: v.adet, kabaBoy, kabaEn,
-      uretimMiktari: v.adet * (+ay.paketAdedi || 1),
+      uretimMiktari,
       yariMamul: '', yatar: '', mHiz: '',
       // Bant sütunları: her kenar grubunda BOY/EN alanı 0/1/2 — o yöndeki
       // kaç kenarın bu bant tipiyle bantlandığını sayar (uzunluk DEĞİL).
@@ -147,7 +150,7 @@ const IsEmriUretici = (() => {
       aciklamalar: v.aciklama || '',
       // Sağ blok hesapları
       birimM2: Math.round(netM2 * 1000) / 1000,
-      toplamM2: Math.round(netM2 * v.adet * 1000) / 1000,
+      toplamM2: Math.round(netM2 * uretimMiktari * 1000) / 1000,
       bantGrup: b.grup, bantInce: b.ince, bantKalin: b.kalin,
       sira
     };
@@ -157,19 +160,22 @@ const IsEmriUretici = (() => {
 
   // ── KENAR BANDI HESABI (bir satır için TOPLAM, tip ayrımı olmadan) ───────
   // Boy/En alanları 0/1/2 kenar sayısıdır. Metraj: (kenar sayısı × kenar
-  // uzunluğu × parça adedi) / 1000.
+  // uzunluğu × ÜRETİM MİKTARI) / 1000 — net adet değil, paket adedi dahil
+  // TOPLAM üretilecek parça sayısı esas alınır.
   function bantHesapla(satir) {
     const b = (x) => (x === '' || x == null) ? 0 : (+x || 0);
     const boyKenar = BANTLI_GRUPLAR.reduce((a, g) => a + b(satir[g].boy), 0);
     const enKenar = BANTLI_GRUPLAR.reduce((a, g) => a + b(satir[g].en), 0);
-    const mt = (boyKenar * satir.netBoy + enKenar * satir.netEn) * satir.netAdet / 1000;
+    const miktar = satir.uretimMiktari != null ? (+satir.uretimMiktari || 0) : (+satir.netAdet || 0);
+    const mt = (boyKenar * satir.netBoy + enKenar * satir.netEn) * miktar / 1000;
     return Math.round(mt * 100) / 100;
   }
 
   // ── KENAR BANDI TÜKETİM ÖZETİ (bant kartına göre GRUPLANMIŞ) ─────────────
   // Her satırda seçilen kenar bandı kartı için: (boy sayısı × net boy +
   // en sayısı × net en) / 1000 metre, parça başına 2 cm (0,02 m) fire
-  // eklenerek, üretim adediyle çarpılır ve aynı bant kartına göre toplanır.
+  // eklenerek, ÜRETİM MİKTARIYLA (paket adedi dahil toplam parça) çarpılır
+  // ve aynı bant kartına göre toplanır.
   const KENAR_BANDI_FIRE_M = 0.02;
   function kenarBandiOzeti(satirlar) {
     const b = (x) => (x === '' || x == null) ? 0 : (+x || 0);
@@ -180,8 +186,8 @@ const IsEmriUretici = (() => {
         if (!g || !g.bandKodu) return;
         const boyKenar = b(g.boy), enKenar = b(g.en);
         if (!boyKenar && !enKenar) return;
-        const adet = +s.netAdet || 0;
-        const metre = ((boyKenar * (+s.netBoy || 0) + enKenar * (+s.netEn || 0)) / 1000 + KENAR_BANDI_FIRE_M) * adet;
+        const miktar = s.uretimMiktari != null ? (+s.uretimMiktari || 0) : (+s.netAdet || 0);
+        const metre = ((boyKenar * (+s.netBoy || 0) + enKenar * (+s.netEn || 0)) / 1000 + KENAR_BANDI_FIRE_M) * miktar;
         if (!gruplar[g.bandKodu]) gruplar[g.bandKodu] = { kod: g.bandKodu, ad: g.bandAd || '', metre: 0 };
         gruplar[g.bandKodu].metre += metre;
       });

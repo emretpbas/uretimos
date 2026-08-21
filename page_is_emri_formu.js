@@ -336,12 +336,18 @@ PageModules.is_emri_formu = (() => {
           s[k] = (/^(netAdet|netBoy|netEn|kabaAdet|kabaBoy|kabaEn|kalinlik|paketAdedi|uretimMiktari)$/.test(k))
             ? (+inp.value || 0) : inp.value;
         }
+        // Net adet veya paket adedi değişince üretim miktarı (= net adet ×
+        // paket adedi) otomatik yeniden hesaplanır — TÜM aşağı akış
+        // hesaplarının (m², kenar bandı metrajı) çarpanı budur.
+        if (['netAdet', 'paketAdedi'].includes(k)) {
+          s.uretimMiktari = (+s.netAdet || 0) * (+s.paketAdedi || 1);
+        }
         // Türetilen alanları yeniden hesapla
-        if (['netBoy', 'netEn', 'netAdet', 'kalinlik'].includes(k)) {
+        if (['netBoy', 'netEn', 'netAdet', 'paketAdedi', 'kalinlik', 'uretimMiktari'].includes(k)) {
           const bg = IsEmriUretici.bantGrubu(s.kalinlik);
           s.bantGrup = bg.grup; s.bantInce = bg.ince; s.bantKalin = bg.kalin;
           s.birimM2 = Math.round((s.netBoy * s.netEn) / 1e6 * 1000) / 1000;
-          s.toplamM2 = Math.round(s.birimM2 * s.netAdet * 1000) / 1000;
+          s.toplamM2 = Math.round(s.birimM2 * (+s.uretimMiktari || 0) * 1000) / 1000;
         }
         // Parça kodu elle değiştirildiyse mevcut kartla yeniden eşleştir
         if (k === 'parcaKodu') { kartlaEslestir(s).then(() => tabloCiz(main)); return; }
@@ -390,7 +396,7 @@ PageModules.is_emri_formu = (() => {
       <td style="white-space:nowrap"><button class="btn btn-sm ie-plaka-sec" data-i="${i}"
         style="padding:1px 4px;font-size:9px"
         title="${s.plakaKartId ? 'Plaka: ' + App.escapeHtml(s.plakaKodu || '') + ' (kalınlık kilitli)' : 'Plaka hammadde seç'}"
-        >${s.plakaKartId ? '🔗 ' : '🔍 '}${App.escapeHtml(s.plakaKodu || 'Seç')}</button></td>
+        >${s.plakaKartId ? '🔗 ' : '🔍 '}${App.escapeHtml(s.plakaKodu ? (s.plakaKodu + (s.plakaAd ? ' — ' + s.plakaAd : '')) : 'Seç')}</button></td>
       <td>${inp('kalinlik', s.kalinlik, 'number', null, kalinlikKilitli)}</td>
       <td>${inp('renk', s.renk)}</td>
       <td>${inp('netAdet', s.netAdet, 'number')}</td>
@@ -594,10 +600,10 @@ PageModules.is_emri_formu = (() => {
   // birlikte görünür, QR ile de erişilebilir olur.
   async function kartaDosyaEkle() {
     if (!Store.sunucuModu) { App.toast('Dosya alanı yalnızca sunucu (hosting) sürümünde çalışır', 'err'); return; }
-    let urunler = [], hammaddeler = [];
+    let urunler = [], hammaddeler = [], yarimamuller = [];
     try {
-      [urunler, hammaddeler] = await Promise.all([
-        Store.urunler.all(), Store.hammaddeler.all()
+      [urunler, hammaddeler, yarimamuller] = await Promise.all([
+        Store.urunler.all(), Store.hammaddeler.all(), Store.yarimamuller.all()
       ]);
     } catch (e) { App.toast('Kartlar yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
 
@@ -605,6 +611,10 @@ PageModules.is_emri_formu = (() => {
       ...urunler.filter(u => u.kod).map(u => ({
         grup: 'urun', kod: u.kod, ad: u.ad || '', birim: '', netFiyat: 0, maliyetYok: true,
         _id: u.id, _tip: 'urun'
+      })),
+      ...yarimamuller.filter(y => y.kod).map(y => ({
+        grup: 'yarimamul', kod: y.kod, ad: y.ad || '', birim: y.birim || '', netFiyat: 0, maliyetYok: true,
+        _id: y.id, _tip: 'yarimamul'
       })),
       ...hammaddeler.filter(h => h.stokKodu).map(h => ({
         grup: h.tip || 'hirdavat', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
@@ -615,7 +625,7 @@ PageModules.is_emri_formu = (() => {
     App.goTo('kalem_secici', {
       baslik: 'İş Emrini Hangi Karta Dosya Olarak Eklensin?',
       secenekler,
-      gruplar: { urun: 'Bitmiş Ürünler', plaka: 'Plaka', hirdavat: 'Hırdavat', kenar_bandi: 'Kenar Bandı', sarf: 'Sarf' },
+      gruplar: { urun: 'Bitmiş Ürünler', yarimamul: 'Yarı Mamüller', plaka: 'Plaka', hirdavat: 'Hırdavat', kenar_bandi: 'Kenar Bandı', sarf: 'Sarf' },
       geriDon: () => App.goTo('is_emri_formu'),
       onSecildi: async (secim) => {
         App.goTo('is_emri_formu');
@@ -624,8 +634,7 @@ PageModules.is_emri_formu = (() => {
           const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
           const dosyaAdi = 'IsEmri_' + (form.isEmriKodu || 'form').replace(/[^\w.-]/g, '_') + '.xlsx';
           await Store.teknikDosyaYukle({
-            tip: secim._tip === 'urun' ? 'urun' : 'hammadde',
-            refId: secim._id, kod: secim.kod, ad: secim.ad,
+            tip: secim._tip, refId: secim._id, kod: secim.kod, ad: secim.ad,
             dosyaAdi, icerikB64: b64
           });
           App.toast('İş emri, "' + secim.kod + '" kartına dosya olarak eklendi.', 'ok');

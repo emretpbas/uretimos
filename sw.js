@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v119'; // v119: is emri formu - hazirlayan/onaylayan, plaka kilit, 0-1-2 bant secimi
+const CACHE_NAME = 'uretimos-v120'; // v120: uretim miktari tum hesaplara yansitildi, plaka adi, yarimamul dosya ekle
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
