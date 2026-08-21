@@ -125,15 +125,24 @@ const IsEmriUretici = (() => {
       // veya kullanıcı elle kart seçince doldurulur (page_is_emri_formu.js).
       parcaKartId: null, parcaKartTipi: '',
       parcaAdi: v.parcaAdi,
+      // Bu parçanın kesildiği plaka hammadde kartı (tip:'plaka') — ayrı bir
+      // bağlantı, parcaKodu'ndan bağımsız: parça kendi kodunu taşıyabilir,
+      // ama hangi plakadan kesildiği ayrıca izlenir.
+      plakaKartId: null, plakaKodu: '',
       kalinlik: v.kalinlik,
       renk: ay.renk || '',
       netAdet: v.adet, netBoy: v.boy, netEn: v.en,
       kabaAdet: v.adet, kabaBoy, kabaEn,
       uretimMiktari: v.adet * (+ay.paketAdedi || 1),
       yariMamul: '', yatar: '', mHiz: '',
-      // Bant sütunları: hangi kenara hangi bant — varsayılan boş, kullanıcı doldurur
-      pvc2: { boy: '', en: '' }, pvc1: { boy: '', en: '' },
-      pvc040: { boy: '', en: '' }, soft: { boy: '', en: '' }, duz: { boy: '', en: '' },
+      // Bant sütunları: hangi kenara hangi bant — varsayılan boş, kullanıcı doldurur.
+      // bandKartId/bandKodu: o kenar grubunda kullanılan kenar bandı (tip:'kenar_bandi')
+      // hammadde kartına bağlantı — DÜZ kenarda bant olmadığından bağlantı taşımaz.
+      pvc2: { boy: '', en: '', bandKartId: null, bandKodu: '' },
+      pvc1: { boy: '', en: '', bandKartId: null, bandKodu: '' },
+      pvc040: { boy: '', en: '', bandKartId: null, bandKodu: '' },
+      soft: { boy: '', en: '', bandKartId: null, bandKodu: '' },
+      duz: { boy: '', en: '' },
       aciklamalar: v.aciklama || '',
       // Sağ blok hesapları
       birimM2: Math.round(netM2 * 1000) / 1000,

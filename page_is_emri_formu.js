@@ -34,6 +34,7 @@ PageModules.is_emri_formu = (() => {
           <button class="btn" id="ie-temizle">Yeni Form</button>
           <button class="btn btn-blue" id="ie-excel">⤓ Excel</button>
           <button class="btn btn-green" id="ie-pdf">🖨 Antetli PDF</button>
+          <button class="btn" id="ie-karta-ekle">📎 Karta Dosya Olarak Ekle</button>
         </div>
       </div>
 
@@ -96,6 +97,7 @@ PageModules.is_emri_formu = (() => {
     };
     document.getElementById('ie-excel').onclick = () => excelIndir();
     document.getElementById('ie-pdf').onclick = () => pdfYazdir();
+    document.getElementById('ie-karta-ekle').onclick = () => kartaDosyaEkle();
     main.querySelectorAll('.ie-b').forEach(el =>
       el.onchange = () => { form[el.dataset.k] = el.value; });
 
@@ -173,6 +175,57 @@ PageModules.is_emri_formu = (() => {
     });
   }
 
+  // Sadece PLAKA tipi hammaddeler arasından seçim — parçanın hangi plakadan
+  // kesildiğini ayrıca izlemek için (parcaKodu'ndan bağımsız).
+  async function plakaSec(i) {
+    let hammaddeler = [];
+    try { hammaddeler = await Store.hammaddeler.all(); }
+    catch (e) { App.toast('Hammaddeler yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    const secenekler = hammaddeler.filter(h => h.tip === 'plaka' && h.stokKodu).map(h => ({
+      grup: 'plaka', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
+      netFiyat: 0, maliyetYok: true, _id: h.id
+    }));
+
+    App.goTo('kalem_secici', {
+      baslik: 'Plaka Hammadde Seç',
+      secenekler,
+      gruplar: { plaka: 'Plaka Hammaddeler' },
+      geriDon: () => App.goTo('is_emri_formu'),
+      onSecildi: (secim) => {
+        const s = form.satirlar[i];
+        if (s) { s.plakaKodu = secim.kod; s.plakaKartId = secim._id; }
+        App.goTo('is_emri_formu');
+      }
+    });
+  }
+
+  // Sadece KENAR BANDI tipi hammaddeler arasından seçim — pvc2/pvc1/pvc040/
+  // soft kenar gruplarının hangi bant koduyla bantlandığını izlemek için.
+  // DÜZ kenarda bant olmadığından bu seçici çağrılmaz.
+  async function bantSec(i, grup) {
+    let hammaddeler = [];
+    try { hammaddeler = await Store.hammaddeler.all(); }
+    catch (e) { App.toast('Hammaddeler yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    const secenekler = hammaddeler.filter(h => h.tip === 'kenar_bandi' && h.stokKodu).map(h => ({
+      grup: 'kenar_bandi', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
+      netFiyat: 0, maliyetYok: true, _id: h.id
+    }));
+
+    App.goTo('kalem_secici', {
+      baslik: 'Kenar Bandı Seç — ' + grup.toUpperCase(),
+      secenekler,
+      gruplar: { kenar_bandi: 'Kenar Bandı' },
+      geriDon: () => App.goTo('is_emri_formu'),
+      onSecildi: (secim) => {
+        const s = form.satirlar[i];
+        if (s && s[grup]) { s[grup].bandKodu = secim.kod; s[grup].bandKartId = secim._id; }
+        App.goTo('is_emri_formu');
+      }
+    });
+  }
+
   // ── TABLO ────────────────────────────────────────────────────────────────
   function tabloCiz(main) {
     const el = document.getElementById('ie-tablo');
@@ -191,6 +244,7 @@ PageModules.is_emri_formu = (() => {
           <th rowspan="2" style="width:46px">Paket<br>Adedi</th>
           <th rowspan="2" style="width:100px">Parç.Kodu</th>
           <th rowspan="2" style="min-width:130px">Parça Adı</th>
+          <th rowspan="2" style="width:100px">Plaka<br>Hammadde</th>
           <th rowspan="2" style="width:52px">Kalınlık</th>
           <th rowspan="2" style="width:80px">Renk</th>
           <th colspan="3" style="text-align:center">Net Ölçü</th>
@@ -252,6 +306,8 @@ PageModules.is_emri_formu = (() => {
       };
     });
     el.querySelectorAll('.ie-kod-sec').forEach(b => b.onclick = () => parcaKoduSec(+b.dataset.i));
+    el.querySelectorAll('.ie-plaka-sec').forEach(b => b.onclick = () => plakaSec(+b.dataset.i));
+    el.querySelectorAll('.ie-bant-sec').forEach(b => b.onclick = () => bantSec(+b.dataset.i, b.dataset.grup));
     el.querySelectorAll('.ie-sil').forEach(b => b.onclick = () => {
       form.satirlar.splice(+b.dataset.i, 1);
       form.satirlar.forEach((s, j) => s.sira = j + 1);
@@ -264,8 +320,15 @@ PageModules.is_emri_formu = (() => {
       `<input class="finput ie-h" ${g(i, k)} ${tip ? 'type="' + tip + '"' : ''}
         value="${App.escapeHtml(deger == null ? '' : String(deger))}"
         style="width:${gen || 100}%;font-size:10.5px;padding:2px;text-align:${tip === 'number' ? 'right' : 'left'}">`;
-    const bant = (ad) => `<td>${inp(ad + '.boy', s[ad].boy, 'number')}</td>
-                          <td>${inp(ad + '.en', s[ad].en, 'number')}</td>`;
+    const bantliGruplar = ['pvc2', 'pvc1', 'pvc040', 'soft'];   // DÜZ hariç — bant taşımaz
+    const bant = (ad) => {
+      const secBtn = bantliGruplar.includes(ad) ? `<button class="btn btn-sm ie-bant-sec"
+        data-i="${i}" data-grup="${ad}" style="padding:0 2px;font-size:8px;vertical-align:middle"
+        title="${s[ad].bandKartId ? 'Kenar bandı: ' + App.escapeHtml(s[ad].bandKodu || '') : 'Kenar bandı seç'}"
+        >${s[ad].bandKartId ? '🔗' : '🔍'}</button>` : '';
+      return `<td style="white-space:nowrap">${inp(ad + '.boy', s[ad].boy, 'number', 60)}${secBtn}</td>
+              <td>${inp(ad + '.en', s[ad].en, 'number')}</td>`;
+    };
     return `<tr>
       <td>${inp('paketNo', s.paketNo)}</td>
       <td>${inp('paketAdedi', s.paketAdedi, 'number')}</td>
@@ -274,6 +337,10 @@ PageModules.is_emri_formu = (() => {
         title="${s.parcaKartId ? 'Hammadde/Yarı Mamül kartına bağlı: ' + App.escapeHtml(s.parcaKartTipi || '') : 'Kart seç (Hammadde/Hırdavat/Kenar Bandı/Yarı Mamül)'}"
         >${s.parcaKartId ? '🔗' : '🔍'}</button></td>
       <td>${inp('parcaAdi', s.parcaAdi)}</td>
+      <td style="white-space:nowrap"><button class="btn btn-sm ie-plaka-sec" data-i="${i}"
+        style="padding:1px 4px;font-size:9px"
+        title="${s.plakaKartId ? 'Plaka: ' + App.escapeHtml(s.plakaKodu || '') : 'Plaka hammadde seç'}"
+        >${s.plakaKartId ? '🔗 ' : '🔍 '}${App.escapeHtml(s.plakaKodu || 'Seç')}</button></td>
       <td>${inp('kalinlik', s.kalinlik, 'number')}</td>
       <td>${inp('renk', s.renk)}</td>
       <td>${inp('netAdet', s.netAdet, 'number')}</td>
@@ -411,46 +478,103 @@ PageModules.is_emri_formu = (() => {
   }
 
   // ── EXCEL ÇIKTISI ────────────────────────────────────────────────────────
+  // Çalışma kitabını kurar (indirme VE karta dosya olarak ekleme tarafından
+  // ortak kullanılır) — sadece hazırlar, dosyayı diske YAZMAZ.
+  function excelKitabiOlustur() {
+    if (!window.XLSX) throw new Error('Excel kütüphanesi yüklenemedi.');
+    if (!form.satirlar.length) throw new Error('Önce satır ekleyin.');
+    const S = [];
+    S.push(['İŞ EMRİ', '', '', '', '', '', '', '', 'Doküman No', 'FR.29']);
+    S.push(['İŞ EMRİ İSMİ', form.isEmriIsmi, '', '', '', '', '', '', 'Yayın Tarihi', '15.10.2007']);
+    S.push(['İŞ EMRİ AÇILIŞ TARİHİ', form.acilisTarihi, '', '', '', '', '', '', 'Revizyon No', '01']);
+    S.push(['İŞ EMRİ KODU', form.isEmriKodu, '', '', '', '', '', '', 'Revizyon Tarihi', '12.12.2012']);
+    S.push([]);
+    S.push(['Holzma', form.holzma, 'Ima', form.ima, 'Rover', form.rover, 'Delik', form.delik]);
+    S.push([]);
+    S.push([form.grup, form.altBaslik]);
+    S.push(['Paket No', 'Paket Adedi', 'Parç.Kodu', 'Parça Adı', 'Plaka Hammadde', 'Kalınlık', 'Renk',
+      'Net Adet', 'Net Boy', 'Net En', 'Kaba Adet', 'Kaba Boy', 'Kaba En',
+      'Üretim miktarı', 'Yarı Mamül', 'Yatar', 'M.Hiz(+)',
+      'PVC2 Boy', 'PVC2 En', 'PVC2 Bant', 'PVC1 Boy', 'PVC1 En', 'PVC1 Bant',
+      'PVC0,40 Boy', 'PVC0,40 En', 'PVC0,40 Bant', 'SOFT Boy', 'SOFT En', 'SOFT Bant',
+      'DÜZ Boy', 'DÜZ En', 'AÇIKLAMALAR', 'birim m²', 'Bant grubu']);
+    form.satirlar.forEach(s => S.push([
+      s.paketNo, s.paketAdedi, s.parcaKodu, s.parcaAdi, s.plakaKodu, s.kalinlik, s.renk,
+      s.netAdet, s.netBoy, s.netEn, s.kabaAdet, s.kabaBoy, s.kabaEn,
+      s.uretimMiktari, s.yariMamul, s.yatar, s.mHiz,
+      s.pvc2.boy, s.pvc2.en, s.pvc2.bandKodu, s.pvc1.boy, s.pvc1.en, s.pvc1.bandKodu,
+      s.pvc040.boy, s.pvc040.en, s.pvc040.bandKodu, s.soft.boy, s.soft.en, s.soft.bandKodu,
+      s.duz.boy, s.duz.en, s.aciklamalar, s.birimM2, s.bantGrup
+    ]));
+    const oz = IsEmriUretici.ozet(form.satirlar);
+    S.push([]);
+    S.push(['TOPLAM', '', '', '', '', '', '', '', '', '', '', '', '', oz.toplamParca,
+      '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', oz.toplamM2]);
+    oz.gruplar.forEach(g => S.push([g.grup, g.satir + ' satır', g.m2.toFixed(3) + ' m²']));
+
+    const ws = XLSX.utils.aoa_to_sheet(S);
+    ws['!cols'] = [{ wch: 9 }, { wch: 9 }, { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 8 }, { wch: 12 },
+      ...Array(6).fill({ wch: 8 }), { wch: 10 }, ...Array(3).fill({ wch: 7 }),
+      ...Array(15).fill({ wch: 7 }), { wch: 24 }, { wch: 9 }, { wch: 9 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'İş Emri');
+    return wb;
+  }
+
   function excelIndir() {
     try {
-      if (!window.XLSX) throw new Error('Excel kütüphanesi yüklenemedi.');
-      if (!form.satirlar.length) { App.toast('Önce satır ekleyin.', 'err'); return; }
-      const S = [];
-      S.push(['İŞ EMRİ', '', '', '', '', '', '', '', 'Doküman No', 'FR.29']);
-      S.push(['İŞ EMRİ İSMİ', form.isEmriIsmi, '', '', '', '', '', '', 'Yayın Tarihi', '15.10.2007']);
-      S.push(['İŞ EMRİ AÇILIŞ TARİHİ', form.acilisTarihi, '', '', '', '', '', '', 'Revizyon No', '01']);
-      S.push(['İŞ EMRİ KODU', form.isEmriKodu, '', '', '', '', '', '', 'Revizyon Tarihi', '12.12.2012']);
-      S.push([]);
-      S.push(['Holzma', form.holzma, 'Ima', form.ima, 'Rover', form.rover, 'Delik', form.delik]);
-      S.push([]);
-      S.push([form.grup, form.altBaslik]);
-      S.push(['Paket No', 'Paket Adedi', 'Parç.Kodu', 'Parça Adı', 'Kalınlık', 'Renk',
-        'Net Adet', 'Net Boy', 'Net En', 'Kaba Adet', 'Kaba Boy', 'Kaba En',
-        'Üretim miktarı', 'Yarı Mamül', 'Yatar', 'M.Hiz(+)',
-        'PVC2 Boy', 'PVC2 En', 'PVC1 Boy', 'PVC1 En', 'PVC0,40 Boy', 'PVC0,40 En',
-        'SOFT Boy', 'SOFT En', 'DÜZ Boy', 'DÜZ En', 'AÇIKLAMALAR', 'birim m²', 'Bant grubu']);
-      form.satirlar.forEach(s => S.push([
-        s.paketNo, s.paketAdedi, s.parcaKodu, s.parcaAdi, s.kalinlik, s.renk,
-        s.netAdet, s.netBoy, s.netEn, s.kabaAdet, s.kabaBoy, s.kabaEn,
-        s.uretimMiktari, s.yariMamul, s.yatar, s.mHiz,
-        s.pvc2.boy, s.pvc2.en, s.pvc1.boy, s.pvc1.en, s.pvc040.boy, s.pvc040.en,
-        s.soft.boy, s.soft.en, s.duz.boy, s.duz.en, s.aciklamalar, s.birimM2, s.bantGrup
-      ]));
-      const oz = IsEmriUretici.ozet(form.satirlar);
-      S.push([]);
-      S.push(['TOPLAM', '', '', '', '', '', '', '', '', '', '', '', oz.toplamParca,
-        '', '', '', '', '', '', '', '', '', '', '', '', '', '', oz.toplamM2]);
-      oz.gruplar.forEach(g => S.push([g.grup, g.satir + ' satır', g.m2.toFixed(3) + ' m²']));
-
-      const ws = XLSX.utils.aoa_to_sheet(S);
-      ws['!cols'] = [{ wch: 9 }, { wch: 9 }, { wch: 16 }, { wch: 28 }, { wch: 8 }, { wch: 12 },
-        ...Array(6).fill({ wch: 8 }), { wch: 10 }, ...Array(3).fill({ wch: 7 }),
-        ...Array(10).fill({ wch: 7 }), { wch: 24 }, { wch: 9 }, { wch: 9 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'İş Emri');
+      const wb = excelKitabiOlustur();
       XLSX.writeFile(wb, (form.isEmriKodu || 'is_emri').replace(/[^\w.-]/g, '_') + '.xlsx');
       App.toast('İş emri Excel\'e aktarıldı.', 'ok');
     } catch (e) { App.toast('Aktarılamadı: ' + ((e && e.message) || e), 'err'); }
+  }
+
+  // ── KARTA DOSYA OLARAK EKLE ──────────────────────────────────────────────
+  // İş emri Excel'ini seçilen bir ürün veya hammadde kartının "Teknik
+  // Dosyalar" alanına (QrDosya) yükler — kalem_secici ile kart seçtirir,
+  // sonra mevcut sunucu dosya yükleme uçlarını (Store.teknikDosyaYukle)
+  // kullanır. Kartın kendi dosya listesinde diğer step/pdf/excel'lerle
+  // birlikte görünür, QR ile de erişilebilir olur.
+  async function kartaDosyaEkle() {
+    if (!Store.sunucuModu) { App.toast('Dosya alanı yalnızca sunucu (hosting) sürümünde çalışır', 'err'); return; }
+    let urunler = [], hammaddeler = [];
+    try {
+      [urunler, hammaddeler] = await Promise.all([
+        Store.urunler.all(), Store.hammaddeler.all()
+      ]);
+    } catch (e) { App.toast('Kartlar yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    const secenekler = [
+      ...urunler.filter(u => u.kod).map(u => ({
+        grup: 'urun', kod: u.kod, ad: u.ad || '', birim: '', netFiyat: 0, maliyetYok: true,
+        _id: u.id, _tip: 'urun'
+      })),
+      ...hammaddeler.filter(h => h.stokKodu).map(h => ({
+        grup: h.tip || 'hirdavat', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
+        netFiyat: 0, maliyetYok: true, _id: h.id, _tip: 'hammadde'
+      }))
+    ];
+
+    App.goTo('kalem_secici', {
+      baslik: 'İş Emrini Hangi Karta Dosya Olarak Eklensin?',
+      secenekler,
+      gruplar: { urun: 'Bitmiş Ürünler', plaka: 'Plaka', hirdavat: 'Hırdavat', kenar_bandi: 'Kenar Bandı', sarf: 'Sarf' },
+      geriDon: () => App.goTo('is_emri_formu'),
+      onSecildi: async (secim) => {
+        App.goTo('is_emri_formu');
+        try {
+          const wb = excelKitabiOlustur();
+          const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+          const dosyaAdi = 'IsEmri_' + (form.isEmriKodu || 'form').replace(/[^\w.-]/g, '_') + '.xlsx';
+          await Store.teknikDosyaYukle({
+            tip: secim._tip === 'urun' ? 'urun' : 'hammadde',
+            refId: secim._id, kod: secim.kod, ad: secim.ad,
+            dosyaAdi, icerikB64: b64
+          });
+          App.toast('İş emri, "' + secim.kod + '" kartına dosya olarak eklendi.', 'ok');
+        } catch (e) { App.toast('Karta eklenemedi: ' + ((e && e.message) || e), 'err'); }
+      }
+    });
   }
 
   // ── ANTETLİ PDF ──────────────────────────────────────────────────────────
