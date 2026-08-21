@@ -127,44 +127,66 @@ const IsEmriUretici = (() => {
       parcaAdi: v.parcaAdi,
       // Bu parçanın kesildiği plaka hammadde kartı (tip:'plaka') — ayrı bir
       // bağlantı, parcaKodu'ndan bağımsız: parça kendi kodunu taşıyabilir,
-      // ama hangi plakadan kesildiği ayrıca izlenir.
-      plakaKartId: null, plakaKodu: '',
+      // ama hangi plakadan kesildiği ayrıca izlenir. Plaka seçilince kalınlık
+      // karttan otomatik çekilip kilitlenir (page_is_emri_formu.js).
+      plakaKartId: null, plakaKodu: '', plakaAd: '',
       kalinlik: v.kalinlik,
       renk: ay.renk || '',
       netAdet: v.adet, netBoy: v.boy, netEn: v.en,
       kabaAdet: v.adet, kabaBoy, kabaEn,
       uretimMiktari: v.adet * (+ay.paketAdedi || 1),
       yariMamul: '', yatar: '', mHiz: '',
-      // Bant sütunları: hangi kenara hangi bant — varsayılan boş, kullanıcı doldurur.
-      // bandKartId/bandKodu: o kenar grubunda kullanılan kenar bandı (tip:'kenar_bandi')
-      // hammadde kartına bağlantı — DÜZ kenarda bant olmadığından bağlantı taşımaz.
-      pvc2: { boy: '', en: '', bandKartId: null, bandKodu: '' },
-      pvc1: { boy: '', en: '', bandKartId: null, bandKodu: '' },
-      pvc040: { boy: '', en: '', bandKartId: null, bandKodu: '' },
-      soft: { boy: '', en: '', bandKartId: null, bandKodu: '' },
-      duz: { boy: '', en: '' },
+      // Bant sütunları: her kenar grubunda BOY/EN alanı 0/1/2 — o yöndeki
+      // kaç kenarın bu bant tipiyle bantlandığını sayar (uzunluk DEĞİL).
+      // bandKartId/bandKodu/bandAd: o grupta kullanılan kenar bandı
+      // (tip:'kenar_bandi') hammadde kartına bağlantı.
+      pvc2: { boy: 0, en: 0, bandKartId: null, bandKodu: '', bandAd: '' },
+      pvc1: { boy: 0, en: 0, bandKartId: null, bandKodu: '', bandAd: '' },
+      pvc040: { boy: 0, en: 0, bandKartId: null, bandKodu: '', bandAd: '' },
+      soft: { boy: 0, en: 0, bandKartId: null, bandKodu: '', bandAd: '' },
       aciklamalar: v.aciklama || '',
       // Sağ blok hesapları
       birimM2: Math.round(netM2 * 1000) / 1000,
       toplamM2: Math.round(netM2 * v.adet * 1000) / 1000,
       bantGrup: b.grup, bantInce: b.ince, bantKalin: b.kalin,
-      bantInceMt: 0, bantKalinMt: 0,
       sira
     };
   }
 
-  // ── KENAR BANDI HESABI ───────────────────────────────────────────────────
-  // Kullanıcı hangi kenara bant geleceğini işaretler; metraj buradan çıkar.
-  // Boy kenarı 2 adet, en kenarı 2 adet varsayılır (tam çevre bantlıysa).
+  const BANTLI_GRUPLAR = ['pvc2', 'pvc1', 'pvc040', 'soft'];
+
+  // ── KENAR BANDI HESABI (bir satır için TOPLAM, tip ayrımı olmadan) ───────
+  // Boy/En alanları 0/1/2 kenar sayısıdır. Metraj: (kenar sayısı × kenar
+  // uzunluğu × parça adedi) / 1000.
   function bantHesapla(satir) {
     const b = (x) => (x === '' || x == null) ? 0 : (+x || 0);
-    const boyKenar = b(satir.pvc2.boy) + b(satir.pvc1.boy) + b(satir.pvc040.boy)
-                   + b(satir.soft.boy) + b(satir.duz.boy);
-    const enKenar = b(satir.pvc2.en) + b(satir.pvc1.en) + b(satir.pvc040.en)
-                  + b(satir.soft.en) + b(satir.duz.en);
-    // Metraj: (kenar sayısı × kenar uzunluğu × parça adedi) / 1000
+    const boyKenar = BANTLI_GRUPLAR.reduce((a, g) => a + b(satir[g].boy), 0);
+    const enKenar = BANTLI_GRUPLAR.reduce((a, g) => a + b(satir[g].en), 0);
     const mt = (boyKenar * satir.netBoy + enKenar * satir.netEn) * satir.netAdet / 1000;
     return Math.round(mt * 100) / 100;
+  }
+
+  // ── KENAR BANDI TÜKETİM ÖZETİ (bant kartına göre GRUPLANMIŞ) ─────────────
+  // Her satırda seçilen kenar bandı kartı için: (boy sayısı × net boy +
+  // en sayısı × net en) / 1000 metre, parça başına 2 cm (0,02 m) fire
+  // eklenerek, üretim adediyle çarpılır ve aynı bant kartına göre toplanır.
+  const KENAR_BANDI_FIRE_M = 0.02;
+  function kenarBandiOzeti(satirlar) {
+    const b = (x) => (x === '' || x == null) ? 0 : (+x || 0);
+    const gruplar = {};
+    (satirlar || []).forEach(s => {
+      BANTLI_GRUPLAR.forEach(ad => {
+        const g = s[ad];
+        if (!g || !g.bandKodu) return;
+        const boyKenar = b(g.boy), enKenar = b(g.en);
+        if (!boyKenar && !enKenar) return;
+        const adet = +s.netAdet || 0;
+        const metre = ((boyKenar * (+s.netBoy || 0) + enKenar * (+s.netEn || 0)) / 1000 + KENAR_BANDI_FIRE_M) * adet;
+        if (!gruplar[g.bandKodu]) gruplar[g.bandKodu] = { kod: g.bandKodu, ad: g.bandAd || '', metre: 0 };
+        gruplar[g.bandKodu].metre += metre;
+      });
+    });
+    return Object.values(gruplar).map(x => ({ ...x, metre: Math.round(x.metre * 100) / 100 }));
   }
 
   // ── PDF'TEN ÜRET ─────────────────────────────────────────────────────────
@@ -202,15 +224,17 @@ const IsEmriUretici = (() => {
   }
 
   // ── ÖZET (formun sağ bloğu) ──────────────────────────────────────────────
+  // Gruplama ÖNCELİKLE seçilen plaka hammaddeye göre yapılır (plakaKodu) —
+  // aynı plakadan kesilen tüm parçaların m² toplamı tek grupta görünür.
+  // Satırda henüz plaka seçilmemişse eski davranışa (kalınlık bazlı
+  // bantGrup) düşülür, böylece dosyadan yeni gelen satırlar da gruplanır.
   function ozet(satirlar) {
     const gruplar = {};
     let toplamM2 = 0;
     (satirlar || []).forEach(s => {
       toplamM2 += (+s.toplamM2 || 0);
-      const g = s.bantGrup || '8mm';
-      if (!gruplar[g]) gruplar[g] = { grup: g, ince: 0, kalin: 0, m2: 0, satir: 0 };
-      gruplar[g].ince += (+s.bantInceMt || 0);
-      gruplar[g].kalin += (+s.bantKalinMt || 0);
+      const g = s.plakaKodu ? s.plakaKodu : (s.bantGrup || '8mm');
+      if (!gruplar[g]) gruplar[g] = { grup: g, ad: s.plakaKodu ? (s.plakaAd || '') : '', m2: 0, satir: 0 };
       gruplar[g].m2 += (+s.toplamM2 || 0);
       gruplar[g].satir++;
     });
@@ -231,7 +255,7 @@ const IsEmriUretici = (() => {
   return {
     VARSAYILAN_PAY, BANT_TABLOSU, bantGrubu,
     malzemeCikar, urunlerCikar, stepDenUret, pdfDenUret,
-    satirKur, bantHesapla, ozet, isEmriKodu
+    satirKur, bantHesapla, kenarBandiOzeti, ozet, isEmriKodu
   };
 })();
 

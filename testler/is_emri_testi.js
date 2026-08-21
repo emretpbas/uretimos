@@ -111,7 +111,7 @@ t('wireframe uyarisi var', /Wireframe seçilirse ölçüler çıkmaz/.test(pg));
 t('FR.29 dokuman no formda', /FR\.29/.test(pg));
 t('Holzma\\/Ima\\/Rover\\/Delik alanlari', /holzma[\s\S]{0,80}ima[\s\S]{0,80}rover[\s\S]{0,80}delik/.test(pg));
 t('Net ve Kaba olcu sutunlari', /Net Ölçü[\s\S]{0,200}Kaba Ölçü/.test(pg));
-t('5 bant sutunu (PVC2\\/1\\/0,40\\/SOFT\\/DUZ)', /'PVC 2mm', 'PVC 1mm', 'PVC 0,40', 'SOFT', 'DÜZ'/.test(pg));
+t('4 bant sutunu (PVC2\\/1\\/0,40\\/SOFT, DUZ kaldirildi)', /'PVC 2mm', 'PVC 1mm', 'PVC 0,40', 'SOFT'\]/.test(pg));
 t('Excel ciktisi var', /function excelIndir/.test(pg));
 t('antetli PDF ciktisi var', /function pdfYazdir/.test(pg));
 t('PDF A3 yatay (genis tablo)', /size: A3 landscape/.test(pg));

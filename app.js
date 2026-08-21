@@ -331,7 +331,7 @@ const App = (() => {
     }
   }
 
-  const UYGULAMA_SURUM = 'v118';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
+  const UYGULAMA_SURUM = 'v119';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
 
   // ── SESSİZ HATA AVCISI ────────────────────────────────────────────────────
   // Bir buton handler'ında hata oluşursa tarayıcı bunu sessizce yutar ve

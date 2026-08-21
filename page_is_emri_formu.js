@@ -13,6 +13,7 @@ PageModules.is_emri_formu = (() => {
       acilisTarihi: new Date().toISOString().slice(0, 10),
       grup: '', altBaslik: '',
       holzma: '', ima: '', rover: '', delik: '',
+      hazirlayan: '', onaylayan: '',
       satirlar: [], kaynak: ''
     };
   }
@@ -74,6 +75,12 @@ PageModules.is_emri_formu = (() => {
           ${['holzma', 'ima', 'rover', 'delik'].map(k => `
             <div class="fgroup"><label class="flbl">${k.toUpperCase()}</label>
               <input class="finput ie-b" data-k="${k}" value="${App.escapeHtml(form[k])}"></div>`).join('')}
+        </div>
+        <div class="frow">
+          <div class="fgroup"><label class="flbl">Hazırlayan</label>
+            <input class="finput ie-b" data-k="hazirlayan" value="${App.escapeHtml(form.hazirlayan)}" placeholder="ad soyad"></div>
+          <div class="fgroup"><label class="flbl">Onaylayan</label>
+            <input class="finput ie-b" data-k="onaylayan" value="${App.escapeHtml(form.onaylayan)}" placeholder="ad soyad"></div>
         </div>
       </div>
 
@@ -146,6 +153,7 @@ PageModules.is_emri_formu = (() => {
       baslik: 'Parça Kodu Seç — Yarı Mamül',
       secenekler,
       gruplar: { yarimamul: 'Yarı Mamül' },
+      yeniKartEklenebilir: true,
       geriDon: () => App.goTo('is_emri_formu'),
       onSecildi: (secim) => {
         const s = form.satirlar[i];
@@ -156,12 +164,33 @@ PageModules.is_emri_formu = (() => {
           s.parcaKartTipi = secim._tip;
         }
         App.goTo('is_emri_formu');
+      },
+      // Aranan yarı mamül listede yoksa: kod+ad girilip sisteme YENİ bir
+      // yarı mamül kartı olarak tanımlanır, sonra satıra bağlanır. Diğer
+      // alanlar (ölçü, hammadde, rota...) boş kalır — kullanıcı Yarı
+      // Mamüller sayfasından tamamlar (kalem_secici'nin standart deseni).
+      onYeniKartIstendi: async ({ kod, ad }) => {
+        try {
+          const yeni = { id: App.uid('YM'), kod, ad, gorseller: [] };
+          await App.persist(() => Store.topluEkle('yarimamuller', [yeni], 1));
+          const s = form.satirlar[i];
+          if (s) {
+            s.parcaKodu = yeni.kod;
+            if (!s.parcaAdi) s.parcaAdi = yeni.ad;
+            s.parcaKartId = yeni.id;
+            s.parcaKartTipi = 'yarimamul';
+          }
+          App.toast('Yeni yarı mamül "' + kod + '" tanımlandı ve satıra bağlandı.', 'ok');
+          App.goTo('is_emri_formu');
+        } catch (e) { App.toast('Yarı mamül oluşturulamadı: ' + ((e && e.message) || e), 'err'); }
       }
     });
   }
 
   // Sadece PLAKA tipi hammaddeler arasından seçim — parçanın hangi plakadan
-  // kesildiğini ayrıca izlemek için (parcaKodu'ndan bağımsız).
+  // kesildiğini ayrıca izlemek için (parcaKodu'ndan bağımsız). Seçilince
+  // kartın KENDİ kalınlığı satıra otomatik yazılır ve kilitlenir (elle
+  // değiştirilemez) — plaka seçiliyken kalınlık her zaman karttan gelir.
   async function plakaSec(i) {
     let hammaddeler = [];
     try { hammaddeler = await Store.hammaddeler.all(); }
@@ -169,18 +198,36 @@ PageModules.is_emri_formu = (() => {
 
     const secenekler = hammaddeler.filter(h => h.tip === 'plaka' && h.stokKodu).map(h => ({
       grup: 'plaka', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
-      netFiyat: 0, maliyetYok: true, _id: h.id
+      netFiyat: 0, maliyetYok: true, _id: h.id, _kalinlik: h.kalinlik || null
     }));
 
     App.goTo('kalem_secici', {
       baslik: 'Plaka Hammadde Seç',
       secenekler,
       gruplar: { plaka: 'Plaka Hammaddeler' },
+      yeniKartEklenebilir: true,
       geriDon: () => App.goTo('is_emri_formu'),
       onSecildi: (secim) => {
         const s = form.satirlar[i];
-        if (s) { s.plakaKodu = secim.kod; s.plakaKartId = secim._id; }
+        if (s) {
+          s.plakaKodu = secim.kod; s.plakaKartId = secim._id; s.plakaAd = secim.ad;
+          if (secim._kalinlik) s.kalinlik = secim._kalinlik;
+        }
         App.goTo('is_emri_formu');
+      },
+      // Aranan plaka listede yoksa: yeni bir plaka hammadde kartı, satırda
+      // O ANDA yazılı olan kalınlıkla önceden doldurulmuş şekilde açılır —
+      // kart oluşunca kalınlık zaten karttan geldiği için otomatik kilitlenir.
+      onYeniKartIstendi: async ({ kod, ad }) => {
+        try {
+          const s = form.satirlar[i];
+          const kalinlik = s && s.kalinlik ? +s.kalinlik : null;
+          const yeni = { id: App.uid('HM'), tip: 'plaka', stokKodu: kod, ad, kalinlik, birim: 'M2' };
+          await App.persist(() => Store.topluEkle('hammaddeler', [yeni], 1));
+          if (s) { s.plakaKodu = yeni.stokKodu; s.plakaKartId = yeni.id; s.plakaAd = yeni.ad; if (kalinlik) s.kalinlik = kalinlik; }
+          App.toast('Yeni plaka hammadde "' + kod + '" tanımlandı ve satıra bağlandı.', 'ok');
+          App.goTo('is_emri_formu');
+        } catch (e) { App.toast('Hammadde kartı oluşturulamadı: ' + ((e && e.message) || e), 'err'); }
       }
     });
   }
@@ -205,7 +252,7 @@ PageModules.is_emri_formu = (() => {
       geriDon: () => App.goTo('is_emri_formu'),
       onSecildi: (secim) => {
         const s = form.satirlar[i];
-        if (s && s[grup]) { s[grup].bandKodu = secim.kod; s[grup].bandKartId = secim._id; }
+        if (s && s[grup]) { s[grup].bandKodu = secim.kod; s[grup].bandKartId = secim._id; s[grup].bandAd = secim.ad; }
         App.goTo('is_emri_formu');
       }
     });
@@ -220,6 +267,7 @@ PageModules.is_emri_formu = (() => {
       return;
     }
     const ozet = IsEmriUretici.ozet(form.satirlar);
+    const kenarBandiOzet = IsEmriUretici.kenarBandiOzeti(form.satirlar);
     const g = (i, k) => `data-i="${i}" data-k="${k}"`;
 
     el.innerHTML = `<div class="tbl-wrap" style="overflow-x:auto">
@@ -238,7 +286,7 @@ PageModules.is_emri_formu = (() => {
           <th rowspan="2" style="width:40px">Yarı<br>Mamül</th>
           <th rowspan="2" style="width:36px">Yatar</th>
           <th rowspan="2" style="width:40px">M.Hiz<br>(+)</th>
-          ${['PVC 2mm', 'PVC 1mm', 'PVC 0,40', 'SOFT', 'DÜZ'].map(x =>
+          ${['PVC 2mm', 'PVC 1mm', 'PVC 0,40', 'SOFT'].map(x =>
             `<th colspan="2" style="text-align:center;width:64px">${x}</th>`).join('')}
           <th rowspan="2" style="min-width:120px">AÇIKLAMALAR</th>
           <th rowspan="2" style="width:56px">birim m²</th>
@@ -247,23 +295,33 @@ PageModules.is_emri_formu = (() => {
         <tr>
           <th style="width:36px">Adet</th><th style="width:48px">Boy</th><th style="width:48px">En</th>
           <th style="width:36px">Adet</th><th style="width:48px">Boy</th><th style="width:48px">En</th>
-          ${'<th style="width:32px">Boy</th><th style="width:32px">En</th>'.repeat(5)}
+          ${'<th style="width:32px">Boy</th><th style="width:32px">En</th>'.repeat(4)}
         </tr>
         ${form.satirlar.map((s, i) => satirHtml(s, i, g)).join('')}
         <tr style="background:var(--surface2);font-weight:600">
-          <td colspan="12">TOPLAM</td>
+          <td colspan="13">TOPLAM</td>
           <td class="r">${ozet.toplamParca}</td>
-          <td colspan="13"></td>
+          <td colspan="12"></td>
           <td class="r">${ozet.toplamM2}</td><td></td>
         </tr>
       </table></div>
 
       <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
         ${ozet.gruplar.map(gr => `<div style="border:1px solid var(--border);border-radius:8px;padding:8px 12px">
-          <b style="font-size:12px">${gr.grup}</b>
+          <b style="font-size:12px">${gr.grup}</b>${gr.ad ? ' <span class="muted" style="font-weight:400">— ' + App.escapeHtml(gr.ad) + '</span>' : ''}
           <div style="font-size:11px;color:var(--muted)">
             ${gr.satir} satır · ${gr.m2.toFixed(3)} m²</div>
         </div>`).join('')}
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="card-title" style="font-size:11.5px;margin-bottom:6px">Kullanılan Kenar Bandı (net ölçü × seçim + 0,02 m fire)</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          ${kenarBandiOzet.length ? kenarBandiOzet.map(b => `<div style="border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+            <b style="font-size:12px" class="mono">${App.escapeHtml(b.kod)}</b>${b.ad ? ' <span class="muted" style="font-weight:400">— ' + App.escapeHtml(b.ad) + '</span>' : ''}
+            <div style="font-size:11px;color:var(--muted)">${b.metre} m</div>
+          </div>`).join('') : '<div class="muted" style="font-size:11.5px">Henüz kenar bandı seçilmedi.</div>'}
+        </div>
       </div>`;
 
     // Alan düzenleme
@@ -301,19 +359,26 @@ PageModules.is_emri_formu = (() => {
   }
 
   function satirHtml(s, i, g) {
-    const inp = (k, deger, tip, gen) =>
-      `<input class="finput ie-h" ${g(i, k)} ${tip ? 'type="' + tip + '"' : ''}
+    const inp = (k, deger, tip, gen, kilitli) =>
+      `<input class="finput ie-h" ${g(i, k)} ${tip ? 'type="' + tip + '"' : ''} ${kilitli ? 'disabled' : ''}
         value="${App.escapeHtml(deger == null ? '' : String(deger))}"
-        style="width:${gen || 100}%;font-size:10.5px;padding:2px;text-align:${tip === 'number' ? 'right' : 'left'}">`;
-    const bantliGruplar = ['pvc2', 'pvc1', 'pvc040', 'soft'];   // DÜZ hariç — bant taşımaz
+        style="width:${gen || 100}%;font-size:10.5px;padding:2px;text-align:${tip === 'number' ? 'right' : 'left'}${kilitli ? ';opacity:.65' : ''}">`;
+    // Kenar bandı sayısı: bir kenarda en fazla 2 taraf (boy/en) olabilir —
+    // 0 = bant yok, 1 = tek taraf, 2 = çift taraf. Başka rakam anlamsızdır.
+    const sel012 = (k, deger) =>
+      `<select class="finput ie-h" ${g(i, k)} style="width:100%;font-size:10.5px;padding:2px">
+        ${[0, 1, 2].map(n => `<option value="${n}" ${+deger === n ? 'selected' : ''}>${n}</option>`).join('')}
+      </select>`;
+    const bantliGruplar = ['pvc2', 'pvc1', 'pvc040', 'soft'];
     const bant = (ad) => {
-      const secBtn = bantliGruplar.includes(ad) ? `<button class="btn btn-sm ie-bant-sec"
+      const secBtn = `<button class="btn btn-sm ie-bant-sec"
         data-i="${i}" data-grup="${ad}" style="padding:0 2px;font-size:8px;vertical-align:middle"
         title="${s[ad].bandKartId ? 'Kenar bandı: ' + App.escapeHtml(s[ad].bandKodu || '') : 'Kenar bandı seç'}"
-        >${s[ad].bandKartId ? '🔗' : '🔍'}</button>` : '';
-      return `<td style="white-space:nowrap">${inp(ad + '.boy', s[ad].boy, 'number', 60)}${secBtn}</td>
-              <td>${inp(ad + '.en', s[ad].en, 'number')}</td>`;
+        >${s[ad].bandKartId ? '🔗' : '🔍'}</button>`;
+      return `<td style="white-space:nowrap">${sel012(ad + '.boy', s[ad].boy)}${secBtn}</td>
+              <td>${sel012(ad + '.en', s[ad].en)}</td>`;
     };
+    const kalinlikKilitli = !!s.plakaKartId;
     return `<tr>
       <td>${inp('paketNo', s.paketNo)}</td>
       <td>${inp('paketAdedi', s.paketAdedi, 'number')}</td>
@@ -324,9 +389,9 @@ PageModules.is_emri_formu = (() => {
       <td>${inp('parcaAdi', s.parcaAdi)}</td>
       <td style="white-space:nowrap"><button class="btn btn-sm ie-plaka-sec" data-i="${i}"
         style="padding:1px 4px;font-size:9px"
-        title="${s.plakaKartId ? 'Plaka: ' + App.escapeHtml(s.plakaKodu || '') : 'Plaka hammadde seç'}"
+        title="${s.plakaKartId ? 'Plaka: ' + App.escapeHtml(s.plakaKodu || '') + ' (kalınlık kilitli)' : 'Plaka hammadde seç'}"
         >${s.plakaKartId ? '🔗 ' : '🔍 '}${App.escapeHtml(s.plakaKodu || 'Seç')}</button></td>
-      <td>${inp('kalinlik', s.kalinlik, 'number')}</td>
+      <td>${inp('kalinlik', s.kalinlik, 'number', null, kalinlikKilitli)}</td>
       <td>${inp('renk', s.renk)}</td>
       <td>${inp('netAdet', s.netAdet, 'number')}</td>
       <td>${inp('netBoy', s.netBoy, 'number')}</td>
@@ -338,7 +403,7 @@ PageModules.is_emri_formu = (() => {
       <td>${inp('yariMamul', s.yariMamul)}</td>
       <td>${inp('yatar', s.yatar)}</td>
       <td>${inp('mHiz', s.mHiz)}</td>
-      ${bant('pvc2')}${bant('pvc1')}${bant('pvc040')}${bant('soft')}${bant('duz')}
+      ${bant('pvc2')}${bant('pvc1')}${bant('pvc040')}${bant('soft')}
       <td>${inp('aciklamalar', s.aciklamalar)}</td>
       <td class="r">${s.birimM2}</td>
       <td><button class="btn btn-sm ie-sil" data-i="${i}" style="color:var(--red-text);padding:1px 5px">✕</button></td>
@@ -475,6 +540,7 @@ PageModules.is_emri_formu = (() => {
     S.push(['İŞ EMRİ KODU', form.isEmriKodu, '', '', '', '', '', '', 'Revizyon Tarihi', '12.12.2012']);
     S.push([]);
     S.push(['Holzma', form.holzma, 'Ima', form.ima, 'Rover', form.rover, 'Delik', form.delik]);
+    S.push(['Hazırlayan', form.hazirlayan, 'Onaylayan', form.onaylayan]);
     S.push([]);
     S.push([form.grup, form.altBaslik]);
     S.push(['Paket No', 'Paket Adedi', 'Parç.Kodu', 'Parça Adı', 'Plaka Hammadde', 'Kalınlık', 'Renk',
@@ -482,25 +548,31 @@ PageModules.is_emri_formu = (() => {
       'Üretim miktarı', 'Yarı Mamül', 'Yatar', 'M.Hiz(+)',
       'PVC2 Boy', 'PVC2 En', 'PVC2 Bant', 'PVC1 Boy', 'PVC1 En', 'PVC1 Bant',
       'PVC0,40 Boy', 'PVC0,40 En', 'PVC0,40 Bant', 'SOFT Boy', 'SOFT En', 'SOFT Bant',
-      'DÜZ Boy', 'DÜZ En', 'AÇIKLAMALAR', 'birim m²', 'Bant grubu']);
+      'AÇIKLAMALAR', 'birim m²', 'Bant grubu']);
     form.satirlar.forEach(s => S.push([
       s.paketNo, s.paketAdedi, s.parcaKodu, s.parcaAdi, s.plakaKodu, s.kalinlik, s.renk,
       s.netAdet, s.netBoy, s.netEn, s.kabaAdet, s.kabaBoy, s.kabaEn,
       s.uretimMiktari, s.yariMamul, s.yatar, s.mHiz,
       s.pvc2.boy, s.pvc2.en, s.pvc2.bandKodu, s.pvc1.boy, s.pvc1.en, s.pvc1.bandKodu,
       s.pvc040.boy, s.pvc040.en, s.pvc040.bandKodu, s.soft.boy, s.soft.en, s.soft.bandKodu,
-      s.duz.boy, s.duz.en, s.aciklamalar, s.birimM2, s.bantGrup
+      s.aciklamalar, s.birimM2, s.bantGrup
     ]));
     const oz = IsEmriUretici.ozet(form.satirlar);
     S.push([]);
     S.push(['TOPLAM', '', '', '', '', '', '', '', '', '', '', '', '', oz.toplamParca,
-      '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', oz.toplamM2]);
-    oz.gruplar.forEach(g => S.push([g.grup, g.satir + ' satır', g.m2.toFixed(3) + ' m²']));
+      ...Array(17).fill(''), oz.toplamM2]);
+    oz.gruplar.forEach(g => S.push([g.grup + (g.ad ? ' — ' + g.ad : ''), g.satir + ' satır', g.m2.toFixed(3) + ' m²']));
+    const kb = IsEmriUretici.kenarBandiOzeti(form.satirlar);
+    if (kb.length) {
+      S.push([]);
+      S.push(['Kullanılan Kenar Bandı', 'Metre (0,02m fire dahil)']);
+      kb.forEach(b => S.push([b.kod + (b.ad ? ' — ' + b.ad : ''), b.metre]));
+    }
 
     const ws = XLSX.utils.aoa_to_sheet(S);
     ws['!cols'] = [{ wch: 9 }, { wch: 9 }, { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 8 }, { wch: 12 },
       ...Array(6).fill({ wch: 8 }), { wch: 10 }, ...Array(3).fill({ wch: 7 }),
-      ...Array(15).fill({ wch: 7 }), { wch: 24 }, { wch: 9 }, { wch: 9 }];
+      ...Array(12).fill({ wch: 7 }), { wch: 24 }, { wch: 9 }, { wch: 9 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'İş Emri');
     return wb;
@@ -573,6 +645,7 @@ PageModules.is_emri_formu = (() => {
       } catch (e) { }
       try { logo = localStorage.getItem('uretimos_firma_logo'); } catch (e) { }
       const oz = IsEmriUretici.ozet(form.satirlar);
+      const kb = IsEmriUretici.kenarBandiOzeti(form.satirlar);
       const esc = App.escapeHtml;
       const w = window.open('', '_blank');
       if (!w) throw new Error('Açılır pencere engellendi.');
@@ -623,46 +696,54 @@ PageModules.is_emri_formu = (() => {
       <tr>
         <th rowspan="2">Paket<br>No</th><th rowspan="2">Paket<br>Adedi</th>
         <th rowspan="2">Parç.Kodu</th><th rowspan="2">Parça Adı</th>
-        <th rowspan="2">Kalınlık</th><th rowspan="2">Renk</th>
+        <th rowspan="2">Plaka<br>Hammadde</th><th rowspan="2">Kalınlık</th><th rowspan="2">Renk</th>
         <th colspan="3">Net Ölçü</th><th colspan="3">Kaba Ölçü</th>
         <th rowspan="2">Üretim<br>miktarı</th><th rowspan="2">Yarı<br>Mamül</th>
         <th rowspan="2">Yatar</th><th rowspan="2">M.Hiz<br>(+)</th>
         <th colspan="2">PVC<br>2 mm</th><th colspan="2">PVC<br>1 mm</th>
-        <th colspan="2">PVC<br>0,40 mm</th><th colspan="2">SOFT</th><th colspan="2">DÜZ</th>
+        <th colspan="2">PVC<br>0,40 mm</th><th colspan="2">SOFT</th>
         <th rowspan="2">AÇIKLAMALAR</th><th rowspan="2">birim m²</th>
       </tr>
       <tr>
         <th>Adet</th><th>Boy</th><th>En</th><th>Adet</th><th>Boy</th><th>En</th>
-        ${'<th>Boy</th><th>En</th>'.repeat(5)}
+        ${'<th>Boy</th><th>En</th>'.repeat(4)}
       </tr>
     </thead>
     <tbody>
       ${form.satirlar.map(s => `<tr>
         <td class="c">${esc(s.paketNo)}</td><td class="c">${s.paketAdedi}</td>
         <td>${esc(s.parcaKodu)}</td><td>${esc(s.parcaAdi)}</td>
-        <td class="c">${s.kalinlik || ''}</td><td>${esc(s.renk)}</td>
+        <td>${esc(s.plakaKodu)}</td><td class="c">${s.kalinlik || ''}</td><td>${esc(s.renk)}</td>
         <td class="c">${s.netAdet || ''}</td><td class="r">${s.netBoy || ''}</td><td class="r">${s.netEn || ''}</td>
         <td class="c">${s.kabaAdet || ''}</td><td class="r">${s.kabaBoy || ''}</td><td class="r">${s.kabaEn || ''}</td>
         <td class="c">${s.uretimMiktari || ''}</td>
         <td class="c">${esc(s.yariMamul)}</td><td class="c">${esc(s.yatar)}</td><td class="c">${esc(s.mHiz)}</td>
-        ${['pvc2', 'pvc1', 'pvc040', 'soft', 'duz'].map(b =>
+        ${['pvc2', 'pvc1', 'pvc040', 'soft'].map(b =>
           `<td class="c">${esc(s[b].boy)}</td><td class="c">${esc(s[b].en)}</td>`).join('')}
         <td>${esc(s.aciklamalar)}</td><td class="r">${s.birimM2 || ''}</td>
       </tr>`).join('')}
       ${Array(Math.max(0, 6 - form.satirlar.length)).fill(
-        '<tr>' + '<td></td>'.repeat(28) + '</tr>').join('')}
+        '<tr>' + '<td></td>'.repeat(27) + '</tr>').join('')}
     </tbody>
     <tfoot><tr>
-      <td colspan="12" class="r">TOPLAM</td><td class="c">${oz.toplamParca}</td>
-      <td colspan="14"></td><td class="r">${oz.toplamM2}</td>
+      <td colspan="13" class="r">TOPLAM</td><td class="c">${oz.toplamParca}</td>
+      <td colspan="12"></td><td class="r">${oz.toplamM2}</td>
     </tr></tfoot>
   </table>
-  <div style="margin-top:8px;display:flex;gap:16px;font-size:9px">
+  <div style="margin-top:8px;display:flex;gap:16px;font-size:9px;flex-wrap:wrap">
     ${oz.gruplar.map(g => `<div style="border:1px solid #000;padding:3px 8px">
-      <b>${g.grup}</b> — ${g.satir} satır · ${g.m2.toFixed(3)} m²</div>`).join('')}
+      <b>${g.grup}${g.ad ? ' — ' + esc(g.ad) : ''}</b> — ${g.satir} satır · ${g.m2.toFixed(3)} m²</div>`).join('')}
   </div>
+  ${kb.length ? `<div style="margin-top:6px;font-size:9px">
+    <b>Kullanılan Kenar Bandı (0,02m fire dahil):</b>
+    <div style="display:flex;gap:16px;margin-top:3px;flex-wrap:wrap">
+      ${kb.map(b => `<div style="border:1px solid #000;padding:3px 8px">
+        <b>${esc(b.kod)}${b.ad ? ' — ' + esc(b.ad) : ''}</b> — ${b.metre} m</div>`).join('')}
+    </div>
+  </div>` : ''}
   <div style="margin-top:14px;display:flex;justify-content:space-between;font-size:9px">
-    <div>Hazırlayan: ______________</div><div>Onaylayan: ______________</div>
+    <div>Hazırlayan: ${esc(form.hazirlayan) || '______________'}</div>
+    <div>Onaylayan: ${esc(form.onaylayan) || '______________'}</div>
     <div>Üretim Sorumlusu: ______________</div>
   </div>
 </body></html>`);
