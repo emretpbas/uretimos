@@ -103,6 +103,76 @@ PageModules.is_emri_formu = (() => {
     if (ekBilgi) ekBilgiCiz();
   }
 
+  // ── PARÇA KODU ↔ HAMMADDE/HIRDAVAT/KENAR BANDI/YARI MAMÜL KARTI ──────────
+  // Satırdaki parcaKodu, mevcut bir hammadde (stokKodu) veya yarı mamül (kod)
+  // kartıyla eşleşiyorsa otomatik bağlanır — parcaKartId/parcaKartTipi doldurulur
+  // ve boşsa parça adı karttan alınır. Eşleşme yoksa satır yine de serbest
+  // metin olarak kullanılabilir kalır.
+  async function kartlaEslestir(satir) {
+    if (!satir || !satir.parcaKodu) { if (satir) { satir.parcaKartId = null; satir.parcaKartTipi = ''; } return; }
+    try {
+      const [hammaddeler, yarimamuller] = await Promise.all([
+        Store.hammaddeler.all(), Store.yarimamuller.all()
+      ]);
+      const h = hammaddeler.find(x => x.stokKodu === satir.parcaKodu);
+      if (h) {
+        satir.parcaKartId = h.id; satir.parcaKartTipi = 'hammadde';
+        if (!satir.parcaAdi) satir.parcaAdi = h.ad || '';
+        return;
+      }
+      const y = yarimamuller.find(x => x.kod === satir.parcaKodu);
+      if (y) {
+        satir.parcaKartId = y.id; satir.parcaKartTipi = 'yarimamul';
+        if (!satir.parcaAdi) satir.parcaAdi = y.ad || '';
+        return;
+      }
+      satir.parcaKartId = null; satir.parcaKartTipi = '';
+    } catch (e) { /* eşleştirme başarısız olsa da satır serbest metinle kullanılabilir kalır */ }
+  }
+
+  async function tumSatirlariEslestir() {
+    await Promise.all(form.satirlar.map(kartlaEslestir));
+  }
+
+  // Manuel seçim: hammadde/hırdavat/kenar bandı/yarı mamül kartlarından birini
+  // "kalem_secici" ekranı üzerinden seçtirir, satıra bağlar.
+  async function parcaKoduSec(i) {
+    let hammaddeler = [], yarimamuller = [];
+    try {
+      [hammaddeler, yarimamuller] = await Promise.all([
+        Store.hammaddeler.all(), Store.yarimamuller.all()
+      ]);
+    } catch (e) { App.toast('Kartlar yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    const secenekler = [
+      ...hammaddeler.filter(h => h.stokKodu).map(h => ({
+        grup: h.tip || 'hirdavat', kod: h.stokKodu, ad: h.ad || '',
+        birim: h.birim || '', netFiyat: 0, maliyetYok: true, _id: h.id, _tip: 'hammadde'
+      })),
+      ...yarimamuller.filter(y => y.kod).map(y => ({
+        grup: 'yarimamul', kod: y.kod, ad: y.ad || '',
+        birim: y.birim || '', netFiyat: 0, maliyetYok: true, _id: y.id, _tip: 'yarimamul'
+      }))
+    ];
+
+    App.goTo('kalem_secici', {
+      baslik: 'Parça Kodu Seç — Hammadde / Hırdavat / Kenar Bandı / Yarı Mamül',
+      secenekler,
+      gruplar: { plaka: 'Plaka', hirdavat: 'Hırdavat', kenar_bandi: 'Kenar Bandı', sarf: 'Sarf', yarimamul: 'Yarı Mamül' },
+      geriDon: () => App.goTo('is_emri_formu'),
+      onSecildi: (secim) => {
+        const s = form.satirlar[i];
+        if (s) {
+          s.parcaKodu = secim.kod;
+          if (!s.parcaAdi) s.parcaAdi = secim.ad;
+          s.parcaKartId = secim._id;
+          s.parcaKartTipi = secim._tip;
+        }
+        App.goTo('is_emri_formu');
+      }
+    });
+  }
+
   // ── TABLO ────────────────────────────────────────────────────────────────
   function tabloCiz(main) {
     const el = document.getElementById('ie-tablo');
@@ -176,9 +246,12 @@ PageModules.is_emri_formu = (() => {
           s.birimM2 = Math.round((s.netBoy * s.netEn) / 1e6 * 1000) / 1000;
           s.toplamM2 = Math.round(s.birimM2 * s.netAdet * 1000) / 1000;
         }
+        // Parça kodu elle değiştirildiyse mevcut kartla yeniden eşleştir
+        if (k === 'parcaKodu') { kartlaEslestir(s).then(() => tabloCiz(main)); return; }
         tabloCiz(main);
       };
     });
+    el.querySelectorAll('.ie-kod-sec').forEach(b => b.onclick = () => parcaKoduSec(+b.dataset.i));
     el.querySelectorAll('.ie-sil').forEach(b => b.onclick = () => {
       form.satirlar.splice(+b.dataset.i, 1);
       form.satirlar.forEach((s, j) => s.sira = j + 1);
@@ -196,7 +269,10 @@ PageModules.is_emri_formu = (() => {
     return `<tr>
       <td>${inp('paketNo', s.paketNo)}</td>
       <td>${inp('paketAdedi', s.paketAdedi, 'number')}</td>
-      <td>${inp('parcaKodu', s.parcaKodu)}</td>
+      <td style="white-space:nowrap">${inp('parcaKodu', s.parcaKodu, null, 66)}<button
+        class="btn btn-sm ie-kod-sec" data-i="${i}" style="padding:1px 3px;font-size:9px;margin-left:2px"
+        title="${s.parcaKartId ? 'Hammadde/Yarı Mamül kartına bağlı: ' + App.escapeHtml(s.parcaKartTipi || '') : 'Kart seç (Hammadde/Hırdavat/Kenar Bandı/Yarı Mamül)'}"
+        >${s.parcaKartId ? '🔗' : '🔍'}</button></td>
       <td>${inp('parcaAdi', s.parcaAdi)}</td>
       <td>${inp('kalinlik', s.kalinlik, 'number')}</td>
       <td>${inp('renk', s.renk)}</td>
@@ -241,6 +317,7 @@ PageModules.is_emri_formu = (() => {
         durum.innerHTML = `<span style="color:var(--green-text)">✓ ${form.satirlar.length} parça satırı ` +
           `üretildi · ölçüler geometriden KESİN alındı</span>`;
         ekBilgi = null;
+        await tumSatirlariEslestir();
         render(main);
         return;
       }
@@ -256,6 +333,7 @@ PageModules.is_emri_formu = (() => {
         ekBilgi = u;
         durum.innerHTML = `<span style="color:var(--amber-text)">✓ ${u.malzemeler.length} malzeme kodu, ` +
           `${u.urunler.length} ürün bulundu — <b>ölçüleri doldurmanız gerekiyor</b></span>`;
+        await tumSatirlariEslestir();
         render(main);
         return;
       }
@@ -272,6 +350,7 @@ PageModules.is_emri_formu = (() => {
         ekBilgi = u;
         durum.innerHTML = `<span style="color:var(--amber-text)">✓ DWG okundu · ` +
           `${u.malzemeler.length} malzeme kodu — <b>ölçüleri doldurun</b></span>`;
+        await tumSatirlariEslestir();
         render(main);
         return;
       }
@@ -323,8 +402,9 @@ PageModules.is_emri_formu = (() => {
           <td><button class="btn btn-sm ie-kod-ata" data-kod="${App.escapeHtml(m.kod)}">Satırlara ata</button></td>
         </tr>`).join('')}
       </table>` : ''}`;
-    el.querySelectorAll('.ie-kod-ata').forEach(b => b.onclick = () => {
+    el.querySelectorAll('.ie-kod-ata').forEach(b => b.onclick = async () => {
       form.satirlar.forEach(s => { if (!s.parcaKodu) s.parcaKodu = b.dataset.kod; });
+      await tumSatirlariEslestir();
       App.toast('Kod boş satırlara atandı.', 'ok');
       render(document.querySelector('main') || document.body);
     });

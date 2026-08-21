@@ -121,6 +121,9 @@ const IsEmriUretici = (() => {
       paketNo: ay.paketNo || '',
       paketAdedi: ay.paketAdedi || 1,
       parcaKodu: v.parcaKodu || '',
+      // Hammadde/hırdavat/kenar bandı/yarı mamül kartına bağlantı — kod eşleşince
+      // veya kullanıcı elle kart seçince doldurulur (page_is_emri_formu.js).
+      parcaKartId: null, parcaKartTipi: '',
       parcaAdi: v.parcaAdi,
       kalinlik: v.kalinlik,
       renk: ay.renk || '',
