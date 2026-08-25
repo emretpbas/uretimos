@@ -80,6 +80,7 @@ PageModules.recete_agac = (() => {
   function isaretleKirli() { kirli = true; }
 
   const TIP_ETIKET = { urun: ['ÜRÜN', 'pill-blue'], yarimamul: ['YM', 'pill-gray'], altmontaj: ['ALT MONTAJ', 'pill-amber'], paket: ['PAKET', 'pill-green'], hammadde: ['HM', 'pill-green'] };
+  const TIP_TAM_ADI = { urun: 'Ürün', yarimamul: 'Yarı Mamül', altmontaj: 'Alt Montaj', paket: 'Paket' };
 
   // ── ESKİ KAYIT UYUMLULUĞU ────────────────────────────────────────────────
   // Reçetede geçerli kalem tipleri: urun / yarimamul / altmontaj / paket /
@@ -487,6 +488,7 @@ PageModules.recete_agac = (() => {
 
     if (tip !== 'hammadde') {
       html += `<button class="btn btn-sm btn-ghost ra-add-kalem" data-path="${nodeKey}" data-tip="${tip}" data-id="${id}" title="Bu satırın altına kalem ekle">+ Alt Kalem</button>`;
+      html += `<button class="btn btn-sm btn-ghost ra-degistir" data-path="${nodeKey}" data-tip="${tip}" data-id="${id}" title="Bu kartın adını/kodunu değiştir veya farklı bir kartla değiştir">✏️ Değiştir</button>`;
     }
     // ── PAKET SATIRLARINDA HACİM/AĞIRLIK DÜĞMESİ ────────────────────────────
     // Paket kartının ölçü ve ağırlığı çeki listesinin ve sevkiyat hacminin
@@ -616,6 +618,7 @@ PageModules.recete_agac = (() => {
       });
     });
     wrap.querySelectorAll('.ra-add-kalem').forEach(b => b.onclick = () => openAltKalemEkle(b.dataset.tip, b.dataset.id));
+    wrap.querySelectorAll('.ra-degistir').forEach(b => b.onclick = () => openDegistirSecimModal(b.dataset.path, b.dataset.tip, b.dataset.id));
     wrap.querySelectorAll('.ra-olcu-ekle').forEach(b => b.onclick = () => openPaketOlcuDuzenle(b.dataset.id));
     wrap.querySelectorAll('.ra-tasi').forEach(b => b.onclick = () => openTasiModal(b.dataset.path));
     wrap.querySelectorAll('.ra-olcu-duzenle').forEach(b => b.onclick = () => openOlcuDuzenleModal(b.dataset.path));
@@ -787,12 +790,95 @@ PageModules.recete_agac = (() => {
     };
   }
 
+  // ── DEĞİŞTİR: bir ürün/yarımamül/alt montaj/paket düğümü için iki seçenek
+  // sunar — (1) kartın kendi adını/kodunu TASLAKTA değiştirmek (kart aynı
+  // kalır, sadece bilgisi güncellenir; başka reçetelerde de kullanılıyorsa
+  // orada da yeni adıyla görünür — kart tek bir kayıt, ağaçta yalnızca
+  // referans edilir), (2) bu satırdaki kalemi TAMAMEN FARKLI, yeni oluşturulan
+  // bir karta bağlamak (miktar/birim korunur, eski kart silinmez/etkilenmez).
+  // Kök karta (nodeKey==='kok') bir üst kalem yok, bu yüzden yalnızca (1)
+  // sunulur.
+  function openDegistirSecimModal(nodeKey, tip, id) {
+    const kart = kartBul(tip, id);
+    if (!kart) { App.toast('Kart bulunamadı', 'err'); return; }
+    const tamAd = TIP_TAM_ADI[tip] || tip;
+    const kokMu = nodeKey === 'kok';
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:12px"><b class="mono">${App.escapeHtml(kart.kod || '')}</b> — ${App.escapeHtml(kart.ad || '')} için ne yapmak istiyorsunuz?</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn" id="ds-yeniden-adlandir" style="text-align:left;padding:12px 14px;height:auto">
+          <div style="font-weight:700">✏️ Mevcut ${tamAd} Kartının Adını/Kodunu Değiştir</div>
+          <div class="muted" style="font-size:11px;margin-top:2px;font-weight:400">Bu kart kullanıldığı HER YERDE (başka reçetelerde de) yeni adıyla görünür.</div>
+        </button>
+        ${!kokMu ? `<button class="btn" id="ds-yeni-kart" style="text-align:left;padding:12px 14px;height:auto">
+          <div style="font-weight:700">🔁 Yeni Bir ${tamAd} Kartı Oluştur ve Bununla Değiştir</div>
+          <div class="muted" style="font-size:11px;margin-top:2px;font-weight:400">Bu satır, yeni oluşturulacak farklı bir karta bağlanır (miktar/birim korunur). Eski kart silinmez, başka yerde kullanılıyorsa etkilenmez.</div>
+        </button>` : `<div class="fhint">Kök karttaki satırın bir üst kalemi yoktur, bu yüzden yalnızca adı/kodu değiştirilebilir — farklı bir kartla değiştirmek için ağacı o karttan yeniden açın.</div>`}
+      </div>
+    `;
+    App.openModal({ title: 'Değiştir', body, footer: `<button class="btn" id="ds-kapat">Kapat</button>`, wide: true });
+    document.getElementById('ds-kapat').onclick = App.closeModal;
+    document.getElementById('ds-yeniden-adlandir').onclick = () => { App.closeModal(); openKartYenidenAdlandirForm(tip, id); };
+    const yeniKartBtn = document.getElementById('ds-yeni-kart');
+    if (yeniKartBtn) yeniKartBtn.onclick = () => {
+      App.closeModal();
+      const cozum = pathCoz(nodeKey);
+      if (!cozum || !cozum.kalem) { App.toast('Kalem bulunamadı', 'err'); return; }
+      openYeniKartOlusturForm({ kod: '', ad: '' }, (yeniTip, yeniId) => {
+        cozum.kalem.tip = yeniTip;
+        cozum.kalem.refId = yeniId;
+        // Ölçü/kenar bandı bilgisi eski (muhtemelen hammadde) karta özgüydü;
+        // yeni kart urun/yarimamul/altmontaj/paket olduğundan anlamsız kalır.
+        delete cozum.kalem.olcu;
+        delete cozum.kalem.kenarBantlari;
+        isaretleKirli();
+        App.toast('Satır yeni oluşturulan karta bağlandı (taslak) — kalıcı olması için "Reçete Olarak Kaydet"', 'ok');
+        reAcVeRender();
+      }, tip);
+    };
+  }
+
+  // Bir ürün/yarımamül/alt montaj/paket kartının kod/adını TASLAKTA değiştirir
+  // — kart tek bir kayıttır, bu ağacın dışında başka reçetelerde de aynı
+  // kart referans ediliyorsa oralarda da güncel ad/kod görünür.
+  function openKartYenidenAdlandirForm(tip, id) {
+    const kart = kartBul(tip, id);
+    if (!kart) { App.toast('Kart bulunamadı', 'err'); return; }
+    const tamAd = TIP_TAM_ADI[tip] || tip;
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:10px">Bu kart TASLAKTA yeniden adlandırılacak — kalıcı olması için "✓ Reçete Olarak Kaydet" gerekir.</div>
+      <div class="frow">
+        <div class="fgroup"><label class="flbl">Kod</label><input class="finput" id="ka-kod" value="${App.escapeHtml(kart.kod || '')}"></div>
+        <div class="fgroup"><label class="flbl">Ad</label><input class="finput" id="ka-ad" value="${App.escapeHtml(kart.ad || '')}"></div>
+      </div>
+    `;
+    const footer = `<button class="btn" id="ka-cancel">Vazgeç</button><button class="btn btn-blue" id="ka-save">Taslağa Kaydet</button>`;
+    App.openModal({ title: tamAd + ' Adını/Kodunu Değiştir (Taslak)', sub: kart.kod || '', body, footer, wide: true });
+    document.getElementById('ka-cancel').onclick = App.closeModal;
+    document.getElementById('ka-save').onclick = () => {
+      const kod = document.getElementById('ka-kod').value.trim();
+      const ad = document.getElementById('ka-ad').value.trim();
+      if (!kod || !ad) { App.toast('Kod ve ad zorunlu', 'err'); return; }
+      kart.kod = kod; kart.ad = ad;
+      if (tip === kokTip && id === kokKart.id) { kokKart.kod = kod; kokKart.ad = ad; }
+      isaretleKirli();
+      App.toast('İsim taslakta güncellendi — kalıcı olması için "Reçete Olarak Kaydet"', 'ok');
+      App.closeModal();
+      reAcVeRender();
+    };
+  }
+
   // Yeni kart oluşturma (Yarımamül/Alt Montaj/Hırdavat/Diğer-kategori) —
   // SADECE taslak listelerine (veri.yarimamuller/altMontajlar/hammaddeler)
   // eklenir, gerçek Store'a YAZILMAZ. Kategori adı bile (yeni bir kategori
   // girilse) taslakta kalır, gerçek kategoriler listesine "Reçete Olarak
   // Kaydet" dediğinizde işlenir.
-  function openYeniKartOlusturForm(yeniKartBilgisi, onTamam) {
+  // sabitTip verilirse (bir kalemin kartını DEĞİŞTİRMEK için çağrıldığında)
+  // Kart Tipi seçimi o tipe kilitlenir — "yarımamülü değiştir" derken
+  // kullanıcının yanlışlıkla hammadde/paket oluşturmasını engeller.
+  function openYeniKartOlusturForm(yeniKartBilgisi, onTamam, sabitTip) {
     const kategoriler = [...new Set(veri.hammaddeler.map(h => h.kategori).filter(Boolean))];
     const body = document.createElement('div');
     body.innerHTML = `
@@ -817,7 +903,7 @@ PageModules.recete_agac = (() => {
         <div class="fgroup"><label class="flbl">Kod</label><input class="finput" id="yko-kod" value="${App.escapeHtml(yeniKartBilgisi.kod || '')}"></div>
         <div class="fgroup"><label class="flbl">Ad</label><input class="finput" id="yko-ad" value="${App.escapeHtml(yeniKartBilgisi.ad || '')}"></div>
       </div>
-      <div class="frow">
+      <div class="frow" id="yko-miktar-wrap" style="${sabitTip ? 'display:none' : ''}">
         <div class="fgroup"><label class="flbl">Miktar</label><input class="finput" id="yko-miktar" type="number" value="1" step="0.01"></div>
         <div class="fgroup"><label class="flbl">Birim</label>
           <select class="fselect" id="yko-birim">
@@ -826,11 +912,12 @@ PageModules.recete_agac = (() => {
         </div>
       </div>
     `;
-    const footer = `<button class="btn" id="yko-cancel">Vazgeç</button><button class="btn btn-green" id="yko-save">Taslağa Ekle</button>`;
-    App.openModal({ title: 'Yeni Kart Oluştur (Taslak)', body, footer, wide: true });
+    const footer = `<button class="btn" id="yko-cancel">Vazgeç</button><button class="btn btn-green" id="yko-save">${sabitTip ? 'Oluştur ve Değiştir' : 'Taslağa Ekle'}</button>`;
+    App.openModal({ title: sabitTip ? (TIP_TAM_ADI[sabitTip] || sabitTip) + ' — Yeni Kart Oluştur ve Değiştir (Taslak)' : 'Yeni Kart Oluştur (Taslak)', body, footer, wide: true });
     document.getElementById('yko-cancel').onclick = App.closeModal;
     const tipSelect = document.getElementById('yko-tip');
     tipSelect.onchange = () => { document.getElementById('yko-kategori-wrap').style.display = tipSelect.value === 'diger' ? 'block' : 'none'; };
+    if (sabitTip) { tipSelect.value = sabitTip; tipSelect.disabled = true; }
     document.getElementById('yko-save').onclick = () => {
       const yeniTip = tipSelect.value;
       const kod = document.getElementById('yko-kod').value.trim();
