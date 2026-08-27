@@ -30,6 +30,8 @@
 //   POST api.php?action=auditGeriAl    body:{id}                  -> {ok}  (sadece yonetim) GERİ ALMA
 //   POST api.php?action=sayfaZiyaret   body:{sayfa,birim}         -> {ok}  (sayfa/birim ziyaret kaydı)
 //   GET  api.php?action=ziyaretler&limit=300                     -> {rows} (sadece yonetim)
+//   POST api.php?action=montajSemasiOku body:{gorselB64,mediaType,dosyaAdi}
+//        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_ANTHROPIC_KEY gerekir)
 //
 // Kurulum: bu klasörde PHP'nin YAZMA izni olmalı (data.sqlite + backups/ için).
 // data.sqlite ve backups/ web'den erişime KAPATILMALI (.htaccess dahildir).
@@ -340,6 +342,13 @@ function istemciIp() {
 function tarayiciOzeti() {
     return substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 180);
 }
+
+// Montaj şeması AI görme uçları — anthropicApiCagir() ve
+// montajSemasiYanitAyristir() ayrı bir dosyadadır ki bu ikinci (saf) fonksiyon
+// bir HTTP sunucusu başlatmadan, sabit (fixture) yanıtlarla doğrudan test
+// edilebilsin (bkz. montaj_semasi_ai.php başındaki açıklama ve
+// testler/06_montaj_semasi_test.php).
+require_once __DIR__ . '/montaj_semasi_ai.php';
 
 function auditYaz($pdo, $kullanici, $islem, $anahtar, $ek = []) {
     try {
@@ -980,6 +989,81 @@ try {
         teknikKayitYaz($pdo, $kayitlar);
         auditYaz($pdo, $oturum['kullanici_adi'] ?? '?', 'dosya_sil', 'teknikDosyalar', ['sayfa' => $ra]);
         respond(['ok' => true, 'dosyalar' => $kalanlar]);
+    }
+
+    // montajSemasiOku: montaj şeması görselini (istemci PDF'i canvas'a çizip
+    // PNG'ye çevirir) Anthropic vision API'sine gönderir, yapılandırılmış
+    // parça listesi döner. Sadece ARGE/Teknik Ofis/Yönetim/Admin — reçete
+    // oluşturma yetkisiyle aynı çevre (bkz. step_ice_aktar rol kısıtı).
+    elseif ($action === 'montajSemasiOku') {
+        $oturum = oturumZorunlu($pdo);
+        if (!in_array($oturum['rol'] ?? '', ['admin', 'arge', 'teknik_ofis', 'yonetim'], true)) {
+            respond(['error' => 'Bu işlem yalnızca ARGE, Teknik Ofis ve Yönetim rolüne açıktır'], 403);
+        }
+        $body = readJsonBody();
+        $gorselB64 = (string)($body['gorselB64'] ?? '');
+        $mediaType = (string)($body['mediaType'] ?? 'image/png');
+        $dosyaAdi = trim((string)($body['dosyaAdi'] ?? ''));
+        if ($gorselB64 === '') respond(['error' => 'Görsel gönderilmedi'], 400);
+        if (!in_array($mediaType, ['image/png', 'image/jpeg'], true)) respond(['error' => 'Desteklenmeyen görsel türü'], 400);
+        if (strlen($gorselB64) > 15 * 1024 * 1024) respond(['error' => 'Görsel çok büyük (en fazla ~15 MB)'], 400);
+
+        $apiKey = getenv('URETIMOS_ANTHROPIC_KEY');
+        if (!$apiKey) {
+            respond(['error' => 'AI görme servisi sunucuda yapılandırılmamış (URETIMOS_ANTHROPIC_KEY ortam değişkeni eksik). Kurulum belgesine bakın.', 'yapilandirmaEksik' => true], 503);
+        }
+
+        $istekGovdesi = [
+            'model' => 'claude-sonnet-5',
+            'max_tokens' => 4096,
+            'tools' => [[
+                'name' => 'receteKalemleriBildir',
+                'description' => 'Montaj şemasındaki NO/SIZE/QTY parça tablosunu yapılandırılmış biçimde bildirir.',
+                'input_schema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'parcalar' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'no' => ['type' => 'string', 'description' => 'Şemadaki parça/kalem numarası'],
+                                    'tahminiAd' => ['type' => 'string', 'description' => 'Parçanın görünümünden tahmin edilen adı/türü (Türkçe)'],
+                                    'olcuSpec' => ['type' => 'string', 'description' => 'Ölçü/vida tipi gibi teknik özellik metni, yoksa boş bırak'],
+                                    'adet' => ['type' => 'number', 'description' => 'Adet']
+                                ],
+                                'required' => ['no', 'tahminiAd', 'adet']
+                            ]
+                        ],
+                        'genelNot' => ['type' => 'string', 'description' => 'Belirsiz/okunaksız kısımlar için genel not']
+                    ],
+                    'required' => ['parcalar']
+                ]
+            ]],
+            'tool_choice' => ['type' => 'tool', 'name' => 'receteKalemleriBildir'],
+            'messages' => [[
+                'role' => 'user',
+                'content' => [
+                    ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mediaType, 'data' => $gorselB64]],
+                    ['type' => 'text', 'text' =>
+                        "Bu görsel bir mobilya/sandalye parçasının PATLATILMIŞ MONTAJ ŞEMASIDIR. " .
+                        "Alt kısımdaki NO/SKETCH/SIZE/QTY tablosunu ve üstteki numaralandırılmış çizimi kullanarak " .
+                        "her parça/vida/pul kalemini çıkar. SADECE görselde gerçekten gördüğünü bildir, " .
+                        "asla parça kodu veya fiyat UYDURMA. Ölçü/boyut bilgisi yoksa olcuSpec alanını boş bırak."]
+                ]
+            ]]
+        ];
+
+        try {
+            $yanit = anthropicApiCagir($apiKey, $istekGovdesi);
+        } catch (Exception $e) {
+            respond(['error' => $e->getMessage()], 502);
+        }
+        $sonuc = montajSemasiYanitAyristir($yanit);
+        if (!$sonuc['ok']) respond(['error' => $sonuc['hata']], 502);
+
+        auditYaz($pdo, $oturum['kullanici_adi'] ?? '?', 'montaj_semasi_oku', 'aiVision', ['dosya' => $dosyaAdi, 'parcaSayisi' => count($sonuc['parcalar'])]);
+        respond(['ok' => true, 'parcalar' => $sonuc['parcalar'], 'genelNot' => $sonuc['genelNot']]);
     }
 
     // qrGoruntule: HERKESE AÇIK görüntüleyici — telefon QR'ı okutunca açılan

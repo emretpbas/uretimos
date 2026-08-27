@@ -75,6 +75,35 @@ server {
 }
 ```
 
+## AI Görme Servisi (Montaj Şemasından Reçete)
+
+**Tanımlar (ARGE/Teknik Ofis) → Montaj Şemasından Reçete (AI)** ekranı, montaj
+şeması PDF'lerini (patlatılmış çizim + parça tablosu) okumak için Anthropic'in
+görme (vision) API'sini kullanır. Bu şemalarda tablo dahil HER ŞEY vektör
+çizimdir — metin katmanı yoktur, kural tabanlı çıkarım mümkün değildir; AI
+şart. Bu modül olmadan uygulamanın geri kalanı normal çalışmaya devam eder.
+
+1. `php-curl` eklentisinin kurulu olduğundan emin olun: `php -m | grep curl`
+   (yoksa: `sudo apt install -y php-curl` ve PHP-FPM/Apache'yi yeniden başlatın)
+2. Bir Anthropic API anahtarı alın (console.anthropic.com)
+3. Anahtarı sunucuda `URETIMOS_ANTHROPIC_KEY` ortam değişkeni olarak tanımlayın
+   — `URETIMOS_DB` ile AYNI mekanizma, koda veya veritabanına ASLA yazılmaz:
+
+   **Apache** (sanal host veya `.htaccess`'e, `SetEnv` `AllowOverride FileInfo`
+   gerektirir):
+   ```apache
+   SetEnv URETIMOS_ANTHROPIC_KEY "sk-ant-..."
+   ```
+   **Nginx + PHP-FPM** (pool dosyasına, örn. `/etc/php/8.3/fpm/pool.d/www.conf`):
+   ```ini
+   env[URETIMOS_ANTHROPIC_KEY] = sk-ant-...
+   ```
+   sonra: `sudo systemctl restart php8.3-fpm`
+
+Anahtar tanımlı değilse ekran silinmiş/uydurma veri ÜRETMEZ — sunucu açık bir
+"AI görme servisi yapılandırılmamış" hatası döner. Her çağrı görsel başına
+küçük bir API maliyeti taşır (Anthropic konsolundan izlenebilir).
+
 ## HTTPS (zorunlu tavsiye)
 
 ```bash
