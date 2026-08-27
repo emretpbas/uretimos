@@ -409,6 +409,10 @@ const Store = (() => {
   async function teknikDosyaYukle(payload) {
     return qrJson('dosyaYukle', payload);
   }
+  // Montaj şeması görselini AI görme servisine gönderir → {ok, parcalar, genelNot}
+  async function montajSemasiOku(payload) {
+    return qrJson('montajSemasiOku', payload);
+  }
   // Şifreyi sunucuda bcrypt ile hash'ler; istemci düz metni SAKLAMAZ.
   async function sifreHashle(sifre, kimIcin) {
     const res = await apiFetch(API_URL + '?action=sifreHashle', {
@@ -621,7 +625,7 @@ const Store = (() => {
     get, set, del, listKeys, setIfAbsent,
     login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifreTalepGonder,
-    qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle,
+    qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku,
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,
     hammaddeler: coll('hammaddeler'),
     yarimamuller: coll('yarimamuller'),
