@@ -5,6 +5,9 @@ backups/
 *.sqlite
 *.sqlite-journal
 
+# Gizli anahtarlar — asla repoya girmez, sadece sunucuda elle oluşturulur
+anthropic_anahtari.php
+
 # Derleme çıktısı
 dist/
 

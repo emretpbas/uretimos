@@ -1008,9 +1008,22 @@ try {
         if (!in_array($mediaType, ['image/png', 'image/jpeg'], true)) respond(['error' => 'Desteklenmeyen görsel türü'], 400);
         if (strlen($gorselB64) > 15 * 1024 * 1024) respond(['error' => 'Görsel çok büyük (en fazla ~15 MB)'], 400);
 
+        // Anahtar önce ortam değişkeninden (VPS/Apache SetEnv) okunur; paylaşımlı
+        // hosting'de (GoDaddy cPanel gibi) Apache env değişkeni PHP'ye her zaman
+        // ulaşmayabilir VE .htaccess her deploy'da git'ten ÜZERİNE YAZILDIĞI için
+        // anahtar oraya asla yazılamaz. Bu yüzden ikinci bir yol: repoda OLMAYAN,
+        // .gitignore'da olan, sadece sunucuda cPanel Dosya Yöneticisi'yle elle
+        // oluşturulan `anthropic_anahtari.php` dosyası — git/FTP deploy bu dosyayı
+        // hiç görmediği için (izlenmiyor) her deploy'dan sağlam çıkar.
         $apiKey = getenv('URETIMOS_ANTHROPIC_KEY');
         if (!$apiKey) {
-            respond(['error' => 'AI görme servisi sunucuda yapılandırılmamış (URETIMOS_ANTHROPIC_KEY ortam değişkeni eksik). Kurulum belgesine bakın.', 'yapilandirmaEksik' => true], 503);
+            $yerelAnahtarDosyasi = __DIR__ . '/anthropic_anahtari.php';
+            if (is_file($yerelAnahtarDosyasi)) {
+                $apiKey = (string)(include $yerelAnahtarDosyasi);
+            }
+        }
+        if (!$apiKey) {
+            respond(['error' => 'AI görme servisi sunucuda yapılandırılmamış (URETIMOS_ANTHROPIC_KEY ortam değişkeni veya anthropic_anahtari.php eksik). Kurulum belgesine bakın.', 'yapilandirmaEksik' => true], 503);
         }
 
         $istekGovdesi = [

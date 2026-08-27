@@ -86,23 +86,40 @@ görme (vision) API'sini kullanır. Bu şemalarda tablo dahil HER ŞEY vektör
 1. `php-curl` eklentisinin kurulu olduğundan emin olun: `php -m | grep curl`
    (yoksa: `sudo apt install -y php-curl` ve PHP-FPM/Apache'yi yeniden başlatın)
 2. Bir Anthropic API anahtarı alın (console.anthropic.com)
-3. Anahtarı sunucuda `URETIMOS_ANTHROPIC_KEY` ortam değişkeni olarak tanımlayın
-   — `URETIMOS_DB` ile AYNI mekanizma, koda veya veritabanına ASLA yazılmaz:
+3. Anahtarı sunucuya tanıtın — koda veya veritabanına ASLA yazılmaz, iki yöntem var:
 
-   **Apache** (sanal host veya `.htaccess`'e, `SetEnv` `AllowOverride FileInfo`
-   gerektirir):
+   **A) Paylaşımlı hosting (GoDaddy cPanel gibi — kök/SSH erişimi yok, ÖNERİLEN):**
+   Bu repo `main`'e her push'ta `.htaccess` dahil TÜM dosyaları FTPS ile
+   sunucuya senkronize eder (`deploy.yml`) — bu yüzden anahtar `.htaccess`'e
+   veya herhangi bir git-izlenen dosyaya YAZILAMAZ (bir sonraki deploy'da
+   silinir). Bunun yerine cPanel **Dosya Yöneticisi**'nden, uygulamanın
+   kök dizininde (`api.php` ile aynı klasör), `anthropic_anahtari.php`
+   adında YENİ bir dosya oluşturun (bu dosya adı `.gitignore`'da olduğundan
+   git/deploy hiç dokunmaz, her deploy'dan sağlam çıkar) ve içeriği şu olsun:
+   ```php
+   <?php
+   return 'sk-ant-...'; // gerçek Anthropic API anahtarınız
+   ```
+   Kaydedin — birkaç saniye içinde ekrandaki hata kaybolur, tekrar denemenize
+   gerek yok.
+
+   **B) VPS/kendi sunucunuz (kök erişimi varsa) — `URETIMOS_ANTHROPIC_KEY`
+   ortam değişkeni:**
    ```apache
+   # Apache (sanal host veya .htaccess'e, SetEnv AllowOverride FileInfo gerektirir)
    SetEnv URETIMOS_ANTHROPIC_KEY "sk-ant-..."
    ```
-   **Nginx + PHP-FPM** (pool dosyasına, örn. `/etc/php/8.3/fpm/pool.d/www.conf`):
    ```ini
+   ; Nginx + PHP-FPM (pool dosyasına, örn. /etc/php/8.3/fpm/pool.d/www.conf)
    env[URETIMOS_ANTHROPIC_KEY] = sk-ant-...
    ```
-   sonra: `sudo systemctl restart php8.3-fpm`
+   sonra: `sudo systemctl restart php8.3-fpm`. Ortam değişkeni tanımlıysa
+   `anthropic_anahtari.php` dosyasına hiç bakılmaz — A ve B birlikte de
+   kullanılabilir, B önceliklidir.
 
-Anahtar tanımlı değilse ekran silinmiş/uydurma veri ÜRETMEZ — sunucu açık bir
-"AI görme servisi yapılandırılmamış" hatası döner. Her çağrı görsel başına
-küçük bir API maliyeti taşır (Anthropic konsolundan izlenebilir).
+Anahtar hiçbir yolla tanımlı değilse ekran silinmiş/uydurma veri ÜRETMEZ —
+sunucu açık bir "AI görme servisi yapılandırılmamış" hatası döner. Her çağrı
+görsel başına küçük bir API maliyeti taşır (Anthropic konsolundan izlenebilir).
 
 ## HTTPS (zorunlu tavsiye)
 
