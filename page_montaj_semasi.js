@@ -40,16 +40,104 @@ PageModules.montaj_semasi = (() => {
     return window.pdfjsLib;
   }
 
-  async function pdfIlkSayfaPng(dosya) {
+  async function pdfIlkSayfaPng(dosya, olcek) {
     const pdfjs = await pdfjsYukle();
     const buf = await dosya.arrayBuffer();
     const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
     const sayfa = await doc.getPage(1);
-    const vp = sayfa.getViewport({ scale: 2 });
+    const vp = sayfa.getViewport({ scale: olcek || 2 });
     const canvas = document.createElement('canvas');
     canvas.width = vp.width; canvas.height = vp.height;
     await sayfa.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
     return canvas.toDataURL('image/png');
+  }
+
+  // ── ÜCRETSİZ ALTERNATİF: TARAYICI İÇİ OCR (Tesseract.js) ────────────────
+  // AI görme (Anthropic) ücretli ve API anahtarı/faturalandırma gerektirir.
+  // Bunun bir alternatifi olarak, sayfayı yüksek çözünürlükte görsele çevirip
+  // tamamen tarayıcıda çalışan, ücretsiz/açık kaynak bir OCR motoruyla
+  // (Tesseract.js) "resimdeki yazıyı okumayı" deniyoruz — hiçbir sunucuya
+  // veya dış servise gitmez, hiçbir maliyeti yoktur. AI kadar isabetli
+  // DEĞİLDİR: tabloyu bağlamıyla anlamaz, sadece harf/rakam tanımaya çalışır
+  // — bu yüzden kullanıcıya her zaman "deneysel" olarak sunulur ve sonuç
+  // satırlarının gözden geçirilmesi (zaten AI yolunda da zorunlu olan adım)
+  // burada daha da kritiktir.
+  let _tesseractHazir = false;
+  async function tesseractYukle() {
+    if (_tesseractHazir && window.Tesseract) return window.Tesseract;
+    if (!window.Tesseract) {
+      await new Promise((cz, rd) => {
+        const s = document.createElement('script');
+        s.src = 'tesseract.min.js';
+        s.onload = cz; s.onerror = () => rd(new Error('OCR motoru (tesseract.min.js) yüklenemedi.'));
+        document.head.appendChild(s);
+      });
+    }
+    _tesseractHazir = true;
+    return window.Tesseract;
+  }
+
+  // Tesseract'ın satır satır ayırdığı metni ("NO AD/ÖLÇÜ ... ADET" biçiminde
+  // olduğu varsayılan tek satırlık tablo hücreleri) parça listesine çevirir.
+  // AI'nin aksine "ad" ile "ölçü/spec" ayrımını YAPAMAZ (bağlamı anlamıyor,
+  // sadece karakter tanıyor) — ikisi birlikte "tahminiAd"e konur. Geçersiz
+  // satırlar (sondan bir adet rakamı çıkmayan) sessizce atlanır — AI
+  // yolundaki montajSemasiYanitAyristir() ile AYNI kural.
+  function ocrMetnindenParcalarCikar(data) {
+    const satirlarHam = [];
+    (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l => {
+      const metin = (l.text || '').replace(/\s+/g, ' ').trim();
+      if (metin) satirlarHam.push(metin);
+    })));
+    const parcalar = [];
+    satirlarHam.forEach(satir => {
+      let no = '', ad = '', adet = null;
+      let m = satir.match(/^(\d{1,4})\s+(.+?)\s+(\d{1,4}(?:[.,]\d+)?)$/);
+      if (m) { no = m[1]; ad = m[2].trim(); adet = parseFloat(m[3].replace(',', '.')); }
+      else {
+        m = satir.match(/^(.+?)\s+(\d{1,4}(?:[.,]\d+)?)$/);
+        if (m) { ad = m[1].trim(); adet = parseFloat(m[2].replace(',', '.')); }
+      }
+      if (!ad || adet === null || isNaN(adet) || adet <= 0) return; // eksik/geçersiz satır sessizce atlanır
+      parcalar.push({ no, tahminiAd: ad, olcuSpec: '', adet });
+    });
+    return parcalar;
+  }
+
+  async function ocrIleOku(main) {
+    const durum = document.getElementById('ms-durum');
+    if (!secilenPdfDosya) { App.toast('Önce bir PDF seçin.', 'err'); return; }
+    try {
+      durum.innerHTML = '<span class="muted">Sayfa OCR için yüksek çözünürlükte görsele çevriliyor…</span>';
+      const ocrGorsel = await pdfIlkSayfaPng(secilenPdfDosya, 4);
+      durum.innerHTML = '<span class="muted">Ücretsiz OCR motoru yükleniyor (ilk seferde dil verisi indirileceği için birkaç saniye sürebilir)…</span>';
+      await tesseractYukle();
+      const worker = await window.Tesseract.createWorker('eng+tur', 1, {
+        workerPath: 'worker.min.js', corePath: 'tesseract-core-simd-lstm.wasm.js', langPath: '.',
+        logger: (m) => {
+          if (m && m.status && typeof m.progress === 'number') {
+            durum.innerHTML = `<span class="muted">${App.escapeHtml(m.status)} — %${Math.round(m.progress * 100)}</span>`;
+          }
+        }
+      });
+      const { data } = await worker.recognize(ocrGorsel, {}, { text: true, blocks: true });
+      await worker.terminate();
+      const parcalar = ocrMetnindenParcalarCikar(data);
+      if (!parcalar.length) {
+        durum.innerHTML = '<span style="color:var(--red-text)">✕ OCR hiçbir geçerli satır bulamadı. Görsel net olmayabilir — AI ile okumayı deneyin.</span>';
+        return;
+      }
+      aiSonuc = {
+        ok: true, parcalar,
+        genelNot: 'Bu satırlar ÜCRETSİZ OCR (Tesseract.js) ile üretildi — AI görme kadar isabetli DEĞİLDİR. Her satırı dikkatle kontrol edin; harf/rakam karışıklıkları (1/l, 0/O gibi) olabilir. "Ad" ile "Ölçü/Spec" ayrımı yapılamadığından ikisi birlikte "AI Tahmini Ad" sütununa yazılmıştır.'
+      };
+      gorselDataUrl = ocrGorsel;
+      satirlar = parcalar.map(p => ({ no: p.no, tahminiAd: p.tahminiAd, olcuSpec: p.olcuSpec, adet: p.adet, eslesen: null }));
+      durum.innerHTML = `<span style="color:var(--green-text)">✓ ${satirlar.length} satır OCR ile okundu (ÜCRETSİZ, deneysel — dikkatle kontrol edin)</span>`;
+      sonucCiz(main);
+    } catch (err) {
+      durum.innerHTML = `<span style="color:var(--red-text)">✕ OCR başarısız: ${App.escapeHtml((err && err.message) || String(err))}</span>`;
+    }
   }
 
   const ROLLER = ['admin', 'arge', 'teknik_ofis', 'yonetim'];
@@ -57,13 +145,14 @@ PageModules.montaj_semasi = (() => {
 
   let hedefKart = null;          // {tip, id, kod, ad}
   let dosyaAdi = '';
+  let secilenPdfDosya = null;    // seçilen ama henüz AI/OCR ile okunmamış PDF (File)
   let gorselDataUrl = '';        // önizleme + API'ye gönderilecek (data: öneki ile)
   let aiSonuc = null;            // {parcalar:[{no,tahminiAd,olcuSpec,adet}], genelNot}
   let satirlar = [];             // her AI satırı için: {no,tahminiAd,olcuSpec,adet, eslesen:{tip,id,kod,ad}|null}
   let mevcutRecete = null;       // hedefKart'ın halihazırdaki reçetesi (varsa)
 
   function sifirla() {
-    dosyaAdi = ''; gorselDataUrl = ''; aiSonuc = null; satirlar = []; mevcutRecete = null;
+    dosyaAdi = ''; secilenPdfDosya = null; gorselDataUrl = ''; aiSonuc = null; satirlar = []; mevcutRecete = null;
   }
 
   async function render(main) {
@@ -160,15 +249,36 @@ PageModules.montaj_semasi = (() => {
     });
   }
 
+  // Dosya seçilince yalnızca önizleme çıkarılır; okuma yöntemi (AI/OCR)
+  // kullanıcının seçtiği butonla ayrıca tetiklenir — ikisi de AYNI önizleme
+  // görselini kullanır, dosya iki kez işlenmez.
   async function dosyaSecildi(e, main) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
+    secilenPdfDosya = f;
+    dosyaAdi = f.name;
+    aiSonuc = null; satirlar = [];
     const durum = document.getElementById('ms-durum');
-    durum.innerHTML = '<span class="muted">Sayfa görsele çevriliyor…</span>';
+    durum.innerHTML = '<span class="muted">Önizleme oluşturuluyor…</span>';
     try {
-      dosyaAdi = f.name;
-      gorselDataUrl = await pdfIlkSayfaPng(f);
-      durum.innerHTML = '<span class="muted">Görsel AI\'ya gönderiliyor, birkaç saniye sürebilir…</span>';
+      gorselDataUrl = await pdfIlkSayfaPng(f, 2);
+      durum.innerHTML = `
+        <div style="margin:8px 0"><img src="${gorselDataUrl}" style="max-width:100%;max-height:320px;border:1px solid var(--border);border-radius:8px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-blue" id="ms-oku-ai">🤖 AI ile Oku (Ücretli, Önerilen)</button>
+          <button class="btn" id="ms-oku-ocr">🔤 Ücretsiz OCR ile Dene (Deneysel)</button>
+        </div>`;
+      document.getElementById('ms-oku-ai').onclick = () => aiIleOku(main);
+      document.getElementById('ms-oku-ocr').onclick = () => ocrIleOku(main);
+    } catch (err) {
+      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
+    }
+  }
+
+  async function aiIleOku(main) {
+    const durum = document.getElementById('ms-durum');
+    durum.innerHTML = '<span class="muted">Görsel AI\'ya gönderiliyor, birkaç saniye sürebilir…</span>';
+    try {
       const b64 = gorselDataUrl.split(',')[1];
       const cevap = await Store.montajSemasiOku({ gorselB64: b64, mediaType: 'image/png', dosyaAdi });
       aiSonuc = cevap;
