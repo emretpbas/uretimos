@@ -118,13 +118,27 @@ const Dolap3D = (() => {
         kutu(grup, bl.genislik - 6, bl.cekmeceYukseklik - 6, t, bxMerkez, cy, b.D / 2 - t / 2, kapakRenk, 1);
       }
       // Kapaklar (çekmecelerin üstündeki alanı kaplar) — hafif saydam ki iç görünsün
+      // Kapak tipi (tam bini/yarım bini/içerlek), bölme boşluğuna göre kapağın
+      // KONUM ve BOYUTUNU değiştirir — dolap_hesap.js/dolap_render.js ile aynı
+      // mantık: içerlek panel+fuga kadar içeri çekilir, tam/yarım bini panel
+      // kalınlığı kadar (yarımda yarısı) dışa taşar.
       if (bl.kapakSayisi > 0) {
         const kapAltY = icAltY + cekH;
-        const kapH = kapakAlanY;
-        const kw = (bl.genislik - 6) / bl.kapakSayisi;
-        for (let k = 0; k < bl.kapakSayisi; k++) {
-          const kx = -b.W / 2 + bl.x + 3 + kw * (k + 0.5);
-          kutu(grup, kw - 3, kapH - 6, t, kx, kapAltY + kapH / 2, b.D / 2 - t / 2, kapakRenk, 0.82);
+        const fuga = +b.c.fuga || 3;
+        let kapXBase, kapW, kapYAlt, kapHTotal;
+        if (b.c.kapakTipi === 'icerlek') {
+          kapXBase = -b.W / 2 + bl.x + t + fuga; kapW = bl.genislik - 2 * (t + fuga);
+          kapYAlt = kapAltY + t + fuga; kapHTotal = kapakAlanY - 2 * (t + fuga);
+        } else {
+          const tasma = b.c.kapakTipi === 'yarim_bini' ? t / 2 : t;
+          kapXBase = -b.W / 2 + bl.x - tasma; kapW = bl.genislik + 2 * tasma;
+          kapYAlt = kapAltY - tasma; kapHTotal = kapakAlanY + 2 * tasma;
+        }
+        const adet = bl.kapakSayisi;
+        const kw = (kapW - (adet - 1) * fuga) / adet;
+        for (let k = 0; k < adet; k++) {
+          const kx = kapXBase + k * (kw + fuga) + kw / 2;
+          kutu(grup, kw, kapHTotal, t, kx, kapYAlt + kapHTotal / 2, b.D / 2 - t / 2, kapakRenk, 0.82);
         }
       }
     });

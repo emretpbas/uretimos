@@ -178,6 +178,17 @@ const DolapTasarim = (() => {
             ${kutuAlan('dt-kulp', 'Kulp kullanılıyor', g('kulpVar', true))}
             ${kutuAlan('dt-ust-acilir', 'Üstten açılır (kaldırma sistemi)', g('ustAcilirKapak', false))}
           </div>
+          <div id="dt-kulp-tipi-alan" style="margin-top:8px">
+            ${secAlan('dt-kulp-tipi', 'Kulp tipi', [
+              ['klasik', 'Klasik (vidalı) kulp'],
+              ['kendinden', 'Kendinden kulp (kenara frezeli)'],
+              ['aluminyum_boy', 'Alüminyum boy kulp'],
+              ['aluminyum_j', 'Alüminyum J kulp'],
+              ['j_kendinden', 'J kendinden kulp'],
+              ['j_cep', 'J cep kulp (gizli)'],
+              ['pah_45', '45° pahlı kulp']
+            ], g('kulpTipi', 'klasik'))}
+          </div>
 
           <div class="card-title" style="font-size:11px;margin:12px 0 6px">ÜST BÖLÜM (TAÇ)</div>
           <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:end">
@@ -275,6 +286,7 @@ const DolapTasarim = (() => {
       rafSabit: 0, rafHareketli: 0, raflar: bolmeler.length > 1 ? [] : tekRaflar,
       kapakSayisi: bolmeler.length > 1 ? 0 : (+val('dt-ksay') || 0),
       kapakTipi: val('dt-ktip') || 'tam_bini', fuga: +val('dt-fuga') || 3, kulpVar: chk('dt-kulp'),
+      kulpTipi: val('dt-kulp-tipi') || 'klasik',
       kapakDizilim: val('dt-kdizilim') || 'yanyana',
       kapakYukseklikleri: (val('dt-kyuk') || '').split(',').map(x => parseFloat(x)).filter(x => x > 0),
       cekmeceSayisi: bolmeler.length > 1 ? 0 : (+val('dt-cek-sayi') || 0),
@@ -665,6 +677,15 @@ const DolapTasarim = (() => {
     // Sadece çizim (raf konumu sürüklerken tüm paneli yeniden çizmemek için)
     function sadeceCizimTazele() { sonHesap = H.hesapla(oku()); cizimCiz(); }
 
+    // "Kulp kullanılıyor" işaretli değilse kulp tipi seçimi anlamsız —
+    // alanı gizle (kulpTipiAlanGuncelle statik alan olduğu için tam yeniden
+    // çizim gerekmez, sadece görünürlük değişir).
+    const kulpTipiAlanGuncelle = () => {
+      const el = document.getElementById('dt-kulp-tipi-alan');
+      const kulpChk = document.getElementById('dt-kulp');
+      if (el && kulpChk) el.style.display = kulpChk.checked ? '' : 'none';
+    };
+
     const yenile = () => {
       sonHesap = H.hesapla(oku());
       cizimCiz();
@@ -673,6 +694,7 @@ const DolapTasarim = (() => {
       kapakPaneliCiz();
       malzemePaneliCiz();
       markaBilgisiYaz();
+      kulpTipiAlanGuncelle();
       onizlemeCiz(document.getElementById('dt-onizleme'), sonHesap);
     };
 

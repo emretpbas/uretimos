@@ -345,7 +345,7 @@ const DolapRender = (() => {
               h.surgulu.camEn * sc, h.surgulu.camBoy * sc, c.camTipi);
           }
         }
-        if (c.kulpVar) s += kulpDikey(kx + kw - 14, ky + kh / 2);
+        if (c.kulpVar) s += kulpCiz(c, kx, kw, ky, kh, true);
         s += `<rect x="${kx}" y="${ky}" width="${kw}" height="${kh}" fill="none" stroke="#000" stroke-width=".8" opacity=".22"/>`;
       }
     } else if (!kapakGizli && sistem === 'menteseli') {
@@ -384,7 +384,7 @@ const DolapRender = (() => {
           s += `<rect x="${kx}" y="${kapY}" width="${kw}" height="${kapH}" rx="1.5" fill="none" stroke="#000" stroke-width=".8" opacity=".22"/>`;
           if (c.kulpVar) {
             const solMu = (adet === 1) || (i < adet / 2);
-            s += kulpDikey(solMu ? kx + kw - 11 : kx + 8, kapY + kapH / 2);
+            s += kulpCiz(c, kx, kw, kapY, kapH, solMu);
           }
         }
         for (let k = 0; k < (b.cekmeceSayisi || 0); k++) {
@@ -456,6 +456,51 @@ const DolapRender = (() => {
     return `<rect x="${x}" y="${cy - 17}" width="4.4" height="34" rx="2.2" fill="#a7aeb4"/>
       <rect x="${x}" y="${cy - 17}" width="1.8" height="34" rx=".9" fill="#fff" opacity=".55"/>
       <rect x="${x}" y="${cy - 17}" width="4.4" height="34" rx="2.2" fill="none" stroke="#000" stroke-width=".5" opacity=".3"/>`;
+  }
+
+  // Kulp tipine göre görsel: piyasadaki "handleless" kapak kulp çeşitleri
+  // farklı KONUM ve ŞEKİLDE görünür — hepsini aynı küçük dikey çubukla
+  // çizmek (eski davranış) seçimi görünmez kılıyordu.
+  //   klasik        → kısa dikey metal çubuk (mevcut kulpDikey)
+  //   kendinden     → kenara frezelenmiş, ince koyu bir oyuk (hırdavat yok)
+  //   aluminyum_boy → kapak boyunca uzanan tam boy alüminyum profil
+  //   aluminyum_j   → üst kenarda yatay alüminyum J profili
+  //   j_kendinden   → üst kenarda yatay, panele frezelenmiş koyu J oyuğu
+  //   j_cep         → gizli/gömme — önden neredeyse görünmez, çok ince iz
+  //   pah_45        → üst kenarda 45° pah — ince aydınlık/gölge çizgisi
+  function kulpCiz(c, kx, kw, kapY, kapH, solMu) {
+    const tip = c.kulpTipi || 'klasik';
+    if (tip === 'aluminyum_boy') {
+      const bx = solMu ? kx + kw - 8 : kx + 3;
+      return `<rect x="${bx}" y="${kapY + 4}" width="4" height="${kapH - 8}" rx="2" fill="#b9bec3"/>
+        <rect x="${bx}" y="${kapY + 4}" width="1.6" height="${kapH - 8}" rx=".8" fill="#fff" opacity=".55"/>
+        <rect x="${bx}" y="${kapY + 4}" width="4" height="${kapH - 8}" rx="2" fill="none" stroke="#000" stroke-width=".5" opacity=".3"/>`;
+    }
+    if (tip === 'aluminyum_j') {
+      const gy = kapY + 6, gx = kx + kw * .12, gw = kw * .76;
+      return `<rect x="${gx}" y="${gy}" width="${gw}" height="3.2" rx="1.6" fill="#b9bec3"/>
+        <rect x="${gx}" y="${gy}" width="${gw}" height="1.2" rx=".6" fill="#fff" opacity=".4"/>`;
+    }
+    if (tip === 'j_kendinden') {
+      // Panele frezelenmiş J oyuğu: alüminyumsuz, koyu ince bir yiv
+      const gy = kapY + 6, gx = kx + kw * .12, gw = kw * .76;
+      return `<rect x="${gx}" y="${gy}" width="${gw}" height="3.2" rx="1.6" fill="rgba(0,0,0,.3)"/>`;
+    }
+    if (tip === 'pah_45') {
+      // 45° pah: yatay yiv değil, üst kenarda ışık/gölge yakalayan bir kesim —
+      // trapez gölge + üst kenarda parlak vurgu çizgisiyle diğer tiplerden ayrışır.
+      const gy = kapY, gx = kx + kw * .12, gw = kw * .76;
+      return `<polygon points="${gx},${gy} ${gx + gw},${gy} ${gx + gw - 5},${gy + 8} ${gx + 5},${gy + 8}" fill="rgba(0,0,0,.24)"/>
+        <line x1="${gx}" y1="${gy}" x2="${gx + gw}" y2="${gy}" stroke="#fff" stroke-width="1.1" opacity=".55"/>`;
+    }
+    if (tip === 'j_cep') {
+      return `<rect x="${kx + kw * .18}" y="${kapY + 5}" width="${kw * .64}" height="1.4" rx=".7" fill="#000" opacity=".18"/>`;
+    }
+    if (tip === 'kendinden') {
+      const ex = solMu ? kx + kw - 9 : kx + 7;
+      return `<rect x="${ex}" y="${kapY + kapH / 2 - 12}" width="2.2" height="24" rx="1.1" fill="#000" opacity=".22"/>`;
+    }
+    return kulpDikey(solMu ? kx + kw - 11 : kx + 8, kapY + kapH / 2);
   }
 
   function camCiz(x, y, w, h, tip) {

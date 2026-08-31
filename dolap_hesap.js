@@ -89,7 +89,7 @@ const DolapHesap = (() => {
     ustTac: false, ustTacYukseklik: 80,
     altTac: false, altTacYukseklik: 80,
     bazaTipi: 'baza', bazaYukseklik: 100, ayakTipi: 'plastik_ayak', ayakAdet: 4,
-    kesimPayi: 10, kulpVar: true,
+    kesimPayi: 10, kulpVar: true, kulpTipi: 'klasik',
 
     // ── YENİ (hepsi opsiyonel — verilmezse eski davranış birebir korunur) ──
     marka: 'Blum',              // Hettich | Blum | Hafele | Samet
@@ -333,6 +333,10 @@ const DolapHesap = (() => {
     const kapakSistemi = c.kapakSistemi || 'menteseli';
     const n = (kapakSistemi === 'menteseli') ? Math.max(0, +c.kapakSayisi || 0) : 0;
     const f = +c.fuga || 0;
+    // Ekstra hırdavat gerektirmeyen kulp tipleri (kendinden/J kendinden/J cep/
+    // 45° pah) panelin kendisine CNC ile işlenir — bu bir üretim notudur,
+    // kapak panelinin adına eklenir (kesim listesinde/Excel'de görünür).
+    const kulpNotu = (c.kulpVar && KULP_FREZE_NOTU[c.kulpTipi]) ? ' · ' + KULP_FREZE_NOTU[c.kulpTipi] : '';
     // Çekmece bölgesi kapak yüksekliğinden düşülür (çekmece yoksa 0 → eski davranış)
     const cekmeceBolgesi = (+c.cekmeceSayisi || 0) * (+c.cekmeceYukseklik || 0);
 
@@ -362,7 +366,7 @@ const DolapHesap = (() => {
       const en = c.kapakTipi === 'icerlek' ? alanW - 2 * t - 2 * f : alanW - f;
       yukler.forEach((h2, i) => {
         if (h2 <= 0 || en <= 0) { uyarilar.push(etiket + 'kapak ' + (i + 1) + ' ölçüsü geçersiz'); return; }
-        ekle('Kapak ' + (i + 1) + etiket2(etiket), 1, en, h2, 'kapak', 'dort');
+        ekle('Kapak ' + (i + 1) + etiket2(etiket) + kulpNotu, 1, en, h2, 'kapak', 'dort');
       });
     };
     const etiket2 = (e) => (e ? ' ' + e.trim().replace(/:$/, '') : '');
@@ -374,7 +378,7 @@ const DolapHesap = (() => {
         } else {
           const k = kapakOlcu(W, govdeH - cekmeceBolgesi, n);
           if (k.en <= 0 || k.boy <= 0) uyarilar.push('Kapak ölçüsü negatif çıktı — fuga veya kapak sayısını gözden geçirin');
-          ekle('Kapak (' + kapakTipiAdi(c.kapakTipi) + ')', n, k.en, k.boy, 'kapak', 'dort');
+          ekle('Kapak (' + kapakTipiAdi(c.kapakTipi) + ')' + kulpNotu, n, k.en, k.boy, 'kapak', 'dort');
           if (k.en > 600) uyarilar.push('Kapak genişliği ' + yuvarla(k.en) + ' mm — 600 mm üstü kapaklarda sarkma riski, kapak sayısını artırmayı düşünün');
         }
       }
@@ -392,7 +396,7 @@ const DolapHesap = (() => {
         }
         const k = kapakOlcu(alanW, alanH, b.kapakSayisi);
         if (k.en <= 0 || k.boy <= 0) { uyarilar.push('Bölme ' + (b.index + 1) + ': kapak ölçüsü negatif çıktı'); return; }
-        ekle('Kapak ' + et2, b.kapakSayisi, k.en, k.boy, 'kapak', 'dort');
+        ekle('Kapak ' + et2 + kulpNotu, b.kapakSayisi, k.en, k.boy, 'kapak', 'dort');
         if (k.en > 600) uyarilar.push('Bölme ' + (b.index + 1) + ': kapak genişliği ' + yuvarla(k.en) + ' mm — sarkma riski');
       });
     }
@@ -564,7 +568,24 @@ const DolapHesap = (() => {
       const menteseToplam = kapaklar.reduce((s, p) => s + p.adet * menteseSayisi(p), 0);
       hEkle('Menteşe', menteseToplam, 'ADET', MK.mentese);
       hEkle('Menteşe tablası', menteseToplam, 'ADET', MK.menteseTablasi);
-      if (c.kulpVar) hEkle('Kulp', toplamKapak, 'ADET');
+      // Kulp tipine göre hırdavat: klasik/alüminyum profilli tipler ayrı
+      // parça gerektirir; kendinden/J/pah tipleri panelin kendisine
+      // frezelenir (bkz. kulpNotu) — ayrı hırdavat kalemi YOK.
+      if (c.kulpVar) {
+        const kt = c.kulpTipi || 'klasik';
+        if (kt === 'aluminyum_boy') {
+          const metre = kapaklar.reduce((s, p) => s + p.adet * (p.netBoy / 1000), 0);
+          hEkle('Alüminyum boy kulp profili', metre, 'METRE');
+          hEkle('Boy kulp bağlantı vida takımı', toplamKapak, 'TAKIM');
+        } else if (kt === 'aluminyum_j') {
+          const metre = kapaklar.reduce((s, p) => s + p.adet * (p.netEn / 1000), 0);
+          hEkle('Alüminyum J kulp profili', metre, 'METRE');
+          hEkle('J kulp bağlantı vida takımı', toplamKapak, 'TAKIM');
+        } else if (kt === 'klasik') {
+          hEkle('Kulp', toplamKapak, 'ADET');
+        }
+        // kendinden / j_kendinden / j_cep / pah_45 → bkz. kulpNotu (panel adı)
+      }
     }
     // Toplam hareketli raf (bölmeli/bölmesiz)
     const toplamHarRaf = cokBolmeli ? bolmeYerlesim.reduce((s, b) => s + (b.rafHareketli || 0), 0) : (+c.rafHareketli || 0);
@@ -765,8 +786,35 @@ const DolapHesap = (() => {
     gizli_ayak: 'Gizli ayak', ahsap_ayak: 'Ahşap ayak'
   })[t] || 'Ayak';
 
+  // Kulp tipi: piyasada bilinen "handleless"/profil kulp çeşitleri.
+  //   klasik        → vidalı, ayrı hırdavat kulp (eski/varsayılan davranış)
+  //   kendinden     → kapağın kendi kenarına frezelenen tutamak, ayrı hırdavat yok
+  //   aluminyum_boy → kapak boyunca (dikey) tam boy alüminyum profil kulp — ayrı
+  //                   hırdavat: metre bazlı profil + bağlantı vida takımı
+  //   aluminyum_j   → üst kenara monte J-profil alüminyum kulp (Gola/J-pull
+  //                   sisteminin alüminyumlu varyantı) — metre bazlı profil
+  //   j_kendinden   → J-pull: üst kenara doğrudan frezelenen J oyuğu, ayrı
+  //                   hırdavat yok (CNC/freze notu panel adına eklenir)
+  //   j_cep         → gizli cep kulp: panelin arka yüzüne frezelenen, önden
+  //                   görünmeyen J oyuğu (Gola sisteminin "gömme" hali)
+  //   pah_45        → üst kenarı 45° pahlanarak oluşturulan parmak boşluğu
+  const KULP_TIPI_ADI = {
+    klasik: 'Klasik kulp', kendinden: 'Kendinden kulp', aluminyum_boy: 'Alüminyum boy kulp',
+    aluminyum_j: 'Alüminyum J kulp', j_kendinden: 'J kendinden kulp', j_cep: 'J cep kulp (gizli)',
+    pah_45: '45° pahlı kulp'
+  };
+  const kulpTipiAdi = (t) => KULP_TIPI_ADI[t] || 'Kulp';
+  // Ekstra hırdavat gerektirmeyen, panelin kendisine CNC ile işlenen kulp
+  // tipleri — kapak panelinin `ad` alanına üretim notu olarak eklenir.
+  const KULP_FREZE_NOTU = {
+    kendinden: 'kendinden kulp — kenara frezeli',
+    j_kendinden: 'J kendinden kulp — üst kenara frezeli',
+    j_cep: 'J cep kulp — arka yüze gizli cep freze',
+    pah_45: '45° pahlı kulp — üst kenar pah'
+  };
+
   return { hesapla, VARSAYILAN, menteseSayisi, bantUzunluk, bantUzunlukIds, kapakTipiAdi, ayakTipiAdi,
-           MARKALAR, markaAl, rayBoyuSec, otoAyakAdedi, rafListesi };
+           kulpTipiAdi, MARKALAR, markaAl, rayBoyuSec, otoAyakAdedi, rafListesi };
 })();
 
 // Node ortamında (test) dışa aktar

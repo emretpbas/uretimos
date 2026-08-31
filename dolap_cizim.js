@@ -275,6 +275,7 @@ const DolapCizim = (() => {
     s += `<rect x="${x0}" y="${y0}" width="${gw}" height="${gh}" fill="var(--card, #fff)" stroke="${C.hat}" stroke-width="1.4"/>`;
 
     const P = (mm) => p(mm);
+    const tP = P(g.t), fpx = P(+c.fuga || 0);
     g.bolmeler.forEach((b, i) => {
       const bx = x0 + P(b.x), by = y0 + P(b.y), bw = P(b.genislik), bh = P(b.yukseklik);
       const cekH = (b.cekmeceSayisi || 0) * (b.cekmeceYukseklik || 0);
@@ -283,9 +284,23 @@ const DolapCizim = (() => {
         s += `<line x1="${bx + bw}" y1="${y0}" x2="${bx + bw}" y2="${y0 + gh}" stroke="${C.hat}" stroke-width="1"/>`;
       }
       if (b.kapakSayisi > 0) {
-        const kw = bw / b.kapakSayisi;
-        for (let k = 0; k < b.kapakSayisi; k++) {
-          s += `<rect x="${bx + k * kw + 1}" y="${by + 1}" width="${kw - 2}" height="${ustAlan - 2}" fill="none" stroke="${C.hat}" stroke-width=".9"/>`;
+        // Kapak tipi (tam bini/yarım bini/içerlek) kapağın bölme boşluğuna
+        // göre KONUMUNU değiştirir — dolap_hesap.js'teki kapakOlcu() ve
+        // dolap_render.js'teki aynı mantık (bkz. oradaki yorum).
+        let kapX, kapW, kapY, kapH;
+        if (c.kapakTipi === 'icerlek') {
+          kapX = bx + tP + fpx; kapW = bw - 2 * (tP + fpx);
+          kapY = by + tP + fpx; kapH = ustAlan - 2 * (tP + fpx);
+        } else {
+          const tasma = c.kapakTipi === 'yarim_bini' ? tP / 2 : tP;
+          kapX = bx - tasma; kapW = bw + 2 * tasma;
+          kapY = by - tasma; kapH = ustAlan + 2 * tasma;
+        }
+        const adet = b.kapakSayisi;
+        const kw = (kapW - (adet - 1) * fpx) / adet;
+        for (let k = 0; k < adet; k++) {
+          const kx = kapX + k * (kw + fpx);
+          s += `<rect x="${kx}" y="${kapY}" width="${kw}" height="${kapH}" fill="none" stroke="${C.hat}" stroke-width=".9"/>`;
         }
       } else {
         const rafTop = (b.rafSabit || 0) + (b.rafHareketli || 0);
