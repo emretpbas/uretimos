@@ -39,6 +39,7 @@ const DolapTasarim = (() => {
   let seciliBolme = 0;
   let tekRaflar = [];        // tek bölmeli dolapta raf listesi
   let panelAyarlari = {};    // rol → { kalinlik, hammaddeId, bantlar{on,arka,sag,sol} }
+  let kapakAyarlari = {};    // kapak sistemi/tipi, LED, sürgülü/cam, çekmece — bkz. kapakPaneliCiz
   let sonHesap = null;
   let aktifSekme = 'parca';
   let aktifGorunum = 'izo';   // izo | 3d — görsel önizleme modu
@@ -99,6 +100,29 @@ const DolapTasarim = (() => {
     panelAyarlari = y.panelAyarlari ? JSON.parse(JSON.stringify(y.panelAyarlari)) : {};
     seciliBolme = 0; sonHesap = null; aktifSekme = 'parca';
     const g = (alan, vars) => (y[alan] !== undefined && y[alan] !== null && y[alan] !== '') ? y[alan] : vars;
+
+    // Kapak panelindeki alanlar (kapakSistemi, kapakTipi, LED, sürgülü/cam…)
+    // dt-kapak-panel her yenile()'de SIFIRDAN çizilir. Kayıtlı `y`'den değil
+    // bu KALICI nesneden okunmazlarsa kullanıcının seçimi bir sonraki
+    // tazelemede kayıtlı/varsayılan değere geri döner — kapak sistemi hep
+    // "menteşeli"de kalır, kapak tipi hep "tam bini"ye döner, LED kutucukları
+    // işaretlenemiyormuş gibi görünür. kapakAyarlariGuncelle() bu nesneyi her
+    // değişiklikte ekrandaki güncel değerlerle senkron tutar.
+    kapakAyarlari = {
+      kapakSistemi: g('kapakSistemi', 'menteseli'),
+      kapakSayisi: y.kapakSayisi !== undefined ? y.kapakSayisi : V.kapakSayisi,
+      kapakTipi: g('kapakTipi', V.kapakTipi), fuga: g('fuga', V.fuga),
+      kapakDizilim: g('kapakDizilim', 'yanyana'), kapakYukseklikleri: y.kapakYukseklikleri || [],
+      cekmeceSayisi: g('cekmeceSayisi', 0), cekmeceYukseklik: g('cekmeceYukseklik', 180),
+      cekmeceTipi: g('cekmeceTipi', 'normal'),
+      surguluKanat: g('surguluKanat', 2), surguluCerceve: g('surguluCerceve', 'aluminyum'),
+      surguluBindirme: g('surguluBindirme', 25), surguluProfilEn: g('surguluProfilEn', 20),
+      surguluRaySistemi: g('surguluRaySistemi', 'ustten_asmali'),
+      camTipi: g('camTipi', 'yok'), camKalinlik: g('camKalinlik', 4),
+      camUstMesafe: g('camUstMesafe', 100), camYukseklik: g('camYukseklik', 0), camYanMesafe: g('camYanMesafe', 60),
+      ledYan: g('ledYan', false), ledRaf: g('ledRaf', false), ledRenk: g('ledRenk', 'ilikbeyaz'),
+      ledProfilVar: g('ledProfilVar', true), ledTrafoVar: g('ledTrafoVar', true)
+    };
 
     const body = document.createElement('div');
     body.innerHTML = `
@@ -209,7 +233,7 @@ const DolapTasarim = (() => {
         <!-- ── SAĞ: ÜRETİM VERİSİ ── -->
         <div style="flex:1 1 320px;min-width:280px">
           <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-            <button class="btn btn-sm dt-sekme" data-s="parca">Parça</button>
+            <button class="btn btn-sm dt-sekme btn-blue" data-s="parca">Parça</button>
             <button class="btn btn-sm dt-sekme" data-s="delik">Delik</button>
             <button class="btn btn-sm dt-sekme" data-s="hirdavat">Hırdavat</button>
             <button class="btn btn-sm" id="dt-csv">⬇ CSV</button>
@@ -355,12 +379,13 @@ const DolapTasarim = (() => {
       const el = document.getElementById('dt-kapak-panel');
       const cokMu = bolmeler.length > 1;
       const b = cokMu ? bolmeler[seciliBolme] : null;
-      const kSay = cokMu ? (b.kapakSayisi || 0) : (y.kapakSayisi !== undefined ? y.kapakSayisi : V.kapakSayisi);
-      const kDiz = cokMu ? (b.kapakDizilim || 'yanyana') : g('kapakDizilim', 'yanyana');
-      const kYuk = cokMu ? (b.kapakYukseklikleri || []) : (y.kapakYukseklikleri || []);
-      const cSay = cokMu ? (b.cekmeceSayisi || 0) : g('cekmeceSayisi', 0);
-      const cYuk = cokMu ? (b.cekmeceYukseklik || 180) : g('cekmeceYukseklik', 180);
-      const sistem = g('kapakSistemi', 'menteseli');
+      const k = kapakAyarlari;
+      const kSay = cokMu ? (b.kapakSayisi || 0) : k.kapakSayisi;
+      const kDiz = cokMu ? (b.kapakDizilim || 'yanyana') : k.kapakDizilim;
+      const kYuk = cokMu ? (b.kapakYukseklikleri || []) : k.kapakYukseklikleri;
+      const cSay = cokMu ? (b.cekmeceSayisi || 0) : k.cekmeceSayisi;
+      const cYuk = cokMu ? (b.cekmeceYukseklik || 180) : k.cekmeceYukseklik;
+      const sistem = k.kapakSistemi;
       el.innerHTML = `
         <div style="margin-bottom:8px">
           ${secAlan('dt-ksistem', 'Kapak sistemi', [['menteseli', 'Menteşeli kapak'], ['surgulu', 'Sürgülü kapak'], ['yok', 'Kapaksız (açık dolap)']], sistem)}
@@ -369,26 +394,26 @@ const DolapTasarim = (() => {
           <div style="border:1.5px solid var(--border);border-radius:8px;padding:9px;margin-bottom:8px">
             <div class="card-title" style="font-size:10.5px;margin-bottom:6px">SÜRGÜLÜ KANAT</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
-              ${sayiAlan('dt-sg-kanat', 'Kanat sayısı', g('surguluKanat', 2))}
-              ${secAlan('dt-sg-cerceve', 'Çerçeve', [['aluminyum', 'Alüminyum çerçeve'], ['melamin', 'Melamin (tek parça)']], g('surguluCerceve', 'aluminyum'))}
+              ${sayiAlan('dt-sg-kanat', 'Kanat sayısı', k.surguluKanat)}
+              ${secAlan('dt-sg-cerceve', 'Çerçeve', [['aluminyum', 'Alüminyum çerçeve'], ['melamin', 'Melamin (tek parça)']], k.surguluCerceve)}
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px">
-              ${sayiAlan('dt-sg-bindirme', 'Kanat bindirmesi', g('surguluBindirme', 25))}
-              ${sayiAlan('dt-sg-profil', 'Profil eni', g('surguluProfilEn', 20))}
+              ${sayiAlan('dt-sg-bindirme', 'Kanat bindirmesi', k.surguluBindirme)}
+              ${sayiAlan('dt-sg-profil', 'Profil eni', k.surguluProfilEn)}
             </div>
             <div style="margin-top:7px">
-              ${secAlan('dt-sg-ray', 'Ray sistemi', [['ustten_asmali', 'Üstten asmalı'], ['alttan_tekerlekli', 'Alttan tekerlekli']], g('surguluRaySistemi', 'ustten_asmali'))}
+              ${secAlan('dt-sg-ray', 'Ray sistemi', [['ustten_asmali', 'Üstten asmalı'], ['alttan_tekerlekli', 'Alttan tekerlekli']], k.surguluRaySistemi)}
             </div>
             <div class="card-title" style="font-size:10.5px;margin:10px 0 6px">CAM</div>
             <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:7px">
               ${secAlan('dt-cam-tip', 'Cam tipi', [['yok', 'Cam yok'], ['seffaf', 'Şeffaf'], ['kumlu', 'Kumlu (buzlu)'],
-                 ['bronz_reflekte', 'Bronz reflekte'], ['gumus_reflekte', 'Gümüş reflekte'], ['nervurlu', 'Nervürlü'], ['fume', 'Füme']], g('camTipi', 'yok'))}
-              ${sayiAlan('dt-cam-kal', 'Cam kalınlığı', g('camKalinlik', 4))}
+                 ['bronz_reflekte', 'Bronz reflekte'], ['gumus_reflekte', 'Gümüş reflekte'], ['nervurlu', 'Nervürlü'], ['fume', 'Füme']], k.camTipi)}
+              ${sayiAlan('dt-cam-kal', 'Cam kalınlığı', k.camKalinlik)}
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:7px">
-              ${sayiAlan('dt-cam-ust', 'Üstten mesafe', g('camUstMesafe', 100))}
-              ${sayiAlan('dt-cam-yuk', 'Cam yüksekliği (0=kalan)', g('camYukseklik', 0))}
-              ${sayiAlan('dt-cam-yan', 'Yandan mesafe', g('camYanMesafe', 60))}
+              ${sayiAlan('dt-cam-ust', 'Üstten mesafe', k.camUstMesafe)}
+              ${sayiAlan('dt-cam-yuk', 'Cam yüksekliği (0=kalan)', k.camYukseklik)}
+              ${sayiAlan('dt-cam-yan', 'Yandan mesafe', k.camYanMesafe)}
             </div>
             <div class="fhint">Cam konumu kanadın <b>üst kenarından</b> ve <b>yan kenarlarından</b> mm cinsinden ölçülür.</div>
           </div>` : ''}
@@ -396,8 +421,8 @@ const DolapTasarim = (() => {
         ${cokMu && sistem === 'menteseli' ? `<div class="fhint" style="margin-bottom:6px">Bölme ${seciliBolme + 1} kapakları düzenleniyor.</div>` : ''}
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;${sistem !== 'menteseli' ? 'opacity:.4;pointer-events:none' : ''}">
           ${sayiAlan('dt-ksay', 'Kapak sayısı', kSay)}
-          ${secAlan('dt-ktip', 'Kapak tipi', [['tam_bini', 'Tam bini'], ['yarim_bini', 'Yarım bini'], ['icerlek', 'İçerlek']], g('kapakTipi', V.kapakTipi))}
-          ${sayiAlan('dt-fuga', 'Fuga', g('fuga', V.fuga))}
+          ${secAlan('dt-ktip', 'Kapak tipi', [['tam_bini', 'Tam bini'], ['yarim_bini', 'Yarım bini'], ['icerlek', 'İçerlek']], k.kapakTipi)}
+          ${sayiAlan('dt-fuga', 'Fuga', k.fuga)}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:8px;margin-top:8px">
           ${secAlan('dt-kdizilim', 'Kapak dizilimi', [['yanyana', 'Yan yana (eşit)'], ['ustuste', 'Üst üste (manuel)']], kDiz)}
@@ -409,23 +434,54 @@ const DolapTasarim = (() => {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px;${sistem === 'yok' ? 'opacity:.4;pointer-events:none' : ''}">
           ${sayiAlan('dt-cek-sayi', 'Çekmece sayısı', cSay)}
           ${sayiAlan('dt-cek-yuk', 'Çekmece yüksekliği', cYuk)}
-          ${secAlan('dt-cek-tip', 'Çekmece tipi', [['normal', 'Normal'], ['ic', 'İç çekmece'], ['gizli', 'Gizli']], g('cekmeceTipi', 'normal'))}
+          ${secAlan('dt-cek-tip', 'Çekmece tipi', [['normal', 'Normal'], ['ic', 'İç çekmece'], ['gizli', 'Gizli']], k.cekmeceTipi)}
         </div>
         <div class="card-title" style="font-size:11px;margin:12px 0 6px">LED AYDINLATMA</div>
         <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:7px">
-          ${kutuAlan('dt-led-yan', 'Yan dikmelere dikey LED', g('ledYan', false))}
-          ${kutuAlan('dt-led-raf', 'Rafların altına LED', g('ledRaf', false))}
+          ${kutuAlan('dt-led-yan', 'Yan dikmelere dikey LED', k.ledYan)}
+          ${kutuAlan('dt-led-raf', 'Rafların altına LED', k.ledRaf)}
         </div>
         <div style="display:grid;grid-template-columns:1.3fr auto auto;gap:8px;align-items:center">
-          ${secAlan('dt-led-renk', 'LED rengi', [['gunisigi', 'Gün ışığı 3000K'], ['ilikbeyaz', 'Ilık beyaz 4000K'], ['beyaz', 'Beyaz 6500K'], ['rgb', 'RGB']], g('ledRenk', 'ilikbeyaz'))}
-          <div style="padding-top:12px">${kutuAlan('dt-led-profil', 'Profil', g('ledProfilVar', true))}</div>
-          <div style="padding-top:12px">${kutuAlan('dt-led-trafo', 'Trafo', g('ledTrafoVar', true))}</div>
+          ${secAlan('dt-led-renk', 'LED rengi', [['gunisigi', 'Gün ışığı 3000K'], ['ilikbeyaz', 'Ilık beyaz 4000K'], ['beyaz', 'Beyaz 6500K'], ['rgb', 'RGB']], k.ledRenk)}
+          <div style="padding-top:12px">${kutuAlan('dt-led-profil', 'Profil', k.ledProfilVar)}</div>
+          <div style="padding-top:12px">${kutuAlan('dt-led-trafo', 'Trafo', k.ledTrafoVar)}</div>
         </div>`;
       el.querySelectorAll('.dt-in').forEach(e2 => { e2.oninput = kapakDegisti; e2.onchange = kapakDegisti; });
     }
-    function kapakDegisti(e) {
-      // Kapak sistemi değişimi formun yapısını değiştirir → tam yeniden çizim
-      if (e && e.target && e.target.id === 'dt-ksistem') { yenile(); kapakPaneliCiz(); return; }
+    // dt-kapak-panel her yenile()'de sıfırdan yeniden çizilir; bir alan
+    // değiştiğinde o anki DOM değerlerini kalıcı kapakAyarlari nesnesine
+    // yazmadan yenile() çağrılırsa kullanıcının seçimi anında kaybolur.
+    // Element o an DOM'da yoksa (örn. sistem sürgülü değilken cam alanları)
+    // mevcut kayıtlı değer korunur, sıfırlanmaz.
+    function kapakAyarlariGuncelle() {
+      const k = kapakAyarlari;
+      const setIf = (id, uygula) => { const e = document.getElementById(id); if (e) uygula(e); };
+      setIf('dt-ksistem', e => k.kapakSistemi = e.value || 'menteseli');
+      setIf('dt-ksay', e => k.kapakSayisi = +e.value || 0);
+      setIf('dt-ktip', e => k.kapakTipi = e.value || 'tam_bini');
+      setIf('dt-fuga', e => k.fuga = +e.value || 3);
+      setIf('dt-kdizilim', e => k.kapakDizilim = e.value || 'yanyana');
+      setIf('dt-kyuk', e => k.kapakYukseklikleri = (e.value || '').split(',').map(x => parseFloat(x)).filter(x => x > 0));
+      setIf('dt-cek-sayi', e => k.cekmeceSayisi = +e.value || 0);
+      setIf('dt-cek-yuk', e => k.cekmeceYukseklik = +e.value || 180);
+      setIf('dt-cek-tip', e => k.cekmeceTipi = e.value || 'normal');
+      setIf('dt-sg-kanat', e => k.surguluKanat = +e.value || 2);
+      setIf('dt-sg-cerceve', e => k.surguluCerceve = e.value || 'aluminyum');
+      setIf('dt-sg-bindirme', e => k.surguluBindirme = +e.value || 0);
+      setIf('dt-sg-profil', e => k.surguluProfilEn = +e.value || 20);
+      setIf('dt-sg-ray', e => k.surguluRaySistemi = e.value || 'ustten_asmali');
+      setIf('dt-cam-tip', e => k.camTipi = e.value || 'yok');
+      setIf('dt-cam-kal', e => k.camKalinlik = +e.value || 4);
+      setIf('dt-cam-ust', e => k.camUstMesafe = +e.value || 0);
+      setIf('dt-cam-yuk', e => k.camYukseklik = +e.value || 0);
+      setIf('dt-cam-yan', e => k.camYanMesafe = +e.value || 0);
+      setIf('dt-led-yan', e => k.ledYan = e.checked);
+      setIf('dt-led-raf', e => k.ledRaf = e.checked);
+      setIf('dt-led-renk', e => k.ledRenk = e.value || 'ilikbeyaz');
+      setIf('dt-led-profil', e => k.ledProfilVar = e.checked);
+      setIf('dt-led-trafo', e => k.ledTrafoVar = e.checked);
+    }
+    function kapakDegisti() {
       if (bolmeler.length > 1) {
         const b = bolmeler[seciliBolme];
         b.kapakSayisi = +val('dt-ksay') || 0;
@@ -433,6 +489,8 @@ const DolapTasarim = (() => {
         b.kapakYukseklikleri = (val('dt-kyuk') || '').split(',').map(x => parseFloat(x)).filter(x => x > 0);
         b.cekmeceSayisi = +val('dt-cek-sayi') || 0;
         b.cekmeceYukseklik = +val('dt-cek-yuk') || 180;
+      } else {
+        kapakAyarlariGuncelle();
       }
       yenile();
     }
@@ -622,7 +680,9 @@ const DolapTasarim = (() => {
     document.getElementById('dt-bolme-sayi').oninput = () => { bolmeSayisiUygula(); yenile(); };
     document.getElementById('dt-bolme-esit').onclick = () => { bolmeler.forEach(b => b.oran = 1); yenile(); };
     body.querySelectorAll('.dt-sekme').forEach(b => b.onclick = () => {
-      aktifSekme = b.dataset.s; onizlemeCiz(document.getElementById('dt-onizleme'), sonHesap);
+      aktifSekme = b.dataset.s;
+      body.querySelectorAll('.dt-sekme').forEach(x => x.classList.toggle('btn-blue', x === b));
+      onizlemeCiz(document.getElementById('dt-onizleme'), sonHesap);
     });
     body.querySelectorAll('.dt-gorunum-sec').forEach(b => b.onclick = () => gorunumSec(b.dataset.g));
     document.getElementById('dt-csv').onclick = () => csvIndir();
