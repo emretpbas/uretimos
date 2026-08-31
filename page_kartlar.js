@@ -1,6 +1,37 @@
 // ════════════════════════════════════════════════════════════════════════════
 // ÜRÜN KARTLARI — bitmiş ürün + yarı mamül kartları, hiyerarşik BOM ağacı
 // ════════════════════════════════════════════════════════════════════════════
+
+// ── ÜRÜN KARTI SİLİNİRKEN YARI MAMÜL CASCADE'İ (saf mantık, test edilebilir) ─
+// Bir ürün kartı silindiğinde, reçetesindeki yarı mamül bileşenleri de
+// GEREKSİZ hale gelir — ama yalnızca BAŞKA HİÇBİR YERDE kullanılmıyorlarsa.
+// "Başka yerde kullanım": başka bir reçetede bileşen olmak (başka bir ürün,
+// alt montaj, paket veya yarı mamülün reçetesinde), açık bir sipariş/teklifte
+// geçmek, aktif bir iş emrinde olmak, ya da stokta bakiyesi olmak — bunların
+// HERHANGİ biri varsa kart SİLİNMEZ (kart-silme akışındaki "engeller"
+// kontrolüyle aynı güvenlik mantığı, tek tek yarı mamüller için tekrarlanır).
+function yarimamulCascadeSilinebilirMi(ym, receteVar, tumReceteler, siparisler, teklifler, isemirleri, stokRaf) {
+  const baskaYerdeKullanimda = tumReceteler.some(r => r.id !== receteVar.id &&
+    (r.kalemler || []).some(k => k.tip === 'yarimamul' && k.refId === ym.id));
+  if (baskaYerdeKullanimda) return false;
+  const acikSip = siparisler.some(s => s.durum !== 'reddedildi' && (s.kalemler || []).some(k => k.kod === ym.kod));
+  const acikTeklif = teklifler.some(t => (t.kalemler || []).some(k => k.kod === ym.kod));
+  const aktifIe = isemirleri.some(ie => ie.durum !== 'tamamlandi' &&
+    ((ie.urunId === ym.id) || (ie.uretimListesi || []).some(k => k.refId === ym.id)));
+  const stokVar = stokRaf.some(s => s.refId === ym.id && (s.miktar || 0) > 0);
+  return !acikSip && !acikTeklif && !aktifIe && !stokVar;
+}
+
+// receteVar: silinecek ürünün kendi reçetesi. Döndürür: cascade ile birlikte
+// silinecek yarı mamül KARTLARININ listesi (boş olabilir).
+function urunSilYarimamulCascade(receteVar, tumYarimamuller, tumReceteler, siparisler, teklifler, isemirleri, stokRaf) {
+  if (!receteVar) return [];
+  const adaylar = [...new Set((receteVar.kalemler || [])
+    .filter(k => k.tip === 'yarimamul' && k.refId).map(k => k.refId))];
+  return adaylar.map(id => tumYarimamuller.find(y => y.id === id)).filter(Boolean)
+    .filter(ym => yarimamulCascadeSilinebilirMi(ym, receteVar, tumReceteler, siparisler, teklifler, isemirleri, stokRaf));
+}
+
 PageModules.kartlar = (() => {
 
   // ── PARÇALI KAYIT (HTTP 413 koruması) ─────────────────────────────────────
@@ -364,9 +395,9 @@ PageModules.kartlar = (() => {
     // stokta kullanılıyorsa SİLİNMEZ — veri bütünlüğü bozulur. Nerede
     // kullanıldığı gösterilir.
     document.getElementById('kt-kart-sil').onclick = async () => {
-      const [tumReceteler, siparisler, isemirleri, stokRaf, teklifler] = await Promise.all([
+      const [tumReceteler, siparisler, isemirleri, stokRaf, teklifler, tumYarimamuller] = await Promise.all([
         Store.receteler.all(), Store.siparisler.all(), Store.isemirleri.all(),
-        Store.stokRaf.all(), Store.teklifler.all()
+        Store.stokRaf.all(), Store.teklifler.all(), Store.yarimamuller.all()
       ]);
       const engeller = [];
 
@@ -414,16 +445,35 @@ PageModules.kartlar = (() => {
         : tip === 'yarimamul' ? tumReceteler.find(x => x.yarimamulId === kart.id)
         : tip === 'altmontaj' ? tumReceteler.find(x => x.altMontajId === kart.id)
         : tumReceteler.find(x => x.paketId === kart.id);
+
+      // ── ÜRÜN KARTI SİLİNİRKEN: reçetesindeki yarı mamülleri de birlikte
+      // sil — AMA yalnızca başka HİÇBİR yerde (başka bir reçetede bileşen
+      // olarak, açık sipariş/teklifte, aktif iş emrinde veya stokta)
+      // kullanılmayanları. Başka bir karta da bağlıysa DOKUNULMAZ.
+      const silinecekYm = tip === 'urun'
+        ? urunSilYarimamulCascade(receteVar, tumYarimamuller, tumReceteler, siparisler, teklifler, isemirleri, stokRaf)
+        : [];
+
       App.confirmDialog(
         `<b>${App.escapeHtml(kart.kod)} — ${App.escapeHtml(kart.ad || '')}</b> kartı kalıcı olarak silinecek.` +
         (receteVar ? `<br><br>Reçetesi de silinecek (<b>${(receteVar.kalemler || []).length} kalem</b>).` : '') +
+        (silinecekYm.length ? `<br><br>Ayrıca, başka hiçbir yerde kullanılmayan <b>${silinecekYm.length} yarı mamül kartı</b> da silinecek: ` +
+          App.escapeHtml(silinecekYm.map(y => y.kod).join(', ')) +
+          `<br><span style="font-size:11px;color:var(--text3)">(Başka bir ürün/alt montaj/paket/yarı mamül kartında kullanılan yarı mamüller korunur.)</span>` : '') +
         `<br><br>Kontrol edildi: bu kart hiçbir reçete, sipariş, teklif, iş emri veya stok kaydında kullanılmıyor.` +
         `<br><br><span style="color:var(--red-text)">Bu işlem geri alınamaz.</span> Onaylıyor musunuz?`,
         async () => {
           const storeMap = { urun: Store.urunler, yarimamul: Store.yarimamuller, altmontaj: Store.altMontajlar, paket: Store.paketler };
-          if (receteVar) await App.persist(() => Store.receteler.remove(receteVar.id));
-          await App.persist(() => storeMap[tip].remove(kart.id));
-          App.toast('Kart silindi: ' + kart.kod, 'ok');
+          await App.persist(async () => {
+            if (receteVar) await Store.receteler.remove(receteVar.id);
+            for (const ym of silinecekYm) {
+              const ymRecete = tumReceteler.find(r => r.yarimamulId === ym.id);
+              if (ymRecete) await Store.receteler.remove(ymRecete.id);
+              await Store.yarimamuller.remove(ym.id);
+            }
+            await storeMap[tip].remove(kart.id);
+          });
+          App.toast('Kart silindi: ' + kart.kod + (silinecekYm.length ? ' · ' + silinecekYm.length + ' yarı mamül de silindi' : ''), 'ok');
           detayKartId = null;
           render(main);
         });
@@ -2349,3 +2399,9 @@ PageModules.kartlar = (() => {
 
   return { render };
 })();
+
+// Node ortamında (test) — yalnızca saf mantık fonksiyonları dışa aktarılır.
+// PageModules.kartlar'ın kendisi (DOM'a bağımlı) test edilmez.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { yarimamulCascadeSilinebilirMi, urunSilYarimamulCascade };
+}
