@@ -349,22 +349,42 @@ const DolapRender = (() => {
         s += `<rect x="${kx}" y="${ky}" width="${kw}" height="${kh}" fill="none" stroke="#000" stroke-width=".8" opacity=".22"/>`;
       }
     } else if (!kapakGizli && sistem === 'menteseli') {
+      // Kapak tipi, kapağın gövdeye göre KONUMUNU belirler — dolap_hesap.js'teki
+      // kapakOlcu() ile AYNI mantık (bkz. o fonksiyonun başındaki yorum):
+      //   tam_bini  : kapak gövdeyi ÖNDEN öreter, panel kalınlığı kadar taşar
+      //   yarim_bini: yarısı kadar taşar (komşu bölmeyle paylaşılan dikmede)
+      //   icerlek   : kapak boşluğun İÇİNE oturur, panel kalınlığı + fuga kadar içeri çekilir
+      // Öncesinde bölmenin İÇ boşluğu (bx/by/bw/bh) HER ZAMAN aynı şekilde
+      // çizilip kapak tipi hiç dikkate alınmıyordu — bu yüzden seçim ne olursa
+      // olsun render hep "içerlek" gibi görünüyordu.
+      const fpx = (+c.fuga || 0) * sc;
       bolmeler.forEach((b) => {
         if (!b.kapakSayisi) return;
         const bx = x0 + b.x * sc, bw = b.genislik * sc;
         const cek = (b.cekmeceSayisi || 0) * (b.cekmeceYukseklik || 0) * sc;
         const bh = b.yukseklik * sc - cek;
         const by = y0 + b.y * sc;
-        const kw = bw / b.kapakSayisi;
-        for (let i = 0; i < b.kapakSayisi; i++) {
-          const kx = bx + i * kw;
-          s += `<rect x="${kx + .6}" y="${by}" width="${kw - 1.2}" height="${bh}" rx="1.5" fill="url(#mt-kapak)"/>`;
-          s += `<rect x="${kx + .6}" y="${by}" width="${kw - 1.2}" height="${bh}" rx="1.5" fill="url(#mt-isik)"/>`;
-          s += `<rect x="${kx + .6}" y="${by}" width="${kw - 1.2}" height="1.6" fill="#fff" opacity=".4"/>`;
-          s += `<rect x="${kx + .6}" y="${by}" width="${kw - 1.2}" height="${bh}" rx="1.5" fill="none" stroke="#000" stroke-width=".8" opacity=".22"/>`;
+
+        let kapX, kapW, kapY, kapH;
+        if (c.kapakTipi === 'icerlek') {
+          kapX = bx + t + fpx; kapW = bw - 2 * (t + fpx);
+          kapY = by + t + fpx; kapH = bh - 2 * (t + fpx);
+        } else {
+          const tasma = c.kapakTipi === 'yarim_bini' ? t / 2 : t;
+          kapX = bx - tasma; kapW = bw + 2 * tasma;
+          kapY = by - tasma; kapH = bh + 2 * tasma;
+        }
+        const adet = b.kapakSayisi;
+        const kw = (kapW - (adet - 1) * fpx) / adet;
+        for (let i = 0; i < adet; i++) {
+          const kx = kapX + i * (kw + fpx);
+          s += `<rect x="${kx}" y="${kapY}" width="${kw}" height="${kapH}" rx="1.5" fill="url(#mt-kapak)"/>`;
+          s += `<rect x="${kx}" y="${kapY}" width="${kw}" height="${kapH}" rx="1.5" fill="url(#mt-isik)"/>`;
+          s += `<rect x="${kx}" y="${kapY}" width="${kw}" height="1.6" fill="#fff" opacity=".4"/>`;
+          s += `<rect x="${kx}" y="${kapY}" width="${kw}" height="${kapH}" rx="1.5" fill="none" stroke="#000" stroke-width=".8" opacity=".22"/>`;
           if (c.kulpVar) {
-            const solMu = (b.kapakSayisi === 1) || (i < b.kapakSayisi / 2);
-            s += kulpDikey(solMu ? kx + kw - 11 : kx + 8, by + bh / 2);
+            const solMu = (adet === 1) || (i < adet / 2);
+            s += kulpDikey(solMu ? kx + kw - 11 : kx + 8, kapY + kapH / 2);
           }
         }
         for (let k = 0; k < (b.cekmeceSayisi || 0); k++) {
