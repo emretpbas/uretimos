@@ -32,6 +32,8 @@
 //   GET  api.php?action=ziyaretler&limit=300                     -> {rows} (sadece yonetim)
 //   POST api.php?action=montajSemasiOku body:{gorselB64,mediaType,dosyaAdi}
 //        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_ANTHROPIC_KEY gerekir)
+//   POST api.php?action=montajSemasiOkuBaidu body:{gorselB64,mediaType,dosyaAdi}
+//        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_BAIDU_API_KEY + URETIMOS_BAIDU_SECRET_KEY gerekir)
 //
 // Kurulum: bu klasörde PHP'nin YAZMA izni olmalı (data.sqlite + backups/ için).
 // data.sqlite ve backups/ web'den erişime KAPATILMALI (.htaccess dahildir).
@@ -349,6 +351,7 @@ function tarayiciOzeti() {
 // edilebilsin (bkz. montaj_semasi_ai.php başındaki açıklama ve
 // testler/06_montaj_semasi_test.php).
 require_once __DIR__ . '/montaj_semasi_ai.php';
+require_once __DIR__ . '/baidu_ocr_ai.php';
 
 function auditYaz($pdo, $kullanici, $islem, $anahtar, $ek = []) {
     try {
@@ -1076,6 +1079,54 @@ try {
         if (!$sonuc['ok']) respond(['error' => $sonuc['hata']], 502);
 
         auditYaz($pdo, $oturum['kullanici_adi'] ?? '?', 'montaj_semasi_oku', 'aiVision', ['dosya' => $dosyaAdi, 'parcaSayisi' => count($sonuc['parcalar'])]);
+        respond(['ok' => true, 'parcalar' => $sonuc['parcalar'], 'genelNot' => $sonuc['genelNot']]);
+    }
+
+    // montajSemasiOkuBaidu: montajSemasiOku ile AYNI rol/görsel doğrulaması,
+    // ama Anthropic yerine Baidu OCR'ı (ücretsiz kotalı bulut metin tanıma)
+    // çağırır — bkz. baidu_ocr_ai.php başındaki açıklama.
+    elseif ($action === 'montajSemasiOkuBaidu') {
+        $oturum = oturumZorunlu($pdo);
+        if (!in_array($oturum['rol'] ?? '', ['admin', 'arge', 'teknik_ofis', 'yonetim'], true)) {
+            respond(['error' => 'Bu işlem yalnızca ARGE, Teknik Ofis ve Yönetim rolüne açıktır'], 403);
+        }
+        $body = readJsonBody();
+        $gorselB64 = (string)($body['gorselB64'] ?? '');
+        $mediaType = (string)($body['mediaType'] ?? 'image/png');
+        $dosyaAdi = trim((string)($body['dosyaAdi'] ?? ''));
+        if ($gorselB64 === '') respond(['error' => 'Görsel gönderilmedi'], 400);
+        if (!in_array($mediaType, ['image/png', 'image/jpeg'], true)) respond(['error' => 'Desteklenmeyen görsel türü'], 400);
+        if (strlen($gorselB64) > 15 * 1024 * 1024) respond(['error' => 'Görsel çok büyük (en fazla ~15 MB)'], 400);
+
+        // Anahtar okuma AYNI güvenli desen: önce ortam değişkeni, sonra
+        // git'in hiç görmediği (.gitignore'da) yerel baidu_anahtari.php
+        // dosyası — bkz. montajSemasiOku üzerindeki uzun açıklama.
+        $baiduApiKey = getenv('URETIMOS_BAIDU_API_KEY');
+        $baiduSecretKey = getenv('URETIMOS_BAIDU_SECRET_KEY');
+        if (!$baiduApiKey || !$baiduSecretKey) {
+            $yerelAnahtarDosyasi = __DIR__ . '/baidu_anahtari.php';
+            if (is_file($yerelAnahtarDosyasi)) {
+                $anahtarlar = include $yerelAnahtarDosyasi;
+                if (is_array($anahtarlar)) {
+                    if (!$baiduApiKey) $baiduApiKey = (string)($anahtarlar['apiKey'] ?? '');
+                    if (!$baiduSecretKey) $baiduSecretKey = (string)($anahtarlar['secretKey'] ?? '');
+                }
+            }
+        }
+        if (!$baiduApiKey || !$baiduSecretKey) {
+            respond(['error' => 'Baidu OCR servisi sunucuda yapılandırılmamış (URETIMOS_BAIDU_API_KEY / URETIMOS_BAIDU_SECRET_KEY ortam değişkenleri veya baidu_anahtari.php eksik). Kurulum belgesine bakın.', 'yapilandirmaEksik' => true], 503);
+        }
+
+        try {
+            $token = baiduTokenAl($baiduApiKey, $baiduSecretKey);
+            $baiduYanit = baiduOcrCagir($token, $gorselB64);
+        } catch (Exception $e) {
+            respond(['error' => $e->getMessage()], 502);
+        }
+        $sonuc = baiduOcrYanitAyristir($baiduYanit);
+        if (!$sonuc['ok']) respond(['error' => $sonuc['hata']], 502);
+
+        auditYaz($pdo, $oturum['kullanici_adi'] ?? '?', 'montaj_semasi_oku_baidu', 'baiduOcr', ['dosya' => $dosyaAdi, 'parcaSayisi' => count($sonuc['parcalar'])]);
         respond(['ok' => true, 'parcalar' => $sonuc['parcalar'], 'genelNot' => $sonuc['genelNot']]);
     }
 

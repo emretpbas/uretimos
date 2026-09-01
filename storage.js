@@ -413,6 +413,10 @@ const Store = (() => {
   async function montajSemasiOku(payload) {
     return qrJson('montajSemasiOku', payload);
   }
+  // Montaj şeması görselini Baidu OCR'a (ücretsiz kotalı bulut metin tanıma) gönderir → {ok, parcalar, genelNot}
+  async function montajSemasiOkuBaidu(payload) {
+    return qrJson('montajSemasiOkuBaidu', payload);
+  }
   // Şifreyi sunucuda bcrypt ile hash'ler; istemci düz metni SAKLAMAZ.
   async function sifreHashle(sifre, kimIcin) {
     const res = await apiFetch(API_URL + '?action=sifreHashle', {
@@ -625,7 +629,7 @@ const Store = (() => {
     get, set, del, listKeys, setIfAbsent,
     login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifreTalepGonder,
-    qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku,
+    qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu,
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,
     hammaddeler: coll('hammaddeler'),
     yarimamuller: coll('yarimamuller'),

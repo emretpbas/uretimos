@@ -11,7 +11,9 @@
 // AKIŞ:
 //   1) Reçetenin ait olacağı kart seçilir (ürün/yarı mamül/alt montaj/paket)
 //   2) Montaj şeması PDF'i yüklenir, sayfa görsele çevrilir (istemci, pdf.js)
-//   3) Görsel api.php?action=montajSemasiOku ile AI'ya gönderilir
+//   3) Görsel üç yoldan biriyle okunur: api.php?action=montajSemasiOku (Anthropic,
+//      ücretli), api.php?action=montajSemasiOkuBaidu (Baidu OCR, ücretsiz kotalı
+//      bulut) ya da tamamen tarayıcı içi Tesseract.js (ücretsiz, deneysel)
 //   4) Kullanıcı HER satırı gözden geçirir: adet düzeltir, mevcut hammadde/
 //      yarı mamül kartına eşler ya da yeni kart açar (isim UYDURULMAZ —
 //      eşleşme yoksa satır "eşleşmemiş" kalır, kaydedilemez)
@@ -266,9 +268,11 @@ PageModules.montaj_semasi = (() => {
         <div style="margin:8px 0"><img src="${gorselDataUrl}" style="max-width:100%;max-height:320px;border:1px solid var(--border);border-radius:8px"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <button class="btn btn-blue" id="ms-oku-ai">🤖 AI ile Oku (Ücretli, Önerilen)</button>
-          <button class="btn" id="ms-oku-ocr">🔤 Ücretsiz OCR ile Dene (Deneysel)</button>
+          <button class="btn" id="ms-oku-baidu">🌐 Baidu OCR ile Dene (Ücretsiz Kotalı)</button>
+          <button class="btn" id="ms-oku-ocr">🔤 Tarayıcı İçi OCR ile Dene (Deneysel)</button>
         </div>`;
       document.getElementById('ms-oku-ai').onclick = () => aiIleOku(main);
+      document.getElementById('ms-oku-baidu').onclick = () => baiduIleOku(main);
       document.getElementById('ms-oku-ocr').onclick = () => ocrIleOku(main);
     } catch (err) {
       durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
@@ -286,6 +290,26 @@ PageModules.montaj_semasi = (() => {
         no: p.no, tahminiAd: p.tahminiAd, olcuSpec: p.olcuSpec, adet: p.adet, eslesen: null
       }));
       durum.innerHTML = `<span style="color:var(--green-text)">✓ ${satirlar.length} satır okundu (AI tahmini — gözden geçirin)</span>`;
+      sonucCiz(main);
+    } catch (err) {
+      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
+    }
+  }
+
+  // ── BAIDU OCR (sunucu üzerinden, ücretsiz kotalı bulut metin tanıma) ────
+  // Anthropic'ten daha cömert bir ücretsiz kotayla çalışır ama Tesseract.js
+  // gibi bağlamı ANLAMAZ — yalnızca karakter tanır (bkz. baidu_ocr_ai.php).
+  async function baiduIleOku(main) {
+    const durum = document.getElementById('ms-durum');
+    durum.innerHTML = '<span class="muted">Görsel Baidu OCR\'a gönderiliyor, birkaç saniye sürebilir…</span>';
+    try {
+      const b64 = gorselDataUrl.split(',')[1];
+      const cevap = await Store.montajSemasiOkuBaidu({ gorselB64: b64, mediaType: 'image/png', dosyaAdi });
+      aiSonuc = cevap;
+      satirlar = (cevap.parcalar || []).map(p => ({
+        no: p.no, tahminiAd: p.tahminiAd, olcuSpec: p.olcuSpec, adet: p.adet, eslesen: null
+      }));
+      durum.innerHTML = `<span style="color:var(--green-text)">✓ ${satirlar.length} satır okundu (Baidu OCR — gözden geçirin)</span>`;
       sonucCiz(main);
     } catch (err) {
       durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
