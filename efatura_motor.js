@@ -96,6 +96,13 @@ const EFaturaMotor = (() => {
     return s + y + String(sira || 1).padStart(9, '0');
   }
 
+  // ── İRSALİYE NUMARASI — aynı GİB desenini kullanır ───────────────────────
+  function irsaliyeNoUret(seri, yil, sira) {
+    const s = (seri || 'IRS').toUpperCase().slice(0, 3).padEnd(3, 'X');
+    const y = String(yil || new Date().getFullYear());
+    return s + y + String(sira || 1).padStart(9, '0');
+  }
+
   // ── UBL-TR 1.2 XML ÜRETİMİ ──────────────────────────────────────────────
   function xmlKacis(s) {
     return String(s == null ? '' : s)
@@ -262,6 +269,107 @@ ${satirlar}
     return { gonderilebilir: hatalar.length === 0, hatalar, uyarilar };
   }
 
+  // ── e-İRSALİYE (SEVK BELGESİ) UBL-TR ÜRETİMİ ─────────────────────────────
+  // İrsaliye parasal tutar/KDV taşımaz — yalnızca sevk edilen kalem + miktar + tarih.
+  function irsaliyeUblOlustur(irsaliye, musteri, firma, kalemler) {
+    const ettn = irsaliye.ettn || ettnUret();
+    const tarih = irsaliye.tarih || new Date().toISOString().slice(0, 10);
+    const saat = new Date().toTimeString().slice(0, 8);
+    const sevkTarihi = irsaliye.sevkTarihi || tarih;
+    const n = (x) => (Math.round((x || 0) * 100) / 100).toFixed(2);
+
+    const musteriVergiNo = String((musteri && (musteri.vergiNo || musteri.tckn)) || '').replace(/\D/g, '');
+    const musteriTipi = musteriVergiNo.length === 11 ? 'TCKN' : 'VKN';
+
+    const satirlar = (kalemler || []).map((k, i) => {
+      const miktar = k.miktar || 1;
+      return `    <cac:DespatchLine>
+      <cbc:ID>${i + 1}</cbc:ID>
+      <cbc:DeliveredQuantity unitCode="${xmlKacis(k.birim || 'C62')}">${n(miktar)}</cbc:DeliveredQuantity>
+      <cac:Item>
+        <cbc:Name>${xmlKacis(k.ad || k.kod || 'Ürün')}</cbc:Name>
+        ${k.kod ? `<cac:SellersItemIdentification><cbc:ID>${xmlKacis(k.kod)}</cbc:ID></cac:SellersItemIdentification>` : ''}
+      </cac:Item>
+    </cac:DespatchLine>`;
+    }).join('\n');
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
+  <cbc:ProfileID>TEMELIRSALIYE</cbc:ProfileID>
+  <cbc:ID>${xmlKacis(irsaliye.irsaliyeNo || '')}</cbc:ID>
+  <cbc:UUID>${ettn}</cbc:UUID>
+  <cbc:IssueDate>${tarih}</cbc:IssueDate>
+  <cbc:IssueTime>${saat}</cbc:IssueTime>
+  <cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode>
+  <cbc:LineCountNumeric>${(kalemler || []).length}</cbc:LineCountNumeric>
+
+  <cac:DespatchSupplierParty>
+    <cac:Party>
+      <cac:PartyIdentification><cbc:ID schemeID="VKN">${xmlKacis(String((firma && firma.vergiNo) || '').replace(/\D/g, ''))}</cbc:ID></cac:PartyIdentification>
+      <cac:PartyName><cbc:Name>${xmlKacis((firma && firma.unvan) || 'Firma')}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${xmlKacis((firma && firma.adres) || '')}</cbc:StreetName>
+        <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
+      </cac:PostalAddress>
+    </cac:Party>
+  </cac:DespatchSupplierParty>
+
+  <cac:DeliveryCustomerParty>
+    <cac:Party>
+      <cac:PartyIdentification><cbc:ID schemeID="${musteriTipi}">${xmlKacis(musteriVergiNo)}</cbc:ID></cac:PartyIdentification>
+      <cac:PartyName><cbc:Name>${xmlKacis((musteri && musteri.unvan) || irsaliye.musteriAdi || '')}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${xmlKacis((musteri && musteri.adres) || '')}</cbc:StreetName>
+        <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
+      </cac:PostalAddress>
+    </cac:Party>
+  </cac:DeliveryCustomerParty>
+
+  <cac:Shipment>
+    <cbc:ID>1</cbc:ID>
+    <cac:Delivery>
+      <cbc:ActualDeliveryDate>${sevkTarihi}</cbc:ActualDeliveryDate>
+    </cac:Delivery>
+  </cac:Shipment>
+
+${satirlar}
+</DespatchAdvice>`;
+
+    return { xml, ettn };
+  }
+
+  // ── İRSALİYE GÖNDERİME HAZIR MI? ─────────────────────────────────────────
+  function irsaliyeGonderimKontrol(irsaliye, musteri, firma, kalemler) {
+    const hatalar = [], uyarilar = [];
+
+    if (!firma || !firma.unvan) hatalar.push('Firma ünvanı tanımlı değil (Ayarlar → Firma Bilgileri)');
+    const firmaVkn = vergiKimligiKontrol(firma && firma.vergiNo);
+    if (!firmaVkn.gecerli) hatalar.push('Firma VKN geçersiz: ' + firmaVkn.mesaj);
+
+    if (!musteri) hatalar.push('Müşteri kaydı bulunamadı');
+    else {
+      const mv = vergiKimligiKontrol(musteri.vergiNo || musteri.tckn);
+      if (!mv.gecerli) hatalar.push('Müşteri vergi kimliği geçersiz: ' + mv.mesaj);
+      if (!musteri.adres) uyarilar.push('Müşteri adresi boş');
+    }
+
+    if (!kalemler || !kalemler.length) hatalar.push('İrsaliyede kalem yok');
+    else {
+      (kalemler || []).forEach((k, i) => {
+        if (!k.ad && !k.kod) hatalar.push(`${i + 1}. kalemde ürün adı/kodu yok`);
+        if ((k.miktar || 0) <= 0) hatalar.push(`${i + 1}. kalemde miktar geçersiz`);
+      });
+    }
+    if (!irsaliye || !irsaliye.irsaliyeNo) hatalar.push('İrsaliye numarası yok');
+    if (!irsaliye || !irsaliye.tarih) hatalar.push('İrsaliye tarihi yok');
+
+    return { gonderilebilir: hatalar.length === 0, hatalar, uyarilar };
+  }
+
   // ── GÖNDERİM DURUMU AKIŞI ───────────────────────────────────────────────
   const DURUMLAR = {
     taslak: ['Taslak', 'pill-gray', 'Henüz gönderilmedi'],
@@ -273,5 +381,8 @@ ${satirlar}
   };
 
   return { vknGecerliMi, tcknGecerliMi, vergiKimligiKontrol, senaryoBelirle,
-           ettnUret, faturaNoUret, ublOlustur, gonderimKontrol, DURUMLAR, xmlKacis };
+           ettnUret, faturaNoUret, ublOlustur, gonderimKontrol, DURUMLAR, xmlKacis,
+           irsaliyeNoUret, irsaliyeUblOlustur, irsaliyeGonderimKontrol };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = EFaturaMotor;

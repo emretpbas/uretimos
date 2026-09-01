@@ -12,11 +12,11 @@ PageModules.efatura = (() => {
 
   async function render(main, params) {
     if (params && params.tab) activeTab = params.tab;
-    const [faturalar, eFaturalar, musteriler, firmaKayit] = await Promise.all([
-      Store.faturalar.all(), Store.eFaturalar.all(), Store.musteriler.all(), Store.firmaBilgileri.all()
+    const [faturalar, eFaturalar, musteriler, firmaKayit, irsaliyeler] = await Promise.all([
+      Store.faturalar.all(), Store.eFaturalar.all(), Store.musteriler.all(), Store.firmaBilgileri.all(), Store.irsaliyeler.all()
     ]);
     const firma = firmaKayit[0] || null;
-    const d = { faturalar, eFaturalar, musteriler, firma };
+    const d = { faturalar, eFaturalar, musteriler, firma, irsaliyeler };
 
     // Uyarı: firma bilgisi eksikse hiçbir fatura gönderilemez
     const firmaKontrol = EFaturaMotor.vergiKimligiKontrol(firma && firma.vergiNo);
@@ -75,7 +75,11 @@ PageModules.efatura = (() => {
               ? `<span class="pill pill-green" style="font-size:9px">${vk.tip} ✓</span> <span class="mono" style="font-size:10px">${App.escapeHtml(vk.no)}</span>`
               : `<span class="pill pill-red" style="font-size:9px">Geçersiz</span><br><span class="muted" style="font-size:9px">${App.escapeHtml(vk.mesaj.slice(0, 40))}</span>`}</td>
             <td><span class="pill ${sen.senaryo === 'EFATURA' ? 'pill-blue' : 'pill-amber'}" style="font-size:9px">${sen.senaryo === 'EFATURA' ? 'e-Fatura' : 'e-Arşiv'}</span></td>
-            <td><button class="btn btn-sm btn-blue ef-hazirla" data-id="${f.id}">Kontrol & XML</button></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-sm btn-blue ef-hazirla" data-id="${f.id}">Kontrol & XML</button>
+              ${d.irsaliyeler.some(i => i.siparisId === f.siparisId)
+                ? `<button class="btn btn-sm btn-ghost ef-irsaliye" data-id="${f.id}">📦 e-İrsaliye</button>` : ''}
+            </td>
           </tr>`;
         }).join('')}
       </table></div>`;
@@ -83,6 +87,11 @@ PageModules.efatura = (() => {
     c.querySelectorAll('.ef-hazirla').forEach(b => b.onclick = async () => {
       const f = d.faturalar.find(x => x.id === b.dataset.id);
       hazirlaModal(f, d, render, main);
+    });
+    c.querySelectorAll('.ef-irsaliye').forEach(b => b.onclick = async () => {
+      const f = d.faturalar.find(x => x.id === b.dataset.id);
+      const irs = d.irsaliyeler.find(i => i.siparisId === f.siparisId);
+      irsaliyeModal(f, irs, d, render, main);
     });
   }
 
@@ -168,6 +177,77 @@ PageModules.efatura = (() => {
     };
   }
 
+  async function irsaliyeModal(fatura, irsaliye, d, render, main) {
+    const mus = d.musteriler.find(m => m.id === irsaliye.musteriId);
+    const kalemler = irsaliye.kalemler || [];
+    const kontrol = EFaturaMotor.irsaliyeGonderimKontrol(irsaliye, mus, d.firma, kalemler);
+
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:10px">
+        <b>${App.escapeHtml(irsaliye.irsaliyeNo || '')}</b> · ${App.escapeHtml(irsaliye.musteriAdi || '')} · ${irsaliye.tarih || '—'}
+      </div>
+      ${kontrol.hatalar.length ? `<div style="border:1.5px solid var(--red);background:var(--red-bg);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <b style="color:var(--red-text);font-size:12px">🚫 ${kontrol.hatalar.length} ZORUNLU ALAN EKSİK — GİB reddeder</b>
+        ${kontrol.hatalar.map(h => `<div style="font-size:11.5px;padding:2px 0">• ${App.escapeHtml(h)}</div>`).join('')}
+      </div>` : `<div style="border:1px solid var(--green);background:var(--green-bg);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <b style="color:var(--green-text);font-size:12px">✓ Zorunlu alan kontrolü geçti</b></div>`}
+      ${kontrol.uyarilar.length ? `<div style="border:1px solid var(--amber);background:var(--amber-bg);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <b style="font-size:11.5px">⚠ ${kontrol.uyarilar.length} uyarı (gönderimi engellemez)</b>
+        ${kontrol.uyarilar.slice(0, 6).map(u => `<div style="font-size:11px;padding:2px 0">• ${App.escapeHtml(u)}</div>`).join('')}
+      </div>` : ''}
+      <div class="fgroup"><label class="flbl">Sevk Edilen Kalemler (${kalemler.length})</label>
+        <table class="dtable" style="font-size:10.5px">
+          <tr><th>Ürün</th><th class="r">Miktar</th><th>Birim</th></tr>
+          ${kalemler.map(k => `<tr><td>${App.escapeHtml(k.kod || '')} ${App.escapeHtml((k.ad || '').slice(0, 30))}</td>
+            <td class="r">${App.fmt(k.miktar || 1, 0)}</td>
+            <td>${App.escapeHtml(k.birim || '')}</td></tr>`).join('')}
+        </table></div>
+      <div id="ef-irs-xml-alan"></div>`;
+
+    App.openModal({ title: '📦 e-İrsaliye Hazırlama', body, xwide: true,
+      footer: `<button class="btn" id="ef-irs-cancel">Kapat</button>
+        <button class="btn btn-blue" id="ef-irs-xml" ${kontrol.gonderilebilir ? '' : 'disabled'}>UBL-TR XML Üret</button>` });
+    document.getElementById('ef-irs-cancel').onclick = App.closeModal;
+
+    document.getElementById('ef-irs-xml').onclick = async () => {
+      const sonuc = EFaturaMotor.irsaliyeUblOlustur(irsaliye, mus, d.firma, kalemler);
+      const alan = document.getElementById('ef-irs-xml-alan');
+      alan.innerHTML = `
+        <div style="border:1px solid var(--blue-light);background:var(--blue-bg);border-radius:8px;padding:10px 12px;margin-top:10px">
+          <div style="font-size:12px;margin-bottom:6px"><b>✓ UBL-TR 1.2 DespatchAdvice XML üretildi</b></div>
+          <div style="font-size:11px">ETTN: <span class="mono">${sonuc.ettn}</span></div>
+          <textarea class="ftextarea" id="ef-irs-xml-icerik" readonly style="font-family:monospace;font-size:9.5px;height:180px;margin-top:8px">${App.escapeHtml(sonuc.xml)}</textarea>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn btn-sm" id="ef-irs-kopyala">📋 XML'i Kopyala</button>
+            <button class="btn btn-sm btn-green" id="ef-irs-kaydet">✓ Gönderim Kaydı Oluştur</button>
+          </div>
+          <div class="fhint" style="margin-top:6px">XML'i entegratörünüzün paneline yükleyin veya API'sine gönderin. Kayıt oluşturulduktan sonra durumu <b>Gönderilenler</b> sekmesinden takip edin.</div>
+        </div>`;
+      document.getElementById('ef-irs-kopyala').onclick = () => {
+        const ta = document.getElementById('ef-irs-xml-icerik');
+        ta.select();
+        try { document.execCommand('copy'); App.toast('XML panoya kopyalandı', 'ok'); }
+        catch (e) { App.toast('Kopyalanamadı — metni elle seçin', 'err'); }
+      };
+      document.getElementById('ef-irs-kaydet').onclick = async () => {
+        const tumu = await Store.eFaturalar.all();
+        tumu.push({
+          id: App.uid('EFT'), tip: 'irsaliye', faturaId: fatura.id, irsaliyeId: irsaliye.id,
+          faturaNo: irsaliye.irsaliyeNo, musteriId: irsaliye.musteriId, musteriAdi: irsaliye.musteriAdi,
+          ettn: sonuc.ettn, senaryo: 'IRSALIYE', profil: 'TEMELIRSALIYE',
+          xml: sonuc.xml, durum: 'hazir', tarih: irsaliye.tarih || bugun(),
+          olusturmaZamani: new Date().toISOString()
+        });
+        await App.persist(() => Store.eFaturalar.save(tumu));
+        App.toast('e-İrsaliye kaydı oluşturuldu — ETTN: ' + sonuc.ettn.slice(0, 8) + '…', 'ok');
+        App.closeModal();
+        activeTab = 'gonderilen';
+        render(main);
+      };
+    };
+  }
+
   // ── SEKME 2: GÖNDERİLENLER ──────────────────────────────────────────────
   function gonderilenTab(c, d, render, main) {
     if (!d.eFaturalar.length) {
@@ -193,7 +273,7 @@ PageModules.efatura = (() => {
               <td class="mono"><b>${App.escapeHtml(e.faturaNo || '—')}</b></td>
               <td>${App.escapeHtml(e.musteriAdi || '—')}</td>
               <td class="mono" style="font-size:9.5px">${App.escapeHtml((e.ettn || '').slice(0, 13))}…</td>
-              <td><span class="pill ${e.senaryo === 'EFATURA' ? 'pill-blue' : 'pill-amber'}" style="font-size:9px">${e.senaryo === 'EFATURA' ? 'e-Fatura' : 'e-Arşiv'}</span></td>
+              <td><span class="pill ${e.senaryo === 'EFATURA' ? 'pill-blue' : e.senaryo === 'IRSALIYE' ? 'pill-gray' : 'pill-amber'}" style="font-size:9px">${e.senaryo === 'EFATURA' ? 'e-Fatura' : e.senaryo === 'IRSALIYE' ? '📦 e-İrsaliye' : 'e-Arşiv'}</span></td>
               <td class="r">${App.fmtTL(e.genelToplam || 0)}</td>
               <td class="mono" style="font-size:10.5px">${e.tarih || '—'}</td>
               <td><span class="pill ${renk}" style="font-size:9px">${ad}</span>${e.gibNot ? `<br><span class="muted" style="font-size:9px">${App.escapeHtml(e.gibNot.slice(0, 30))}</span>` : ''}</td>
