@@ -11,13 +11,14 @@
 // AKIŞ:
 //   1) Reçetenin ait olacağı kart seçilir (ürün/yarı mamül/alt montaj/paket)
 //   2) Montaj şeması PDF'i yüklenir, sayfa görsele çevrilir (istemci, pdf.js)
-//   3) Görsel dört yoldan biriyle okunur — VARSAYILAN api.php?action=
-//      montajSemasiOkuGoogle (Google Cloud Vision OCR, ücretsiz kotalı bulut;
-//      Baidu OCR denemesi Türkiye telefon/SMS doğrulamasında tıkandığı için
-//      yerine bu geçti), alternatif olarak api.php?action=montajSemasiOku
-//      (Anthropic, ücretli), api.php?action=montajSemasiOkuBaidu (Baidu OCR,
-//      hesap açabilenler için) ya da tamamen tarayıcı içi Tesseract.js
-//      (ücretsiz, deneysel)
+//   3) Görsel TEK görünür butonla okunur — api.php?action=montajSemasiOkuGoogle
+//      (Google Cloud Vision OCR, ücretsiz kotalı bulut; Baidu OCR denemesi
+//      Türkiye telefon/SMS doğrulamasında tıkandığı için yerine bu geçti).
+//      Karışıklığı önlemek için diğer üç yol bir "Diğer yöntemler" açılır
+//      panelinde saklı kalır: api.php?action=montajSemasiOku (Anthropic,
+//      ücretli), api.php?action=montajSemasiOkuBaidu (Baidu OCR, hesap
+//      açabilenler için) ya da tamamen tarayıcı içi Tesseract.js (ücretsiz,
+//      deneysel)
 //   4) Kullanıcı HER satırı gözden geçirir: adet düzeltir, mevcut hammadde/
 //      yarı mamül kartına eşler ya da yeni kart açar (isim UYDURULMAZ —
 //      eşleşme yoksa satır "eşleşmemiş" kalır, kaydedilemez)
@@ -111,7 +112,7 @@ PageModules.montaj_semasi = (() => {
   }
 
   async function ocrIleOku(main) {
-    const durum = document.getElementById('ms-durum');
+    const durum = document.getElementById('ms-durum-mesaj') || document.getElementById('ms-durum');
     if (!secilenPdfDosya) { App.toast('Önce bir PDF seçin.', 'err'); return; }
     try {
       durum.innerHTML = '<span class="muted">Sayfa OCR için yüksek çözünürlükte görsele çevriliyor…</span>';
@@ -268,25 +269,40 @@ PageModules.montaj_semasi = (() => {
     durum.innerHTML = '<span class="muted">Önizleme oluşturuluyor…</span>';
     try {
       gorselDataUrl = await pdfIlkSayfaPng(f, 2);
-      durum.innerHTML = `
-        <div style="margin:8px 0"><img src="${gorselDataUrl}" style="max-width:100%;max-height:320px;border:1px solid var(--border);border-radius:8px"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <button class="btn btn-blue" id="ms-oku-google">🌐 Google Vision ile Oku (Varsayılan, Ücretsiz Kotalı)</button>
-          <button class="btn" id="ms-oku-ai">🤖 AI ile Dene (Ücretli)</button>
-          <button class="btn" id="ms-oku-baidu">🈶 Baidu OCR ile Dene (Ücretsiz Kotalı)</button>
-          <button class="btn" id="ms-oku-ocr">🔤 Tarayıcı İçi OCR ile Dene (Deneysel)</button>
-        </div>`;
-      document.getElementById('ms-oku-google').onclick = () => googleIleOku(main);
-      document.getElementById('ms-oku-ai').onclick = () => aiIleOku(main);
-      document.getElementById('ms-oku-baidu').onclick = () => baiduIleOku(main);
-      document.getElementById('ms-oku-ocr').onclick = () => ocrIleOku(main);
+      okumaButonlariCiz(main);
     } catch (err) {
       durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
     }
   }
 
-  async function aiIleOku(main) {
+  // Önizleme + TEK varsayılan buton (Google Vision) çizer; diğer üç yöntem
+  // (AI/Baidu/tarayıcı içi OCR) karışıklığı önlemek için bir <details>
+  // altında gizli kalır. Durum mesajı AYRI bir alt div'e (#ms-durum-mesaj)
+  // yazılır ki bir yöntem hata verdiğinde SADECE o mesaj değişsin, butonlar
+  // kaybolmasın — kullanıcı dosyayı yeniden seçmeden başka bir yöntemi
+  // hemen deneyebilsin.
+  function okumaButonlariCiz(main) {
     const durum = document.getElementById('ms-durum');
+    durum.innerHTML = `
+      <div style="margin:8px 0"><img src="${gorselDataUrl}" style="max-width:100%;max-height:320px;border:1px solid var(--border);border-radius:8px"></div>
+      <button class="btn btn-blue" id="ms-oku-google">🌐 Google Vision ile Oku</button>
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-size:11.5px;color:var(--text3)">Diğer yöntemler (AI / Baidu OCR / Tarayıcı İçi OCR)</summary>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          <button class="btn" id="ms-oku-ai">🤖 AI ile Dene (Ücretli)</button>
+          <button class="btn" id="ms-oku-baidu">🈶 Baidu OCR ile Dene (Ücretsiz Kotalı)</button>
+          <button class="btn" id="ms-oku-ocr">🔤 Tarayıcı İçi OCR ile Dene (Deneysel)</button>
+        </div>
+      </details>
+      <div id="ms-durum-mesaj" style="margin-top:8px;font-size:12px"></div>`;
+    document.getElementById('ms-oku-google').onclick = () => googleIleOku(main);
+    document.getElementById('ms-oku-ai').onclick = () => aiIleOku(main);
+    document.getElementById('ms-oku-baidu').onclick = () => baiduIleOku(main);
+    document.getElementById('ms-oku-ocr').onclick = () => ocrIleOku(main);
+  }
+
+  async function aiIleOku(main) {
+    const durum = document.getElementById('ms-durum-mesaj') || document.getElementById('ms-durum');
     durum.innerHTML = '<span class="muted">Görsel AI\'ya gönderiliyor, birkaç saniye sürebilir…</span>';
     try {
       const b64 = gorselDataUrl.split(',')[1];
@@ -306,7 +322,7 @@ PageModules.montaj_semasi = (() => {
   // Anthropic'ten daha cömert bir ücretsiz kotayla çalışır ama Tesseract.js
   // gibi bağlamı ANLAMAZ — yalnızca karakter tanır (bkz. baidu_ocr_ai.php).
   async function baiduIleOku(main) {
-    const durum = document.getElementById('ms-durum');
+    const durum = document.getElementById('ms-durum-mesaj') || document.getElementById('ms-durum');
     durum.innerHTML = '<span class="muted">Görsel Baidu OCR\'a gönderiliyor, birkaç saniye sürebilir…</span>';
     try {
       const b64 = gorselDataUrl.split(',')[1];
@@ -329,7 +345,7 @@ PageModules.montaj_semasi = (() => {
   // kota var. Anthropic'in aksine bağlamı ANLAMAZ — yalnızca karakter tanır
   // (bkz. google_ocr_ai.php).
   async function googleIleOku(main) {
-    const durum = document.getElementById('ms-durum');
+    const durum = document.getElementById('ms-durum-mesaj') || document.getElementById('ms-durum');
     durum.innerHTML = '<span class="muted">Görsel Google Vision\'a gönderiliyor, birkaç saniye sürebilir…</span>';
     try {
       const b64 = gorselDataUrl.split(',')[1];
