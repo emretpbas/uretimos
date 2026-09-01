@@ -501,7 +501,8 @@ const Store = (() => {
     }
   }
 
-  // Şifre değiştirme — sunucu bcrypt ile hash'ler.
+  // Şifre değiştirme — sunucu bcrypt ile hash'ler. Sunucu artık güçlü şifre
+  // kuralını (10+ karakter, büyük/küçük harf, rakam) uygular.
   async function sifreDegistir(userId, yeniSifre) {
     const res = await apiFetch(API_URL + '?action=changePassword', {
       method: 'POST',
@@ -513,12 +514,45 @@ const Store = (() => {
     return true;
   }
 
-  // Tüm şifreleri [kullanıcıadı]1234 varsayılanına döndürür (sadece yonetim).
+  // Tüm şifreleri GÜÇLÜ RASTGELE şifrelerle yeniler (sadece yonetim). Eski
+  // tahmin edilebilir [kullanıcıadı]1234 varsayılanının yerini aldı. Yeni
+  // şifreler düz metin olarak yalnızca bu TEK seferlik yanıtta döner —
+  // sunucuda hiçbir yerde saklanmaz; ekranda gösterip dağıtmak çağırana aittir.
   async function sifreleriSifirla() {
     const res = await apiFetch(API_URL + '?action=resetPasswords', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error || 'Şifreler sıfırlanamadı');
-    return true;
+    return data.yeniSifreler || [];
+  }
+
+  // ── HESAP TALEBİ (e-posta ile kayıt + yönetim onayı) ─────────────────────
+  // Giriş ekranındaki "Hesap Talep Et" formundan çağrılır — oturumsuzdur,
+  // sunucu tarafında hız sınırlıdır (hatSifreTalepGonder ile AYNI desen).
+  async function hesapTalepEt(payload) {
+    try {
+      const res = await fetch(API_URL + '?action=hesapTalepEt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) return { ok: false, error: data.error || 'Talep gönderilemedi' };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: 'Sunucuya ulaşılamadı: ' + e.message };
+    }
+  }
+
+  // Bekleyen bir hesap talebini onaylar/reddeder (sadece yonetim).
+  async function hesapTalepiKarar(id, karar) {
+    const res = await apiFetch(API_URL + '?action=hesapTalepiKarar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, karar })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Karar kaydedilemedi');
+    return data;
   }
 
   // GENİŞLETİLMİŞ DENETİM KAYDI (sadece yonetim)
@@ -632,7 +666,7 @@ const Store = (() => {
   return {
     get, set, del, listKeys, setIfAbsent,
     login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, hatVerisiGetir, sunucuModu,
-    hatListesiGetir, hatOperatorGiris, hatSifreTalepGonder,
+    hatListesiGetir, hatOperatorGiris, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,
     hammaddeler: coll('hammaddeler'),
@@ -735,6 +769,7 @@ const Store = (() => {
     hatSifreleri: coll('hatSifreleri'),                  // Hat/bölüm operatör terminali giriş şifreleri
     hatOperatorleri: coll('hatOperatorleri'),            // Yönetim onaylı hat operatörleri — {id, isim, sifre, hatlar:[], durum:'aktif'|'pasif'} — kişi bazlı hat yetkilendirmesi
     hatSifreTalepleri: coll('hatSifreTalepleri'),        // Operatör şifre oluşturma talepleri — {id, isim, sifre, hatlar:[], durum:'bekliyor'|'onaylandi'|'reddedildi'} — yönetim değerlendirir
+    hesapTalepleri: coll('hesapTalepleri'),        // ÜretimOS giriş hesabı talepleri — {id,ad,email,rol,sifreHash,durum:'bekliyor'|'onaylandi'|'reddedildi'} — yalnızca LİSTELEME için; onay/red her zaman Store.hesapTalepiKarar() ile (kullaniciler'e yazma gerektirir, generic set'ten kapalıdır)
     gerceklesenSureKayitlari: coll('gerceklesenSureKayitlari'), // İstasyonlarda ölçülen gerçek işlem süreleri              // Hat & istasyon takibi iş kartları        // Kaliteden dönen siparişlerin düzeltme giderleri (malzeme + işçilik)
     tedarikciIadeFaturalari: coll('tedarikciIadeFaturalari'), // Satınalmanın tedarikçiye kestiği iade faturası
     eFaturalar: coll('eFaturalar'),                      // E-Fatura/E-Arşiv gönderim kayıtları
@@ -986,8 +1021,9 @@ const Store = (() => {
         'bildirimler', 'aiBulgulari', 'aiRaporlari'
       ];
       // KORUNANLAR (bilerek silinmez — bunlar veri değil KURULUM bilgisidir):
-      //   kullaniciler   → silinirse kimse sisteme giremez
-      //   firmaBilgileri → unvan, vergi no, logo: yeniden girilmesi gereksiz
+      //   kullaniciler    → silinirse kimse sisteme giremez
+      //   hesapTalepleri  → kullaniciler ile aynı gerekçe (hesap/erişim durumu, iş verisi değil)
+      //   firmaBilgileri  → unvan, vergi no, logo: yeniden girilmesi gereksiz
       // Bunların da sıfırlanması istenirse listeye eklenmesi yeterlidir.
       for (const koleksiyonAdi of TUM_VERI_KOLEKSIYONLARI) {
         await set(koleksiyonAdi, []);

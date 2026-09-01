@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v125'; // v125: yari mamul agac editorune baglandi, is emrinde urun agacindan parca secimi
+const CACHE_NAME = 'uretimos-v126'; // v126: hesap talebi (e-posta ile kayit + yonetim onayi) ve guclu sifre kurali eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

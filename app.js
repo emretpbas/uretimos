@@ -913,6 +913,7 @@ const App = (() => {
           </div>
           <div id="ln-hata" style="color:var(--red-text);font-size:12px;margin-bottom:10px;display:none">Kullanıcı adı veya şifre hatalı.</div>
           <button class="btn btn-blue" id="ln-giris" style="width:100%;margin-top:4px">Giriş Yap</button>
+          <button class="btn btn-ghost" id="ln-hesap-talep" style="width:100%;margin-top:8px;font-size:11.5px">Hesabınız yok mu? Hesap Talep Edin</button>
         </div>
         <div style="text-align:center;font-size:11px;color:var(--text3);margin-top:16px">
           İlk kurulumda her birim için varsayılan şifre: <b>[birim]1234</b><br>
@@ -1020,6 +1021,54 @@ const App = (() => {
     document.getElementById('ln-giris').onclick = girisBtnCalis;
     document.getElementById('ln-sifre').onkeydown = e => { if (e.key === 'Enter') girisBtnCalis(); };
     document.getElementById('ln-kullanici').onkeydown = e => { if (e.key === 'Enter') document.getElementById('ln-sifre').focus(); };
+    document.getElementById('ln-hesap-talep').onclick = hesapTalepFormuAc;
+  }
+
+  // ── HESAP TALEP ET (e-posta ile kayıt + yönetim onayı) ──────────────────
+  // Giriş ekranından, oturum olmadan çağrılır. Şifre KULLANICI tarafından
+  // belirlenir (sunucu yalnızca hash'ini saklar) — böylece onaydan sonra
+  // ayrıca bir "şifrenizi e-postayla iletiyoruz" adımına gerek kalmaz.
+  function hesapTalepFormuAc() {
+    const rolSecenekleri = ROLLER.filter(r => r.id !== 'admin');
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:12px">Talebiniz yönetici onayına düşer; onaylanınca burada belirlediğiniz kullanıcı adı ve şifreyle giriş yapabilirsiniz.</div>
+      <div class="fgroup"><label class="flbl">Ad Soyad</label><input class="finput" id="ht-ad" placeholder="Ad Soyad"></div>
+      <div class="fgroup"><label class="flbl">E-posta</label><input class="finput" id="ht-email" type="email" placeholder="ornek@sirket.com"></div>
+      <div class="fgroup"><label class="flbl">Birim / Rol</label>
+        <select class="fselect" id="ht-rol">${rolSecenekleri.map(r => `<option value="${r.id}">${escapeHtml(r.label)}</option>`).join('')}</select>
+      </div>
+      <div class="fgroup"><label class="flbl">Şifre</label><input class="finput" id="ht-sifre" type="password" placeholder="En az 10 karakter, büyük/küçük harf ve rakam"></div>
+      <div class="fgroup"><label class="flbl">Şifre (Tekrar)</label><input class="finput" id="ht-sifre2" type="password" placeholder="Şifreyi tekrar girin"></div>
+      <div id="ht-hata" style="color:var(--red-text);font-size:12px;display:none"></div>`;
+    openModal({
+      title: 'Hesap Talep Et', body,
+      footer: '<button class="btn" id="ht-vazgec">Vazgeç</button><button class="btn btn-blue" id="ht-gonder">Talebi Gönder</button>'
+    });
+    document.getElementById('ht-vazgec').onclick = closeModal;
+    document.getElementById('ht-gonder').onclick = async () => {
+      const ad = document.getElementById('ht-ad').value.trim();
+      const email = document.getElementById('ht-email').value.trim();
+      const rol = document.getElementById('ht-rol').value;
+      const sifre = document.getElementById('ht-sifre').value;
+      const sifre2 = document.getElementById('ht-sifre2').value;
+      const hataEl = document.getElementById('ht-hata');
+      const hataGoster = (msg) => { hataEl.textContent = msg; hataEl.style.display = 'block'; };
+      hataEl.style.display = 'none';
+      if (!ad) return hataGoster('Ad soyad zorunlu.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return hataGoster('Geçerli bir e-posta adresi girin.');
+      if (sifre.length < 10 || !/[a-z]/.test(sifre) || !/[A-Z]/.test(sifre) || !/[0-9]/.test(sifre)) {
+        return hataGoster('Şifre en az 10 karakter olmalı; büyük harf, küçük harf ve rakam içermeli.');
+      }
+      if (sifre !== sifre2) return hataGoster('Şifreler eşleşmiyor.');
+      const btn = document.getElementById('ht-gonder');
+      btn.disabled = true; btn.textContent = 'Gönderiliyor…';
+      const sonuc = await Store.hesapTalepEt({ ad, email, rol, sifre });
+      btn.disabled = false; btn.textContent = 'Talebi Gönder';
+      if (!sonuc.ok) return hataGoster(sonuc.error || 'Talep gönderilemedi.');
+      closeModal();
+      toast('Talebiniz alındı — yönetici onayı bekleniyor.', 'ok');
+    };
   }
 
   // Eski renderRoleSelector → artık giriş ekranı açar
@@ -1435,20 +1484,61 @@ const App = (() => {
     if (hepsi.length) hepsi[hepsi.length - 1].remove();
   }
 
+  // Kriptografik olarak güvenli (crypto.getRandomValues) 12 haneli şifre —
+  // sunucudaki guvenliRastgeleSifreUret() ile AYNI karakter sınıfı kuralı.
+  function guclutSifreUret() {
+    const buyuk = 'ABCDEFGHJKLMNPQRSTUVWXYZ', kucuk = 'abcdefghijkmnpqrstuvwxyz', rakam = '23456789', ozel = '!@#$%&*';
+    const havuz = buyuk + kucuk + rakam + ozel;
+    const rastgele = (s) => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length];
+    const arr = [rastgele(buyuk), rastgele(kucuk), rastgele(rakam), rastgele(ozel)];
+    for (let i = 0; i < 8; i++) arr.push(rastgele(havuz));
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+      const gecici = arr[i]; arr[i] = arr[j]; arr[j] = gecici;
+    }
+    return arr.join('');
+  }
+
+  // Yeni üretilen şifreleri TEK SEFERLİK gösteren reveal modalı — kopyalama
+  // kolaylığı dışında hiçbir yerde (localStorage/log) tutulmaz; modal
+  // kapatıldığında şifreler bir daha görüntülenemez.
+  function sifreleriGosterModal(liste) {
+    const metin = liste.map(x => `${x.kullaniciAdi}\t${x.sifre}`).join('\n');
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div style="border:1.5px solid var(--red);background:var(--red-bg);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11.5px;color:var(--red-text)">
+        ⚠ Bu şifreler <b>yalnızca burada, bir kez</b> gösteriliyor — kapattıktan sonra bir daha görüntülenemez. İlgili kişilere hemen iletin.
+      </div>
+      <table class="dtable" style="font-size:12px">
+        <tr><th>Kullanıcı Adı</th><th>Birim / Ad</th><th>Yeni Şifre</th></tr>
+        ${liste.map(x => `<tr><td class="mono"><b>${escapeHtml(x.kullaniciAdi)}</b></td><td>${escapeHtml(x.ad || '')}</td><td class="mono">${escapeHtml(x.sifre)}</td></tr>`).join('')}
+      </table>`;
+    openModal({
+      title: '🔑 Yeni Şifreler', body, wide: true,
+      footer: '<button class="btn" id="sg-kopyala">📋 Tümünü Kopyala</button><button class="btn btn-blue" id="sg-kapat">Kapat</button>'
+    });
+    document.getElementById('sg-kapat').onclick = closeModal;
+    document.getElementById('sg-kopyala').onclick = async () => {
+      try { await navigator.clipboard.writeText(metin); toast('Panoya kopyalandı', 'ok'); }
+      catch (e) { toast('Kopyalanamadı — elle seçip kopyalayın', 'err'); }
+    };
+  }
+
   // ── AYARLAR MODALI ───────────────────────────────────────────────────────
   // ── ŞİFRE YÖNETİMİ (Sadece Üst Yönetim) ─────────────────────────────────
   async function openSifreYonetimiModal() {
     const kullaniciler = await Store.kullaniciler.all();
     const body = document.createElement('div');
-    // GÜVENLİK NOTU: Şifreler artık (sunucu sürümünde bcrypt hash olarak)
-    // saklandığından mevcut şifreler GÖSTERİLEMEZ — sadece yeni şifre
-    // atanabilir veya varsayılana ([kullanıcıadı]1234) sıfırlanabilir.
+    // GÜVENLİK NOTU: Şifreler (sunucuda bcrypt hash olarak) saklandığından
+    // mevcut şifreler GÖSTERİLEMEZ — sadece yeni şifre atanabilir ya da
+    // güçlü rastgele bir şifreyle değiştirilebilir (tahmin edilebilir
+    // [kullanıcıadı]1234 varsayılanı artık kullanılmıyor).
     const renderKullaniciler = () => {
       body.innerHTML = `
-        <div class="fhint" style="margin-bottom:12px">Güvenlik gereği mevcut şifreler görüntülenemez. Yeni şifre yazıp kaydedin ya da ↺ ile <b>[kullanıcıadı]1234</b> varsayılanına döndürün.</div>
+        <div class="fhint" style="margin-bottom:12px">Güvenlik gereği mevcut şifreler görüntülenemez. Yeni şifre yazıp kaydedin (en az 10 karakter, büyük/küçük harf ve rakam) ya da ⟳ ile güçlü rastgele bir şifre üretin.</div>
         <div style="margin-bottom:16px">
-          <button class="btn btn-sm" id="sy-sifirla-hepsi" style="background:#EF4444;color:#fff;border:none">⟳ Tüm Şifreleri Varsayılana Sıfırla</button>
-          <span style="font-size:11px;color:var(--text3);margin-left:8px">Her kullanıcı için şifre = [kullanıcıadı]1234 olur</span>
+          <button class="btn btn-sm" id="sy-sifirla-hepsi" style="background:#EF4444;color:#fff;border:none">⟳ Tüm Şifreleri Güçlü Rastgele Şifrelerle Yenile</button>
+          <span style="font-size:11px;color:var(--text3);margin-left:8px">Her kullanıcı için ayrı, tahmin edilemeyen bir şifre üretilir</span>
         </div>
         <table class="dtable" style="font-size:12px">
           <tr><th>Kullanıcı Adı</th><th>Birim / Ad</th><th>Yeni Şifre (boş = değişmez)</th><th></th></tr>
@@ -1456,21 +1546,22 @@ const App = (() => {
             <td class="mono"><b>${escapeHtml(k.kullaniciAdi)}</b></td>
             <td>${escapeHtml(k.ad || k.rol)}</td>
             <td><input class="finput sy-sifre" data-i="${i}" type="text" placeholder="••••••••" style="font-size:11px;padding:4px 8px;font-family:monospace;width:180px"></td>
-            <td><button class="btn btn-sm btn-ghost sy-varsayilan" data-i="${i}" title="Varsayılana sıfırla">↺</button></td>
+            <td><button class="btn btn-sm btn-ghost sy-varsayilan" data-i="${i}" title="Güçlü rastgele şifre üret">⟳</button></td>
           </tr>`).join('')}
         </table>
       `;
       body.querySelector('#sy-sifirla-hepsi').onclick = async () => {
         try {
-          await Store.sifreleriSifirla();
-          toast('Tüm şifreler varsayılana sıfırlandı', 'ok');
+          const yeniSifreler = await Store.sifreleriSifirla();
+          sifreleriGosterModal(yeniSifreler);
         } catch (e) { toast('Hata: ' + e.message, 'err'); }
       };
       body.querySelectorAll('.sy-varsayilan').forEach(b => b.onclick = async () => {
         const i = parseInt(b.dataset.i);
+        const yeni = guclutSifreUret();
         try {
-          await Store.sifreDegistir(kullaniciler[i].id, kullaniciler[i].kullaniciAdi + '1234');
-          toast('Şifre sıfırlandı: ' + kullaniciler[i].kullaniciAdi, 'ok');
+          await Store.sifreDegistir(kullaniciler[i].id, yeni);
+          sifreleriGosterModal([{ kullaniciAdi: kullaniciler[i].kullaniciAdi, ad: kullaniciler[i].ad, sifre: yeni }]);
         } catch (e) { toast('Hata: ' + e.message, 'err'); }
       });
     };
@@ -1491,6 +1582,68 @@ const App = (() => {
       else if (!hata) toast('Değiştirilecek şifre girilmedi', 'err');
       if (!hata) closeModal();
     };
+  }
+
+  // ── HESAP TALEPLERİ (e-posta ile kayıt onayı, Sadece Üst Yönetim) ───────
+  // Giriş ekranındaki "Hesap Talep Et" formundan gelen bekleyen talepleri
+  // onaylar/reddeder. Onaylanan talep, kullanıcının BAŞVURU SIRASINDA
+  // belirlediği şifreyle (yalnızca hash'i taşınarak) gerçek bir hesaba
+  // dönüşür — yönetim düz metin şifreyi hiç görmez/atamaz.
+  async function openHesapTalepleriModal() {
+    const ROL_ETIKET = {}; ROLLER.forEach(r => { ROL_ETIKET[r.id] = r.label; });
+    const talepler = await Store.hesapTalepleri.all();
+    const bekleyenler = talepler.filter(t => t.durum === 'bekliyor').sort((a, b) => (b.zaman || '').localeCompare(a.zaman || ''));
+    const kararliler = talepler.filter(t => t.durum !== 'bekliyor').sort((a, b) => (b.kararTarihi || '').localeCompare(a.kararTarihi || '')).slice(0, 20);
+
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="card-hdr"><div class="card-title">Bekleyen Talepler (${bekleyenler.length})</div></div>
+      ${!bekleyenler.length ? '<div class="muted" style="font-size:11.5px;padding:8px 0 16px">Bekleyen hesap talebi yok.</div>' : `
+      <table class="dtable" style="font-size:12px;margin-bottom:18px">
+        <tr><th>Ad Soyad</th><th>E-posta</th><th>Birim/Rol</th><th>Tarih</th><th></th></tr>
+        ${bekleyenler.map(t => `<tr>
+          <td>${escapeHtml(t.ad || '')}</td>
+          <td class="mono" style="font-size:10.5px">${escapeHtml(t.email || '')}</td>
+          <td>${escapeHtml(ROL_ETIKET[t.rol] || t.rol || '')}</td>
+          <td class="mono" style="font-size:10.5px">${escapeHtml(t.tarih || '')}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-sm btn-green ht-onayla" data-id="${t.id}" style="padding:3px 8px;font-size:11px">✓ Onayla</button>
+            <button class="btn btn-sm ht-reddet" data-id="${t.id}" style="padding:3px 8px;font-size:11px">✕ Reddet</button>
+          </td>
+        </tr>`).join('')}
+      </table>`}
+      ${kararliler.length ? `
+      <div class="card-hdr"><div class="card-title">Son Kararlar</div></div>
+      <table class="dtable" style="font-size:11px">
+        <tr><th>Ad Soyad</th><th>E-posta</th><th>Birim/Rol</th><th>Durum</th><th>Kullanıcı Adı</th><th>Karar Tarihi</th></tr>
+        ${kararliler.map(t => `<tr>
+          <td>${escapeHtml(t.ad || '')}</td>
+          <td class="mono" style="font-size:10px">${escapeHtml(t.email || '')}</td>
+          <td>${escapeHtml(ROL_ETIKET[t.rol] || t.rol || '')}</td>
+          <td><span class="pill ${t.durum === 'onaylandi' ? 'pill-green' : 'pill-red'}" style="font-size:9px">${t.durum === 'onaylandi' ? 'Onaylandı' : 'Reddedildi'}</span></td>
+          <td class="mono" style="font-size:10px">${escapeHtml(t.atananKullaniciAdi || '—')}</td>
+          <td class="mono" style="font-size:10px">${escapeHtml(t.kararTarihi || '')}</td>
+        </tr>`).join('')}
+      </table>` : ''}
+    `;
+    openModal({ title: '👥 Hesap Talepleri', body, wide: true, footer: '<button class="btn" id="ht-kapat">Kapat</button>' });
+    document.getElementById('ht-kapat').onclick = closeModal;
+    body.querySelectorAll('.ht-onayla').forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const sonuc = await Store.hesapTalepiKarar(b.dataset.id, 'onayla');
+        toast('Hesap onaylandı — kullanıcı adı: ' + sonuc.kullaniciAdi, 'ok');
+        closeModal(); openHesapTalepleriModal();
+      } catch (e) { b.disabled = false; toast('Hata: ' + e.message, 'err'); }
+    });
+    body.querySelectorAll('.ht-reddet').forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await Store.hesapTalepiKarar(b.dataset.id, 'reddet');
+        toast('Talep reddedildi', 'ok');
+        closeModal(); openHesapTalepleriModal();
+      } catch (e) { b.disabled = false; toast('Hata: ' + e.message, 'err'); }
+    });
   }
 
   // ── DENETİM KAYDI (sadece sunucu sürümü + yonetim) ─────────────────────────
@@ -1729,11 +1882,26 @@ const App = (() => {
         <div id="sif-hata" style="color:#DC2626;font-size:11.5px;margin-top:8px;display:none"></div>
       </div>
     `;
-    const footer = `<button class="btn" id="btn-set-cancel">Vazgeç</button><button class="btn btn-blue" id="btn-set-save">Kaydet</button><button class="btn" id="btn-yedek" style="margin-left:8px">💾 Yedekleme</button>${state.role === 'yonetim' ? '<button class="btn" id="btn-sifre-yon" style="margin-left:8px">🔑 Şifre Yönetimi</button>' : ''}${state.role === 'yonetim' && Store.sunucuModu ? '<button class="btn" id="btn-denetim" style="margin-left:8px">📋 Denetim Kaydı</button>' : ''}`;
+    const footer = `<button class="btn" id="btn-set-cancel">Vazgeç</button><button class="btn btn-blue" id="btn-set-save">Kaydet</button><button class="btn" id="btn-yedek" style="margin-left:8px">💾 Yedekleme</button>${state.role === 'yonetim' ? '<button class="btn" id="btn-sifre-yon" style="margin-left:8px">🔑 Şifre Yönetimi</button><button class="btn" id="btn-hesap-talep" style="margin-left:8px">👥 Hesap Talepleri</button>' : ''}${state.role === 'yonetim' && Store.sunucuModu ? '<button class="btn" id="btn-denetim" style="margin-left:8px">📋 Denetim Kaydı</button>' : ''}`;
     openModal({ title: 'Sistem Ayarları', sub: 'Genel maliyet ve fiyatlandırma parametreleri', body, footer, wide: true });
     document.getElementById('btn-set-cancel').onclick = closeModal;
     document.getElementById('btn-yedek').onclick = openYedeklemeModal;
-    if (state.role === 'yonetim') document.getElementById('btn-sifre-yon').onclick = openSifreYonetimiModal;
+    if (state.role === 'yonetim') {
+      document.getElementById('btn-sifre-yon').onclick = openSifreYonetimiModal;
+      document.getElementById('btn-hesap-talep').onclick = openHesapTalepleriModal;
+      // Bekleyen talep sayısı rozeti — Hat & İstasyon Takibi'ndeki
+      // "Operatör Yetkileri" rozetiyle AYNI desen.
+      (async () => {
+        try {
+          const bekleyenSayisi = (await Store.hesapTalepleri.all()).filter(t => t.durum === 'bekliyor').length;
+          if (bekleyenSayisi > 0) {
+            const btn = document.getElementById('btn-hesap-talep');
+            btn.innerHTML = `👥 Hesap Talepleri <span class="pill pill-red" style="font-size:9.5px;margin-left:4px">${bekleyenSayisi}</span>`;
+            btn.style.border = '1.5px solid var(--red)';
+          }
+        } catch (e) {}
+      })();
+    }
     if (state.role === 'yonetim' && Store.sunucuModu) document.getElementById('btn-denetim').onclick = openDenetimKaydiModal;
 
     // ── Tehlikeli Bölge: 3 onay + şifre doğrulanınca buton aktifleşir ──────

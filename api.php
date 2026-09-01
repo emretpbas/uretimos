@@ -36,6 +36,8 @@
 //        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_BAIDU_API_KEY + URETIMOS_BAIDU_SECRET_KEY gerekir)
 //   POST api.php?action=montajSemasiOkuGoogle body:{gorselB64,mediaType,dosyaAdi}
 //        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_GOOGLE_VISION_KEY gerekir)
+//   POST api.php?action=hesapTalepEt      body:{ad,email,rol,sifre} -> {ok}  (oturumsuz, IP hız sınırlı)
+//   POST api.php?action=hesapTalepiKarar  body:{id,karar:'onayla'|'reddet'} -> {ok} (sadece yonetim)
 //
 // Kurulum: bu klasörde PHP'nin YAZMA izni olmalı (data.sqlite + backups/ için).
 // data.sqlite ve backups/ web'den erişime KAPATILMALI (.htaccess dahildir).
@@ -430,6 +432,66 @@ function sifreDogrula($girilen, $sakli) {
     return hash_equals($sakli, $girilen); // zamanlama saldırısına dayanıklı karşılaştırma
 }
 
+// ── ŞİFRE GÜÇ KURALI VE GÜÇLÜ RASTGELE ÜRETİM ──────────────────────────────
+// En az 10 karakter + büyük/küçük harf + rakam. [kullanıcıadı]1234 gibi
+// eski zayıf varsayılanların yerini alır (bkz. resetPasswords/changePassword).
+function sifreGucluMu($sifre) {
+    $uzunluk = function_exists('mb_strlen') ? mb_strlen($sifre) : strlen($sifre);
+    if ($uzunluk < 10) return false;
+    if (!preg_match('/[a-z]/', $sifre)) return false;
+    if (!preg_match('/[A-Z]/', $sifre)) return false;
+    if (!preg_match('/[0-9]/', $sifre)) return false;
+    return true;
+}
+// Kriptografik olarak güvenli (random_int) 12 haneli şifre üretir; karışan
+// karakterler (I/l/O/0/1) havuzdan çıkarılmıştır.
+function guvenliRastgeleSifreUret() {
+    $buyuk = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    $kucuk = 'abcdefghijkmnpqrstuvwxyz';
+    $rakam = '23456789';
+    $ozel = '!@#$%&*';
+    $havuz = $buyuk . $kucuk . $rakam . $ozel;
+    $sifre = [
+        $buyuk[random_int(0, strlen($buyuk) - 1)],
+        $kucuk[random_int(0, strlen($kucuk) - 1)],
+        $rakam[random_int(0, strlen($rakam) - 1)],
+        $ozel[random_int(0, strlen($ozel) - 1)],
+    ];
+    for ($i = 0; $i < 8; $i++) $sifre[] = $havuz[random_int(0, strlen($havuz) - 1)];
+    for ($i = count($sifre) - 1; $i > 0; $i--) {
+        $j = random_int(0, $i);
+        $gecici = $sifre[$i]; $sifre[$i] = $sifre[$j]; $sifre[$j] = $gecici;
+    }
+    return implode('', $sifre);
+}
+
+// ── E-POSTA GÖNDERİMİ (PHP mail() — ek servis/API anahtarı gerektirmez) ────
+// En iyi çaba: başarısızlık (mail() kapalı, spam filtresi vb.) isteği ASLA
+// engellemez, sessizce yutulur.
+function epostaGonder($aliciEposta, $konu, $govde) {
+    if (!$aliciEposta || !function_exists('mail')) return false;
+    $host = preg_replace('/[^a-zA-Z0-9.\-]/', '', $_SERVER['HTTP_HOST'] ?? 'uretimos.com.tr');
+    $basliklar = "Content-Type: text/plain; charset=UTF-8\r\nFrom: ÜretimOS <no-reply@$host>\r\n";
+    try { return @mail($aliciEposta, '=?UTF-8?B?' . base64_encode($konu) . '?=', $govde, $basliklar); }
+    catch (Exception $e) { return false; }
+}
+
+// Talep edilebilir birim/rol listesi — app.js'teki ROLLER menü listesiyle
+// AYNI (bkz. app.js başındaki $ROLLER dizisi), 'admin' hariç: o gerçek bir
+// hesap rolü değil, yalnızca yönetim'in "tümünü gör" arayüz görünümüdür.
+const TALEP_EDILEBILIR_ROLLER = [
+    'yonetim', 'arge', 'teknik_ofis', 'satinalma', 'uretim_planlama', 'depo',
+    'cari', 'teklif_siparis', 'satis', 'sevkiyat', 'muhasebe', 'kalite',
+    'uretim', 'isg', 'ik', 'bakim', 'pazarlama'
+];
+
+function kullaniciAdiTabanUret($email) {
+    $parcalar = explode('@', $email);
+    $yerel = strtolower($parcalar[0] ?? '');
+    $yerel = preg_replace('/[^a-z0-9]/', '', $yerel);
+    return $yerel !== '' ? $yerel : 'kullanici';
+}
+
 // ── HAT OPERATÖR TERMİNALİ YARDIMCILARI ────────────────────────────────────
 // Operatörler ÜretimOS kullanıcı hesabıyla DEĞİL, ana giriş ekranının
 // altındaki terminal tuşuyla girer. Bu girişe 'hat_operator' rolünde KISITLI
@@ -529,6 +591,7 @@ $HASSAS_OKUMA = [
     'teklifKarsilastirma'=> ['satinalma'],
     // Kullanıcı hesapları — hiçbir düz personel görmemeli
     'kullaniciler'       => [],   // yalnızca yonetim (aşağıdaki kural gereği)
+    'hesapTalepleri'     => [],   // yalnızca yonetim — ad/e-posta/şifre hash'i taşır
 ];
 
 // Hassas koleksiyon => bu koleksiyona YAZABİLEN roller (okumadan daha dar)
@@ -553,6 +616,7 @@ $HASSAS_YAZMA = [
     'tedarikciler'       => ['satinalma', 'cari'],
     'teklifKarsilastirma'=> ['satinalma'],
     'kullaniciler'       => [],   // yalnızca özel şifre uçlarından (get/set ile hiç yazılamaz)
+    'hesapTalepleri'     => [],   // yalnızca özel hesapTalep uçlarından
 ];
 
 // Bir oturumun $key koleksiyonuna erişimini denetler. Yetki yoksa 403 döner
@@ -1706,7 +1770,8 @@ try {
         $body = readJsonBody();
         $userId = $body['userId'] ?? '';
         $yeniSifre = $body['yeniSifre'] ?? '';
-        if ($userId === '' || strlen($yeniSifre) < 4) respond(['error' => 'Geçersiz istek (şifre en az 4 karakter)'], 400);
+        if ($userId === '') respond(['error' => 'Geçersiz istek'], 400);
+        if (!sifreGucluMu($yeniSifre)) respond(['error' => 'Şifre en az 10 karakter olmalı; büyük harf, küçük harf ve rakam içermeli'], 400);
         // Yetki: yonetim herkesi, diğerleri sadece KENDİ şifresini değiştirebilir
         if ($oturum['rol'] !== 'yonetim' && $oturum['user_id'] !== $userId) {
             respond(['error' => 'Sadece kendi şifrenizi değiştirebilirsiniz'], 403);
@@ -1729,12 +1794,128 @@ try {
         $oturum = oturumZorunlu($pdo);
         if ($oturum['rol'] !== 'yonetim') respond(['error' => 'Sadece yönetim tüm şifreleri sıfırlayabilir'], 403);
         $kullanicilar = kullanicilariOku($pdo);
+        // ESKİ DAVRANIŞ [kullanıcıadı]1234 gibi tahmin edilebilir bir
+        // varsayılana dönüyordu — artık her kullanıcı için GÜÇLÜ, RASTGELE
+        // bir şifre üretilir. Düz metin şifreler hiçbir yerde saklanmaz;
+        // yalnızca bu TEK seferlik yanıtta döner — istemci ekranda gösterip
+        // yöneticinin ilgili kişilere iletmesini sağlar.
+        $yeniSifreler = [];
         foreach ($kullanicilar as &$k) {
-            $k['sifreHash'] = password_hash(($k['kullaniciAdi'] ?? '') . '1234', PASSWORD_DEFAULT);
+            $yeni = guvenliRastgeleSifreUret();
+            $k['sifreHash'] = password_hash($yeni, PASSWORD_DEFAULT);
+            $yeniSifreler[] = ['kullaniciAdi' => $k['kullaniciAdi'] ?? '', 'ad' => $k['ad'] ?? '', 'sifre' => $yeni];
         }
+        unset($k);
         kullanicilariYaz($pdo, $kullanicilar);
         auditYaz($pdo, $oturum['kullanici_adi'], 'toplu_sifre_sifirlama', 'kullaniciler');
+        respond(['ok' => true, 'yeniSifreler' => $yeniSifreler]);
+    }
+
+    // hesapTalepEt: yeni personel giriş hesabı için TALEP açar — oturumsuzdur
+    // (giriş ekranındaki "Hesap Talep Et" formundan çağrılır), hesap
+    // BEKLEMEDE oluşturulur; yalnızca yönetim onaylayınca gerçek bir
+    // kullaniciler kaydına dönüşür. hatSifreTalep ile AYNI güvenlik deseni:
+    // IP bazlı hız sınırı, düz metin şifre asla saklanmaz (yalnızca hash'i
+    // tutulur, onayda aynen taşınır).
+    elseif ($action === 'hesapTalepEt') {
+        $ip = istemciIp();
+        $pdo->prepare('DELETE FROM login_attempts WHERE attempted_at < :s')
+            ->execute([':s' => time() - DENEME_PENCERE_SANIYE]);
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM login_attempts WHERE ip = :ip');
+        $stmt->execute([':ip' => $ip]);
+        if ((int)$stmt->fetchColumn() >= MAX_GIRIS_DENEME) {
+            respond(['error' => 'Çok fazla istek. 15 dakika sonra tekrar deneyin.'], 429);
+        }
+        $body = readJsonBody();
+        $ad = trim((string)($body['ad'] ?? ''));
+        $email = trim((string)($body['email'] ?? ''));
+        $rol = (string)($body['rol'] ?? '');
+        $sifre = (string)($body['sifre'] ?? '');
+        if ($ad === '') respond(['error' => 'Ad soyad zorunlu'], 400);
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) respond(['error' => 'Geçerli bir e-posta adresi girin'], 400);
+        if (!in_array($rol, TALEP_EDILEBILIR_ROLLER, true)) respond(['error' => 'Geçersiz rol/birim seçimi'], 400);
+        if (!sifreGucluMu($sifre)) respond(['error' => 'Şifre en az 10 karakter olmalı; büyük harf, küçük harf ve rakam içermeli'], 400);
+
+        $emailAnahtar = strtolower($email);
+        $talepler = kvOku($pdo, 'hesapTalepleri');
+        foreach ($talepler as $t) {
+            if (strtolower($t['email'] ?? '') === $emailAnahtar && ($t['durum'] ?? '') === 'bekliyor') {
+                respond(['error' => 'Bu e-posta ile bekleyen bir talebiniz zaten var — yönetim onayını bekleyin'], 409);
+            }
+        }
+        $kullanicilar = kullanicilariOku($pdo);
+        foreach ($kullanicilar as $k) {
+            if (strtolower($k['email'] ?? '') === $emailAnahtar) {
+                respond(['error' => 'Bu e-posta ile zaten bir hesap var'], 409);
+            }
+        }
+        $pdo->prepare('INSERT INTO login_attempts (ip, attempted_at) VALUES (:ip,:t)')
+            ->execute([':ip' => $ip, ':t' => time()]);
+        $talepler[] = [
+            'id' => 'HTL-' . bin2hex(random_bytes(5)), 'ad' => $ad, 'email' => $email, 'rol' => $rol,
+            'sifreHash' => password_hash($sifre, PASSWORD_DEFAULT),
+            'durum' => 'bekliyor', 'tarih' => date('Y-m-d'), 'zaman' => date('c'), 'ip' => $ip
+        ];
+        kvYaz($pdo, 'hesapTalepleri', $talepler);
+        auditYaz($pdo, 'talep:' . $ad, 'hesap_talebi', 'hesapTalepleri', ['rol' => $rol]);
+        epostaGonder($email, 'ÜretimOS — Hesap Talebiniz Alındı',
+            "Merhaba $ad,\n\nÜretimOS'a hesap talebiniz alındı. Yönetici onayından sonra bu adrese ($email) bilgilendirme e-postası gönderilecek.\n\nBu talebi siz oluşturmadıysanız bu e-postayı görmezden gelebilirsiniz.");
         respond(['ok' => true]);
+    }
+
+    // hesapTalepiKarar: yönetimin bekleyen bir hesap talebini onaylaması ya
+    // da reddetmesi. Onayda talep DÜZ METİN şifre hiç taşımadan (yalnızca
+    // hash'i devrederek) gerçek bir kullaniciler kaydına dönüşür.
+    elseif ($action === 'hesapTalepiKarar') {
+        $oturum = oturumZorunlu($pdo);
+        if ($oturum['rol'] !== 'yonetim') respond(['error' => 'Sadece yönetim hesap taleplerini onaylayabilir'], 403);
+        $body = readJsonBody();
+        $id = (string)($body['id'] ?? '');
+        $karar = (string)($body['karar'] ?? '');
+        if (!in_array($karar, ['onayla', 'reddet'], true)) respond(['error' => 'Geçersiz karar'], 400);
+
+        $talepler = kvOku($pdo, 'hesapTalepleri');
+        $bulunanIdx = -1;
+        foreach ($talepler as $i => $t) {
+            if (($t['id'] ?? '') === $id && ($t['durum'] ?? '') === 'bekliyor') { $bulunanIdx = $i; break; }
+        }
+        if ($bulunanIdx < 0) respond(['error' => 'Bekleyen talep bulunamadı'], 404);
+        $talep = $talepler[$bulunanIdx];
+
+        if ($karar === 'reddet') {
+            $talepler[$bulunanIdx]['durum'] = 'reddedildi';
+            $talepler[$bulunanIdx]['kararTarihi'] = date('Y-m-d');
+            kvYaz($pdo, 'hesapTalepleri', $talepler);
+            auditYaz($pdo, $oturum['kullanici_adi'], 'hesap_talebi_reddedildi', 'hesapTalepleri', ['rol' => $talep['rol'] ?? null]);
+            epostaGonder($talep['email'] ?? '', 'ÜretimOS — Hesap Talebiniz',
+                "Merhaba " . ($talep['ad'] ?? '') . ",\n\nÜretimOS hesap talebiniz yönetici tarafından onaylanmadı. Sorularınız için yöneticinizle görüşebilirsiniz.");
+            respond(['ok' => true]);
+        }
+
+        // onayla: benzersiz bir kullanıcı adı üret (e-postanın @ öncesi
+        // kısmından türetilir, çakışırsa sonuna sayı eklenir)
+        $kullanicilar = kullanicilariOku($pdo);
+        $tabanAdi = kullaniciAdiTabanUret($talep['email'] ?? '');
+        $kadi = $tabanAdi; $sira = 1;
+        while (true) {
+            $carpisma = false;
+            foreach ($kullanicilar as $k) { if (strtolower($k['kullaniciAdi'] ?? '') === $kadi) { $carpisma = true; break; } }
+            if (!$carpisma) break;
+            $sira++; $kadi = $tabanAdi . $sira;
+        }
+        $kullanicilar[] = [
+            'id' => 'USR-' . bin2hex(random_bytes(4)), 'kullaniciAdi' => $kadi, 'rol' => $talep['rol'],
+            'ad' => $talep['ad'], 'email' => $talep['email'] ?? '', 'sifreHash' => $talep['sifreHash']
+        ];
+        kullanicilariYaz($pdo, $kullanicilar);
+        $talepler[$bulunanIdx]['durum'] = 'onaylandi';
+        $talepler[$bulunanIdx]['kararTarihi'] = date('Y-m-d');
+        $talepler[$bulunanIdx]['atananKullaniciAdi'] = $kadi;
+        kvYaz($pdo, 'hesapTalepleri', $talepler);
+        auditYaz($pdo, $oturum['kullanici_adi'], 'hesap_talebi_onaylandi', 'hesapTalepleri', ['rol' => $talep['rol'] ?? null]);
+        epostaGonder($talep['email'] ?? '', 'ÜretimOS — Hesabınız Onaylandı',
+            "Merhaba " . ($talep['ad'] ?? '') . ",\n\nÜretimOS hesabınız onaylandı.\nKullanıcı adınız: $kadi\nBaşvuru sırasında belirlediğiniz şifre ile giriş yapabilirsiniz.");
+        respond(['ok' => true, 'kullaniciAdi' => $kadi]);
     }
 
     // ══ DENETİM KAYDI ══════════════════════════════════════════════════════
