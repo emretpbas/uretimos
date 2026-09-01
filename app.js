@@ -898,13 +898,20 @@ const App = (() => {
     document.getElementById('sidebar').innerHTML = '';
     document.getElementById('sidebar').style.display = 'none';
     const main = document.getElementById('main');
+    // Üç tanıtım butonu (rehber/tutorial/hat terminali) TEK bir ortak stil
+    // temelini paylaşır — önceden her biri kendi uzun inline stil bloğunu
+    // taşıyordu, aralarındaki küçük tutarsızlıklar (padding/line-height)
+    // ekranda hafif "kayma" hissi veriyordu. Yalnızca renk/kenarlık farklı.
+    const cta = 'display:block;width:100%;padding:12px 10px;font-size:clamp(11px,3.2vw,13px);' +
+      'font-weight:800;line-height:1.4;white-space:normal;word-break:break-word;height:auto;' +
+      'min-height:44px;text-align:center;box-sizing:border-box';
     main.innerHTML = `
-      <div style="max-width:380px;margin:80px auto">
-        <div style="text-align:center;margin-bottom:32px">
-          <div style="font-size:28px;font-weight:900;letter-spacing:-.5px;margin-bottom:4px">ÜretimOS</div>
-          <div style="font-size:13px;color:var(--text3)">Kullanıcı adı ve şifrenizi girin</div>
+      <div style="max-width:380px;margin:60px auto;padding:0 14px;box-sizing:border-box">
+        <div style="text-align:center;margin-bottom:28px">
+          <div style="font-size:26px;font-weight:900;letter-spacing:-.5px;margin-bottom:4px">ÜretimOS</div>
+          <div style="font-size:12.5px;color:var(--text3)">Kullanıcı adı ve şifrenizi girin</div>
         </div>
-        <div class="card" style="padding:28px">
+        <div class="card" style="padding:24px;box-sizing:border-box">
           <div class="fgroup"><label class="flbl">Kullanıcı Adı</label>
             <input class="finput" id="ln-kullanici" type="text" placeholder="örn. cari" autocomplete="username" autofocus>
           </div>
@@ -912,8 +919,8 @@ const App = (() => {
             <input class="finput" id="ln-sifre" type="password" placeholder="şifreniz" autocomplete="current-password">
           </div>
           <div id="ln-hata" style="color:var(--red-text);font-size:12px;margin-bottom:10px;display:none">Kullanıcı adı veya şifre hatalı.</div>
-          <button class="btn btn-blue" id="ln-giris" style="width:100%;margin-top:4px">Giriş Yap</button>
-          <button class="btn btn-ghost" id="ln-hesap-talep" style="width:100%;margin-top:8px;font-size:11.5px">Hesabınız yok mu? Hesap Talep Edin</button>
+          <button class="btn btn-blue" id="ln-giris" style="width:100%;margin-top:4px;white-space:normal">Giriş Yap</button>
+          <button class="btn btn-ghost" id="ln-hesap-talep" style="width:100%;margin-top:8px;font-size:11.5px;white-space:normal;line-height:1.3">Hesabınız yok mu? Hesap Talep Edin</button>
         </div>
         <div style="text-align:center;font-size:11px;color:var(--text3);margin-top:16px">
           İlk kurulumda her birim için varsayılan şifre: <b>[birim]1234</b><br>
@@ -923,24 +930,20 @@ const App = (() => {
         <!-- ── 1) SİSTEM REHBERİ (ayrıntılı tanıtım) ──
              Programın tamamı: aşama aşama işleyiş, veri akışı, rapor haritası,
              yan kollar ve hiyerarşik yapı. İnteraktif turdan ÖNCE gelir. -->
-        <button class="btn" id="ln-rehber" style="display:block;width:100%;margin-top:16px;padding:13px 10px;
-          font-size:clamp(11px,3.2vw,13px);font-weight:800;line-height:1.4;white-space:normal;word-break:break-word;
-          height:auto;text-align:center;border:0;color:#fff;
+        <button class="btn" id="ln-rehber" style="${cta};margin-top:16px;border:0;color:#fff;
           background:linear-gradient(135deg,#0f172a,#1e3a8a);box-shadow:0 4px 14px rgba(30,58,138,.32)">
           📖 Sistem Rehberi — Ayrıntılı Tanıtım<br>
-          <span style="font-weight:600;opacity:.9">İşleyiş · veri akışı · rapor haritası · hiyerarşi</span>
+          <span style="font-weight:600;opacity:.9">İşleyiş · ERP/OCR entegrasyonları · e-Fatura/e-İrsaliye · rapor haritası</span>
         </button>
         <div style="text-align:center;font-size:10.5px;color:var(--text3);margin-top:7px">
           <b>Önce burayı okuyun:</b> hangi ekran ne yapar, hareketler yönetim
-          raporlarına nasıl yansır — 8 bölüm.
+          raporlarına nasıl yansır — güncel bölümlerle.
         </div>
 
         <!-- ── 2) İNTERAKTİF TANITIM (oyunlaştırılmış eğitim) ──
              Ziyaretçi, siparişten sevkiyata tüm akışı 9 duraklık bir yolculuk
              olarak deneyimler. Giriş yapmadan çalışır, gerçek veriye dokunmaz. -->
-        <button class="btn" id="ln-tutorial" style="display:block;width:100%;margin-top:16px;padding:13px 10px;
-          font-size:clamp(11px,3.2vw,13px);font-weight:800;line-height:1.4;white-space:normal;word-break:break-word;
-          height:auto;text-align:center;border:0;color:#fff;
+        <button class="btn" id="ln-tutorial" style="${cta};margin-top:16px;border:0;color:#fff;
           background:linear-gradient(135deg,#7c3aed,#2563eb);box-shadow:0 4px 14px rgba(37,99,235,.35)">
           🎮 Uygulamalı Test — İnteraktif Tur<br>
           <span style="font-weight:600;opacity:.9">Siparişten sevkiyata 10 durak · görevlerle · ~15 dk</span>
@@ -958,7 +961,7 @@ const App = (() => {
           <div style="font-size:10.5px;color:var(--text3);font-weight:700;letter-spacing:.5px">ÜRETİM SAHASI</div>
           <div style="flex:1;height:1px;background:var(--border)"></div>
         </div>
-        <button class="btn" id="ln-hat-terminal" style="display:block;width:100%;padding:12px 10px;font-size:clamp(11px,3.2vw,13px);font-weight:800;line-height:1.35;white-space:normal;word-break:break-word;height:auto;min-height:44px;text-align:center;border:1.5px solid var(--blue-light);background:var(--blue-bg);color:var(--blue-text)">
+        <button class="btn" id="ln-hat-terminal" style="${cta};border:1.5px solid var(--blue-light);background:var(--blue-bg);color:var(--blue-text)">
           📱 Hat Operatör Terminali<br><span style="font-weight:600;opacity:.85">Operatör Girişi</span>
         </button>
         <div style="text-align:center;font-size:10.5px;color:var(--text3);margin-top:8px">
