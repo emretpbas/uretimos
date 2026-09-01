@@ -8,6 +8,7 @@ backups/
 # Gizli anahtarlar — asla repoya girmez, sadece sunucuda elle oluşturulur
 anthropic_anahtari.php
 baidu_anahtari.php
+google_anahtari.php
 
 # Derleme çıktısı
 dist/

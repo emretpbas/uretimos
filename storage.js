@@ -417,6 +417,10 @@ const Store = (() => {
   async function montajSemasiOkuBaidu(payload) {
     return qrJson('montajSemasiOkuBaidu', payload);
   }
+  // Montaj şeması görselini Google Cloud Vision OCR'a gönderir → {ok, parcalar, genelNot}
+  async function montajSemasiOkuGoogle(payload) {
+    return qrJson('montajSemasiOkuGoogle', payload);
+  }
   // Şifreyi sunucuda bcrypt ile hash'ler; istemci düz metni SAKLAMAZ.
   async function sifreHashle(sifre, kimIcin) {
     const res = await apiFetch(API_URL + '?action=sifreHashle', {
@@ -629,7 +633,7 @@ const Store = (() => {
     get, set, del, listKeys, setIfAbsent,
     login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifreTalepGonder,
-    qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu,
+    qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,
     hammaddeler: coll('hammaddeler'),
     yarimamuller: coll('yarimamuller'),

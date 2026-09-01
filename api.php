@@ -34,6 +34,8 @@
 //        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_ANTHROPIC_KEY gerekir)
 //   POST api.php?action=montajSemasiOkuBaidu body:{gorselB64,mediaType,dosyaAdi}
 //        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_BAIDU_API_KEY + URETIMOS_BAIDU_SECRET_KEY gerekir)
+//   POST api.php?action=montajSemasiOkuGoogle body:{gorselB64,mediaType,dosyaAdi}
+//        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_GOOGLE_VISION_KEY gerekir)
 //
 // Kurulum: bu klasörde PHP'nin YAZMA izni olmalı (data.sqlite + backups/ için).
 // data.sqlite ve backups/ web'den erişime KAPATILMALI (.htaccess dahildir).
@@ -352,6 +354,7 @@ function tarayiciOzeti() {
 // testler/06_montaj_semasi_test.php).
 require_once __DIR__ . '/montaj_semasi_ai.php';
 require_once __DIR__ . '/baidu_ocr_ai.php';
+require_once __DIR__ . '/google_ocr_ai.php';
 
 function auditYaz($pdo, $kullanici, $islem, $anahtar, $ek = []) {
     try {
@@ -1127,6 +1130,49 @@ try {
         if (!$sonuc['ok']) respond(['error' => $sonuc['hata']], 502);
 
         auditYaz($pdo, $oturum['kullanici_adi'] ?? '?', 'montaj_semasi_oku_baidu', 'baiduOcr', ['dosya' => $dosyaAdi, 'parcaSayisi' => count($sonuc['parcalar'])]);
+        respond(['ok' => true, 'parcalar' => $sonuc['parcalar'], 'genelNot' => $sonuc['genelNot']]);
+    }
+
+    // montajSemasiOkuGoogle: montajSemasiOku ile AYNI rol/görsel doğrulaması,
+    // ama Anthropic/Baidu yerine Google Cloud Vision OCR'ı çağırır — bkz.
+    // google_ocr_ai.php başındaki açıklama. Kimlik doğrulaması Baidu'dan
+    // BASİT: tek bir API anahtarı, ayrı token adımı yok.
+    elseif ($action === 'montajSemasiOkuGoogle') {
+        $oturum = oturumZorunlu($pdo);
+        if (!in_array($oturum['rol'] ?? '', ['admin', 'arge', 'teknik_ofis', 'yonetim'], true)) {
+            respond(['error' => 'Bu işlem yalnızca ARGE, Teknik Ofis ve Yönetim rolüne açıktır'], 403);
+        }
+        $body = readJsonBody();
+        $gorselB64 = (string)($body['gorselB64'] ?? '');
+        $mediaType = (string)($body['mediaType'] ?? 'image/png');
+        $dosyaAdi = trim((string)($body['dosyaAdi'] ?? ''));
+        if ($gorselB64 === '') respond(['error' => 'Görsel gönderilmedi'], 400);
+        if (!in_array($mediaType, ['image/png', 'image/jpeg'], true)) respond(['error' => 'Desteklenmeyen görsel türü'], 400);
+        if (strlen($gorselB64) > 15 * 1024 * 1024) respond(['error' => 'Görsel çok büyük (en fazla ~15 MB)'], 400);
+
+        // Anahtar okuma AYNI güvenli desen: önce ortam değişkeni, sonra
+        // git'in hiç görmediği (.gitignore'da) yerel google_anahtari.php
+        // dosyası — bkz. montajSemasiOku üzerindeki uzun açıklama.
+        $googleApiKey = getenv('URETIMOS_GOOGLE_VISION_KEY');
+        if (!$googleApiKey) {
+            $yerelAnahtarDosyasi = __DIR__ . '/google_anahtari.php';
+            if (is_file($yerelAnahtarDosyasi)) {
+                $googleApiKey = (string)(include $yerelAnahtarDosyasi);
+            }
+        }
+        if (!$googleApiKey) {
+            respond(['error' => 'Google Vision servisi sunucuda yapılandırılmamış (URETIMOS_GOOGLE_VISION_KEY ortam değişkeni veya google_anahtari.php eksik). Kurulum belgesine bakın.', 'yapilandirmaEksik' => true], 503);
+        }
+
+        try {
+            $googleYanit = googleVisionCagir($googleApiKey, $gorselB64);
+        } catch (Exception $e) {
+            respond(['error' => $e->getMessage()], 502);
+        }
+        $sonuc = googleOcrYanitAyristir($googleYanit);
+        if (!$sonuc['ok']) respond(['error' => $sonuc['hata']], 502);
+
+        auditYaz($pdo, $oturum['kullanici_adi'] ?? '?', 'montaj_semasi_oku_google', 'googleOcr', ['dosya' => $dosyaAdi, 'parcaSayisi' => count($sonuc['parcalar'])]);
         respond(['ok' => true, 'parcalar' => $sonuc['parcalar'], 'genelNot' => $sonuc['genelNot']]);
     }
 
