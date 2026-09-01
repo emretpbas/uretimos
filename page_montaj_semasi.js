@@ -11,9 +11,10 @@
 // AKIŞ:
 //   1) Reçetenin ait olacağı kart seçilir (ürün/yarı mamül/alt montaj/paket)
 //   2) Montaj şeması PDF'i yüklenir, sayfa görsele çevrilir (istemci, pdf.js)
-//   3) Görsel üç yoldan biriyle okunur: api.php?action=montajSemasiOku (Anthropic,
-//      ücretli), api.php?action=montajSemasiOkuBaidu (Baidu OCR, ücretsiz kotalı
-//      bulut) ya da tamamen tarayıcı içi Tesseract.js (ücretsiz, deneysel)
+//   3) Görsel üç yoldan biriyle okunur — VARSAYILAN api.php?action=montajSemasiOkuBaidu
+//      (Baidu OCR, ücretsiz kotalı bulut), alternatif olarak api.php?action=
+//      montajSemasiOku (Anthropic, ücretli) ya da tamamen tarayıcı içi
+//      Tesseract.js (ücretsiz, deneysel)
 //   4) Kullanıcı HER satırı gözden geçirir: adet düzeltir, mevcut hammadde/
 //      yarı mamül kartına eşler ya da yeni kart açar (isim UYDURULMAZ —
 //      eşleşme yoksa satır "eşleşmemiş" kalır, kaydedilemez)
@@ -267,12 +268,12 @@ PageModules.montaj_semasi = (() => {
       durum.innerHTML = `
         <div style="margin:8px 0"><img src="${gorselDataUrl}" style="max-width:100%;max-height:320px;border:1px solid var(--border);border-radius:8px"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <button class="btn btn-blue" id="ms-oku-ai">🤖 AI ile Oku (Ücretli, Önerilen)</button>
-          <button class="btn" id="ms-oku-baidu">🌐 Baidu OCR ile Dene (Ücretsiz Kotalı)</button>
+          <button class="btn btn-blue" id="ms-oku-baidu">🌐 Baidu OCR ile Oku (Varsayılan, Ücretsiz Kotalı)</button>
+          <button class="btn" id="ms-oku-ai">🤖 AI ile Dene (Ücretli)</button>
           <button class="btn" id="ms-oku-ocr">🔤 Tarayıcı İçi OCR ile Dene (Deneysel)</button>
         </div>`;
-      document.getElementById('ms-oku-ai').onclick = () => aiIleOku(main);
       document.getElementById('ms-oku-baidu').onclick = () => baiduIleOku(main);
+      document.getElementById('ms-oku-ai').onclick = () => aiIleOku(main);
       document.getElementById('ms-oku-ocr').onclick = () => ocrIleOku(main);
     } catch (err) {
       durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
