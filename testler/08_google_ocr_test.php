@@ -49,10 +49,70 @@ Test::dogru(strpos($r3['hata'] ?? '', 'Invalid image content') !== false, 'Googl
 $sonucYok = ['responses' => [['fullTextAnnotation' => ['text' => '']]]];
 $r4 = googleOcrYanitAyristir($sonucYok);
 Test::dogru($r4['ok'] === false, 'Boş metin ok:false döner');
-Test::dogru(strpos($r4['hata'] ?? '', 'geçerli bir satır bulamadı') !== false, 'Hata mesajı anlaşılır');
+Test::dogru(strpos($r4['hata'] ?? '', 'geçerli bir satır/tablo bulamadı') !== false, 'Hata mesajı anlaşılır');
 
 Test::dogru(googleOcrYanitAyristir([])['ok'] === false, 'Boş dizi girdisi çökmeden ok:false döner');
 Test::dogru(googleOcrYanitAyristir(null)['ok'] === false, 'null girdi çökmeden ok:false döner (is_array korumaları)');
+
+Test::bolum('Google Vision OCR — YATAY NO/SIZE/QTY tablosu (konum tabanlı yeniden inşa)');
+
+// Gerçek bir montaj şeması PDF'inde görülen düzeni taklit eder: NO satırı
+// 1..6, SIZE satırı yalnızca bazı sütunlarda dolu (4/5/6 vidalı, 1/2/3'te
+// ölçü yok), QTY satırı hepsinde dolu. Ayrıca sayfanın BAŞKA bir yerinde
+// ("Step 1".."Step 3" diyagram alt yazıları gibi) tabloyla İLGİSİZ kelimeler
+// var — eski satır-bazlı ayrıştırmanın yanlış eşleştirdiği tam senaryo.
+function kelimeOlustur($metin, $x, $y) {
+    return ['description' => $metin, 'boundingPoly' => ['vertices' => [
+        ['x' => $x - 10, 'y' => $y - 8], ['x' => $x + 10, 'y' => $y - 8],
+        ['x' => $x + 10, 'y' => $y + 8], ['x' => $x - 10, 'y' => $y + 8],
+    ]]];
+}
+$sutunX = [100, 150, 200, 250, 300, 350];
+$kelimeler = [
+    ['description' => 'TÜM SAYFA METNİ (kullanılmaz)', 'boundingPoly' => ['vertices' => []]], // index 0
+    // Tabloyla İLGİSİZ diyagram alt yazıları — başka bir y bandında
+    kelimeOlustur('Step', 60, 50), kelimeOlustur('1', 90, 50),
+    kelimeOlustur('Step', 160, 50), kelimeOlustur('2', 190, 50),
+    kelimeOlustur('Step', 260, 50), kelimeOlustur('3', 290, 50),
+    // NO satırı (etiket + 6 sütun)
+    kelimeOlustur('NO', 50, 500),
+    kelimeOlustur('1', $sutunX[0], 500), kelimeOlustur('2', $sutunX[1], 500),
+    kelimeOlustur('3', $sutunX[2], 500), kelimeOlustur('4', $sutunX[3], 500),
+    kelimeOlustur('5', $sutunX[4], 500), kelimeOlustur('6', $sutunX[5], 500),
+    // SIZE satırı — yalnızca 4/5/6. sütunlarda değer var (1/2/3 vidasız parça)
+    kelimeOlustur('SIZE', 50, 550),
+    kelimeOlustur('M4X20MM', $sutunX[3], 550), kelimeOlustur('M4X30MM', $sutunX[4], 550),
+    kelimeOlustur('M5X40MM', $sutunX[5], 550),
+    // QTY satırı (etiket + 6 sütun)
+    kelimeOlustur('QTY', 50, 600),
+    kelimeOlustur('1pcs', $sutunX[0], 600), kelimeOlustur('1pcs', $sutunX[1], 600),
+    kelimeOlustur('1pcs', $sutunX[2], 600), kelimeOlustur('2pcs', $sutunX[3], 600),
+    kelimeOlustur('2pcs', $sutunX[4], 600), kelimeOlustur('3pcs', $sutunX[5], 600),
+];
+$yatayTabloYaniti = ['responses' => [['textAnnotations' => $kelimeler]]];
+$r5 = googleOcrYanitAyristir($yatayTabloYaniti);
+Test::dogru($r5['ok'] === true, 'Yatay tablo ok:true döner');
+Test::esit(6, count($r5['parcalar'] ?? []), 'Tam 6 sütun/parça bulundu ("Step N" dağıtıcıları dahil değil)');
+Test::esit('1', $r5['parcalar'][0]['no'] ?? null, '1. sütunun NO değeri doğru');
+Test::esit(1.0, $r5['parcalar'][0]['adet'] ?? null, '1. sütunun adedi doğru (1pcs → 1)');
+Test::esit('', $r5['parcalar'][0]['olcuSpec'] ?? null, '1. sütunda SIZE yok — boş kalır (vidasız parça)');
+Test::esit('M4X20MM', $r5['parcalar'][3]['olcuSpec'] ?? null, '4. sütunun SIZE değeri doğru eşleşti');
+Test::esit(3.0, $r5['parcalar'][5]['adet'] ?? null, '6. sütunun adedi doğru (3pcs → 3)');
+Test::dogru(strpos($r5['parcalar'][0]['tahminiAd'] ?? '', 'Step') === false,
+    '"Step" dağıtıcı kelimesi YANLIŞLIKLA parça adına karışmadı');
+Test::dogru(strpos($r5['genelNot'] ?? '', 'KONUM') !== false, 'genelNot yeniden inşa yöntemini açıklıyor');
+Test::dogru(strpos($r5['genelNot'] ?? '', 'SİZ adlandırmalısınız') !== false,
+    'genelNot, parça adının OCR ile OKUNAMAYACAĞINI (yer tutucu olduğunu) açıkça belirtiyor');
+
+// NO/QTY etiketleri yoksa (bu tablo düzeninde değilse) eski satır-bazlı
+// ayrıştırmaya SESSİZCE düşülmeli — yukarıdaki "Geçerli fullTextAnnotation"
+// testi zaten bunu dolaylı doğruluyor (o yanıtta textAnnotations[1..] yok).
+$sadeceDagiticiKelimeler = ['responses' => [['textAnnotations' => [
+    ['description' => 'hepsi', 'boundingPoly' => ['vertices' => []]],
+    kelimeOlustur('Step', 60, 50), kelimeOlustur('1', 90, 50),
+]]]];
+$r6 = googleOcrYanitAyristir($sadeceDagiticiKelimeler);
+Test::dogru($r6['ok'] === false, 'NO/QTY etiketi yoksa tablo yeniden inşası devreye girmiyor (ok:false — bulunacak satır da yok)');
 
 Test::bolum('Google Vision OCR — uç nokta (HTTP, gerçek ağ çağrısı YOK)');
 
