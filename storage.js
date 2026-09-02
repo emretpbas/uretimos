@@ -555,6 +555,32 @@ const Store = (() => {
     return data;
   }
 
+  // ── HAMMADDE FİYAT ANOMALİ TESPİTİ (kur sapması + piyasa araması) ────────
+  // Kur karşılaştırması: TCMB'den güncel USD/EUR-TRY alır, Sistem
+  // Ayarları'ndaki kurla karşılaştırır. Anahtarsız çalışır.
+  async function hammaddeKurKarsilastir() {
+    const res = await apiFetch(API_URL + '?action=hammaddeKurKarsilastir');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Kur karşılaştırması yapılamadı');
+    return data;
+  }
+  // Piyasa araması: en fazla 20 hammadde id'si — Google Custom Search
+  // anahtarı gerekir, yapılandırılmamışsa 503 + yapilandirmaEksik döner.
+  async function hammaddePiyasaArama(hammaddeIds) {
+    const res = await apiFetch(API_URL + '?action=hammaddePiyasaArama', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hammaddeIds })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      const hata = new Error(data.error || 'Piyasa araması yapılamadı');
+      hata.yapilandirmaEksik = !!data.yapilandirmaEksik;
+      throw hata;
+    }
+    return data;
+  }
+
   // GENİŞLETİLMİŞ DENETİM KAYDI (sadece yonetim)
   // Satırlar: {id, ts, kullanici, rol, ip, sayfa, islem, anahtar, kayit_sayisi,
   //            geri_alinabilir, geri_alindi, tarayici}
@@ -667,6 +693,7 @@ const Store = (() => {
     get, set, del, listKeys, setIfAbsent,
     login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
+    hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,
     hammaddeler: coll('hammaddeler'),

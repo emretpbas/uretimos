@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v127'; // v127: giris ekrani duzeni duzeltildi (tasan yazi, tutarsiz buton stilleri)
+const CACHE_NAME = 'uretimos-v128'; // v128: hammadde fiyat anomali tespiti (kur + piyasa aramasi) eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

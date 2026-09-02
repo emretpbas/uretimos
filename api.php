@@ -38,6 +38,9 @@
 //        -> {ok,parcalar,genelNot} (admin/arge/teknik_ofis/yonetim; URETIMOS_GOOGLE_VISION_KEY gerekir)
 //   POST api.php?action=hesapTalepEt      body:{ad,email,rol,sifre} -> {ok}  (oturumsuz, IP hız sınırlı)
 //   POST api.php?action=hesapTalepiKarar  body:{id,karar:'onayla'|'reddet'} -> {ok} (sadece yonetim)
+//   GET  api.php?action=hammaddeKurKarsilastir -> {ok,kurlar,anomaliler} (arge/satinalma/yonetim; anahtarsız, TCMB)
+//   POST api.php?action=hammaddePiyasaArama body:{hammaddeIds:[..max 20]} -> {ok,taranan,anomaliler,hatalar}
+//        (arge/satinalma/yonetim; URETIMOS_GOOGLE_SEARCH_KEY + URETIMOS_GOOGLE_SEARCH_CX gerekir)
 //
 // Kurulum: bu klasörde PHP'nin YAZMA izni olmalı (data.sqlite + backups/ için).
 // data.sqlite ve backups/ web'den erişime KAPATILMALI (.htaccess dahildir).
@@ -357,6 +360,7 @@ function tarayiciOzeti() {
 require_once __DIR__ . '/montaj_semasi_ai.php';
 require_once __DIR__ . '/baidu_ocr_ai.php';
 require_once __DIR__ . '/google_ocr_ai.php';
+require_once __DIR__ . '/piyasa_fiyat_ai.php';
 
 function auditYaz($pdo, $kullanici, $islem, $anahtar, $ek = []) {
     try {
@@ -1238,6 +1242,83 @@ try {
 
         auditYaz($pdo, $oturum['kullanici_adi'] ?? '?', 'montaj_semasi_oku_google', 'googleOcr', ['dosya' => $dosyaAdi, 'parcaSayisi' => count($sonuc['parcalar'])]);
         respond(['ok' => true, 'parcalar' => $sonuc['parcalar'], 'genelNot' => $sonuc['genelNot']]);
+    }
+
+    // hammaddeKurKarsilastir: TCMB'nin ücretsiz kur servisinden GÜNCEL
+    // USD/EUR-TRY alır, döviz cinsinden fiyatlı her hammaddeyi Sistem
+    // Ayarları'ndaki (muhtemelen eski) kurla karşılaştırır. Anahtar
+    // gerektirmez — bkz. piyasa_fiyat_ai.php başındaki açıklama.
+    elseif ($action === 'hammaddeKurKarsilastir') {
+        $oturum = oturumZorunlu($pdo);
+        if (!in_array($oturum['rol'] ?? '', ['admin', 'arge', 'satinalma', 'yonetim'], true)) {
+            respond(['error' => 'Bu işlem yalnızca ARGE, Satınalma ve Yönetim rolüne açıktır'], 403);
+        }
+        try {
+            $kurlar = tcmbKurCagir();
+        } catch (Exception $e) {
+            respond(['error' => $e->getMessage()], 502);
+        }
+        if (!$kurlar) respond(['error' => 'TCMB kur verisi ayrıştırılamadı (servis geçici olarak farklı bir biçim döndürmüş olabilir)'], 502);
+        $hammaddeler = kvOku($pdo, 'hammaddeler');
+        $ayarlar = kvOku($pdo, 'ayarlar', []);
+        $anomaliler = hammaddeKurSapmalariHesapla($hammaddeler, $kurlar, $ayarlar);
+        auditYaz($pdo, $oturum['kullanici_adi'], 'hammadde_kur_karsilastir', 'hammaddeler', ['kayitSayisi' => count($anomaliler)]);
+        respond(['ok' => true, 'kurlar' => $kurlar, 'anomaliler' => $anomaliler]);
+    }
+
+    // hammaddePiyasaArama: her hammaddenin adıyla Google Custom Search'te
+    // arama yapıp bulunan fiyatla sistemdeki fiyatı karşılaştırır. Google
+    // API anahtarı + arama motoru (cx) gerektirir — bkz. piyasa_fiyat_ai.php.
+    // Kota/maliyet nedeniyle TEK istekte en fazla 20 hammadde taranır.
+    elseif ($action === 'hammaddePiyasaArama') {
+        $oturum = oturumZorunlu($pdo);
+        if (!in_array($oturum['rol'] ?? '', ['admin', 'arge', 'satinalma', 'yonetim'], true)) {
+            respond(['error' => 'Bu işlem yalnızca ARGE, Satınalma ve Yönetim rolüne açıktır'], 403);
+        }
+        $body = readJsonBody();
+        $idler = $body['hammaddeIds'] ?? [];
+        if (!is_array($idler) || !count($idler)) respond(['error' => 'hammaddeIds zorunlu'], 400);
+        if (count($idler) > 20) respond(['error' => 'Tek seferde en fazla 20 hammadde taranabilir (arama kotası)'], 400);
+
+        $googleApiKey = getenv('URETIMOS_GOOGLE_SEARCH_KEY');
+        $googleCx = getenv('URETIMOS_GOOGLE_SEARCH_CX');
+        if (!$googleApiKey || !$googleCx) {
+            $yerelAnahtarDosyasi = __DIR__ . '/google_arama_anahtari.php';
+            if (is_file($yerelAnahtarDosyasi)) {
+                $anahtarlar = include $yerelAnahtarDosyasi;
+                if (is_array($anahtarlar)) {
+                    if (!$googleApiKey) $googleApiKey = (string)($anahtarlar['apiKey'] ?? '');
+                    if (!$googleCx) $googleCx = (string)($anahtarlar['cx'] ?? '');
+                }
+            }
+        }
+        if (!$googleApiKey || !$googleCx) {
+            respond(['error' => 'Piyasa arama servisi sunucuda yapılandırılmamış (URETIMOS_GOOGLE_SEARCH_KEY + URETIMOS_GOOGLE_SEARCH_CX ortam değişkenleri veya google_arama_anahtari.php eksik). Kurulum belgesine bakın.', 'yapilandirmaEksik' => true], 503);
+        }
+
+        $hammaddeler = kvOku($pdo, 'hammaddeler');
+        $ayarlar = kvOku($pdo, 'ayarlar', []);
+        $hammaddelerById = [];
+        foreach ($hammaddeler as $h) { $hammaddelerById[$h['id'] ?? ''] = $h; }
+
+        $anomaliler = []; $taranan = 0; $hatalar = [];
+        foreach ($idler as $id) {
+            $h = $hammaddelerById[$id] ?? null;
+            if (!$h || !($h['ad'] ?? '')) continue;
+            $sorgu = trim(($h['stokKodu'] ?? '') . ' ' . $h['ad'] . ' fiyat TL');
+            try {
+                $aramaYaniti = googleAramaYap($googleApiKey, $googleCx, $sorgu);
+                $taranan++;
+            } catch (Exception $e) {
+                $hatalar[] = ($h['stokKodu'] ?? $h['ad']) . ': ' . $e->getMessage();
+                continue;
+            }
+            $bulunan = aramaSonucundanFiyatCikar($aramaYaniti);
+            $anomali = hammaddePiyasaSapmasiHesapla($h, $bulunan, $ayarlar);
+            if ($anomali) $anomaliler[] = $anomali;
+        }
+        auditYaz($pdo, $oturum['kullanici_adi'], 'hammadde_piyasa_arama', 'hammaddeler', ['kayitSayisi' => $taranan]);
+        respond(['ok' => true, 'taranan' => $taranan, 'anomaliler' => $anomaliler, 'hatalar' => $hatalar]);
     }
 
     // qrGoruntule: HERKESE AÇIK görüntüleyici — telefon QR'ı okutunca açılan

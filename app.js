@@ -101,6 +101,7 @@ const App = (() => {
     ]},
     { group: 'TANIMLAR (ARGE/Teknik Ofis)', items: [
       { id: 'hammadde', label: 'Hammaddeler', icon: '▭', roller: ['admin','arge','teknik_ofis','satinalma','uretim_planlama','depo','yonetim'] },
+      { id: 'hammadde_piyasa', label: 'Hammadde Fiyat Anomalileri', icon: '📈', roller: ['admin','arge','satinalma','yonetim'] },
       { id: 'yarimamul', label: 'Yarı Mamüller', icon: '◫', roller: ['admin','arge','teknik_ofis','uretim_planlama','yonetim','uretim'] },
       { id: 'kartlar', label: 'Ürün Kartları & Reçete', icon: '▥', roller: ['admin','arge','teknik_ofis','yonetim','uretim'] },
       { id: 'step_ice_aktar', label: 'STEP\'ten Ürün Ağacı (CAD)', icon: '📐', roller: ['admin','arge','teknik_ofis','yonetim'] },

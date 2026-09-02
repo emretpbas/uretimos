@@ -9,6 +9,7 @@ backups/
 anthropic_anahtari.php
 baidu_anahtari.php
 google_anahtari.php
+google_arama_anahtari.php
 
 # Derleme çıktısı
 dist/
