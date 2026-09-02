@@ -1,11 +1,17 @@
 // ════════════════════════════════════════════════════════════════════════════
-// HAMMADDE FİYAT ANOMALİLERİ — kur sapması + piyasa (internet) araması
+// HAMMADDE FİYAT ANOMALİLERİ — iç tutarlılık + kur sapması + piyasa araması
 // ────────────────────────────────────────────────────────────────────────────
-// İki bağımsız tarama:
-//   1) 🇹🇷 Kur Karşılaştırması — TCMB'nin ücretsiz kur servisinden güncel
+// Üç bağımsız tarama:
+//   1) 🔍 İç Tutarlılık — TAMAMEN YEREL, ağa hiç çıkmaz, anahtar gerektirmez
+//      (bkz. hammadde_tutarlilik_motor.js). Aynı ürün ailesindeki (stok kodu
+//      ön eki veya isim benzerliği) kalemleri birbiriyle karşılaştırır — en
+//      yaygın gerçek hata türünü (ondalık/basamak veri girişi hatası, ör.
+//      221,79 yerine 221.792,00 yazılmış) hiçbir dış veriye ihtiyaç duymadan
+//      yakalar. ÖNERİLEN ilk tarama budur.
+//   2) 🇹🇷 Kur Karşılaştırması — TCMB'nin ücretsiz kur servisinden güncel
 //      USD/EUR-TRY alınır, döviz cinsinden fiyatlı hammaddeler Sistem
 //      Ayarları'ndaki (muhtemelen eski) kurla karşılaştırılır. Anahtarsız.
-//   2) 🌐 Piyasa Araması — Google Custom Search ile her hammaddenin adı
+//   3) 🌐 Piyasa Araması — Google Custom Search ile her hammaddenin adı
 //      internette aranır, bulunan fiyatla karşılaştırılır. Google API
 //      anahtarı + arama motoru (cx) gerektirir; yapılandırılmamışsa dürüst
 //      bir "yapılandırma eksik" mesajı gösterilir. Kota gereği tek seferde
@@ -33,7 +39,7 @@ PageModules.hammadde_piyasa = (() => {
     main.innerHTML = `
       <div class="page-hdr"><div>
         <div class="page-title">📈 Hammadde Fiyat Anomalileri</div>
-        <div class="page-sub">Sistemdeki hammadde fiyatlarını kur ve internet piyasa fiyatlarıyla karşılaştırır</div>
+        <div class="page-sub">Veri girişi hatalarını kendi içinde, fiyat sapmalarını kur ve internet piyasa fiyatlarıyla karşılaştırarak bulur</div>
       </div></div>
 
       <div class="card" style="margin-bottom:12px">
@@ -42,7 +48,8 @@ PageModules.hammadde_piyasa = (() => {
           onaylarsanız hammadde kartının birim fiyatı TL olarak güncellenir.
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <button class="btn btn-blue" id="hp-kur-tara">🇹🇷 Kur Karşılaştırması Çalıştır (Ücretsiz)</button>
+          <button class="btn btn-blue" id="hp-tutarlilik-tara">🔍 İç Tutarlılık Taraması (Anahtarsız, Önerilen)</button>
+          <button class="btn" id="hp-kur-tara">🇹🇷 Kur Karşılaştırması Çalıştır (Ücretsiz)</button>
           <button class="btn" id="hp-piyasa-tara">🌐 Piyasa Araması Çalıştır (Sonraki 20)</button>
         </div>
         <div id="hp-durum" style="margin-top:10px;font-size:12px"></div>
@@ -50,9 +57,30 @@ PageModules.hammadde_piyasa = (() => {
 
       <div id="hp-sonuc"></div>`;
 
+    document.getElementById('hp-tutarlilik-tara').onclick = () => tutarlilikTara(main);
     document.getElementById('hp-kur-tara').onclick = () => kurTara(main);
     document.getElementById('hp-piyasa-tara').onclick = () => piyasaTara(main);
     sonucCiz(main);
+  }
+
+  // İç tutarlılık taraması TAMAMEN YEREL — ağa hiç çıkmaz, anahtar
+  // gerektirmez. Sistemin kendi hammadde listesini kendi içinde karşılaştırır
+  // (bkz. hammadde_tutarlilik_motor.js) — ör. aynı ürün ailesindeki 3
+  // kalemden biri ondalık hatasıyla 1000 kat yüksek girilmişse hemen yakalar.
+  async function tutarlilikTara(main) {
+    const durum = document.getElementById('hp-durum');
+    durum.innerHTML = '<span class="muted">Hammadde listesi taranıyor…</span>';
+    try {
+      const [hammaddeler, ayarlar] = await Promise.all([Store.hammaddeler.all(), Store.ayarlar()]);
+      const bulunanlar = HammaddeTutarlilikMotor.tara(hammaddeler, ayarlar);
+      birlestirVeEkle(bulunanlar);
+      durum.innerHTML = bulunanlar.length
+        ? `<span style="color:var(--amber-text)">⚠ ${bulunanlar.length} olası veri girişi hatası bulundu — muhtemelen ondalık/basamak hataları. Aşağıdaki tabloda inceleyin.</span>`
+        : '<span style="color:var(--green-text)">✓ Aynı ürün ailesinde belirgin bir tutarsızlık bulunamadı.</span>';
+      sonucCiz(main);
+    } catch (err) {
+      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
+    }
   }
 
   async function kurTara(main) {
@@ -125,7 +153,7 @@ PageModules.hammadde_piyasa = (() => {
           ${anomaliler.map((a, i) => `<tr>
             <td class="mono">${App.escapeHtml(a.stokKodu || '')}</td>
             <td>${App.escapeHtml(a.ad || '')}</td>
-            <td><span class="pill ${a.tur === 'kur_sapmasi' ? 'pill-blue' : 'pill-amber'}" style="font-size:9px">${a.tur === 'kur_sapmasi' ? '🇹🇷 Kur' : '🌐 Piyasa'}</span></td>
+            <td><span class="pill ${a.tur === 'kur_sapmasi' ? 'pill-blue' : a.tur === 'ic_tutarlilik' ? 'pill-red' : 'pill-amber'}" style="font-size:9px">${a.tur === 'kur_sapmasi' ? '🇹🇷 Kur' : a.tur === 'ic_tutarlilik' ? '🔍 Tutarlılık' : '🌐 Piyasa'}</span></td>
             <td class="r">${App.fmtTL(a.sistemFiyatTL)}</td>
             <td class="r"><b>${App.fmtTL(a.guncelFiyatTL)}</b></td>
             <td class="r"><span class="pill ${Math.abs(a.sapmaYuzde) >= 25 ? 'pill-red' : 'pill-amber'}" style="font-size:9px">${a.sapmaYuzde > 0 ? '+' : ''}${a.sapmaYuzde}%</span></td>

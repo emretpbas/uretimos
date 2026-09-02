@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v128'; // v128: hammadde fiyat anomali tespiti (kur + piyasa aramasi) eklendi
+const CACHE_NAME = 'uretimos-v129'; // v129: hammadde ic tutarlilik taramasi (anahtarsiz, yerel) eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
