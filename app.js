@@ -3240,8 +3240,23 @@ const App = (() => {
     const musteri = musteriler.find(m => m.id === kayit.musteriId);
     const musteriCekleri = await Store.musteriCekleri.all();
     const tahsilatlar = await Store.tahsilatlar.all();
+    const vadeFarkiKayitlari = await Store.vadeFarkiKayitlari.all();
     const tipLabel = { cek: 'Çek', kredi_karti: 'Kredi Kartı', nakit: 'Nakit', diger: 'Diğer' };
-    let toplamIslenenTutar = 0;
+    // Sipariş onayındaki (siparisOnaylaninceOdemePlaniniAnindaIsle) AYNI vade
+    // farkı mantığı — çek/kredi kartı ileri vadeliyse müşterinin
+    // aylikVadeFarkiYuzde'si üzerinden vade farkı düşülür, kalan NET tutar
+    // kasaya/bakiyeye işlenir; vade farkının kendisi vadeFarkiKayitlari'na
+    // ayrı bir gelir olarak yazılır. Önceden burada bu hesap HİÇ
+    // yapılmıyordu — çek/kredi kartı tam tutarıyla işleniyor, aynı
+    // müşterinin sipariş onayından gelen tahsilatıyla TUTARSIZ oluyordu.
+    const aylikVadeFarkiYuzde = (musteri && musteri.aylikVadeFarkiYuzde) || 0;
+    function ayFarkiHesapla(vadeTarihiStr) {
+      if (!vadeTarihiStr) return 0;
+      const bugunD = new Date(bugun), vadeD = new Date(vadeTarihiStr);
+      const gunFarki = Math.max(0, Math.round((vadeD - bugunD) / 86400000));
+      return Math.ceil(gunFarki / 30); // başlayan her 30 gün 1 ay sayılır
+    }
+    let toplamIslenenTutar = 0, toplamVadeFarki = 0;
 
     function tahsilatKaydiEkle(tip, tutar, detay) {
       tahsilatlar.push({
@@ -3258,16 +3273,32 @@ const App = (() => {
       if (k.cekNo) detayParcalari.push('Çek No: ' + k.cekNo);
       if (k.taksitTipi) detayParcalari.push(k.taksitTipi === 'vadeli' ? (k.taksitSayisi + ' Taksit') : 'Tek Çekim');
       if (k.aciklama) detayParcalari.push(k.aciklama);
-      const detay = (tipLabel[k.tip] || k.tip) + (detayParcalari.length ? ' — ' + detayParcalari.join(', ') : '');
+      let detay = (tipLabel[k.tip] || k.tip) + (detayParcalari.length ? ' — ' + detayParcalari.join(', ') : '');
 
-      if (k.tip === 'cek') {
-        // Çek: kasaya tahsilat olarak işlenir VE "elde" çekler listesine eklenir.
-        musteriCekleri.push({
-          id: uid('MCK'), musteriId: kayit.musteriId, musteriAdi: kayit.musteriAdi,
-          cekNo: k.cekNo || '—', tutar: k.tutar, vadeTarihi: k.tarih,
-          alisTarihi: bugun, durum: 'elde', kaynakTahsilatOnayBekleyenId: kayit.id
-        });
-        tahsilatKaydiEkle('cek', k.tutar, detay);
+      if (k.tip === 'cek' || k.tip === 'kredi_karti') {
+        const aySayisi = ayFarkiHesapla(k.tarih);
+        const vadeFarki = k.tutar * (aylikVadeFarkiYuzde / 100) * aySayisi;
+        const netTutar = k.tutar - vadeFarki;
+        toplamVadeFarki += vadeFarki;
+        if (vadeFarki > 0) {
+          detay += ` (brüt ${k.tutar}, vade farkı ${vadeFarki.toFixed(2)} düşüldü)`;
+          vadeFarkiKayitlari.push({
+            id: uid('VF'), musteriId: kayit.musteriId, musteriAdi: kayit.musteriAdi,
+            kaynakTahsilatOnayBekleyenId: kayit.id, tip: k.tip,
+            brutTutar: k.tutar, vadeFarki, netTutar, aySayisi, tarih: bugun
+          });
+        }
+        if (k.tip === 'cek') {
+          // Çek: TAM YÜZ DEĞERİYLE "elde" çekler listesine eklenir (vade
+          // farkı çekin kendi tutarını değiştirmez, yalnızca bugün kasaya
+          // giren NET tahsilat tutarını azaltır).
+          musteriCekleri.push({
+            id: uid('MCK'), musteriId: kayit.musteriId, musteriAdi: kayit.musteriAdi,
+            cekNo: k.cekNo || '—', tutar: k.tutar, vadeTarihi: k.tarih,
+            alisTarihi: bugun, durum: 'elde', kaynakTahsilatOnayBekleyenId: kayit.id
+          });
+        }
+        tahsilatKaydiEkle(k.tip, netTutar, detay);
       } else {
         tahsilatKaydiEkle(k.tip, k.tutar, detay);
       }
@@ -3280,9 +3311,11 @@ const App = (() => {
 
     kayit.durum = 'onaylandi';
     kayit.onayTarihi = bugun;
+    kayit.toplamVadeFarki = toplamVadeFarki;
     await Store.tahsilatOnayBekleyenler.save(tahsilatOnayBekleyenler);
     await Store.musteriCekleri.save(musteriCekleri);
     await Store.tahsilatlar.save(tahsilatlar);
+    await Store.vadeFarkiKayitlari.save(vadeFarkiKayitlari);
     return kayit;
   }
 

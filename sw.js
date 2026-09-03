@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v143'; // v143: FIX - sevk edilmis/reddedilmis siparisler artik iptal ekraninda acik sayilmiyor, sevkiyat sarfi siparisId ile izleniyor
+const CACHE_NAME = 'uretimos-v144'; // v144: FIX - Manuel Tahsilat Yap akisi artik siparis onayiyla ayni vade farki formulunu uyguluyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
