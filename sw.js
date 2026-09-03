@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v158'; // v158: FIX - iade ambari stok anahtari (refId) artik NCR ve stokRaf arasinda tutarli, refId bos oldugunda stok bulunamama sorunu giderildi
+const CACHE_NAME = 'uretimos-v159'; // v159: FIX - acik/eylemsiz DOF varken NCR artik kapatilamiyor (kok neden analizi atlanamasin diye)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

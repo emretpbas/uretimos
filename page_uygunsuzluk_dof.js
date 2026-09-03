@@ -104,6 +104,17 @@ PageModules.uygunsuzluk_dof = (() => {
     });
     document.querySelectorAll('.ncr-kapat').forEach(b => b.onclick = () => {
       const n = ncrler.find(x => x.id === b.dataset.id);
+      // BULGU (T3-28): NCR kapatılırken bağlı DÖF'ün durumu/kök neden girilip
+      // girilmediği hiç kontrol edilmiyordu — açık veya kök nedeni boş bir DÖF
+      // varken uygunsuzluk serbestçe kapatılabiliyor, kalite sorununun kök
+      // nedeni araştırılmadan/aksiyon alınmadan unutulabiliyordu.
+      if (n.dofId) {
+        const dof = dofler.find(x => x.id === n.dofId);
+        if (dof && dof.durum !== 'kapandi') {
+          App.toast('Bu uygunsuzluğa bağlı DÖF (' + dof.no + ') henüz kapanmadı — kök neden analizi ve aksiyon tamamlanmadan NCR kapatılamaz.', 'err');
+          return;
+        }
+      }
       App.confirmDialog('Bu uygunsuzluk kaydını kapatmak istediğinize emin misiniz?', async () => {
         n.durum = 'kapandi';
         n.kapanisTarihi = new Date().toISOString().slice(0, 10);
