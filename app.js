@@ -5507,9 +5507,15 @@ const App = (() => {
     const bugun = new Date().toISOString().slice(0, 10);
     const iadeler = await Store.iadeKalemleri.all();
     const iade = {
+      // BULGU (T3-27): stokRaf kaydı 'ncr.refId || ncr.id' ile açılıyordu
+      // ama iade kaydına yalnızca ncr.refId (fallback'siz) yazılıyordu —
+      // ncr.refId boş olduğunda page_iade_ambari.js'in 'i.refId || i.id'
+      // ile aradığı anahtar (iade.id) stokRaf'takiyle (ncr.id) HİÇ
+      // eşleşmiyor, satış/düşüm sırasında stok bulunamıyordu. Artık AYNI
+      // fallback burada da uygulanıyor — iki taraf da tutarlı.
       id: uid('IADE'), ncrId: ncr.id, ncrNo: ncr.no, kaynak: ncr.kaynak,
       kod: ncr.kod, ad: ncr.ad, miktar: ncr.miktar, birim: ncr.birim,
-      tip: ncr.tip, refId: ncr.refId, aciklama: ncr.aciklama,
+      tip: ncr.tip, refId: ncr.refId || ncr.id, aciklama: ncr.aciklama,
       fotograflar: ncr.fotograflar || [],
       fiyatlandirildi: false, kalite: null, satisFiyati: null, dvz: 'TL',
       satisaSunuldu: false, durum: 'fiyat_bekliyor', olusturmaTarihi: bugun,
