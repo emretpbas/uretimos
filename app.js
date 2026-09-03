@@ -514,6 +514,7 @@ const App = (() => {
       return Math.ceil(gunFarki / 30);
     }
 
+    let toplamVadeFarki = 0;
     islenecekler.forEach(t => {
       const musteri = musteriler.find(m => m.id === t.musteriId);
       const aylikVadeFarkiYuzde = (musteri && musteri.aylikVadeFarkiYuzde) || 0;
@@ -531,6 +532,7 @@ const App = (() => {
           siparisId: t.siparisId, siparisKod: t.siparisKod || t.faturaNo, tip: t.tip,
           brutTutar: t.tutar, vadeFarki, netTutar, aySayisi, tarih: bugun
         });
+        toplamVadeFarki += vadeFarki;
       }
       if (musteri) musteri.bakiye = (musteri.bakiye || 0) - netTutar;
 
@@ -553,6 +555,17 @@ const App = (() => {
     await Store.vadeFarkiKayitlari.save(vadeFarkiKayitlari);
     await Store.tahsilatlar.save(tahsilatlar);
     await Store.tahsilatBeklenenler.save(tahsilatBeklenenler);
+
+    // BULGU (T1-7): bu tek seferlik geçiş de aynı şekilde vade farkı
+    // geliri üretiyordu ama muhasebeye hiç yansıtmıyordu.
+    if (toplamVadeFarki > 0) {
+      await muhasebeKaydiOlustur({
+        tip: 'gelir', kategori: 'vade_farki',
+        aciklama: 'Vade farkı geliri (eski bekleyen kayıtların otomatik düzeltmesi)',
+        tutar: toplamVadeFarki, matrah: toplamVadeFarki, kdvTutari: 0, kaynakTip: 'migrasyon'
+      });
+    }
+
     await Store.set('_migrated_eski_tahsilat_iscek_v1', true);
   }
 
@@ -3308,6 +3321,17 @@ const App = (() => {
     await Store.musteriCekleri.save(musteriCekleri);
     await Store.tahsilatlar.save(tahsilatlar);
     await Store.vadeFarkiKayitlari.save(vadeFarkiKayitlari);
+
+    // BULGU (T1-7): burada da vade farkı muhasebeKaydiOlustur ile P&L'e
+    // yansıtılır — sipariş onayındaki akışla (yukarıda) AYNI mekanizma.
+    if (toplamVadeFarki > 0) {
+      await muhasebeKaydiOlustur({
+        tip: 'gelir', kategori: 'vade_farki',
+        aciklama: 'Vade farkı geliri (Tahsilat Yap onayı): ' + kayit.musteriAdi,
+        tutar: toplamVadeFarki, matrah: toplamVadeFarki, kdvTutari: 0, kaynakId: kayit.id, kaynakTip: 'tahsilat_onay_bekleyen'
+      });
+    }
+
     return kayit;
   }
 
@@ -3598,6 +3622,20 @@ const App = (() => {
     // odenecekBakiye'sini (genelToplam - burada zaten kasaya/cariye
     // işlenmiş net tutar) doğru hesaplamak için kullanır — bkz. T1-1/T1-2.
     siparis.odemePlaniNetKasaToplami = netKasaToplami;
+
+    // BULGU (T1-7): vade farkı vadeFarkiKayitlari'na (müşteri bazlı
+    // raporlama) yazılıyordu ama muhasebeKaydiOlustur HİÇ çağrılmıyordu —
+    // bu gerçek bir gelir olmasına (müşteri bakiyesinden ayrıca tahsil
+    // edilir) rağmen Gelir-Gider Özeti'nde ve Basit Usul Defter'de HİÇ
+    // görünmüyordu. Diğer gelirlerle (satis_faturasi vb.) AYNI mekanizmayı
+    // kullanan tek bir toplu kayıt yeterlidir (kalem başına değil).
+    if (toplamVadeFarki > 0) {
+      await muhasebeKaydiOlustur({
+        tip: 'gelir', kategori: 'vade_farki',
+        aciklama: 'Vade farkı geliri: ' + siparis.kod + ' — ' + siparis.musteriAdi,
+        tutar: toplamVadeFarki, matrah: toplamVadeFarki, kdvTutari: 0, kaynakId: siparis.id, kaynakTip: 'siparis'
+      });
+    }
 
     return { netKasaToplami, toplamVadeFarki, ileriTarihliNakitSayisi: ileriTarihliNakitler.length };
   }

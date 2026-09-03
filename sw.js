@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v150'; // v150: FIX - banka kredisi taksitinde artik sadece faiz kismi gider yaziliyor, anapara/faiz ayriliyor
+const CACHE_NAME = 'uretimos-v151'; // v151: FIX - vade farki geliri artik Gelir-Gider Ozeti/Basit Defter'e yansiyor (3 akista muhasebe kaydi eklendi)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

@@ -12,7 +12,7 @@ PageModules.muhasebe_panel = (() => {
   let activeTab = 'ozet';
   let seciliAy = new Date().toISOString().slice(0, 7);
 
-  const GELIR_KATEGORI_LABEL = { satis_faturasi: 'Satış Faturası', duran_varlik_satisi: 'Duran Varlık Satışı (Makina vb.)' };
+  const GELIR_KATEGORI_LABEL = { satis_faturasi: 'Satış Faturası', duran_varlik_satisi: 'Duran Varlık Satışı (Makina vb.)', vade_farki: 'Vade Farkı Geliri' };
   const GIDER_KATEGORI_LABEL = { hammadde_alimi: 'Hammadde/Hırdavat Alımı', bakim_servis_gideri: 'Bakım/Servis Gideri', arac_gideri: 'Araç Gideri', personel_gideri: 'Personel Gideri (Maaş Dışı)', personel_maliyeti: 'Personel Maliyeti (Bordro)' };
 
   async function render(main) {
