@@ -53,8 +53,9 @@ PageModules.yukleme_onay = (() => {
   async function listeEkrani(main, oturum) {
     const [siparisler, irsaliyeler] = await Promise.all([Store.siparisler.all(), Store.irsaliyeler.all()]);
     // Yüklenecekler: irsaliyesi kesilmiş veya sevke hazır siparişler
+    // (T3-23: kısmen sevk edilmiş siparişler de irsaliyesi kesilmiş sayılır)
     const yuklenebilir = siparisler.filter(s =>
-      (s.durum === 'sevk_edildi' || (s.durum === 'onaylandi' && s.uretimDurumu === 'tamamlandi')));
+      (s.durum === 'sevk_edildi' || s.durum === 'kismi_sevk_edildi' || (s.durum === 'onaylandi' && s.uretimDurumu === 'tamamlandi')));
 
     let html = `
       <div class="page-hdr">

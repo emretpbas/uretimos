@@ -92,7 +92,10 @@ PageModules.iptal_islemleri = (() => {
     // (aşağıdaki engelleriBul #4) de artık siparisId ile eşleşiyor (bkz.
     // app.js sevkiyatYapilinceStoktanDus), ama durum kontrolü ilk ve en
     // kesin engel olduğu için burada da açıkça hariç tutuluyor.
-    const iptalEdilebilirDurum = (d) => !['iptal', 'tamamlandi', 'kapatildi', 'sevk_edildi', 'reddedildi'].includes(d);
+    // T3-23: kısmen sevk edilmiş ('kismi_sevk_edildi') siparişler de KAPALI
+    // sayılır — bir kısmı zaten fiilen müşteriye gitmiş, tamamen iptal
+    // edilemez (kalan kısım için ayrı bir süreç/iade gerekir).
+    const iptalEdilebilirDurum = (d) => !['iptal', 'tamamlandi', 'kapatildi', 'sevk_edildi', 'kismi_sevk_edildi', 'reddedildi'].includes(d);
     const acikIsemirleri = isemirleri.filter(x => iptalEdilebilirDurum(x.durum));
     const acikSiparisler = siparisler.filter(x => iptalEdilebilirDurum(x.durum));
 

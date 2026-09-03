@@ -274,7 +274,12 @@ PageModules.cari_panel = (() => {
         }))
       };
       await App.persist(() => Store.irsaliyeler.upsert(irsaliye));
-      siparis.durum = 'sevk_edildi';
+      // BULGU (T3-23): bu form siparişin TÜM kalemlerini kesiyor (kalem
+      // seçimi yok) — App.siparisKismiSevkGuncelle bu durumda zaten
+      // 'sevk_edildi' üretir; paylaşılan fonksiyonu kullanmak, bu sipariş
+      // daha önce (başka bir irsaliyeyle) kısmen sevk edilmişse
+      // sevkEdilenMiktar'ları doğru topluyor olmasını da garanti eder.
+      App.siparisKismiSevkGuncelle(siparis, irsaliye.kalemler);
       await App.persist(() => Store.siparisler.upsert(siparis));
 
       // Sevkiyat Deposu'ndan otomatik stok çıkışı
@@ -611,7 +616,7 @@ PageModules.cari_panel = (() => {
     let html = uyariHtml + `<div class="card"><div class="tbl-wrap"><table class="dtable">
       <tr><th>Müşteri</th><th>Sipariş</th><th class="r">Tutar</th><th>Vade Tarihi</th><th>Durum</th></tr>`;
     let varMi = false;
-    siparisler.filter(s => s.durum === 'onaylandi' || s.durum === 'uretimde' || s.durum === 'sevk_edildi').forEach(s => {
+    siparisler.filter(s => s.durum === 'onaylandi' || s.durum === 'uretimde' || s.durum === 'sevk_edildi' || s.durum === 'kismi_sevk_edildi').forEach(s => {
       const m = musteriler.find(x => x.id === s.musteriId);
       const vadeGun = m ? (m.odemeVadeGun || 0) : 0;
       const siparisTarihi = new Date(s.tarih);

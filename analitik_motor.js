@@ -69,7 +69,7 @@ const AnalitikMotor = (() => {
     };
 
     const satirlar = v.siparisler
-      .filter(s => s.durum === 'onaylandi' || s.durum === 'sevk_edildi')
+      .filter(s => s.durum === 'onaylandi' || s.durum === 'sevk_edildi' || s.durum === 'kismi_sevk_edildi')
       .map(s => {
         // GELİR (KDV hariç net)
         const gelir = (s.kalemler || []).reduce((a, k) =>
@@ -145,7 +145,7 @@ const AnalitikMotor = (() => {
   // Ürün kârlılığı + ABC analizi (Pareto: cironun %80'ini üreten ürünler = A)
   function urunKarliligi(v, karSatirlari) {
     const grup = new Map();
-    v.siparisler.filter(s => s.durum === 'onaylandi' || s.durum === 'sevk_edildi').forEach(s => {
+    v.siparisler.filter(s => s.durum === 'onaylandi' || s.durum === 'sevk_edildi' || s.durum === 'kismi_sevk_edildi').forEach(s => {
       const sipKar = karSatirlari.find(r => r.siparisId === s.id);
       const sipGelir = sipKar ? sipKar.gelir : 0;
       (s.kalemler || []).forEach(k => {

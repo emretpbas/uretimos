@@ -50,7 +50,14 @@ PageModules.sevkiyat_panel = (() => {
   }
 
   function renderIrsaliyeTab(siparisler, irsaliyeler) {
-    const sevkEdilebilir = siparisler.filter(s => (s.durum === 'onaylandi' || s.durum === 'uretimde') && s.uretimDurumu === 'tamamlandi' && !irsaliyeler.some(i => i.siparisId === s.id));
+    // BULGU (T3-23): "bu siparişte zaten bir irsaliye var mı" (irsaliyeler.some)
+    // kontrolü, TEK bir irsaliye kesilir kesilmez siparişi kalıcı olarak
+    // listeden düşürüyordu — kısmi sevkiyat sonrası kalan kalemler bir daha
+    // asla görünmüyordu. Artık bunun yerine doğrudan siparişin durumuna
+    // (App.siparisKismiSevkGuncelle'nin belirlediği) bakılır:
+    // 'kismi_sevk_edildi' siparişler kalan miktarlarıyla listede kalmaya
+    // devam eder, yalnızca TAM sevk edilenler ('sevk_edildi') çıkar.
+    const sevkEdilebilir = siparisler.filter(s => (s.durum === 'onaylandi' || s.durum === 'uretimde' || s.durum === 'kismi_sevk_edildi') && s.uretimDurumu === 'tamamlandi');
     let html = `<div class="card">
       <div class="card-hdr"><div class="card-title">Sevkiyata Hazır Siparişler</div></div>`;
     if (!sevkEdilebilir.length) {
@@ -201,13 +208,24 @@ PageModules.sevkiyat_panel = (() => {
     const [urunler, yarimamuller, hammaddeler, iadeKalemleri] = await Promise.all([
       Store.urunler.all(), Store.yarimamuller.all(), Store.hammaddeler.all(), Store.iadeKalemleri.all()
     ]);
-    // İrsaliye kalem listesi (çalışma kopyası)
-    const kalemler = (siparis.kalemler || []).map(k => ({
-      kaynak: k.ikinciKalite ? 'ikinci_kalite' : (k.grup === 'yarimamul' ? 'yarimamul' : 'urun'),
-      kod: k.kod, ad: k.ad, miktar: k.miktar || 1, birim: k.birim || 'ADET',
-      netFiyat: k.netFiyat || 0, kdvOrani: k.kdvOrani ?? 20,
-      ikinciKalite: !!k.ikinciKalite, iadeKalemId: k.iadeKalemId || null
-    }));
+    // İrsaliye kalem listesi (çalışma kopyası). BULGU (T3-23): bu liste her
+    // zaman siparişin TAM ORİJİNAL miktarlarıyla başlıyordu — kısmi sevkiyat
+    // sonrası tekrar açıldığında sevkiyatçının halihazırda sevk edilmiş
+    // miktarı FARK EDİP elle çıkarması/azaltması gerekiyordu (unutulursa
+    // aynı ürün ikinci kez sevk edilmiş sayılırdı). Artık ürün kalemleri
+    // KALAN miktarla (miktar - sevkEdilenMiktar) başlar; tamamı zaten sevk
+    // edilmiş ürün kalemleri listeye hiç eklenmez.
+    const kalemler = (siparis.kalemler || [])
+      .map(k => {
+        const kalan = k.grup === 'urun' ? Math.max(0, (k.miktar || 1) - (k.sevkEdilenMiktar || 0)) : (k.miktar || 1);
+        return {
+          kaynak: k.ikinciKalite ? 'ikinci_kalite' : (k.grup === 'yarimamul' ? 'yarimamul' : 'urun'),
+          kod: k.kod, ad: k.ad, miktar: kalan, birim: k.birim || 'ADET',
+          netFiyat: k.netFiyat || 0, kdvOrani: k.kdvOrani ?? 20,
+          ikinciKalite: !!k.ikinciKalite, iadeKalemId: k.iadeKalemId || null
+        };
+      })
+      .filter(k => k.miktar > 0);
 
     const body = document.createElement('div');
     body.innerHTML = `
@@ -318,7 +336,14 @@ PageModules.sevkiyat_panel = (() => {
         faturaDurumu: 'cari_bekliyor' // Cari fiyatları kontrol edip faturalayacak
       };
       await App.persist(() => Store.irsaliyeler.upsert(irsaliye));
-      siparis.durum = 'sevk_edildi';
+      // BULGU (T3-23): durum KOŞULSUZ 'sevk_edildi' oluyordu — bu irsaliye
+      // siparişin yalnızca bir KISMINI (kalem çıkarılmış/miktar azaltılmış)
+      // kapsasa bile sipariş kalıcı olarak "sevk edildi" sayılıp
+      // sevkEdilebilir listesinden düşüyor, kalan kalemler bir daha asla
+      // sevk edilemiyordu. Artık yalnızca TÜM ürün kalemleri fiilen sevk
+      // edildiyse 'sevk_edildi'; aksi halde 'kismi_sevk_edildi' olur ve
+      // sipariş kalan miktarıyla sevkEdilebilir listesinde görünmeye devam eder.
+      App.siparisKismiSevkGuncelle(siparis, irsaliye.kalemler);
       await App.persist(() => Store.siparisler.upsert(siparis));
 
       // Sevkiyat Deposu'ndan otomatik stok çıkışı: ürün kalemleri

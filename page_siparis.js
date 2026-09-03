@@ -113,8 +113,11 @@ PageModules.siparis = (() => {
     // vade farkını ve kesim ihtiyacını İKİNCİ KEZ işleterek çift kayıt riski
     // doğuruyordu (üstelik zaten kesilmiş irsaliye/fatura yeni içerikle
     // uyuşmaz hale geliyordu). Sevk edilmiş siparişler artık düzenlenemez.
-    if (siparis.durum === 'sevk_edildi') {
-      App.toast('Sevk edilmiş bir sipariş artık düzenlenemez (irsaliye/fatura zaten kesilmiş).', 'err');
+    // T3-23: kısmen sevk edilmiş ('kismi_sevk_edildi') siparişler de AYNI
+    // riski taşır — zaten kesilmiş irsaliye/fatura(lar) var, kalemler/
+    // fiyatlar değiştirilirse geri kalan sevkiyat/fatura tutarsız olur.
+    if (siparis.durum === 'sevk_edildi' || siparis.durum === 'kismi_sevk_edildi') {
+      App.toast('Sevkiyatı başlamış bir sipariş artık düzenlenemez (irsaliye/fatura zaten kesilmiş).', 'err');
       return;
     }
     draft = {
@@ -328,8 +331,9 @@ PageModules.siparis = (() => {
         const mevcut = tumSiparisler.find(s => s.id === d.editingId);
         if (!mevcut) { App.toast('Sipariş bulunamadı', 'err'); return; }
         // TAZE veriyle yeniden kontrol: düzenleme ekranı açıkken sipariş
-        // başka bir yerden (örn. sevkiyat) sevk edilmiş olabilir.
-        if (mevcut.durum === 'sevk_edildi') {
+        // başka bir yerden (örn. sevkiyat) sevk edilmiş olabilir (T3-23:
+        // kısmen de olsa).
+        if (mevcut.durum === 'sevk_edildi' || mevcut.durum === 'kismi_sevk_edildi') {
           App.toast('Bu sipariş düzenleme sırasında sevk edildi — artık kaydedilemez.', 'err');
           return;
         }
@@ -411,6 +415,7 @@ PageModules.siparis = (() => {
       cari_onay_bekliyor: ['Cari Onayında', 'pill-amber'],
       onaylandi: ['Onaylandı', 'pill-green'],
       uretimde: ['Üretimde', 'pill-blue'],
+      kismi_sevk_edildi: ['Kısmi Sevk Edildi', 'pill-amber'],
       sevk_edildi: ['Sevk Edildi', 'pill-purple'],
       reddedildi: ['Reddedildi', 'pill-red']
     };
@@ -467,7 +472,7 @@ PageModules.siparis = (() => {
         <div class="page-acts">
           <button class="btn" id="sp-back">&larr; Listeye Dön</button>
           <button class="btn" id="sp-ceki-listesi">📋 Çeki Listesi</button>
-          ${s.durum !== 'sevk_edildi' ? '<button class="btn btn-amber" id="sp-geri-cek">↺ Geri Çek / Düzenle</button>' : ''}
+          ${(s.durum !== 'sevk_edildi' && s.durum !== 'kismi_sevk_edildi') ? '<button class="btn btn-amber" id="sp-geri-cek">↺ Geri Çek / Düzenle</button>' : ''}
         </div>
       </div>
       <div class="grid grid-3" style="margin-bottom:14px">
@@ -484,9 +489,9 @@ PageModules.siparis = (() => {
         </table>
         ${paketToplamKutusu(siparisPaketToplami(s.kalemler))}
       </div>
-      <div class="fhint">${s.durum !== 'sevk_edildi'
+      <div class="fhint">${(s.durum !== 'sevk_edildi' && s.durum !== 'kismi_sevk_edildi')
         ? '"Geri Çek / Düzenle" bu siparişin durumunu sıfırlar (taslağa döner), ürün/miktar/fiyat bilgilerini değiştirmenize izin verir ve kaydettiğinizde tekrar cari onayına gönderir. Onaylanmış veya reddedilmiş siparişler için de kullanılabilir.'
-        : '⚠ Bu sipariş sevk edildi (irsaliye/fatura kesildi) — artık düzenlenemez. Değişiklik gerekiyorsa yeni bir sipariş/iade süreci başlatın.'}</div>
+        : '⚠ Bu siparişin sevkiyatı başladı (irsaliye/fatura kesildi) — artık düzenlenemez. Değişiklik gerekiyorsa yeni bir sipariş/iade süreci başlatın.'}</div>
     
       ${revizyonlar.length ? App.akordeonHtml([{
         baslik: 'Revizyon Geçmişi — Sipariş Değişiklikleri', ikon: '📝',

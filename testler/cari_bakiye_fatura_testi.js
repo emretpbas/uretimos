@@ -33,11 +33,11 @@ console.log('\n-- irsaliyeKesilinceFaturaOlustur: odenecekBakiye artık HER ZAMA
 t('sabit "odenecekBakiye: 0" ARTIK YOK',
   !/odenecekBakiye: 0,/.test(src));
 t('onayindaKasayaGirenNet siparis.odemePlaniNetKasaToplami\'ni okuyor (yoksa peşinat fallback)',
-  /const onayindaKasayaGirenNet = siparis\.odemePlaniNetKasaToplami != null \? siparis\.odemePlaniNetKasaToplami : pesinatTutar;/.test(src));
+  /\? \(siparis\.odemePlaniNetKasaToplami != null \? siparis\.odemePlaniNetKasaToplami : pesinatTutar\)/.test(src));
 t('odenecekBakiye = genelToplam - onayindaKasayaGirenNet (negatif olamaz)',
   /const odenecekBakiye = Math\.max\(0, genelToplam - onayindaKasayaGirenNet\);/.test(src));
-t('fatura objesi artık hesaplanan odenecekBakiye değişkenini kullanıyor',
-  /pesinatMahsup: pesinatTutar, odenecekBakiye, vadeTarihi,/.test(src));
+t('fatura objesi artık hesaplanan odenecekBakiye değişkenini kullanıyor (T3-23: yalnızca ilk faturada tam peşinat)',
+  /pesinatMahsup: buIlkFaturaMi \? pesinatTutar : 0, odenecekBakiye, vadeTarihi,/.test(src));
 
 console.log('\n-- irsaliyeKesilinceFaturaOlustur: müşteri bakiyesi artık fatura kesilince ARTIYOR --');
 t('güncel müşteri taze veriden bulunuyor',

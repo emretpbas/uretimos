@@ -440,7 +440,11 @@ PageModules.uretim_panel = (() => {
   }
 
   function renderKuyrukTab(siparisler, urunler, receteler, yarimamuller) {
-    const kuyruktakiler = siparisler.filter(s => s.uretimKuyrugunda && s.durum !== 'sevk_edildi' && s.durum !== 'reddedildi');
+    // T3-23: kısmen sevk edilmiş ('kismi_sevk_edildi') siparişler de üretim
+    // kuyruğundan çıkar — bu duruma gelebilmek için zaten uretimDurumu
+    // 'tamamlandi' olması gerekiyordu (bkz. sevkEdilebilir filtreleri),
+    // yani üretim bitmiş, sevkiyat aşamasındadır.
+    const kuyruktakiler = siparisler.filter(s => s.uretimKuyrugunda && s.durum !== 'sevk_edildi' && s.durum !== 'kismi_sevk_edildi' && s.durum !== 'reddedildi');
     const bekleyenler = siparisler.filter(s => !s.uretimKuyrugunda && (s.durum === 'onaylandi' || s.durum === 'cari_onay_bekliyor'));
 
     const today = new Date().toISOString().slice(0, 10);

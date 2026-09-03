@@ -35,8 +35,8 @@ t('page_sevkiyat_panel.js (İrsaliye akışı) siparis.id geçiyor',
   /App\.sevkiyatYapilinceStoktanDus\(urun\.id, urun\.ad, kalem\.miktar \|\| 1, siparis\.id\)/.test(sevkSrc));
 
 console.log('\n-- page_iptal_islemleri.js: sevk edilmiş/reddedilmiş siparişler artık KAPALI --');
-t('iptalEdilebilirDurum artık sevk_edildi ve reddedildi\'yi de hariç tutuyor',
-  /const iptalEdilebilirDurum = \(d\) => !\['iptal', 'tamamlandi', 'kapatildi', 'sevk_edildi', 'reddedildi'\]\.includes\(d\);/.test(iptalSrc));
+t('iptalEdilebilirDurum artık sevk_edildi, kismi_sevk_edildi ve reddedildi\'yi de hariç tutuyor',
+  /const iptalEdilebilirDurum = \(d\) => !\['iptal', 'tamamlandi', 'kapatildi', 'sevk_edildi', 'kismi_sevk_edildi', 'reddedildi'\]\.includes\(d\);/.test(iptalSrc));
 
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

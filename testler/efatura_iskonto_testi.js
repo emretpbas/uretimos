@@ -22,7 +22,7 @@ console.log('\n-- app.js: irsaliyeKesilinceFaturaOlustur artık iskonto uygulanm
 t('genelIskontoYuzde siparişten okunuyor',
   /const genelIskontoYuzde = siparis\.genelIskontoYuzde \|\| 0;/.test(appSrc));
 t('2. kalite kalemler iskontodan MUAF (kalemleriKdvGrupla ile aynı kural)',
-  /const faturaKalemleri = \(siparis\.kalemler \|\| \[\]\)\.map\(k => \(\{\s*\n\s*\.\.\.k,\s*\n\s*netFiyat: k\.ikinciKalite \? \(k\.netFiyat \|\| 0\) : \(k\.netFiyat \|\| 0\) \* \(1 - genelIskontoYuzde \/ 100\)/.test(appSrc));
+  /const faturaKalemleri = \(faturaKaynakKalemleri \|\| \[\]\)\.map\(k => \(\{\s*\n\s*\.\.\.k,\s*\n\s*netFiyat: k\.ikinciKalite \? \(k\.netFiyat \|\| 0\) : \(k\.netFiyat \|\| 0\) \* \(1 - genelIskontoYuzde \/ 100\)/.test(appSrc));
 t('fatura nesnesi artık kalemler alanını taşıyor',
   /kalemler: faturaKalemleri,\s*\n\s*matrah, kdvOrani, kdvTutari, genelToplam, kdvDetaylari,/.test(appSrc));
 

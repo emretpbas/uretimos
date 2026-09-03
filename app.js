@@ -3489,6 +3489,33 @@ const App = (() => {
     await Store.stokHareketleri.save(stokHareketleri);
   }
 
+  // ── KISMİ SEVKİYAT: BİR İRSALİYE KESİLİNCE SİPARİŞİN KALAN MİKTARINI GÜNCELLE
+  // BULGU (T3-23): irsaliye kesildiğinde durum KOŞULSUZ 'sevk_edildi' oluyor
+  // ve sipariş sevkEdilebilir listesinden TAMAMEN çıkıyordu — irsaliye
+  // ekranı zaten kalem çıkarmaya/miktar azaltmaya izin verdiği halde (kısmi
+  // sevkiyat fiilen mümkün), sipariş durumu bunu hiç yansıtmıyor, kalan
+  // kalemler bir daha asla sevk edilemiyordu (irsaliyeler.some(...) filtresi
+  // sipariş üzerinde TEK bir irsaliye varlığını "tamamen sevk edildi" sayıyordu).
+  // Bu fonksiyon, irsaliyeye giren 'urun' kalemlerinin miktarını siparişin
+  // kendi kalemlerindeki sevkEdilenMiktar'a ekler; YALNIZCA TÜM ürün
+  // kalemleri tam sevk edildiyse durum 'sevk_edildi' olur, aksi halde
+  // 'kismi_sevk_edildi' — sipariş sevkEdilebilir listesinde (kalan
+  // miktarıyla) görünmeye devam eder.
+  function siparisKismiSevkGuncelle(siparis, irsaliyeKalemleri) {
+    const siparisKalemleri = siparis.kalemler || [];
+    (irsaliyeKalemleri || []).forEach(ik => {
+      if (ik.kaynak !== 'urun') return; // yalnızca gerçek ürün kalemleri sipariş ilerlemesini etkiler
+      const sk = siparisKalemleri.find(x => x.grup === 'urun' && x.kod === ik.kod);
+      if (!sk) return;
+      sk.sevkEdilenMiktar = (sk.sevkEdilenMiktar || 0) + (ik.miktar || 0);
+    });
+    const urunKalemleri = siparisKalemleri.filter(k => k.grup === 'urun');
+    const tamamiSevkEdildiMi = urunKalemleri.length > 0 &&
+      urunKalemleri.every(k => (k.sevkEdilenMiktar || 0) >= (k.miktar || 0) - 0.0001);
+    siparis.durum = tamamiSevkEdildiMi ? 'sevk_edildi' : 'kismi_sevk_edildi';
+    return tamamiSevkEdildiMi;
+  }
+
   // ── SİPARİŞ ONAYLANIP PLANLAMAYA DÜŞTÜĞÜNDE: ÖDEME PLANINI ANINDA İŞLE ───
   // KULLANICI KARARI: Sipariş Yönetim tarafından onaylanıp üretim kuyruğuna
   // düştüğü anda, ödeme planındaki PEŞİNAT + ÇEK + KREDİ KARTI kalemlerinin
@@ -4910,11 +4937,21 @@ const App = (() => {
   }
 
   async function irsaliyeKesilinceFaturaOlustur(siparis, musteri, irsaliye) {
-    // Kalem bazlı KDV: siparişin kalemlerinde kdvOrani varsa (Teklif'ten
-    // gelen kalem bazlı KDV) o kullanılır; kalemler yoksa (eski/serbest
-    // sipariş) tek bir genel KDV oranına (müşteri veya genel ayar) düşülür.
-    const kdvGruplari = (siparis.kalemler && siparis.kalemler.length)
-      ? kalemleriKdvGrupla(siparis.kalemler, siparis.genelIskontoYuzde)
+    // BULGU (T3-23): KDV/matrah HER ZAMAN siparis.kalemler'den (siparişin
+    // TAMAMI) hesaplanıyordu — irsaliyeye kesilirken kalem çıkarılmış veya
+    // miktar azaltılmış olsa bile (kısmi sevkiyat arayüzde zaten mümkündü)
+    // fatura hep TAM sipariş tutarı için kesiliyordu. Aynı sipariş için
+    // birden fazla (kısmi) irsaliye kesilirse bu ÇOK KEZ TAM TUTAR
+    // faturalamaya yol açardı. Artık faturanın kaynağı, GERÇEKTEN bu
+    // irsaliyeyle sevk edilen kalemlerdir (irsaliye.kalemler); yalnızca
+    // hiç kalemi olmayan eski/bozuk irsaliye kayıtlarında sipariş.kalemler'e
+    // düşülür (geriye dönük uyumluluk, kısmi sevkiyat öncesi davranış).
+    const faturaKaynakKalemleri = (irsaliye.kalemler && irsaliye.kalemler.length) ? irsaliye.kalemler : siparis.kalemler;
+    // Kalem bazlı KDV: kalemlerde kdvOrani varsa (Teklif'ten gelen kalem
+    // bazlı KDV) o kullanılır; kalemler yoksa (eski/serbest sipariş) tek
+    // bir genel KDV oranına (müşteri veya genel ayar) düşülür.
+    const kdvGruplari = (faturaKaynakKalemleri && faturaKaynakKalemleri.length)
+      ? kalemleriKdvGrupla(faturaKaynakKalemleri, siparis.genelIskontoYuzde)
       : null;
 
     let matrah, kdvOrani, kdvTutari, genelToplam, kdvDetaylari;
@@ -4949,7 +4986,18 @@ const App = (() => {
     // peşinat mahsup edilmiş kabul edilir. odenecekBakiye artık HER ZAMAN 0
     // yazılmıyor — ai_denetci.js'teki "vadesi geçmiş fatura" kontrolü bu
     // alana bakar.
-    const onayindaKasayaGirenNet = siparis.odemePlaniNetKasaToplami != null ? siparis.odemePlaniNetKasaToplami : pesinatTutar;
+    // BULGU (T3-23 devamı): bu avans (peşinat/çek/kredi kartı) siparişin
+    // ONAYI anında, TEK SEFERLİK olarak kasaya/cariye işlenmişti. Kısmi
+    // sevkiyatta aynı sipariş için BİRDEN FAZLA fatura kesilebildiğinden,
+    // bu avansı HER faturada tekrar mahsup etmek onu birden çok kez
+    // saymak (çifte mahsup) olurdu. Bu yüzden avans YALNIZCA bu sipariş
+    // için kesilen İLK faturada düşülür; sonraki (kısmi) faturalarda tam
+    // tutar üzerinden ödenecek bakiye hesaplanır.
+    const mevcutFaturalar = await Store.faturalar.all();
+    const buIlkFaturaMi = !mevcutFaturalar.some(f => f.siparisId === siparis.id);
+    const onayindaKasayaGirenNet = buIlkFaturaMi
+      ? (siparis.odemePlaniNetKasaToplami != null ? siparis.odemePlaniNetKasaToplami : pesinatTutar)
+      : 0;
     const odenecekBakiye = Math.max(0, genelToplam - onayindaKasayaGirenNet);
 
     // BULGU (T1-4): fatura nesnesi kendi kalemler alanını hiç kaydetmiyordu
@@ -4963,7 +5011,7 @@ const App = (() => {
     // iskonto burada, kaynakta uygulanır; ublOlustur zaten miktar×netFiyat
     // çarpımını kullandığından ekstra bir değişikliğe gerek kalmaz.
     const genelIskontoYuzde = siparis.genelIskontoYuzde || 0;
-    const faturaKalemleri = (siparis.kalemler || []).map(k => ({
+    const faturaKalemleri = (faturaKaynakKalemleri || []).map(k => ({
       ...k,
       netFiyat: k.ikinciKalite ? (k.netFiyat || 0) : (k.netFiyat || 0) * (1 - genelIskontoYuzde / 100)
     }));
@@ -4976,7 +5024,7 @@ const App = (() => {
       musteriId: siparis.musteriId, musteriAdi: siparis.musteriAdi,
       kalemler: faturaKalemleri,
       matrah, kdvOrani, kdvTutari, genelToplam, kdvDetaylari,
-      pesinatMahsup: pesinatTutar, odenecekBakiye, vadeTarihi,
+      pesinatMahsup: buIlkFaturaMi ? pesinatTutar : 0, odenecekBakiye, vadeTarihi,
       odemePlaniSiparisOnayindaIslendi: true,
       tarih: new Date().toISOString().slice(0, 10)
     };
@@ -5665,7 +5713,7 @@ const App = (() => {
     satinalmaSiparisiOnaylaninceDepoGirisiOlustur, depoGirisiOnaylaStokEkle,
     tedarikciOdemeRezervasyonunuKesinlestir, tedarikciOdemeRezervasyonunuIptalEt,
     tahsilatOdemePlaniOnayaGonder, tahsilatOnayBekleyenOnayla, tahsilatOnayBekleyenReddet,
-    uretimBaslarkenHammaddeCek, uretimTamamlaninceUrunGirisiYap, sevkiyatYapilinceStoktanDus,
+    uretimBaslarkenHammaddeCek, uretimTamamlaninceUrunGirisiYap, sevkiyatYapilinceStoktanDus, siparisKismiSevkGuncelle,
     muhasebeKaydiOlustur, tahsilatBeklenenOnayla, siparisOnaylaninceOdemePlaniniAnindaIsle, odemeKalemiVadeFarki, odemePlaniToplamVadeFarki, siparisReddindeTeklifSorusu, kesimPlaniKaydedildiginceStokDus, kalemleriKdvGrupla, ekGiderTutar, ekGiderToplami, EK_GIDER_KATALOG, akordeonHtml, akordeonBagla, kartNeredeKullaniliyor,
     ikinciKaliteKalemleriSatildiIsaretle, ikinciKaliteSevkBilgisiIsle, sayfayaErisebilir,
     ikinciKaliteKullanilabilirAdet, ikinciKaliteRezervasyonSenkronize, ikinciKaliteRezervasyonKaldir, ikinciKaliteSatisGeriAl,
