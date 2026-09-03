@@ -35,7 +35,7 @@ PageModules.ik_bordro = (() => {
     main.querySelectorAll('.tab').forEach(t => t.onclick = () => { activeTab = t.dataset.tab; render(main); });
 
     const content = document.getElementById('ikb-tab-content');
-    if (activeTab === 'bordro') { content.innerHTML = renderBordroTab(aktifPersonel, bordrolar, avanslar); wireBordroTab(aktifPersonel, bordrolar, avanslar, render, main); }
+    if (activeTab === 'bordro') { content.innerHTML = renderBordroTab(aktifPersonel, bordrolar); wireBordroTab(aktifPersonel, bordrolar, render, main); }
     else { content.innerHTML = renderAvansTab(aktifPersonel, avanslar); wireAvansTab(aktifPersonel, render, main); }
   }
 
@@ -51,7 +51,7 @@ PageModules.ik_bordro = (() => {
     return toplam;
   }
 
-  function renderBordroTab(personeller, bordrolar, avanslar) {
+  function renderBordroTab(personeller, bordrolar) {
     let html = `<div class="card">
       <div class="fgroup" style="max-width:220px"><label class="flbl">Bordro Ayı</label>
         <input class="finput" id="ikb-ay-secim" type="month" value="${seciliAy}">
@@ -63,9 +63,15 @@ PageModules.ik_bordro = (() => {
         <tr><th>Personel</th><th class="r">Brüt Maaş</th><th class="r">SGK İşçi</th><th class="r">İşsizlik İşçi</th><th class="r">Gelir V.</th><th class="r">Damga V.</th><th class="r">Avans Kesintisi</th><th class="r">Net Ödenecek</th><th></th></tr>`;
     personeller.forEach(p => {
       const mevcutBordro = bordrolar.find(b => b.personelId === p.id && b.ay === seciliAy);
-      const ayinAvanslari = avanslar.filter(a => a.personelId === p.id && a.ay === seciliAy && !a.mahsupEdildi).reduce((a, x) => a + x.tutar, 0);
       if (mevcutBordro) {
-        const netOdenecek = mevcutBordro.netMaas - ayinAvanslari;
+        // BULGU (T3-33): netOdenecek/avansKesintisi artık bordro
+        // hesaplanırken KALICI olarak kaydediliyor (bkz. wireBordroTab) —
+        // burada canlı yeniden hesaplanmıyor, doğrudan kayıttan okunuyor.
+        // (Eski canlı hesap zaten YANLIŞ sonuç verirdi: bordro
+        // hesaplanınca ilgili avanslar mahsupEdildi=true olur, bu yüzden
+        // "!a.mahsupEdildi" filtresi bordrodan SONRA hep 0 dönerdi.)
+        const avansKesintisi = mevcutBordro.avansKesintisi || 0;
+        const netOdenecek = mevcutBordro.netOdenecek != null ? mevcutBordro.netOdenecek : mevcutBordro.netMaas;
         html += `<tr>
           <td><b>${App.escapeHtml(p.adSoyad)}</b></td>
           <td class="r">${App.fmtTL(mevcutBordro.brutMaas)}</td>
@@ -73,7 +79,7 @@ PageModules.ik_bordro = (() => {
           <td class="r">${App.fmtTL(mevcutBordro.issizlikIsciPrimi)}</td>
           <td class="r">${App.fmtTL(mevcutBordro.gelirVergisiBuAy)}</td>
           <td class="r">${App.fmtTL(mevcutBordro.damgaVergisiBuAy)}</td>
-          <td class="r">${ayinAvanslari > 0 ? '−' + App.fmtTL(ayinAvanslari) : '—'}</td>
+          <td class="r">${avansKesintisi > 0 ? '−' + App.fmtTL(avansKesintisi) : '—'}</td>
           <td class="r"><b>${App.fmtTL(netOdenecek)}</b></td>
           <td><button class="btn btn-sm btn-ghost ikb-detay" data-id="${p.id}">Bordro Detayı</button></td>
         </tr>`;
@@ -90,17 +96,32 @@ PageModules.ik_bordro = (() => {
     return html;
   }
 
-  function wireBordroTab(personeller, bordrolar, avanslar, render, main) {
+  function wireBordroTab(personeller, bordrolar, render, main) {
     document.getElementById('ikb-ay-secim').onchange = (e) => { seciliAy = e.target.value; render(main); };
     document.querySelectorAll('.ikb-hesapla').forEach(b => b.onclick = async () => {
       const p = personeller.find(x => x.id === b.dataset.id);
       const oncekiKumulatif = kumulatifMatrahBul(p.id, seciliAy, bordrolar);
       const hesap = App.bordroHesapla(p.brutMaas, oncekiKumulatif, App.state.ayarlar);
+      // BULGU (T3-33): netOdenecek (net maaş - avans kesintisi) bordro
+      // kaydına HİÇ yazılmıyordu — renderBordroTab her açılışta Store'dan
+      // taze avans listesini çekip yeniden hesaplıyordu. Artık bordro
+      // hesaplanırken o ayın MAHSUP EDİLMEMİŞ avansları toplanıp
+      // avansKesintisi/netOdenecek olarak KALICI biçimde kaydediliyor ve
+      // bu avanslar burada mahsupEdildi=true işaretlenip bordroya bağlanıyor
+      // (mahsup artık fiilen bordroya işleniyor, ayrı bir manuel adım değil).
+      const guncelAvanslar = await Store.avanslar.all();
+      const buAyinAvanslari = guncelAvanslar.filter(a => a.personelId === p.id && a.ay === seciliAy && !a.mahsupEdildi);
+      const avansKesintisi = buAyinAvanslari.reduce((a, x) => a + x.tutar, 0);
+      const netOdenecek = Math.max(0, hesap.netMaas - avansKesintisi);
       const bordro = {
         id: App.uid('BRD'), personelId: p.id, ay: seciliAy,
-        ...hesap, hesaplamaTarihi: new Date().toISOString().slice(0, 10)
+        ...hesap, avansKesintisi, netOdenecek, hesaplamaTarihi: new Date().toISOString().slice(0, 10)
       };
       await App.persist(() => Store.bordrolar.upsert(bordro));
+      if (buAyinAvanslari.length) {
+        buAyinAvanslari.forEach(a => { a.mahsupEdildi = true; a.mahsupBordroId = bordro.id; });
+        await App.persist(() => Store.avanslar.save(guncelAvanslar));
+      }
       // İşverene toplam maliyet (brüt maaş + SGK işveren payı) personel
       // gideri olarak muhasebeye işlenir (KDV'siz, ücret giderleri istisnadır).
       await App.persist(() => App.muhasebeKaydiOlustur({
@@ -198,12 +219,22 @@ PageModules.ik_bordro = (() => {
     document.getElementById('af-save').onclick = async () => {
       const tutar = parseFloat(document.getElementById('af-tutar').value);
       if (!tutar) { App.toast('Tutar zorunlu', 'err'); return; }
+      const personelId = document.getElementById('af-personel').value;
+      const personel = personeller.find(p => p.id === personelId);
       const kayit = {
-        id: App.uid('AVN'), personelId: document.getElementById('af-personel').value,
+        id: App.uid('AVN'), personelId,
         tarih: document.getElementById('af-tarih').value, ay: document.getElementById('af-ay').value,
         tutar, mahsupEdildi: false
       };
       await App.persist(() => Store.avanslar.upsert(kayit));
+      // BULGU (T3-33): avans ödemesi GERÇEK bir nakit çıkışıdır ama hiçbir
+      // muhasebe kaydı oluşturmuyordu — Gelir-Gider Özeti'nde görünmüyordu.
+      await App.persist(() => App.muhasebeKaydiOlustur({
+        tip: 'gider', kategori: 'personel_avans',
+        aciklama: 'Personel avansı: ' + (personel ? personel.adSoyad : ''),
+        tutar, matrah: tutar, kdvOrani: 0, kdvTutari: 0,
+        kaynakId: kayit.id, kaynakTip: 'avans'
+      }));
       App.toast('Avans kaydedildi', 'ok');
       App.closeModal();
       onSaved();

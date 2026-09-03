@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v163'; // v163: FEATURE - KPI paneline Bugun/Bu Hafta/Tum Zamanlar donem filtresi eklendi (kpi_motor.js artik omur boyu kumulatife mahkum degil)
+const CACHE_NAME = 'uretimos-v164'; // v164: FIX - personel avansi artik muhasebe kaydi olusturuyor, bordro netOdenecek/avansKesintisi kalici yaziliyor ve avans mahsubu bordroya isleniyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
