@@ -488,6 +488,20 @@ PageModules.hat_terminal = (() => {
       const { tumu, is } = await isiBul(b.dataset.id);
       const enFazla = (is.gelenAdet - is.fireAdet) - is.kaliteOnayliAdet;
       if (enFazla <= 0) { App.toast('Reddedilebilecek adet kalmadı', 'err'); return; }
+      // BULGU (T3-21): bu ekranda red HER ZAMAN fireye ayrılıyordu —
+      // page_hat_takip.js'deki "önceki operasyona geri gönder" (düzeltilip
+      // tekrar akışa sokulabilecek parçalar için) seçeneği burada YOKTU.
+      // Aynı mantık (rotanın önceki adımları arasından hedef seçilir, o
+      // istasyona yeni/mevcut bir iş kartı olarak eklenir) buraya da
+      // taşındı — alan adları (kaliteRedleri, hand-rolled NCR) bu ekranın
+      // KENDİ mevcut kuralıyla tutarlı bırakıldı; iki ekran arasında tam
+      // bir ortak fonksiyona çıkarmak (page_hat_takip.js "redler" alanına
+      // karşı burada "kaliteRedleri" ve farklı NCR oluşturma yolu) veri
+      // şekli farkları yüzünden ayrı bir refactor gerektirir.
+      const rotalar = await Store.rotalar.all();
+      const rota = rotalar.find(r => r.id === is.rotaId);
+      const steps = rota ? (rota.steps || []) : [];
+      const oncekiler = steps.slice(0, is.stepIndex).map((st, i) => ({ ...st, index: i })).filter(st => st.hat !== 'TAŞIMA');
       const body = document.createElement('div');
       body.innerHTML = `
         <div style="background:var(--red-bg);border:1px solid var(--red);border-radius:8px;padding:8px 10px;
@@ -503,6 +517,15 @@ PageModules.hat_terminal = (() => {
           </select></div>
         <div class="fgroup"><label class="flbl">Açıklama (isteğe bağlı)</label>
           <input class="finput" id="hr-aciklama" placeholder="örn. 3. delik 2 mm kaymış"></div>
+        <div class="fgroup"><label class="flbl">Karar</label>
+          <select class="fselect" id="hr-karar">
+            <option value="fire">🗑 FİRE — parça hurdaya ayrılır</option>
+            ${oncekiler.length ? '<option value="geri">↩ ÖNCEKİ OPERASYON DÜZELTMESİ — istasyona geri gönder</option>' : ''}
+          </select></div>
+        <div class="fgroup" id="hr-hedef-wrap" style="display:none"><label class="flbl">Geri Gönderilecek İstasyon</label>
+          <select class="fselect" id="hr-hedef">
+            ${oncekiler.map(st => `<option value="${st.index}">${App.escapeHtml(st.kod)} — ${App.escapeHtml(st.tanim)} (${App.escapeHtml(st.hat || '')})</option>`).join('')}
+          </select></div>
         <div class="fhint">Reddeden: <b>${App.escapeHtml(oturum.isim)}</b> · İstasyon: <b>${App.escapeHtml(is.istasyonKod)}</b></div>`;
       App.openModal({
         title: '✕ Kalite Reddi', body,
@@ -510,19 +533,50 @@ PageModules.hat_terminal = (() => {
                  <button class="btn" id="hr-ok" style="background:var(--red);color:#fff;border:none">Reddet</button>`
       });
       document.getElementById('hr-vaz').onclick = App.closeModal;
+      document.getElementById('hr-karar').onchange = (e) => {
+        document.getElementById('hr-hedef-wrap').style.display = e.target.value === 'geri' ? '' : 'none';
+      };
       document.getElementById('hr-ok').onclick = async () => {
         const adet = parseInt(document.getElementById('hr-adet').value) || 0;
         if (adet < 1 || adet > enFazla) { App.toast('Adet 1-' + enFazla + ' aralığında olmalı', 'err'); return; }
         const sebep = document.getElementById('hr-sebep').value;
         const aciklama = (document.getElementById('hr-aciklama').value || '').trim();
+        const karar = document.getElementById('hr-karar').value;
         const simdi = new Date();
 
-        is.fireAdet = (is.fireAdet || 0) + adet;
         is.kaliteRedleri = is.kaliteRedleri || [];
         is.kaliteRedleri.push({
-          adet, sebep, aciklama, kisi: oturum.isim,
+          adet, sebep, aciklama, karar, kisi: oturum.isim,
           tarih: simdi.toISOString().slice(0, 10), zaman: simdi.toISOString()
         });
+        if (karar === 'fire') {
+          is.fireAdet = (is.fireAdet || 0) + adet;
+        } else {
+          // Önceki operasyon düzeltmesi: ilgili istasyonun kartına geri gönder
+          // (bkz. page_hat_takip.js'teki ht-red — aynı mantık).
+          const hedefIndex = parseInt(document.getElementById('hr-hedef').value);
+          const hedefStep = steps[hedefIndex];
+          is.gelenAdet -= adet; // bu istasyondan çıkar
+          const kalan = is.gelenAdet - is.fireAdet;
+          if (is.kaliteOnayliAdet > kalan) is.kaliteOnayliAdet = kalan;
+          if (is.islemTamamAdet > is.kaliteOnayliAdet) is.islemTamamAdet = is.kaliteOnayliAdet;
+          let hedefIs = tumu.find(x => x.kaynakTip === is.kaynakTip && x.kaynakId === is.kaynakId &&
+            x.yarimamulId === is.yarimamulId && x.stepIndex === hedefIndex);
+          if (hedefIs) { hedefIs.gelenAdet += adet; hedefIs.durum = 'aktif'; }
+          else {
+            tumu.push({
+              id: App.uid('IST'), kaynakTip: is.kaynakTip, kaynakId: is.kaynakId, kaynakKod: is.kaynakKod, kaynakEtiket: is.kaynakEtiket, musteriAdi: is.musteriAdi || '',
+              yarimamulId: is.yarimamulId, ymKod: is.ymKod, ymAd: is.ymAd,
+              rotaId: is.rotaId, rotaAd: is.rotaAd, stepIndex: hedefIndex,
+              istasyonKod: hedefStep.kod, istasyonTanim: hedefStep.tanim, hat: hedefStep.hat || 'GENEL',
+              gelenAdet: adet, kaliteOnayliAdet: 0, islemTamamAdet: 0, sevkEdilenAdet: 0, fireAdet: 0,
+              kaliteOnaylari: [], islemOnaylari: [], sevkler: [], redler: [], kaliteRedleri: [],
+              barkodOkundu: false, etiketBasildi: is.etiketBasildi || false,
+              etiketTarihi: is.etiketTarihi || null, etiketBasan: is.etiketBasan || null,
+              durum: 'aktif', olusturmaTarihi: simdi.toISOString().slice(0, 10)
+            });
+          }
+        }
 
         // Kaliteye uygunsuzluk (NCR) kaydı
         const ncrler = await Store.uygunsuzlukKayitlari.all();
@@ -536,6 +590,7 @@ PageModules.hat_terminal = (() => {
           sorumluBirim: 'kalite',
           aciklama: sebep + (aciklama ? ' — ' + aciklama : '') +
                     ' · Hat: ' + (is.hat || '—') + ' · İstasyon: ' + is.istasyonKod +
+                    ' · Karar: ' + (karar === 'fire' ? 'FİRE' : 'önceki operasyona geri gönderme') +
                     ' · Reddeden: ' + oturum.isim,
           fotograflar: [], durum: 'acik', dofId: null,
           isEmriId: is.id, istasyonKod: is.istasyonKod, hat: is.hat || '',
@@ -547,7 +602,7 @@ PageModules.hat_terminal = (() => {
           await Store.uygunsuzlukKayitlari.save(ncrler);
         });
         App.closeModal();
-        App.toast('✕ ' + adet + ' adet reddedildi — kaliteye uygunsuzluk kaydı açıldı', 'err');
+        App.toast('✕ ' + adet + ' adet reddedildi (' + (karar === 'fire' ? 'FİRE' : 'önceki istasyona geri gönderildi') + ') — kaliteye uygunsuzluk kaydı açıldı', 'err');
         render(main);
       };
     });
