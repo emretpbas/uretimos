@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v144'; // v144: FIX - Manuel Tahsilat Yap akisi artik siparis onayiyla ayni vade farki formulunu uyguluyor
+const CACHE_NAME = 'uretimos-v145'; // v145: FIX - Onay ekrani vade farki onizlemesi artik gercekte uygulanan formulle (musteriye ozel oran, ileriye donuk) ayni
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

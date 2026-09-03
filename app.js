@@ -3242,20 +3242,14 @@ const App = (() => {
     const tahsilatlar = await Store.tahsilatlar.all();
     const vadeFarkiKayitlari = await Store.vadeFarkiKayitlari.all();
     const tipLabel = { cek: 'Çek', kredi_karti: 'Kredi Kartı', nakit: 'Nakit', diger: 'Diğer' };
-    // Sipariş onayındaki (siparisOnaylaninceOdemePlaniniAnindaIsle) AYNI vade
-    // farkı mantığı — çek/kredi kartı ileri vadeliyse müşterinin
-    // aylikVadeFarkiYuzde'si üzerinden vade farkı düşülür, kalan NET tutar
-    // kasaya/bakiyeye işlenir; vade farkının kendisi vadeFarkiKayitlari'na
-    // ayrı bir gelir olarak yazılır. Önceden burada bu hesap HİÇ
-    // yapılmıyordu — çek/kredi kartı tam tutarıyla işleniyor, aynı
+    // Sipariş onayındaki (siparisOnaylaninceOdemePlaniniAnindaIsle) AYNI
+    // paylaşılan vade farkı formülü (odemeKalemiVadeFarki) — çek/kredi kartı
+    // ileri vadeliyse müşterinin aylikVadeFarkiYuzde'si üzerinden vade farkı
+    // düşülür, kalan NET tutar kasaya/bakiyeye işlenir; vade farkının kendisi
+    // vadeFarkiKayitlari'na ayrı bir gelir olarak yazılır. Önceden burada bu
+    // hesap HİÇ yapılmıyordu — çek/kredi kartı tam tutarıyla işleniyor, aynı
     // müşterinin sipariş onayından gelen tahsilatıyla TUTARSIZ oluyordu.
     const aylikVadeFarkiYuzde = (musteri && musteri.aylikVadeFarkiYuzde) || 0;
-    function ayFarkiHesapla(vadeTarihiStr) {
-      if (!vadeTarihiStr) return 0;
-      const bugunD = new Date(bugun), vadeD = new Date(vadeTarihiStr);
-      const gunFarki = Math.max(0, Math.round((vadeD - bugunD) / 86400000));
-      return Math.ceil(gunFarki / 30); // başlayan her 30 gün 1 ay sayılır
-    }
     let toplamIslenenTutar = 0, toplamVadeFarki = 0;
 
     function tahsilatKaydiEkle(tip, tutar, detay) {
@@ -3276,9 +3270,7 @@ const App = (() => {
       let detay = (tipLabel[k.tip] || k.tip) + (detayParcalari.length ? ' — ' + detayParcalari.join(', ') : '');
 
       if (k.tip === 'cek' || k.tip === 'kredi_karti') {
-        const aySayisi = ayFarkiHesapla(k.tarih);
-        const vadeFarki = k.tutar * (aylikVadeFarkiYuzde / 100) * aySayisi;
-        const netTutar = k.tutar - vadeFarki;
+        const { aySayisi, vadeFarki, netTutar } = odemeKalemiVadeFarki(k.tutar, k.tarih, aylikVadeFarkiYuzde, bugun);
         toplamVadeFarki += vadeFarki;
         if (vadeFarki > 0) {
           detay += ` (brüt ${k.tutar}, vade farkı ${vadeFarki.toFixed(2)} düşüldü)`;
@@ -3494,6 +3486,36 @@ const App = (() => {
   // Müşteri bakiyesi: NET kasaya giren toplamla güncellenir (yani bakiye,
   // vade farkı kadar daha düşük artar — vade farkı müşteriden ayrıca tahsil
   // edilen bir gelirdir, esas mal/hizmet borcuna eklenmez).
+  // ── ORTAK VADE FARKI HESABI ──────────────────────────────────────────────
+  // Sipariş onayı (anında işleme), Manuel Tahsilat onayı VE Onay Bekleyenler
+  // ekranındaki ÖNİZLEME artık TEK bir formülü paylaşıyor — BULGU: önceden
+  // önizleme (page_onaylar.js:hesaplaVadeFarki) global bir oran (Ayarlar'dan)
+  // ve yalnızca GEÇMİŞE dönük vade mantığı kullanıyordu; burada GERÇEKTEN
+  // uygulanan formül müşteriye özel oran (musteri.aylikVadeFarkiYuzde) ve
+  // İLERİYE dönük vade mantığı (henüz vadesi gelmemiş çek/kredi kartı da
+  // vade farkına tabi) kullanıyordu — önizleme gerçek tutarla uyuşmuyordu.
+  // Formül: vadeye kalan gün → 30 günlük dilimlerle yukarı yuvarlanmış ay
+  // sayısı × müşteriye özel aylikVadeFarkiYuzde.
+  function odemeKalemiVadeFarki(tutar, vadeTarihiStr, aylikVadeFarkiYuzde, bugunStr) {
+    if (!vadeTarihiStr) return { aySayisi: 0, vadeFarki: 0, netTutar: tutar };
+    const bugun = bugunStr || new Date().toISOString().slice(0, 10);
+    const bugunD = new Date(bugun), vadeD = new Date(vadeTarihiStr);
+    const gunFarki = Math.max(0, Math.round((vadeD - bugunD) / 86400000));
+    const aySayisi = Math.ceil(gunFarki / 30); // başlayan her 30 gün 1 ay sayılır
+    const vadeFarki = tutar * ((aylikVadeFarkiYuzde || 0) / 100) * aySayisi;
+    return { aySayisi, vadeFarki, netTutar: tutar - vadeFarki };
+  }
+
+  // Bir ödeme planındaki TÜM çek/kredi kartı kalemlerinin toplam vade
+  // farkı — Onay Bekleyenler ekranındaki önizleme bunu çağırır.
+  function odemePlaniToplamVadeFarki(odemePlani, aylikVadeFarkiYuzde, bugunStr) {
+    const kalemler = (odemePlani && odemePlani.odemeKalemleri) || [];
+    return kalemler.reduce((toplam, k) => {
+      if (k.tip !== 'cek' && k.tip !== 'kredi_karti') return toplam;
+      return toplam + odemeKalemiVadeFarki(k.tutar, k.tarih, aylikVadeFarkiYuzde, bugunStr).vadeFarki;
+    }, 0);
+  }
+
   async function siparisOnaylaninceOdemePlaniniAnindaIsle(siparis, musteri) {
     // İDEMPOTENTLİK: aynı sipariş için ödeme planı DAHA ÖNCE anında işlendiyse
     // (çek/kredi kartı ANINDA "elde"/kasaya yazıldıysa) tekrar çalıştırılmaz —
@@ -3512,18 +3534,9 @@ const App = (() => {
     const tahsilatBeklenenler = await Store.tahsilatBeklenenler.all();
     const ileriTarihliNakitler = [];
 
-    function ayFarkiHesapla(vadeTarihiStr) {
-      if (!vadeTarihiStr) return 0;
-      const bugunD = new Date(bugun), vadeD = new Date(vadeTarihiStr);
-      const gunFarki = Math.max(0, Math.round((vadeD - bugunD) / 86400000));
-      return Math.ceil(gunFarki / 30); // başlayan her 30 gün 1 ay sayılır
-    }
-
     odemeKalemleri.forEach(k => {
       if (k.tip === 'cek') {
-        const aySayisi = ayFarkiHesapla(k.tarih);
-        const vadeFarki = k.tutar * (aylikVadeFarkiYuzde / 100) * aySayisi;
-        const netTutar = k.tutar - vadeFarki;
+        const { aySayisi, vadeFarki, netTutar } = odemeKalemiVadeFarki(k.tutar, k.tarih, aylikVadeFarkiYuzde, bugun);
         netKasaToplami += netTutar;
         toplamVadeFarki += vadeFarki;
         if (vadeFarki > 0) {
@@ -3540,9 +3553,7 @@ const App = (() => {
           alisTarihi: bugun, durum: 'elde', kaynakSiparisId: siparis.id
         });
       } else if (k.tip === 'kredi_karti') {
-        const aySayisi = ayFarkiHesapla(k.tarih);
-        const vadeFarki = k.tutar * (aylikVadeFarkiYuzde / 100) * aySayisi;
-        const netTutar = k.tutar - vadeFarki;
+        const { aySayisi, vadeFarki, netTutar } = odemeKalemiVadeFarki(k.tutar, k.tarih, aylikVadeFarkiYuzde, bugun);
         netKasaToplami += netTutar;
         toplamVadeFarki += vadeFarki;
         if (vadeFarki > 0) {
@@ -5561,7 +5572,7 @@ const App = (() => {
     tedarikciOdemeRezervasyonunuKesinlestir, tedarikciOdemeRezervasyonunuIptalEt,
     tahsilatOdemePlaniOnayaGonder, tahsilatOnayBekleyenOnayla, tahsilatOnayBekleyenReddet,
     uretimBaslarkenHammaddeCek, uretimTamamlaninceUrunGirisiYap, sevkiyatYapilinceStoktanDus,
-    muhasebeKaydiOlustur, tahsilatBeklenenOnayla, siparisOnaylaninceOdemePlaniniAnindaIsle, siparisReddindeTeklifSorusu, kesimPlaniKaydedildiginceStokDus, kalemleriKdvGrupla, ekGiderTutar, ekGiderToplami, EK_GIDER_KATALOG, akordeonHtml, akordeonBagla, kartNeredeKullaniliyor,
+    muhasebeKaydiOlustur, tahsilatBeklenenOnayla, siparisOnaylaninceOdemePlaniniAnindaIsle, odemeKalemiVadeFarki, odemePlaniToplamVadeFarki, siparisReddindeTeklifSorusu, kesimPlaniKaydedildiginceStokDus, kalemleriKdvGrupla, ekGiderTutar, ekGiderToplami, EK_GIDER_KATALOG, akordeonHtml, akordeonBagla, kartNeredeKullaniliyor,
     ikinciKaliteKalemleriSatildiIsaretle, ikinciKaliteSevkBilgisiIsle, sayfayaErisebilir,
     ikinciKaliteKullanilabilirAdet, ikinciKaliteRezervasyonSenkronize, ikinciKaliteRezervasyonKaldir, ikinciKaliteSatisGeriAl,
     qrSvg, qrIcerikUret, kodAyikla, barkodOkutModal, partiEtiketKodu, isKartiEtiketYazdir, fotografiOlcekle1080, hatSifresiDogru, receteAltYarimamulleri,

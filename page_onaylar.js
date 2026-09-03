@@ -534,22 +534,18 @@ PageModules.onaylar = (() => {
       });
     }
 
-    // Vade farkı: en son ödeme kalemi vadesi geçmişse, geçen ay sayısı ×
-    // aylık TCMB faiz oranı (Ayarlar'dan manuel girilir) × kalan bakiye
-    // (peşinat düşülmüş tutar)
+    // BULGU: bu önizleme daha önce KENDİ formülünü kullanıyordu (global bir
+    // oran + yalnızca vadesi GEÇMİŞ kalemler için hesap) — Onayla'ya
+    // basıldığında GERÇEKTEN uygulanan formül (app.js:
+    // siparisOnaylaninceOdemePlaniniAnindaIsle → odemeKalemiVadeFarki)
+    // müşteriye özel oran kullanıyor ve henüz vadesi gelmemiş çek/kredi
+    // kartı kalemlerini de (ileriye dönük) hesaba katıyordu — önizleme ile
+    // gerçekte kasaya/bakiyeye yansıyan tutar UYUŞMUYORDU. Artık ikisi de
+    // AYNI paylaşılan fonksiyonu (App.odemePlaniToplamVadeFarki) çağırıyor.
     function hesaplaVadeFarki(siparis, odemePlani) {
-      const kalemler = odemePlani.odemeKalemleri || [];
-      if (!kalemler.length) return 0;
-      const enSonVade = kalemler.map(k => k.tarih).filter(Boolean).sort().slice(-1)[0];
-      if (!enSonVade) return 0;
-      const vade = new Date(enSonVade);
-      const bugun = new Date();
-      if (vade >= bugun) return 0;
-      const gecenGun = (bugun - vade) / 86400000;
-      const gecenAy = gecenGun / 30;
-      const kalanBakiye = siparis.toplam - (odemePlani.pesinatTutar || 0);
-      const aylikFaizOrani = (App.state.ayarlar.aylikVadeFarkiFaizOrani || 0) / 100;
-      return kalanBakiye * aylikFaizOrani * gecenAy;
+      const musteri = musteriler.find(m => m.id === siparis.musteriId);
+      const aylikVadeFarkiYuzde = (musteri && musteri.aylikVadeFarkiYuzde) || 0;
+      return App.odemePlaniToplamVadeFarki(odemePlani, aylikVadeFarkiYuzde);
     }
   }
 

@@ -6,8 +6,10 @@
 // hesabı burada HİÇ uygulanmıyordu. Sonuç: aynı müşterinin aynı vadeli çeki,
 // hangi ekrandan işlendiğine göre farklı net tutarla kasaya/bakiyeye
 // yansıyordu ve vade farkı geliri (vadeFarkiKayitlari) hiç oluşmuyordu.
-// Düzeltme: tahsilatOnayBekleyenOnayla artık AYNI ayFarkiHesapla/vadeFarki/
-// netTutar formülünü kullanıyor, vadeFarkiKayitlari'na kayıt düşüyor.
+// Düzeltme: tahsilatOnayBekleyenOnayla artık siparisOnaylaninceOdemePlaniniAnindaIsle
+// ile PAYLAŞILAN odemeKalemiVadeFarki formülünü çağırıyor, vadeFarkiKayitlari'na
+// kayıt düşüyor (bu paylaşılan helper T2-20'de Onay ekranı önizlemesine de
+// bağlanmıştır — bkz. testler/onay_vade_farki_onizleme_testi.js).
 // app.js Store/DOM'a derinden bağlı olduğu için (diğer app.js testleriyle
 // aynı desende) kaynak kod üzerinde regex doğrulama yapılır.
 const fs = require('fs'), path = require('path');
@@ -19,15 +21,24 @@ const fnMatch = src.match(/async function tahsilatOnayBekleyenOnayla\(tahsilatOn
 const fn = fnMatch ? fnMatch[0] : '';
 t('tahsilatOnayBekleyenOnayla fonksiyonu bulundu', !!fn);
 
-console.log('\n-- Aynı vade farkı formülü (sipariş onayı ile aynı mantık) kullanılıyor --');
+console.log('\n-- Aynı PAYLAŞILAN vade farkı formülü (sipariş onayıyla ortak) kullanılıyor --');
 t('müşterinin aylikVadeFarkiYuzde\'si okunuyor',
   /const aylikVadeFarkiYuzde = \(musteri && musteri\.aylikVadeFarkiYuzde\) \|\| 0;/.test(fn));
-t('ayFarkiHesapla yardımcı fonksiyonu tanımlı (30 günlük dilimlerle yukarı yuvarlama)',
-  /function ayFarkiHesapla\(vadeTarihiStr\)[\s\S]{0,200}Math\.ceil\(gunFarki \/ 30\)/.test(fn));
-t('çek/kredi kartı için vadeFarki = tutar × yüzde × aySayısı hesaplanıyor',
-  /const vadeFarki = k\.tutar \* \(aylikVadeFarkiYuzde \/ 100\) \* aySayisi;/.test(fn));
-t('netTutar = k.tutar - vadeFarki hesaplanıyor',
-  /const netTutar = k\.tutar - vadeFarki;/.test(fn));
+t('artık kendi ayFarkiHesapla kopyasını TANIMLAMIYOR (paylaşılan helper kullanılıyor)',
+  !/function ayFarkiHesapla\(vadeTarihiStr\)/.test(fn));
+t('çek/kredi kartı için paylaşılan odemeKalemiVadeFarki çağrılıyor',
+  /const \{ aySayisi, vadeFarki, netTutar \} = odemeKalemiVadeFarki\(k\.tutar, k\.tarih, aylikVadeFarkiYuzde, bugun\);/.test(fn));
+
+console.log('\n-- app.js: paylaşılan vade farkı hesaplayıcıları tanımlı ve dışa aktarılmış --');
+t('odemeKalemiVadeFarki tek bir kalem için aySayisi/vadeFarki/netTutar döndürüyor',
+  /function odemeKalemiVadeFarki\(tutar, vadeTarihiStr, aylikVadeFarkiYuzde, bugunStr\) \{/.test(src) &&
+  /return \{ aySayisi, vadeFarki, netTutar: tutar - vadeFarki \};/.test(src));
+t('odemePlaniToplamVadeFarki bir ödeme planındaki tüm çek/kredi kartı kalemlerini topluyor',
+  /function odemePlaniToplamVadeFarki\(odemePlani, aylikVadeFarkiYuzde, bugunStr\)/.test(src));
+t('siparisOnaylaninceOdemePlaniniAnindaIsle de artık AYNI paylaşılan helper\'ı çağırıyor',
+  /odemeKalemiVadeFarki\(k\.tutar, k\.tarih, aylikVadeFarkiYuzde, bugun\)/.test(src));
+t('her iki helper da App\'ten dışa aktarılıyor (page_onaylar.js önizlemesi için)',
+  /odemeKalemiVadeFarki, odemePlaniToplamVadeFarki,/.test(src));
 
 console.log('\n-- Kasaya/bakiyeye giren tutar artık NET (vade farkı düşülmüş) --');
 t('tahsilatKaydiEkle çek/kredi kartı için netTutar ile çağrılıyor (tam k.tutar değil)',
