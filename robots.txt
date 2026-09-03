@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api.php
+Disallow: /testler/
+Disallow: /dosyalar/
+Disallow: /backups/
+
+Sitemap: https://uretimos.com.tr/sitemap.xml
