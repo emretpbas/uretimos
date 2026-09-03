@@ -73,6 +73,30 @@ const Sayim = (() => {
     };
   }
 
+  // ── BİR SAYIM SATIRININ BİRİM MALİYETİNİ BUL (TL) ────────────────────────
+  // Hammadde için doğrudan birim fiyatı (kargo payı dahil), yarımamül/ürün
+  // için BOM'un tam maliyetini (App.kartMaliyetHesapla — sistemin tek
+  // "doğru" maliyet motoru, Reçete/Fiyatlandırma ekranlarıyla AYNI) kullanır.
+  async function satirBirimMaliyetleriYukle() {
+    const [hammaddeler, yarimamuller, urunler, altMontajlar, paketler, receteler, rotalar] = await Promise.all([
+      Store.hammaddeler.all(), Store.yarimamuller.all(), Store.urunler.all(),
+      Store.altMontajlar.all(), Store.paketler.all(), Store.receteler.all(), Store.rotalar.all()
+    ]);
+    const ayarlar = (window.App && App.state && App.state.ayarlar) || {};
+    return function birimMaliyet(tip, refId) {
+      if (tip === 'hammadde') {
+        const hm = hammaddeler.find(h => h.id === refId);
+        return hm ? App.hammaddeBirimFiyatTRY(hm, ayarlar) : 0;
+      }
+      const liste = tip === 'yarimamul' ? yarimamuller : tip === 'urun' ? urunler : null;
+      if (!liste) return 0;
+      const kart = liste.find(k => k.id === refId);
+      if (!kart) return 0;
+      const sonuc = App.kartMaliyetHesapla(kart, tip, receteler, yarimamuller, altMontajlar, urunler, hammaddeler, rotalar, ayarlar, undefined, paketler);
+      return sonuc.toplam || 0;
+    };
+  }
+
   // ── STOĞA İŞLE: farkları uygular, her fark için hareket yazar ────────────
   async function stogaIsle(sayimId, kapatan) {
     const sayimlar = await Store.sayimlar.all();
@@ -82,8 +106,15 @@ const Sayim = (() => {
 
     const stoklar = await Store.stokRaf.all();
     const hareketler = await Store.stokHareketleri.all();
+    const birimMaliyet = await satirBirimMaliyetleriYukle();
     const bugun = new Date().toISOString().slice(0, 10);
     let uygulanan = 0;
+    // BULGU (T1-8): sayım farkı (fazla/eksik) hiçbir zaman muhasebeye
+    // yansımıyordu. Fazla (sayılan > sistem) bulunan bir kazanç — GELİR;
+    // eksik (sayılan < sistem) kaybedilen bir değer — GİDERdir. Değer,
+    // her satırın birim maliyeti (yukarıdaki birimMaliyet) × |fark| ile
+    // hesaplanıp tek bir toplu gelir + tek bir toplu gider kaydına biriktirilir.
+    let toplamFazlaDeger = 0, toplamEksikDeger = 0;
 
     kayit.satirlar.forEach(sat => {
       if (sat.sayilanMiktar == null) return;                 // sayılmayan kalem dokunulmaz
@@ -100,6 +131,8 @@ const Sayim = (() => {
                   ' → sayılan ' + bicim(sat.sayilanMiktar) + (sat.sayan ? ' · ' + sat.sayan : ''),
         tarih: bugun
       });
+      const deger = Math.abs(fark) * birimMaliyet(sat.tip, sat.refId);
+      if (fark > 0) toplamFazlaDeger += deger; else toplamEksikDeger += deger;
     });
 
     kayit.durum = 'kapali';
@@ -109,6 +142,20 @@ const Sayim = (() => {
       await Store.stokRaf.save(stoklar);
       await Store.stokHareketleri.save(hareketler);
       await Store.sayimlar.save(sayimlar);
+      if (toplamFazlaDeger > 0) {
+        await App.muhasebeKaydiOlustur({
+          tip: 'gelir', kategori: 'sayim_fazlasi',
+          aciklama: 'Sayım fazlası (' + kayit.no + ', ' + AMBARLAR[kayit.ambar] + ')',
+          tutar: toplamFazlaDeger, matrah: toplamFazlaDeger, kdvTutari: 0, kaynakId: kayit.id, kaynakTip: 'sayim'
+        });
+      }
+      if (toplamEksikDeger > 0) {
+        await App.muhasebeKaydiOlustur({
+          tip: 'gider', kategori: 'sayim_acigi',
+          aciklama: 'Sayım açığı (' + kayit.no + ', ' + AMBARLAR[kayit.ambar] + ')',
+          tutar: toplamEksikDeger, matrah: toplamEksikDeger, kdvTutari: 0, kaynakId: kayit.id, kaynakTip: 'sayim'
+        });
+      }
     });
     return { uygulanan, ozet: farkOzeti(kayit) };
   }

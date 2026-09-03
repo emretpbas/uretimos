@@ -1156,6 +1156,21 @@ PageModules.uretim_panel = (() => {
       });
       await App.persist(() => Store.duzeltmeGiderleri.save(giderler));
 
+      // BULGU (T1-8): düzeltme maliyeti (malzeme+işçilik) yalnızca kendi
+      // özel duzeltmeGiderleri koleksiyonuna yazılıp Yönetim Raporları'nın
+      // "Kalite Düzeltme Giderleri" bölümünde gösteriliyordu — Gelir-Gider
+      // Özeti/Basit Usul Defter'e HİÇ yansımıyordu. Diğer giderlerle
+      // (hammadde_alimi, kredi_taksiti vb.) AYNI mekanizma.
+      const toplamDuzeltmeMaliyeti = malzemeToplam + iscilikMaliyet;
+      if (toplamDuzeltmeMaliyeti > 0) {
+        await App.persist(() => App.muhasebeKaydiOlustur({
+          tip: 'gider', kategori: 'kalite_duzeltme',
+          aciklama: 'Kalite düzeltme gideri: ' + siparis.kod + (ym ? ' — ' + ym.kod : ''),
+          tutar: toplamDuzeltmeMaliyeti, matrah: toplamDuzeltmeMaliyeti, kdvTutari: 0,
+          kaynakId: siparis.id, kaynakTip: 'duzeltme'
+        }));
+      }
+
       if (sonuc === 'duzeltildi') {
         // Tekrar kalite onayına: sipariş kalite_bekliyor + yeni kalite kayıtları
         siparis.uretimDurumu = 'kalite_bekliyor';

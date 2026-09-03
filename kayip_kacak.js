@@ -203,6 +203,31 @@ const KayipKacak = (() => {
     talep.teslimEden = teslimEdenId;
     talep.teslimTarihi = new Date().toISOString();
     await App.persist(() => Store.malzemeTalepleri.save(liste));
+
+    // BULGU (T1-8): fire/hasar/kayıp (normalMi:false) teslimatları hiçbir
+    // zaman muhasebeye yansımıyordu. Üretim sarfı/bakım/numune/iade
+    // (normalMi:true) NORMAL tüketimdir — maliyeti zaten BOM/üretim
+    // maliyeti üzerinden başka yerlerde hesaba katılır, burada AYRICA
+    // gider yazmak ÇİFT SAYIM olur. Yalnızca gerçek bir hammadde kartına
+    // bağlı (değeri bilinen) fire/hasar/kayıp kayıtları için tek bir gider
+    // kaydı oluşturulur.
+    if (!talep.normalMi && talep.hammaddeId) {
+      const hammaddeler = await Store.hammaddeler.all();
+      const hm = hammaddeler.find(h => h.id === talep.hammaddeId);
+      if (hm) {
+        const ayarlar = (typeof App !== 'undefined' && App.state && App.state.ayarlar) || {};
+        const birimFiyat = App.hammaddeBirimFiyatTRY(hm, ayarlar);
+        const tutar = birimFiyat * (talep.miktar || 0);
+        if (tutar > 0) {
+          await App.muhasebeKaydiOlustur({
+            tip: 'gider', kategori: 'fire_kayip',
+            aciklama: (talep.kayipTipiAd || 'Fire/Kayıp') + ': ' + talep.kalemAdi + ' — ' + talep.gerekce,
+            tutar, matrah: tutar, kdvTutari: 0, kaynakId: talep.id, kaynakTip: 'malzeme_talebi'
+          });
+        }
+      }
+    }
+
     return { ok: true, talep };
   }
 

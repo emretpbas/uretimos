@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v151'; // v151: FIX - vade farki geliri artik Gelir-Gider Ozeti/Basit Defter'e yansiyor (3 akista muhasebe kaydi eklendi)
+const CACHE_NAME = 'uretimos-v152'; // v152: FIX - fire/kayip/sayim farki/kalite duzeltme/tedarikci iade artik muhasebeye yansiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

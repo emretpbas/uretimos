@@ -12,8 +12,8 @@ PageModules.muhasebe_panel = (() => {
   let activeTab = 'ozet';
   let seciliAy = new Date().toISOString().slice(0, 7);
 
-  const GELIR_KATEGORI_LABEL = { satis_faturasi: 'Satış Faturası', duran_varlik_satisi: 'Duran Varlık Satışı (Makina vb.)', vade_farki: 'Vade Farkı Geliri' };
-  const GIDER_KATEGORI_LABEL = { hammadde_alimi: 'Hammadde/Hırdavat Alımı', bakim_servis_gideri: 'Bakım/Servis Gideri', arac_gideri: 'Araç Gideri', personel_gideri: 'Personel Gideri (Maaş Dışı)', personel_maliyeti: 'Personel Maliyeti (Bordro)' };
+  const GELIR_KATEGORI_LABEL = { satis_faturasi: 'Satış Faturası', duran_varlik_satisi: 'Duran Varlık Satışı (Makina vb.)', vade_farki: 'Vade Farkı Geliri', sayim_fazlasi: 'Sayım Fazlası' };
+  const GIDER_KATEGORI_LABEL = { hammadde_alimi: 'Hammadde/Hırdavat Alımı', bakim_servis_gideri: 'Bakım/Servis Gideri', arac_gideri: 'Araç Gideri', personel_gideri: 'Personel Gideri (Maaş Dışı)', personel_maliyeti: 'Personel Maliyeti (Bordro)', sayim_acigi: 'Sayım Açığı', fire_kayip: 'Fire/Kayıp/Hasar', kalite_duzeltme: 'Kalite Düzeltme Gideri', tedarikci_iade_mahsup: 'Tedarikçi İade Mahsubu' };
 
   async function render(main) {
     const [muhasebeKayitlari, makinalar, faturalar, tahsilatlar, tahsilatBeklenenler, bankaKredileri, musteriler, siparisler, tedarikciler, satinalmaSiparisleri, musteriCekleri, tedarikciOdemeleri, vadeFarkiKayitlari] = await Promise.all([

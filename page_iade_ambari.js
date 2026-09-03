@@ -250,6 +250,32 @@ PageModules.iade_ambari = (() => {
       const stokRaf = await Store.stokRaf.all();
       const s = stokRaf.find(x => x.ambar === 'iade_ambari' && x.refId === (i.refId || i.id));
       if (s) { s.miktar = Math.max(0, (s.miktar || 0) - i.miktar); await App.persist(() => Store.stokRaf.save(stokRaf)); }
+
+      // BULGU (T1-8): tedarikçiye iade ne tedarikçi borcundan mahsup
+      // ediliyordu ne de muhasebeye yansıyordu — malzeme fiziksel olarak
+      // geri gönderilse de sistemde hâlâ "borçlu/satın alınmış" görünüyordu.
+      // Tutar TL'ye çevrilip (1) tedarikciOdemeleri'ne bir mahsup kaydı
+      // (borcu azaltır — page_cari_panel.js'teki bakiye hesabı ÖDEMELERİ
+      // tipe bakmaksızın topladığı için doğrudan çalışır), (2) 'gelir'
+      // olarak bir muhasebe kaydı (orijinal hammadde alımı gideri kısmen
+      // GERİ ALINDI — ters kayıt) eklenir.
+      const tutarTRY = App.toTRY(tutar, dvz, App.state.ayarlar);
+      if (tutarTRY > 0 && i.kaynakTedarikciId) {
+        const tedarikciOdemeleri = await Store.tedarikciOdemeleri.all();
+        tedarikciOdemeleri.push({
+          id: App.uid('TO'), tarih: fatura.tarih, tedarikciId: i.kaynakTedarikciId, tedarikciAdi: i.kaynakTedarikciAdi,
+          tip: 'iade_mahsup', detay: 'Tedarikçi iade faturası: ' + faturaNo, tutar: tutarTRY, iadeFaturaId: fatura.id
+        });
+        await App.persist(() => Store.tedarikciOdemeleri.save(tedarikciOdemeleri));
+      }
+      if (tutarTRY > 0) {
+        await App.persist(() => App.muhasebeKaydiOlustur({
+          tip: 'gelir', kategori: 'tedarikci_iade_mahsup',
+          aciklama: 'Tedarikçiye iade: ' + faturaNo + ' — ' + (i.ad || i.kod) + (i.kaynakTedarikciAdi ? ' (' + i.kaynakTedarikciAdi + ')' : ''),
+          tutar: tutarTRY, matrah: tutarTRY, kdvTutari: 0, kaynakId: fatura.id, kaynakTip: 'tedarikci_iade_faturasi'
+        }));
+      }
+
       App.closeModal();
       App.toast('İade faturası oluşturuldu: ' + faturaNo, 'ok');
       iadeFaturaPDF(fatura); // faturayı hemen yazdırılabilir aç

@@ -1,11 +1,12 @@
 // Uctan uca: talep -> onay -> teslim, ve stok hareketine SAHIPLI kayit.
 const fs=require('fs'); let src=fs.readFileSync('../kayip_kacak.js','utf8');
 // Sahte Store + App
-const db={malzemeTalepleri:[],stokHareketleri:[],stokRaf:[]};
+const db={malzemeTalepleri:[],stokHareketleri:[],stokRaf:[],hammaddeler:[],muhasebeKayitlari:[]};
 global.Store={
   malzemeTalepleri:{all:async()=>db.malzemeTalepleri,save:async(v)=>{db.malzemeTalepleri=v;}},
   stokHareketleri:{all:async()=>db.stokHareketleri,save:async(v)=>{db.stokHareketleri=v;}},
   stokRaf:{all:async()=>db.stokRaf,save:async(v)=>{db.stokRaf=v;}},
+  hammaddeler:{all:async()=>db.hammaddeler,save:async(v)=>{db.hammaddeler=v;}},
 };
 let _rol='ahmet';
 // app.js'deki GERÇEK stokMiktarGuncelle ile BİREBİR aynı davranış (kayıt
@@ -13,12 +14,18 @@ let _rol='ahmet';
 // bu testte app.js'in tamamını yüklemeden birebir aynı davranışı taklit eder.
 global.App={
   uid:(p)=>p+'-'+Math.random().toString(36).slice(2,8),persist:async(fn)=>fn(),aktifRol:()=>_rol,
+  state:{ayarlar:{}},
   stokMiktarGuncelle:(stokRaf,ambar,tip,refId,refKod,refAd,birim,fark)=>{
     let s=stokRaf.find(x=>x.ambar===ambar&&x.tip===tip&&x.refId===refId);
     if(!s){ s={id:'STK-'+ambar+'-'+tip+'-'+refId,ambar,tip,refId,refKod:refKod||'',refAd:refAd||'',miktar:0,birim:birim||'ADET'}; stokRaf.push(s); }
     s.miktar=(s.miktar||0)+fark;
     return s;
-  }
+  },
+  // Gerçek app.js:hammaddeBirimFiyatTRY'nin basitleştirilmiş (dvz çevrimsiz,
+  // TL varsayan) hali — bu testte yalnızca T1-8'in fire/kayıp gider kaydını
+  // doğrulamak için yeterli.
+  hammaddeBirimFiyatTRY:(hm)=>hm.birimFiyat||0,
+  muhasebeKaydiOlustur:async(kayit)=>{ const k={id:'MHS-'+Math.random().toString(36).slice(2,8),tarih:'2026-01-01',...kayit}; db.muhasebeKayitlari.push(k); return k; }
 };
 eval(src.replace('const KayipKacak','global.KayipKacak'));
 
@@ -60,11 +67,22 @@ let ok=0,bad=0;const t=(a,k,x)=>{if(k){ok++;console.log('  GECTI '+a);}else{bad+
   console.log('\n-- GERÇEK STOK DÜŞÜMÜ (hammaddeId dolu) --');
   _rol='ahmet';
   db.stokRaf.push({id:'STK-hammadde_deposu-hammadde-HM1',ambar:'hammadde_deposu',tip:'hammadde',refId:'HM1',refKod:'57.19.058',refAd:'Suntalam 18mm',miktar:20,birim:'M2'});
+  db.hammaddeler.push({id:'HM1',ad:'Suntalam 18mm',birimFiyat:100,dvz:'TL'});
   let rs=await KayipKacak.talepOlustur({kalemAdi:'Suntalam 18mm',hammaddeId:'HM1',miktar:5,birim:'M2',kayipTipi:'fire',gerekce:'Kesim hatasi',tahminiTutar:2000});
   await KayipKacak.onayla(rs.talep.id,'mehmet');
   await KayipKacak.teslimEt(rs.talep.id,'depo_veli');
   const rafKaydi=db.stokRaf.find(x=>x.refId==='HM1');
   t('gerçek raf stoğu 20den 15e düştü', rafKaydi && rafKaydi.miktar===15);
+
+  console.log('\n-- T1-8: fire/kayıp teslimatı artık muhasebeye gider olarak yansıyor --');
+  const fireGiderKaydi=db.muhasebeKayitlari.find(k=>k.kategori==='fire_kayip');
+  t('fire teslimatı için gider kaydı oluştu', !!fireGiderKaydi);
+  t('gider tutarı doğru (5 M2 × 100 TL = 500)', fireGiderKaydi && fireGiderKaydi.tutar===500);
+  t('kayıt tip=gider', fireGiderKaydi && fireGiderKaydi.tip==='gider');
+  t('kayıt kaynak talebe bağlı (kaynakId)', fireGiderKaydi && fireGiderKaydi.kaynakId===rs.talep.id);
+  // BULGU önceki hali: hammaddeId YOKSA (serbest metin, ilk senaryo) değer
+  // bilinmediği için gider kaydı OLUŞTURULMAMALI (fabrikasyon veri riski).
+  t('hammaddeId yoksa (ilk senaryo) fazladan gider kaydı YOK', db.muhasebeKayitlari.filter(k=>k.kategori==='fire_kayip').length===1);
 
   console.log('\n-- ÇİFT ONAY (>=50.000) --');
   _rol='ali';
