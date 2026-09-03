@@ -1196,15 +1196,39 @@ const App = (() => {
     return r ? r.label : '';
   }
 
+  // Sidebar grup başlıklarının açık/kapalı hali — bölümleri bulmayı
+  // kolaylaştırmak için AKORDEON: her grup başlığına tıklayınca kendi
+  // öğeleri açılıp kapanır. Tercih tarayıcıda kalıcıdır (localStorage).
+  function sidebarKapaliGruplariOku() {
+    try { return new Set(JSON.parse(localStorage.getItem('uretimos_sidebar_kapali') || '[]')); }
+    catch (e) { return new Set(); }
+  }
+  function sidebarKapaliGruplariYaz(set) {
+    try { localStorage.setItem('uretimos_sidebar_kapali', JSON.stringify([...set])); } catch (e) {}
+  }
+
   function renderSidebar() {
     const el = document.getElementById('sidebar');
     el.innerHTML = '';
+    const kapaliGruplar = sidebarKapaliGruplariOku();
     PAGES.forEach(grp => {
       const visibleItems = grp.items.filter(it => !it.roller || it.roller.includes(state.role));
       if (!visibleItems.length) return;
+      // Aktif sayfanın grubu, kullanıcı elle kapatmış olsa bile AÇIK
+      // gösterilir — yoksa "neredeyim" görünmez olur.
+      const aktifBuGrupta = visibleItems.some(it => it.id === state.page);
+      const kapali = kapaliGruplar.has(grp.group) && !aktifBuGrupta;
       const g = document.createElement('div');
-      g.className = 'nav-group';
-      g.innerHTML = `<div class="nav-group-lbl">${escapeHtml(I18N.t(grp.group))}</div>`;
+      g.className = 'nav-group' + (kapali ? ' collapsed' : '');
+      g.innerHTML = `<div class="nav-group-lbl"><span>${escapeHtml(I18N.t(grp.group))}</span><span class="nav-group-chev">▶</span></div>`;
+      g.querySelector('.nav-group-lbl').onclick = () => {
+        const simdiKapali = g.classList.toggle('collapsed');
+        const set = sidebarKapaliGruplariOku();
+        if (simdiKapali) set.add(grp.group); else set.delete(grp.group);
+        sidebarKapaliGruplariYaz(set);
+      };
+      const itemsWrap = document.createElement('div');
+      itemsWrap.className = 'nav-group-items';
       visibleItems.forEach(it => {
         const a = document.createElement('div');
         a.className = 'nav-item' + (state.page === it.id ? ' active' : '');
@@ -1213,8 +1237,9 @@ const App = (() => {
         const nikon = (typeof Ikon !== 'undefined' && Ikon.menu(it.id)) || escapeHtml(it.icon || '');
         a.innerHTML = `<span class="nico">${nikon}</span><span>${escapeHtml(I18N.t(it.label))}</span>`;
         a.onclick = () => { closeMobileMenuIfOpen(); goTo(it.id); };
-        g.appendChild(a);
+        itemsWrap.appendChild(a);
       });
+      g.appendChild(itemsWrap);
       el.appendChild(g);
     });
     const footer = document.createElement('div');
