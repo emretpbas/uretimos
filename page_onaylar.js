@@ -480,6 +480,19 @@ PageModules.onaylar = (() => {
         duzenlenebilir: true,
         onaylaButonMetni: 'Onayla',
         onOnayla: async (odemePlani) => {
+          // İDEMPOTENTLİK KORUMASI: modal açıldıktan sonra sipariş başka bir
+          // yerden (ör. başka bir yönetici, veya bu ekranın bayat listesi
+          // üzerinden ikinci kez "Onayla") zaten işlenmiş olabilir. Onaya
+          // devam etmeden HEMEN ÖNCE sunucudaki güncel durumu tekrar kontrol
+          // et — 'yonetim_onay_bekliyor' değilse kesim/ödeme işlemi TEKRAR
+          // tetiklenmez (çift kesim ihtiyacı / çift raf stok düşümü riski).
+          const guncelSiparisler = await Store.siparisler.all();
+          const guncel = guncelSiparisler.find(x => x.id === s.id);
+          if (!guncel || guncel.durum !== 'yonetim_onay_bekliyor') {
+            App.toast('Bu sipariş zaten işlenmiş veya durumu değişmiş, tekrar onaylanamaz.', 'err');
+            render(main);
+            return;
+          }
           s.odemePlani = odemePlani;
           s.durum = 'onaylandi';
           s.uretimKuyrugunda = true;

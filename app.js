@@ -2831,6 +2831,11 @@ const App = (() => {
   //      dahil) -> Hammadde İhtiyacı (Üretim Planlama sayfası, miktar bazlı,
   //      birden fazla siparişten gelen aynı hammadde miktarları toplanır)
   async function siparisOnaylaninceKesimIhtiyaciOlustur(siparis) {
+    // İDEMPOTENTLİK: bu sipariş için kesim/hammadde ihtiyacı ve raf stok
+    // sarfı DAHA ÖNCE işlendiyse tekrar çalıştırılmaz — aksi halde miktarlar
+    // ikinci kez üste eklenir, raf stoğu ikinci kez düşülür (bkz. aşağıdaki
+    // kesimIhtiyaciIslendi ataması).
+    if (siparis.kesimIhtiyaciIslendi) return null;
     const [receteler, yarimamuller, hammaddeler, urunler, altMontajlar, paketler, kesimIhtiyaclari, hammaddeIhtiyaclari, stokRaf] = await Promise.all([
       Store.receteler.all(), Store.yarimamuller.all(), Store.hammaddeler.all(), Store.urunler.all(), Store.altMontajlar.all(), Store.paketler.all(),
       Store.kesimIhtiyaclari.all(), Store.hammaddeIhtiyaclari.all(), Store.stokRaf.all()
@@ -3113,6 +3118,7 @@ const App = (() => {
     // hiç girmediği için (bkz. yukarıdaki kalemIsle) başka hiçbir koleksiyona
     // (kesim/hammadde ihtiyacı, stok) yazılmaz — sadece bu alanda durur.
     siparis.gerekenPaketler = paketIhtiyaclari.map(p => ({ ...p, onaylananAdet: 0, kaliteOnayli: false, sevkEdildi: false }));
+    siparis.kesimIhtiyaciIslendi = true;
     await Store.siparisler.upsert(siparis);
 
     // 3) Rafta hazır olan yarımamüllerden sarf edilenleri stoktan düş.
@@ -3452,6 +3458,10 @@ const App = (() => {
   // vade farkı kadar daha düşük artar — vade farkı müşteriden ayrıca tahsil
   // edilen bir gelirdir, esas mal/hizmet borcuna eklenmez).
   async function siparisOnaylaninceOdemePlaniniAnindaIsle(siparis, musteri) {
+    // İDEMPOTENTLİK: aynı sipariş için ödeme planı DAHA ÖNCE anında işlendiyse
+    // (çek/kredi kartı ANINDA "elde"/kasaya yazıldıysa) tekrar çalıştırılmaz —
+    // aksi halde çekler ikinci kez oluşturulur, müşteri bakiyesi ikinci kez düşer.
+    if (siparis.odemePlaniIslendi) return null;
     const op = siparis.odemePlani || {};
     const pesinatTutar = op.pesinatTutar || 0;
     const odemeKalemleri = op.odemeKalemleri || [];
@@ -3531,6 +3541,11 @@ const App = (() => {
     await Store.musteriCekleri.save(musteriCekleri);
     await Store.vadeFarkiKayitlari.save(vadeFarkiKayitlari);
     await Store.tahsilatBeklenenler.save(tahsilatBeklenenler);
+
+    // Bayrak siparişin kendisine yazılır — çağıran (page_onaylar.js) bu
+    // fonksiyondan hemen sonra Store.siparisler.upsert(siparis) çağırdığı
+    // için burada ayrıca bir upsert gerekmez, mevcut akışa "biner".
+    siparis.odemePlaniIslendi = true;
 
     return { netKasaToplami, toplamVadeFarki, ileriTarihliNakitSayisi: ileriTarihliNakitler.length };
   }
