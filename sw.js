@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v140'; // v140: FIX - siparis onayi ikinci kez tetiklenince kesim/stok/odeme cift islenmiyor (idempotentlik)
+const CACHE_NAME = 'uretimos-v141'; // v141: FIX - MRP artik taslak is emirlerini saymiyor, tamamlanmis/reddedilmis satinalma siparisini yolda saymiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

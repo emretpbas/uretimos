@@ -63,8 +63,12 @@ const MrpMotor = (() => {
         });
       });
     });
-    // İş emirleri — tarihi ihtiyaç tarihidir
-    v.isemirleri.filter(ie => ie.durum !== 'tamamlandi').forEach(ie => {
+    // İş emirleri — tarihi ihtiyaç tarihidir. Planlamanın henüz üretime
+    // ALMADIĞI (durum='taslak') iş emirleri MRP'ye HİÇ girmemeli — aksi
+    // halde henüz gerçekleşmesi kesin olmayan bir ihtiyaç için satınalma
+    // tetiklenmiş olur (bkz. cizelge_motor.js/page_cizelge.js/
+    // page_hat_takip.js'deki aynı düzeltme).
+    v.isemirleri.filter(ie => ie.durum === 'uretimde').forEach(ie => {
       (ie.uretimListesi || []).filter(k => k.tip === 'yarimamul').forEach(k => {
         const ym = v.yarimamuller.find(y => y.id === k.refId);
         if (!ym) return;
@@ -157,8 +161,13 @@ const MrpMotor = (() => {
     });
 
     // ── YOLDAKI SİPARİŞLER (scheduled receipts)
+    // NOT: 'teslim_alindi' bu koleksiyonda HİÇ kullanılmayan bir durum
+    // string'iydi (satınalma siparişi tamamlanınca durum='tamamlandi' olur,
+    // bkz. page_depo_panel.js:542 aynı filtre) — bu yüzden tamamlanmış
+    // siparişler de "yolda" sayılıp brüt ihtiyaçtan hatalı şekilde
+    // düşülüyordu. Ayrıca 'reddedildi' de artık hariç tutuluyor.
     const yolda = new Map(); // hammaddeId -> [hafta bazında gelecek miktar]
-    v.satinalmaSiparisleri.filter(s => s.durum !== 'iptal' && s.durum !== 'teslim_alindi').forEach(s => {
+    v.satinalmaSiparisleri.filter(s => s.durum !== 'iptal' && s.durum !== 'tamamlandi' && s.durum !== 'reddedildi').forEach(s => {
       if (!s.hammaddeId) return;
       const gelis = s.tahminiGirisTarihi || gunEkle(s.tarih || bugun(), s.terminGun || 7);
       const hi = haftaIndex(gelis);
@@ -275,3 +284,4 @@ const MrpMotor = (() => {
 
   return { tamMrp, calistir, mpsOlustur, hammaddeIhtiyaci, taleplereDonustur, haftaBasi };
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = MrpMotor;
