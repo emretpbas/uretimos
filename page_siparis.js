@@ -108,6 +108,15 @@ PageModules.siparis = (() => {
   // çıkarılmaz (bu kasıtlı — zaten oluşmuş kesim/üretim hareketleri korunur,
   // sadece sipariş kalem/fiyat/müşteri bilgisi yeniden düzenlenebilir olur).
   function startEditSiparis(main, siparis) {
+    // BULGU/FIX: sevk edilmiş (irsaliye/fatura kesilmiş) bir sipariş tekrar
+    // "Cari Onayında"ya düşürülüp düzenlenebiliyordu — bu, ödeme planını,
+    // vade farkını ve kesim ihtiyacını İKİNCİ KEZ işleterek çift kayıt riski
+    // doğuruyordu (üstelik zaten kesilmiş irsaliye/fatura yeni içerikle
+    // uyuşmaz hale geliyordu). Sevk edilmiş siparişler artık düzenlenemez.
+    if (siparis.durum === 'sevk_edildi') {
+      App.toast('Sevk edilmiş bir sipariş artık düzenlenemez (irsaliye/fatura zaten kesilmiş).', 'err');
+      return;
+    }
     draft = {
       editingId: siparis.id,
       editingKod: siparis.kod,
@@ -318,6 +327,12 @@ PageModules.siparis = (() => {
         const tumSiparisler = await Store.siparisler.all();
         const mevcut = tumSiparisler.find(s => s.id === d.editingId);
         if (!mevcut) { App.toast('Sipariş bulunamadı', 'err'); return; }
+        // TAZE veriyle yeniden kontrol: düzenleme ekranı açıkken sipariş
+        // başka bir yerden (örn. sevkiyat) sevk edilmiş olabilir.
+        if (mevcut.durum === 'sevk_edildi') {
+          App.toast('Bu sipariş düzenleme sırasında sevk edildi — artık kaydedilemez.', 'err');
+          return;
+        }
         // ── REVİZYON GEÇMİŞİ: neyin değiştiği kayıt altına alınır ──────────
         // "Ben 10 demiştim 12 değil" tartışmasında kimin ne zaman neyi
         // değiştirdiği buradan görülür. Sipariş detayında listelenir.
@@ -452,7 +467,7 @@ PageModules.siparis = (() => {
         <div class="page-acts">
           <button class="btn" id="sp-back">&larr; Listeye Dön</button>
           <button class="btn" id="sp-ceki-listesi">📋 Çeki Listesi</button>
-          <button class="btn btn-amber" id="sp-geri-cek">↺ Geri Çek / Düzenle</button>
+          ${s.durum !== 'sevk_edildi' ? '<button class="btn btn-amber" id="sp-geri-cek">↺ Geri Çek / Düzenle</button>' : ''}
         </div>
       </div>
       <div class="grid grid-3" style="margin-bottom:14px">
@@ -469,7 +484,9 @@ PageModules.siparis = (() => {
         </table>
         ${paketToplamKutusu(siparisPaketToplami(s.kalemler))}
       </div>
-      <div class="fhint">"Geri Çek / Düzenle" bu siparişin durumunu sıfırlar (taslağa döner), ürün/miktar/fiyat bilgilerini değiştirmenize izin verir ve kaydettiğinizde tekrar cari onayına gönderir. Onaylanmış veya reddedilmiş siparişler için de kullanılabilir.</div>
+      <div class="fhint">${s.durum !== 'sevk_edildi'
+        ? '"Geri Çek / Düzenle" bu siparişin durumunu sıfırlar (taslağa döner), ürün/miktar/fiyat bilgilerini değiştirmenize izin verir ve kaydettiğinizde tekrar cari onayına gönderir. Onaylanmış veya reddedilmiş siparişler için de kullanılabilir.'
+        : '⚠ Bu sipariş sevk edildi (irsaliye/fatura kesildi) — artık düzenlenemez. Değişiklik gerekiyorsa yeni bir sipariş/iade süreci başlatın.'}</div>
     
       ${revizyonlar.length ? App.akordeonHtml([{
         baslik: 'Revizyon Geçmişi — Sipariş Değişiklikleri', ikon: '📝',
@@ -499,7 +516,8 @@ PageModules.siparis = (() => {
         App.toast('Çeki listesi açılamadı: ' + e.message, 'err');
       }
     };
-    document.getElementById('sp-geri-cek').onclick = () => {
+    const geriCekBtn = document.getElementById('sp-geri-cek');
+    if (geriCekBtn) geriCekBtn.onclick = () => {
       App.confirmDialog('Bu siparişi geri çekip düzenlemek istediğinize emin misiniz? Sipariş "Cari Onayında" durumuna dönecek ve mevcut onay/red durumu geçersiz kalacak.', () => {
         startEditSiparis(main, s);
       });

@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v138'; // v138: FIX - malzeme talebi teslimati gercek stogu dusuyor, hayalet yarimamul transferi kaldirildi
+const CACHE_NAME = 'uretimos-v139'; // v139: FIX - sevk edilmis siparis artik geri cekilip duzenlenemiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
