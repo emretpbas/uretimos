@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v131'; // v131: uretim parti etiketine musteri bilgisi eklendi
+const CACHE_NAME = 'uretimos-v132'; // v132: gunluk kapasite duzeltmeleri + site ici arama (Ctrl/Cmd+K) eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

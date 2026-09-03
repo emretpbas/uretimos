@@ -148,8 +148,9 @@ PageModules.cizelge = (() => {
     }
 
     html += `<div class="card"><div class="card-hdr"><div class="card-title">📊 Hat Bazında Kapasite Kullanımı</div></div>
+      <div class="fhint" style="margin-bottom:8px">Günlük Kapasite = vardiya <b>tabanı</b>. Aşağıdaki "Günlük Yük Dağılımı" bölümünde 📌 işaretli günlerde <b>Operasyon Yönetimi › Kapasite Düzeltmeleri</b>'nden girilmiş manuel bir artış/azalış uygulanmıştır — doluluk % o günün fiili (düzeltmeli) kapasitesine göre hesaplanır.</div>
       <table class="dtable" style="font-size:11.5px">
-        <tr><th>Hat</th><th class="r">Günlük Kapasite</th><th class="r">Yüklenen İş</th><th class="r">Gün</th><th>Doluluk</th></tr>
+        <tr><th>Hat</th><th class="r">Günlük Kapasite (taban)</th><th class="r">Yüklenen İş</th><th class="r">Gün</th><th>Doluluk</th></tr>
         ${hy.map(h => {
           const p = Math.min(100, Math.round(h.doluluk * 100));
           const renk = h.doluluk >= 0.9 ? 'red' : h.doluluk >= 0.7 ? 'amber' : 'green';
@@ -177,9 +178,10 @@ PageModules.cizelge = (() => {
           ${h.gunler.map(g => {
             const p = Math.min(100, Math.round(g.doluluk * 100));
             const renk = g.doluluk >= 0.95 ? 'var(--red)' : g.doluluk >= 0.7 ? 'var(--amber)' : 'var(--green)';
-            return `<div style="min-width:56px;text-align:center" title="${g.tarih}: ${Math.round(g.dk)} dk">
-              <div style="height:${Math.max(6, p * 0.5)}px;background:${renk};border-radius:3px 3px 0 0"></div>
-              <div style="font-size:8.5px;color:var(--text2)">${g.tarih.slice(5)}</div>
+            const baslik = `${g.tarih}: ${Math.round(g.dk)} / ${Math.round(g.kapasite)} dk` + (g.duzeltmeVar ? ' (manuel düzeltme uygulandı)' : '');
+            return `<div style="min-width:56px;text-align:center" title="${baslik}">
+              <div style="height:${Math.max(6, p * 0.5)}px;background:${renk};border-radius:3px 3px 0 0${g.duzeltmeVar ? ';box-shadow:0 0 0 1.5px var(--purple)' : ''}"></div>
+              <div style="font-size:8.5px;color:var(--text2)">${g.tarih.slice(5)}${g.duzeltmeVar ? ' 📌' : ''}</div>
               <div style="font-size:8.5px;font-weight:700">%${p}</div></div>`;
           }).join('')}
         </div></div>`).join('')}

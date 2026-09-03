@@ -36,22 +36,29 @@ PageModules.operasyon = (() => {
 
   // ══ 1) VARDİYALAR ═══════════════════════════════════════════════════════
   async function renderVardiya(c, render, main) {
-    const [vardiyalar, rotalar] = await Promise.all([Store.vardiyalar.all(), Store.rotalar.all()]);
+    const [vardiyalar, rotalar, duzeltmeler] = await Promise.all([
+      Store.vardiyalar.all(), Store.rotalar.all(), Store.kapasiteDuzeltmeleri.all()
+    ]);
     const hatlar = [...new Set(rotalar.flatMap(r => (r.steps || []).map(s => s.hat)).filter(h => h && h !== 'TAŞIMA'))].sort();
     const aktif = vardiyalar.filter(v => v.aktif !== false);
     const toplamDk = aktif.reduce((a, v) => a + (v.netCalismaDk || 0), 0);
+    const bugun = new Date().toISOString().slice(0, 10);
+    // Geçmiş düzeltmeler arşiv sayılır — varsayılan görünümde yalnızca
+    // bugün ve ileri tarihli olanlar gösterilir (liste zamanla şişmesin).
+    const guncelDuzeltmeler = [...duzeltmeler].filter(d => d.tarih >= bugun).sort((a, b) => a.tarih.localeCompare(b.tarih));
+    const gecmisSayisi = duzeltmeler.length - guncelDuzeltmeler.length;
 
     c.innerHTML = `
       <div class="grid grid-3" style="margin-bottom:14px">
         <div class="kpi"><div class="kpi-lbl">Aktif Vardiya</div><div class="kpi-val blue">${aktif.length}</div></div>
-        <div class="kpi"><div class="kpi-lbl">Günlük Net Kapasite</div><div class="kpi-val green">${App.fmt(toplamDk / 60, 1)} saat</div>
+        <div class="kpi"><div class="kpi-lbl">Günlük Net Kapasite (taban)</div><div class="kpi-val green">${App.fmt(toplamDk / 60, 1)} saat</div>
           <div class="muted" style="font-size:10.5px">Hat başına ${toplamDk} dk</div></div>
         <div class="kpi"><div class="kpi-lbl">Tanımlı Hat</div><div class="kpi-val purple">${hatlar.length}</div></div>
       </div>
-      <div class="card">
+      <div class="card" style="margin-bottom:14px">
         <div class="card-hdr"><div class="card-title">Vardiya Tanımları</div>
           <button class="btn btn-sm btn-blue" id="op-vardiya-ekle">+ Vardiya Ekle</button></div>
-        <div class="fhint" style="margin-bottom:8px">KPI panelindeki <b>Kapasite Kullanımı</b> ve <b>OEE</b> hesabı bu vardiya sürelerini taban alır. Vardiya tanımlanmazsa tek vardiya (8 saat) varsayılır — çift vardiya çalışıyorsanız mutlaka tanımlayın.</div>
+        <div class="fhint" style="margin-bottom:8px">KPI panelindeki <b>Kapasite Kullanımı</b> ve <b>OEE</b> hesabı bu vardiya sürelerini taban alır. Vardiya tanımlanmazsa tek vardiya (8 saat) varsayılır — çift vardiya çalışıyorsanız mutlaka tanımlayın. <b>Kalıcı</b> bir kapasite artışı (yeni bir vardiya AÇILDIYSA, sürekli geçerli olacaksa) buraya girilir.</div>
         ${vardiyalar.length ? `<table class="dtable" style="font-size:11.5px">
           <tr><th>Vardiya</th><th>Saat</th><th class="r">Brüt</th><th class="r">Mola</th><th class="r">Net Çalışma</th><th>Hatlar</th><th>Durum</th><th></th></tr>
           ${vardiyalar.map(v => `<tr${v.aktif === false ? ' style="opacity:.5"' : ''}>
@@ -67,6 +74,23 @@ PageModules.operasyon = (() => {
               <button class="btn btn-sm btn-ghost op-v-sil" data-id="${v.id}" style="color:var(--red-text)">&times;</button></td>
           </tr>`).join('')}</table>`
         : `<div class="empty-state" style="padding:24px"><div class="edesc">Henüz vardiya tanımlanmadı — kapasite hesabı tek vardiya (480 dk) varsayımıyla yapılıyor.</div></div>`}
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">📅 Günlük Kapasite Düzeltmeleri</div>
+          <button class="btn btn-sm btn-blue" id="op-duzeltme-ekle">+ Düzeltme Ekle</button></div>
+        <div class="fhint" style="margin-bottom:8px">Belirli bir GÜN için GEÇİCİ artış/azalış (fazla mesai, arıza, planlı duruş, tek seferlik ek vardiya). <b>Kalıcı</b> bir değişiklik için yukarıdan Vardiya ekleyin/düzenleyin — bu liste yalnızca seçtiğiniz tek günü etkiler ve Üretim Çizelgesi'nde anında yansır.</div>
+        ${guncelDuzeltmeler.length ? `<table class="dtable" style="font-size:11.5px">
+          <tr><th>Tarih</th><th>Hat</th><th class="r">Dakika Farkı</th><th>Açıklama</th><th>Ekleyen</th><th></th></tr>
+          ${guncelDuzeltmeler.map(d => `<tr${d.tarih === bugun ? ' style="background:var(--blue-bg)"' : ''}>
+            <td class="mono" style="font-size:10.5px">${App.escapeHtml(d.tarih)}${d.tarih === bugun ? ' <span class="pill pill-blue" style="font-size:8.5px">BUGÜN</span>' : ''}</td>
+            <td><b>${App.escapeHtml(d.hat)}</b></td>
+            <td class="r"><b style="color:var(--${d.dakikaFarki >= 0 ? 'green' : 'red'}-text)">${d.dakikaFarki >= 0 ? '+' : ''}${d.dakikaFarki} dk</b></td>
+            <td style="font-size:10.5px">${App.escapeHtml(d.aciklama || '')}</td>
+            <td style="font-size:10.5px" class="muted">${App.escapeHtml(d.olusturan || '')}</td>
+            <td><button class="btn btn-sm btn-ghost op-d-sil" data-id="${d.id}" style="color:var(--red-text)">&times;</button></td>
+          </tr>`).join('')}</table>`
+        : `<div class="empty-state" style="padding:20px"><div class="edesc">Bugün veya ileri tarihli bir kapasite düzeltmesi yok.</div></div>`}
+        ${gecmisSayisi ? `<div class="muted" style="font-size:10.5px;margin-top:8px">${gecmisSayisi} geçmiş düzeltme (arşiv, listede gösterilmiyor)</div>` : ''}
       </div>`;
 
     document.getElementById('op-vardiya-ekle').onclick = () => vardiyaFormu(null, hatlar, render, main);
@@ -80,6 +104,57 @@ PageModules.operasyon = (() => {
         render(main);
       });
     });
+
+    document.getElementById('op-duzeltme-ekle').onclick = () => duzeltmeFormu(hatlar, render, main);
+    c.querySelectorAll('.op-d-sil').forEach(b => b.onclick = () => {
+      const d = duzeltmeler.find(x => x.id === b.dataset.id);
+      App.confirmDialog(`${App.escapeHtml(d.hat)} — ${App.escapeHtml(d.tarih)} tarihli kapasite düzeltmesi silinecek. Onaylıyor musunuz?`, async () => {
+        await App.persist(() => Store.kapasiteDuzeltmeleri.save(duzeltmeler.filter(x => x.id !== d.id)));
+        App.toast('Kapasite düzeltmesi silindi', 'ok');
+        render(main);
+      });
+    });
+  }
+
+  function duzeltmeFormu(hatlar, render, main) {
+    const bugun = new Date().toISOString().slice(0, 10);
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="frow">
+        <div class="fgroup" style="flex:1.2"><label class="flbl">Hat <span style="color:var(--red-text)">*</span></label>
+          <select class="fselect" id="kd-hat">
+            <option value="">— seçin —</option>
+            ${hatlar.map(h => `<option value="${App.escapeHtml(h)}">${App.escapeHtml(h)}</option>`).join('')}
+          </select></div>
+        <div class="fgroup"><label class="flbl">Tarih <span style="color:var(--red-text)">*</span></label>
+          <input class="finput" id="kd-tarih" type="date" value="${bugun}"></div>
+      </div>
+      <div class="fgroup"><label class="flbl">Dakika Farkı <span style="color:var(--red-text)">*</span></label>
+        <input class="finput" id="kd-dakika" type="number" placeholder="örn. 120 (artış) veya -180 (azalış)">
+        <div class="fhint">Pozitif = ek kapasite (fazla mesai, ek vardiya) · Negatif = kayıp kapasite (arıza, planlı duruş)</div></div>
+      <div class="fgroup"><label class="flbl">Açıklama</label>
+        <input class="finput" id="kd-aciklama" placeholder="örn. Pres arızası, 3 saat duruş"></div>`;
+    App.openModal({ title: '📅 Kapasite Düzeltmesi Ekle', body,
+      footer: `<button class="btn" id="kd-cancel">Vazgeç</button><button class="btn btn-blue" id="kd-ok">Kaydet</button>` });
+    document.getElementById('kd-cancel').onclick = App.closeModal;
+    document.getElementById('kd-ok').onclick = async () => {
+      const hat = document.getElementById('kd-hat').value;
+      const tarih = document.getElementById('kd-tarih').value;
+      const dakika = parseInt(document.getElementById('kd-dakika').value);
+      if (!hat) { App.toast('Hat seçimi zorunlu', 'err'); return; }
+      if (!tarih) { App.toast('Tarih zorunlu', 'err'); return; }
+      if (!dakika || isNaN(dakika)) { App.toast('Dakika farkı zorunlu ve 0 olamaz', 'err'); return; }
+      const tumu = await Store.kapasiteDuzeltmeleri.all();
+      tumu.push({
+        id: App.uid('KD'), hat, tarih, dakikaFarki: dakika,
+        aciklama: document.getElementById('kd-aciklama').value.trim(),
+        olusturan: App.aktifRol(), olusturmaTarihi: new Date().toISOString()
+      });
+      await App.persist(() => Store.kapasiteDuzeltmeleri.save(tumu));
+      App.toast(`Kapasite düzeltmesi kaydedildi: ${hat} · ${tarih} · ${dakika >= 0 ? '+' : ''}${dakika} dk`, 'ok');
+      App.closeModal();
+      render(main);
+    };
   }
 
   function vardiyaFormu(v, hatlar, render, main) {

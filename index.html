@@ -277,6 +277,15 @@ a.linklike:hover{text-decoration:underline}
   <div id="breadcrumb"></div>
   <div id="topbar-right">
     <div id="save-indicator"><span class="dot"></span><span id="save-text">Kayıtlı</span></div>
+    <div id="arama-wrap" style="position:relative">
+      <button class="btn btn-ghost btn-sm" id="btn-arama" onclick="App.aramaAc()" title="Ara (Ctrl/Cmd+K)">🔍</button>
+      <div id="arama-panel" style="display:none;position:absolute;top:calc(100% + 6px);right:0;width:300px;max-width:88vw;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);z-index:500;overflow:hidden">
+        <input id="arama-input" type="text" placeholder="Bölüm / ekran ara…" autocomplete="off"
+          style="width:100%;box-sizing:border-box;border:none;border-bottom:1px solid var(--border);padding:10px 12px;font-size:13px;outline:none;background:transparent;color:inherit"
+          oninput="App.aramaFiltrele(this.value)" onkeydown="App.aramaTusVur(event)">
+        <div id="arama-liste" style="max-height:340px;overflow-y:auto;padding:4px"></div>
+      </div>
+    </div>
     <button class="btn btn-ghost btn-sm" id="btn-dil" onclick="App.toggleDil()" title="Dil / Language">🌐 TR</button>
     <button class="btn btn-ghost btn-sm" id="btn-bildirim" onclick="App.openBildirimMerkezi()" title="Bildirimler" style="position:relative">🔔<span id="bildirim-rozet" style="display:none;position:absolute;top:-2px;right:-2px;background:#EF4444;color:#fff;border-radius:9px;font-size:9px;min-width:15px;height:15px;line-height:15px;text-align:center;padding:0 3px;font-weight:700"></span></button>
     <button class="btn btn-ghost btn-sm" id="btn-ayarlar" onclick="App.openSettings()">⚙ <span id="ayarlar-lbl">Ayarlar</span></button>
@@ -309,7 +318,7 @@ a.linklike:hover{text-decoration:underline}
 <script src="mekan_yerlesim.js?v=41"></script>
 <script src="ikon.js?v=24"></script>
 <script src="i18n.js?v=24"></script>
-<script src="storage.js?v=128"></script>
+<script src="storage.js?v=132"></script>
 <script src="qr_kod.js?v=24"></script>
 <script src="qr_dosya.js?v=37"></script>
 <script src="kontrol_plani.js?v=24"></script>
@@ -324,7 +333,7 @@ a.linklike:hover{text-decoration:underline}
 <script src="kamera_teshis.js?v=24"></script>
 <script src="is_emri_uretici.js?v=124"></script>
 <script src="otomasyon_motor.js?v=115"></script>
-<script src="app.js?v=130"></script>
+<script src="app.js?v=132"></script>
 <script src="page_is_emri_formu.js?v=125"></script>
 <script src="page_dashboard.js?v=24"></script>
 <script src="page_hammadde.js?v=87"></script>
@@ -364,9 +373,9 @@ a.linklike:hover{text-decoration:underline}
 <script src="page_isg.js?v=24"></script>
 <script src="page_kpi_panel.js?v=24"></script>
 <script src="page_cek_portfoy.js?v=24"></script>
-<script src="page_operasyon.js?v=24"></script>
-<script src="cizelge_motor.js?v=24"></script>
-<script src="page_cizelge.js?v=24"></script>
+<script src="page_operasyon.js?v=25"></script>
+<script src="cizelge_motor.js?v=25"></script>
+<script src="page_cizelge.js?v=25"></script>
 <script src="mrp_motor.js?v=24"></script>
 <script src="page_mrp.js?v=24"></script>
 <script src="page_hat_takip.js?v=81"></script>

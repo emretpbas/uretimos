@@ -1768,6 +1768,100 @@ const App = (() => {
     overlay.classList.toggle('mob-open', isOpen);
   }
 
+  // ── SİTE İÇİ ARAMA (üst bar 🔍, Ctrl/Cmd+K) ─────────────────────────────
+  // Menüdeki (PAGES) TÜM ekranları grup+etiket üzerinden arar — bazı
+  // bölümlerin sidebar hiyerarşisinde bulunması zor olabildiği için doğrudan
+  // isimle bulup App.goTo ile gidilir. Yalnızca aktif ROLÜN erişebildiği
+  // sayfalar sonuçta gösterilir (yetkisiz sayfa önerilmez).
+  let _aramaSonuclari = [];
+  let _aramaSecili = -1;
+
+  function aramaAc() {
+    if (!state.role) return;
+    const panel = document.getElementById('arama-panel');
+    const input = document.getElementById('arama-input');
+    if (!panel || !input) return;
+    panel.style.display = 'block';
+    input.value = '';
+    aramaFiltrele('');
+    setTimeout(() => input.focus(), 30);
+    document.addEventListener('mousedown', aramaDisTiklamaKapat, true);
+  }
+
+  function aramaKapat() {
+    const panel = document.getElementById('arama-panel');
+    if (panel) panel.style.display = 'none';
+    document.removeEventListener('mousedown', aramaDisTiklamaKapat, true);
+  }
+
+  function aramaDisTiklamaKapat(e) {
+    const wrap = document.getElementById('arama-wrap');
+    if (wrap && !wrap.contains(e.target)) aramaKapat();
+  }
+
+  function aramaFiltrele(sorgu) {
+    const q = String(sorgu || '').trim().toLocaleLowerCase('tr');
+    const sonuclar = [];
+    PAGES.forEach(grp => {
+      (grp.items || []).forEach(it => {
+        if (it.roller && !it.roller.includes(state.role)) return;
+        const etiket = I18N.t(it.label) || it.label;
+        const grupAd = I18N.t(grp.group) || grp.group;
+        const hedefMetin = (etiket + ' ' + grupAd).toLocaleLowerCase('tr');
+        if (!q || hedefMetin.indexOf(q) >= 0) sonuclar.push({ id: it.id, etiket, grupAd, icon: it.icon });
+      });
+    });
+    _aramaSonuclari = sonuclar.slice(0, 30);
+    _aramaSecili = _aramaSonuclari.length ? 0 : -1;
+    aramaSonuclariCiz();
+  }
+
+  function aramaSonuclariCiz() {
+    const liste = document.getElementById('arama-liste');
+    if (!liste) return;
+    if (!_aramaSonuclari.length) {
+      liste.innerHTML = '<div class="muted" style="padding:14px;font-size:12px;text-align:center">Sonuç bulunamadı</div>';
+      return;
+    }
+    liste.innerHTML = _aramaSonuclari.map((s, i) => `
+      <div class="arama-satir" data-id="${escapeHtml(s.id)}"
+        style="display:flex;align-items:center;gap:8px;padding:7px 9px;cursor:pointer;border-radius:6px;${i === _aramaSecili ? 'background:var(--blue-bg)' : ''}">
+        <span style="font-size:14px;width:18px;text-align:center;flex-shrink:0">${escapeHtml(s.icon || '·')}</span>
+        <div style="min-width:0">
+          <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.etiket)}</div>
+          <div style="font-size:10px;color:var(--text3)">${escapeHtml(s.grupAd)}</div>
+        </div>
+      </div>`).join('');
+    liste.querySelectorAll('.arama-satir').forEach(el => {
+      el.onclick = () => aramaSecGit(el.dataset.id);
+    });
+  }
+
+  function aramaSecGit(pageId) {
+    aramaKapat();
+    closeMobileMenuIfOpen();
+    goTo(pageId);
+  }
+
+  function aramaTusVur(e) {
+    if (e.key === 'Escape') { aramaKapat(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (_aramaSecili < _aramaSonuclari.length - 1) { _aramaSecili++; aramaSonuclariCiz(); } return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); if (_aramaSecili > 0) { _aramaSecili--; aramaSonuclariCiz(); } return; }
+    if (e.key === 'Enter') {
+      if (_aramaSecili >= 0 && _aramaSonuclari[_aramaSecili]) aramaSecGit(_aramaSonuclari[_aramaSecili].id);
+    }
+  }
+
+  // Genel kısayol: Ctrl/Cmd+K herhangi bir ekrandan aramayı açar
+  if (typeof window !== 'undefined') {
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        aramaAc();
+      }
+    });
+  }
+
   // ── DİL DEĞİŞTİRME (TR/EN) ──────────────────────────────────────────────
   // Üst bardaki 🌐 düğmesi. Dili değiştirir, düğme etiketini ve tüm arayüzü
   // (menü + aktif sayfa) yeniden çizer. Seçim localStorage'da kalıcıdır.
@@ -5354,6 +5448,7 @@ const App = (() => {
 
   return {
     init, goTo, openSettings, openBildirimMerkezi, bildirimleriTazele, toast, openModal, closeModal, persist, yeniZIndexAl, toggleMobileMenu, toggleDil,
+    aramaAc, aramaKapat, aramaFiltrele, aramaTusVur,
     escapeHtml, fmt, fmtTL, fmtPct, uid, toTRY, fileToDataUrl, fotografKucult, confirmDialog, redGerekceDialog,
     kaliteUygunsuzlukOlustur, dofOlustur, iadeAmbarinaAktar,
     switchRole, currentRoleLabel, ymBirimMaliyetHesapla, urunMaliyetHesapla,

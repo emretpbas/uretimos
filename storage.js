@@ -765,6 +765,7 @@ const Store = (() => {
     tahsilatBeklenenler: coll('tahsilatBeklenenler'), // SADECE ileri tarihli NAKİT alacaklar — peşinat/çek/kredi kartı artık sipariş onayında ANINDA işlenir (bkz. siparisOnaylaninceOdemePlaniniAninda İşle), bu koleksiyona hiç düşmez. Vadesi gelince Cari ve Üst Yönetim uyarılır.
     vadeFarkiKayitlari: coll('vadeFarkiKayitlari'), // müşteri bazlı, her çek/kredi kartı ödemesinde hesaplanan vade farkı tutarı — Yönetim ekranında müşteri bazlı toplam gösterilir
     vardiyalar: coll('vardiyalar'),                      // Vardiya tanımları — KPI kapasite tabanı
+    kapasiteDuzeltmeleri: coll('kapasiteDuzeltmeleri'),  // Hat bazlı, GÜNE ÖZEL manuel kapasite artış/azalış (dk) — vardiya tabanının üzerine eklenir
     lotlar: coll('lotlar'),                              // Parti/lot izlenebilirliği
     lotHareketleri: coll('lotHareketleri'),              // Lot tüketim hareketleri
     stokSayimlari: coll('stokSayimlari'),                // Envanter sayım fişleri
@@ -1032,7 +1033,7 @@ const Store = (() => {
         // istasyonIsleri: hat operatör terminalindeki AÇIK İŞ EMİRLERİ.
         // Bunlar sıfırlamada atlanıyordu; sistem sıfırlansa bile terminalde
         // eski işler görünmeye devam ediyordu.
-        'istasyonIsleri', 'gerceklesenSureKayitlari', 'vardiyalar',
+        'istasyonIsleri', 'gerceklesenSureKayitlari', 'vardiyalar', 'kapasiteDuzeltmeleri',
         'hatOperatorleri', 'hatSifreleri', 'hatSifreTalepleri',
         // ── KALİTE ─────────────────────────────────────────────────────────
         'uygunsuzlukKayitlari', 'dofKayitlari', 'kontrolPlanlari',

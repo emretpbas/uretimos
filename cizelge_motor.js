@@ -58,6 +58,30 @@ const CizelgeMotor = (() => {
     return kap;
   }
 
+  // ── MANUEL GÜNLÜK KAPASİTE DÜZELTMELERİ ─────────────────────────────────
+  // Vardiya tabanı (yukarıdaki hatKapasiteleri) her gün için AYNI sayıyı
+  // verir. Gerçekte bazı günler farklıdır: fazla mesai, ek vardiya, arıza,
+  // bakım, planlı duruş vb. Bu fonksiyonlar hat+tarihe özel bir +/- dakika
+  // düzeltmesini (kapasiteDuzeltmeleri koleksiyonu) tabana ekler — geçmiş
+  // günler dokunulmadan, yalnızca ilgili gün(ler) etkilenir.
+  function duzeltmeHaritasi(duzeltmeler) {
+    const harita = new Map();
+    (duzeltmeler || []).forEach(d => {
+      if (!d.hat || !d.tarih) return;
+      const anahtar = d.hat + '|' + d.tarih;
+      harita.set(anahtar, (harita.get(anahtar) || 0) + (Number(d.dakikaFarki) || 0));
+    });
+    return harita;
+  }
+
+  // O GÜN o hattın fiili net kapasitesi: vardiya tabanı + o güne özel
+  // düzeltme(ler). Negatife düşemez (kapasite eksi olamaz).
+  function gunlukKapasiteHesapla(kapasiteBaz, duzeltmeHar, hat, tarih) {
+    const baz = kapasiteBaz.get(hat) || VARSAYILAN_GUNLUK_DK;
+    const fark = duzeltmeHar.get(hat + '|' + tarih) || 0;
+    return Math.max(0, baz + fark);
+  }
+
   // ── OPERASYON LİSTESİ ÇIKAR ─────────────────────────────────────────────
   // Aktif iş emirlerinden ve üretimdeki siparişlerden yapılacak operasyonları
   // üretir. Halihazırda istasyonda tamamlanmış adımlar ATLANIR (çizelge
@@ -124,9 +148,11 @@ const CizelgeMotor = (() => {
   }
 
   // ── ÇİZELGELE ───────────────────────────────────────────────────────────
-  // ops: operasyon listesi, kapasite: Map(hat -> günlük dk)
+  // ops: operasyon listesi, kapasite: Map(hat -> günlük dk BAZ),
+  // duzeltmeler: kapasiteDuzeltmeleri listesi (hat+tarihe özel +/- dk)
   // Dönen: { yerlesim[], isTerminleri: Map(isAnahtari -> bitisTarihi), hatYuku }
-  function cizelgele(ops, kapasite, baslangicTarihi, haftaSonuCalis) {
+  function cizelgele(ops, kapasite, duzeltmeler, baslangicTarihi, haftaSonuCalis) {
+    const duzeltmeHar = duzeltmeHaritasi(duzeltmeler);
     const bas = ilkIsGunu(baslangicTarihi, haftaSonuCalis);
     // Öncelik → termin → adım sırası
     const sirali = [...ops].sort((a, b) => {
@@ -152,7 +178,6 @@ const CizelgeMotor = (() => {
     const yerlesim = [];
 
     sirali.forEach(op => {
-      const gunlukKap = kapasite.get(op.hat) || VARSAYILAN_GUNLUK_DK;
       // Başlangıç: hattın müsaitliği VE önceki adımın bitişi
       let gun = bas;
       const oncekiBitis = isSonBitis.get(op.isAnahtari);
@@ -163,6 +188,9 @@ const CizelgeMotor = (() => {
       const parcalar = [];
       let guvenlik = 0;
       while (kalan > 0 && guvenlik++ < 2000) {
+        // Kapasite GÜNE ÖZEL hesaplanır — aynı hat farklı günlerde farklı
+        // kapasiteye sahip olabilir (manuel düzeltme, bkz. yukarı).
+        const gunlukKap = gunlukKapasiteHesapla(kapasite, duzeltmeHar, op.hat, gun);
         const bosluk = Math.max(0, gunlukKap - kullanilan(op.hat, gun));
         if (bosluk <= 0) { gun = sonrakiIsGunu(gun, haftaSonuCalis); continue; }
         const konan = Math.min(bosluk, kalan);
@@ -185,17 +213,24 @@ const CizelgeMotor = (() => {
       if (!mevcut || y.bitisTarihi > mevcut) isTerminleri.set(anahtar, y.bitisTarihi);
     });
 
-    // Hat yükü özeti
+    // Hat yükü özeti — doluluk, o hattaki HER GÜNÜN kendi (düzeltmeli)
+    // kapasitesine göre hesaplanır; gunlukKapasite alanı yalnızca BAZ
+    // (vardiya toplamı) değerini gösterir, günler listesindeki kapasite
+    // alanı o güne özel fiili değerdir.
     const hatYuku = [];
     takvim.forEach((gunler, hat) => {
       const kap = kapasite.get(hat) || VARSAYILAN_GUNLUK_DK;
       const toplam = [...gunler.values()].reduce((a, b) => a + b, 0);
       const gunSayisi = gunler.size;
+      const gunlerListesi = [...gunler.entries()].map(([t, d]) => {
+        const gunKap = gunlukKapasiteHesapla(kapasite, duzeltmeHar, hat, t);
+        return { tarih: t, dk: d, kapasite: gunKap, duzeltmeVar: duzeltmeHar.has(hat + '|' + t), doluluk: gunKap > 0 ? d / gunKap : 0 };
+      }).sort((a, b) => a.tarih.localeCompare(b.tarih));
+      const toplamKapasite = gunlerListesi.reduce((a, g) => a + g.kapasite, 0);
       hatYuku.push({
         hat, gunlukKapasite: kap, toplamDk: toplam, gunSayisi,
-        doluluk: gunSayisi > 0 ? toplam / (gunSayisi * kap) : 0,
-        gunler: [...gunler.entries()].map(([t, d]) => ({ tarih: t, dk: d, doluluk: d / kap }))
-          .sort((a, b) => a.tarih.localeCompare(b.tarih))
+        doluluk: toplamKapasite > 0 ? toplam / toplamKapasite : 0,
+        gunler: gunlerListesi
       });
     });
 
@@ -204,12 +239,12 @@ const CizelgeMotor = (() => {
 
   async function veriYukle() {
     const [isemirleri, siparisler, rotalar, yarimamuller, urunler, receteler,
-           istasyonIsleri, vardiyalar] = await Promise.all([
+           istasyonIsleri, vardiyalar, kapasiteDuzeltmeleri] = await Promise.all([
       Store.isemirleri.all(), Store.siparisler.all(), Store.rotalar.all(),
       Store.yarimamuller.all(), Store.urunler.all(), Store.receteler.all(),
-      Store.istasyonIsleri.all(), Store.vardiyalar.all()
+      Store.istasyonIsleri.all(), Store.vardiyalar.all(), Store.kapasiteDuzeltmeleri.all()
     ]);
-    return { isemirleri, siparisler, rotalar, yarimamuller, urunler, receteler, istasyonIsleri, vardiyalar };
+    return { isemirleri, siparisler, rotalar, yarimamuller, urunler, receteler, istasyonIsleri, vardiyalar, kapasiteDuzeltmeleri };
   }
 
   // Tam çizelge üretir
@@ -221,7 +256,7 @@ const CizelgeMotor = (() => {
     const kapasite = hatKapasiteleri(v.vardiyalar, hatlar);
     const ops = operasyonlariCikar(v);
     const bas = o.baslangic || new Date().toISOString().slice(0, 10);
-    const sonuc = cizelgele(ops, kapasite, bas, !!o.haftaSonuCalis);
+    const sonuc = cizelgele(ops, kapasite, v.kapasiteDuzeltmeleri, bas, !!o.haftaSonuCalis);
     return { ...sonuc, kapasite, hatlar, veri: v, operasyonSayisi: ops.length };
   }
 
@@ -270,12 +305,12 @@ const CizelgeMotor = (() => {
     }
 
     const bas = o.baslangic || new Date().toISOString().slice(0, 10);
-    const sonuc = cizelgele([...mevcutOps, ...yeniOps], kapasite, bas, !!o.haftaSonuCalis);
+    const sonuc = cizelgele([...mevcutOps, ...yeniOps], kapasite, v.kapasiteDuzeltmeleri, bas, !!o.haftaSonuCalis);
     const yeniYerlesim = sonuc.yerlesim.filter(y => y.kaynakTip === 'yeni');
     const bitis = yeniYerlesim.reduce((en, y) => (!en || y.bitisTarihi > en) ? y.bitisTarihi : en, null);
     const toplamDk = yeniOps.reduce((a, x) => a + x.sureDk, 0);
     // Kuyruk etkisi: mevcut yük olmasaydı ne zaman biterdi?
-    const yalnizYeni = cizelgele(yeniOps, kapasite, bas, !!o.haftaSonuCalis);
+    const yalnizYeni = cizelgele(yeniOps, kapasite, v.kapasiteDuzeltmeleri, bas, !!o.haftaSonuCalis);
     const yalnizBitis = yalnizYeni.yerlesim.reduce((en, y) => (!en || y.bitisTarihi > en) ? y.bitisTarihi : en, null);
 
     return {
@@ -287,5 +322,7 @@ const CizelgeMotor = (() => {
     };
   }
 
-  return { tamCizelge, terminOner, operasyonlariCikar, cizelgele, hatKapasiteleri, VARSAYILAN_GUNLUK_DK };
+  return { tamCizelge, terminOner, operasyonlariCikar, cizelgele, hatKapasiteleri, duzeltmeHaritasi, gunlukKapasiteHesapla, VARSAYILAN_GUNLUK_DK };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = CizelgeMotor;
