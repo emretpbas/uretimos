@@ -467,7 +467,13 @@ PageModules.recete_agac = (() => {
     const maliyetRenk = kaynak === 'yok' ? 'var(--red-text)' : 'var(--text2)';
 
     let html = `<div class="ra-node" data-nodekey="${nodeKey}" style="margin-left:${girintiPx}px;margin-bottom:4px">`;
-    html += `<div class="flex-gap" style="padding:7px 9px;background:${derinlik === 1 ? 'var(--blue-bg)' : 'var(--bg)'};border-radius:7px;border-left:3px solid ${derinlik === 1 ? 'var(--blue-text)' : 'var(--border)'}">`;
+    html += `<div class="flex-gap ra-row" data-nodekey="${nodeKey}" data-tip="${tip}" data-id="${id}" style="padding:7px 9px;background:${derinlik === 1 ? 'var(--blue-bg)' : 'var(--bg)'};border-radius:7px;border-left:3px solid ${derinlik === 1 ? 'var(--blue-text)' : 'var(--border)'}">`;
+    // Sürükle-bırak tutamacı: yalnızca gerçek bir kalem (kök kart değil) taşınabilir.
+    // Dokunmatik cihazlarda HTML5 drag-drop çalışmadığı için "↕ Taşı" butonu da
+    // aşağıda AYNEN korunuyor — bu, masaüstü için EK bir yol, yerine geçen değil.
+    if (kalemBaglami) {
+      html += `<span class="ra-drag-handle" draggable="true" data-nodekey="${nodeKey}" title="Sürükleyip başka bir kartın üzerine bırakarak taşıyın">⠿</span>`;
+    }
     html += `<span class="pill ${renk}" style="font-size:9px;flex-shrink:0">${etiket}</span>`;
     html += `<div style="flex:1;min-width:160px;font-size:12px"><b class="mono">${App.escapeHtml(kart.kod || kart.stokKodu)}</b> — ${App.escapeHtml(kart.ad)}</div>`;
 
@@ -622,6 +628,46 @@ PageModules.recete_agac = (() => {
     wrap.querySelectorAll('.ra-olcu-ekle').forEach(b => b.onclick = () => openPaketOlcuDuzenle(b.dataset.id));
     wrap.querySelectorAll('.ra-tasi').forEach(b => b.onclick = () => openTasiModal(b.dataset.path));
     wrap.querySelectorAll('.ra-olcu-duzenle').forEach(b => b.onclick = () => openOlcuDuzenleModal(b.dataset.path));
+
+    // ── SÜRÜKLE-BIRAK İLE TAŞIMA ─────────────────────────────────────────────
+    // Tutamaç (⠿) sürüklenir, bırakılan SATIR hedef kart olur — "↕ Taşı"
+    // modalındaki hedef seçimiyle AYNI kalemiTasi() fonksiyonunu kullanır,
+    // aynı döngü/hammadde-hedef kontrolleri burada da geçerlidir.
+    let draggedNodeKey = null;
+    wrap.querySelectorAll('.ra-drag-handle').forEach(handle => {
+      handle.addEventListener('dragstart', (e) => {
+        draggedNodeKey = handle.dataset.nodekey;
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', draggedNodeKey); } catch (err) {}
+        const row = handle.closest('.ra-row');
+        if (row) row.classList.add('ra-dragging');
+      });
+      handle.addEventListener('dragend', () => {
+        wrap.querySelectorAll('.ra-dragging').forEach(el => el.classList.remove('ra-dragging'));
+        wrap.querySelectorAll('.ra-drop-hedef').forEach(el => el.classList.remove('ra-drop-hedef'));
+        draggedNodeKey = null;
+      });
+    });
+    wrap.querySelectorAll('.ra-row').forEach(row => {
+      row.addEventListener('dragover', (e) => {
+        if (!draggedNodeKey || row.dataset.nodekey === draggedNodeKey || row.dataset.tip === 'hammadde') return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('ra-drop-hedef');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('ra-drop-hedef'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('ra-drop-hedef');
+        const kaynakNodeKey = draggedNodeKey;
+        draggedNodeKey = null;
+        if (!kaynakNodeKey || kaynakNodeKey === row.dataset.nodekey) return;
+        if (kalemiTasi(kaynakNodeKey, row.dataset.tip, row.dataset.id)) {
+          App.toast('Kalem sürükleyerek taşındı (taslak — henüz kaydedilmedi)', 'ok');
+          reAcVeRender();
+        }
+      });
+    });
 
     // ── İNLİNE ROTA + AMORTİSMAN + GYG (kart düzenleme formuna gitmeden) ─────
     wrap.querySelectorAll('.ra-rota').forEach(sel => sel.onchange = () => {
@@ -951,8 +997,30 @@ PageModules.recete_agac = (() => {
   }
 
   // ── TAŞIMA: bir kalemi bulunduğu reçeteden çıkarıp BAŞKA bir üst kalemin
-  // (veya kök kartın) reçetesine ekler — TASLAKTA. Döngüsel referansı önlemek
-  // için hedef olarak kalemin kendi alt-ağacındaki kartlar listelenmez.
+  // (veya kök kartın) reçetesine ekler — TASLAKTA. Hem "↕ Taşı" modalı hem
+  // sürükle-bırak AYNI fonksiyonu kullanır — döngü ve hammadde-hedef
+  // kontrolleri TEK YERDE.
+  function kalemiTasi(kaynakNodeKey, hedefTip, hedefId) {
+    const cozumKaynak = pathCoz(kaynakNodeKey);
+    if (!cozumKaynak || !cozumKaynak.kalem) return false;
+    if (hedefTip === 'hammadde') { App.toast('Bir hammadde kartının altına kalem taşınamaz', 'err'); return false; }
+    const tasinanKalem = cozumKaynak.kalem;
+    if (tasinanKalem.tip === hedefTip && tasinanKalem.refId === hedefId) {
+      App.toast('Bir kalem kendi üzerine taşınamaz', 'err');
+      return false;
+    }
+    if (altAgactaMi(tasinanKalem.tip, tasinanKalem.refId, hedefTip, hedefId)) {
+      App.toast('⚠ Bu taşıma döngüsel referansa yol açar, engellendi.', 'err');
+      return false;
+    }
+    cozumKaynak.recete.kalemler.splice(cozumKaynak.kalemIndex, 1);
+    const hedefKart = kartBul(hedefTip, hedefId);
+    const hedefRecete = receteBulVeyaOlustur(hedefTip, hedefId, hedefKart ? hedefKart.ad : '');
+    hedefRecete.kalemler.push({ ...tasinanKalem });
+    isaretleKirli();
+    return true;
+  }
+
   function openTasiModal(nodeKey) {
     const cozum = pathCoz(nodeKey);
     if (!cozum || !cozum.kalem) return;
@@ -983,17 +1051,7 @@ PageModules.recete_agac = (() => {
     document.getElementById('tm-save').onclick = () => {
       const secilenIndex = parseInt(document.getElementById('tm-hedef').value);
       const hedef = adaylar[secilenIndex];
-
-      if (altAgactaMi(tasinanKalem.tip, tasinanKalem.refId, hedef.tip, hedef.id)) {
-        App.toast('⚠ Bu taşıma döngüsel referansa yol açar, engellendi.', 'err');
-        return;
-      }
-
-      cozum.recete.kalemler.splice(cozum.kalemIndex, 1);
-      const hedefRecete = receteBulVeyaOlustur(hedef.tip, hedef.id, kartBul(hedef.tip, hedef.id).ad);
-      hedefRecete.kalemler.push({ ...tasinanKalem });
-      isaretleKirli();
-
+      if (!kalemiTasi(nodeKey, hedef.tip, hedef.id)) return;
       App.toast('Kalem taslakta taşındı (henüz kaydedilmedi)', 'ok');
       App.closeModal();
       reAcVeRender();
