@@ -251,9 +251,16 @@ PageModules.muhasebe_panel = (() => {
     // ödenenler) hesaplamak için taze veri çekilir — Cari Panel'deki mantıkla
     // AYNI hesaplama (bkz. page_cari_panel.js render fonksiyonu).
     const [satinalmaSiparisleri, tedarikciOdemeleriTaze] = await Promise.all([Store.satinalmaSiparisleri.all(), Store.tedarikciOdemeleri.all()]);
-    const acikSatinalmaSiparisleri = satinalmaSiparisleri.filter(s => s.durum !== 'reddedildi' && s.durum !== 'tamamlandi');
+    // Ödemeyle İLİŞKİLENDİRİLEBİLECEK açık siparişler: onaylanmış/gönderilmiş
+    // ama henüz tamamlanmamış olanlar. 'yonetim_onayi_bekliyor' ve
+    // 'birime_dondu' tedarikçiye hiç iletilmedi, ödeme bağlanacak bir
+    // taahhüt değiller.
+    const acikSatinalmaSiparisleri = satinalmaSiparisleri.filter(s => s.durum === 'onaylandi' || s.durum === 'gonderildi');
     function tedarikciBakiyesi(tedarikciId) {
-      const borc = satinalmaSiparisleri.filter(s => s.tedarikciId === tedarikciId && s.durum !== 'reddedildi').reduce((a, s) => a + (s.toplamTRY || 0), 0);
+      // Yalnızca GERÇEK TAAHHÜDE dönüşmüş (onaylanmış/gönderilmiş/tamamlanmış)
+      // siparişler borç sayılır — Cari Panel'deki hesaplamayla AYNI mantık
+      // (bkz. page_cari_panel.js SATINALMA_BORC_DURUMLARI).
+      const borc = satinalmaSiparisleri.filter(s => s.tedarikciId === tedarikciId && (s.durum === 'onaylandi' || s.durum === 'gonderildi' || s.durum === 'tamamlandi')).reduce((a, s) => a + (s.toplamTRY || 0), 0);
       const odenen = tedarikciOdemeleriTaze.filter(o => o.tedarikciId === tedarikciId).reduce((a, o) => a + (o.tutar || 0), 0);
       return borc - odenen;
     }

@@ -6,6 +6,12 @@ PageModules.cari_panel = (() => {
   let activeTab = 'musteriler';
   let detayMusteriId = null;
 
+  // Bir satınalma siparişinin tedarikçiye GERÇEK bir borç/taahhüt sayılması
+  // için en az onaylanmış olması gerekir — 'yonetim_onayi_bekliyor' (henüz
+  // gönderilmedi) ve 'birime_dondu' (yönetim reddetti, düzenleme bekliyor)
+  // bir borç DEĞİLDİR, yalnızca 'reddedildi'yi hariç tutmak yetersizdi.
+  const SATINALMA_BORC_DURUMLARI = ['onaylandi', 'gonderildi', 'tamamlandi'];
+
   async function render(main, params) {
     if (params && params.tab) activeTab = params.tab;
     const [musteriler, siparisler, tedarikciler, irsaliyeler, faturalar, stokRaf, urunler, tahsilatBeklenenler, satinalmaSiparisleri, tedarikciOdemeleri] = await Promise.all([
@@ -14,12 +20,13 @@ PageModules.cari_panel = (() => {
       Store.satinalmaSiparisleri.all(), Store.tedarikciOdemeleri.all()
     ]);
 
-    // Her tedarikçinin net borç bakiyesi: tüm (reddedilmemiş) satınalma
-    // siparişlerinin toplamı - tüm tedarikçi ödemelerinin toplamı. Pozitifse
-    // FİRMA bu tedarikçiye borçludur ("Ödeme Yap" butonu gösterilir).
+    // Her tedarikçinin net borç bakiyesi: GERÇEK BİR TAAHHÜDE dönüşmüş
+    // (onaylanmış/gönderilmiş/tamamlanmış) satınalma siparişlerinin toplamı
+    // - tüm tedarikçi ödemelerinin toplamı. Pozitifse FİRMA bu tedarikçiye
+    // borçludur ("Ödeme Yap" butonu gösterilir).
     const tedarikciBakiyeleri = new Map();
     tedarikciler.forEach(t => {
-      const borc = satinalmaSiparisleri.filter(s => s.tedarikciId === t.id && s.durum !== 'reddedildi').reduce((a, s) => a + (s.toplamTRY || 0), 0);
+      const borc = satinalmaSiparisleri.filter(s => s.tedarikciId === t.id && SATINALMA_BORC_DURUMLARI.includes(s.durum)).reduce((a, s) => a + (s.toplamTRY || 0), 0);
       const odenen = tedarikciOdemeleri.filter(o => o.tedarikciId === t.id).reduce((a, o) => a + (o.tutar || 0), 0);
       tedarikciBakiyeleri.set(t.id, borc - odenen);
     });
@@ -475,7 +482,7 @@ PageModules.cari_panel = (() => {
         const [satinalmaSiparisleri, tedarikciOdemeleri] = await Promise.all([
           Store.satinalmaSiparisleri.all(), Store.tedarikciOdemeleri.all()
         ]);
-        const cariSiparisleri = satinalmaSiparisleri.filter(s => s.tedarikciId === cariId && s.durum !== 'reddedildi');
+        const cariSiparisleri = satinalmaSiparisleri.filter(s => s.tedarikciId === cariId && SATINALMA_BORC_DURUMLARI.includes(s.durum));
         const cariOdemeleri = tedarikciOdemeleri.filter(o => o.tedarikciId === cariId);
 
         // Bir satınalma siparişinin "kapanma durumu": durum 'tamamlandi' ise

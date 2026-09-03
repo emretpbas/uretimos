@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v141'; // v141: FIX - MRP artik taslak is emirlerini saymiyor, tamamlanmis/reddedilmis satinalma siparisini yolda saymiyor
+const CACHE_NAME = 'uretimos-v142'; // v142: FIX - tedarikci borc bakiyesi artik sadece onaylanmis/gonderilmis/tamamlanmis siparisleri sayiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
