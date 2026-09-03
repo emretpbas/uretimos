@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v155'; // v155: FEATURE - kismi sevkiyat destegi (kalan miktar takibi, dogru fatura, cifte avans mahsubu onlendi)
+const CACHE_NAME = 'uretimos-v156'; // v156: FIX - dogrudan sevkiyata eklenen 2.kalite kalemler artik rezervasyon/kullanilabilir miktar kontrolunden geciyor, kismi satis destekleniyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

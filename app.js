@@ -4016,6 +4016,69 @@ const App = (() => {
     return { ok: true };
   }
 
+  // ── 2. KALİTE — İRSALİYEYE DOĞRUDAN EKLEME (teklif akışı DIŞINDA) ────────
+  // BULGU (T3-24): Sevkiyat ekranındaki "+ Kalem Ekle" ile irsaliyeye
+  // DOĞRUDAN eklenen 2. kalite/defolu kalemler ikinciKaliteKullanilabilirAdet
+  // (rezervasyon farkındalıklı kullanılabilir miktar) kontrolünden HİÇ
+  // geçmiyordu — bir teklifte REZERVE edilmiş bir kalem burada da
+  // seçilip aynı fiziksel parça iki farklı müşteriye satılabiliyordu.
+  // Ayrıca kayıt anında iade.miktar hiç düşülmüyor, durum KOŞULSUZ
+  // 'satildi' yazılıyordu (kısmi satış desteklenmiyordu). Bu fonksiyon,
+  // teklif akışındaki (ikinciKaliteKalemleriSatildiIsaretle) AYNI
+  // kuralları — son kontrol, kısmi satışa duyarlı miktar/durum, satış
+  // geçmişi, ambar stok düşümü — doğrudan irsaliyeye eklenen kalemlere de
+  // uygular. ikKalemler: [{iadeKalemId, kod, miktar}], baglam: {kaynakId,
+  // kaynakKod, musteriId, musteriAdi, tarih, irsaliyeNo}.
+  async function ikinciKaliteDogrudanSatisIsle(ikKalemler, baglam) {
+    if (!ikKalemler || !ikKalemler.length) return { ok: true };
+    // Aynı iadeKalemId birden fazla satırda (kullanıcı "+ Kalem Ekle"yi aynı
+    // kalem için birden fazla kez tıklamış olabilir) geçebilir — TEK TEK
+    // kontrol edilirse her satır ayrı ayrı "yeterli" görünüp toplamda
+    // kullanılabilir miktarı AŞABİLİR. Kontrolü ve düşümü toplanmış
+    // (aggregate) miktar üzerinden yap.
+    const toplanmis = new Map(); // iadeKalemId -> {kod, miktar}
+    ikKalemler.forEach(k => {
+      const mevcut = toplanmis.get(k.iadeKalemId);
+      if (mevcut) mevcut.miktar += (k.miktar || 1);
+      else toplanmis.set(k.iadeKalemId, { kod: k.kod, miktar: k.miktar || 1 });
+    });
+    const iadeler = await Store.iadeKalemleri.all();
+    // 1) SON KONTROL — teklif akışıyla AYNI (haricTeklifId=null: doğrudan
+    // satışın kendi rezervasyonu yoktur, tüm rezervasyonlar düşülür)
+    for (const [iadeKalemId, k] of toplanmis) {
+      const iade = iadeler.find(i => i.id === iadeKalemId);
+      if (!iade) return { ok: false, hata: 'İade kaydı bulunamadı: ' + k.kod };
+      const kullanilabilir = ikinciKaliteKullanilabilirAdet(iade, null);
+      if (iade.durum !== 'satista' || k.miktar > kullanilabilir) {
+        return { ok: false, hata: `"${iade.ad || iade.kod}" için yeterli stok yok — kullanılabilir: ${kullanilabilir} adet (rezerve/satılmış olabilir).` };
+      }
+    }
+    // 2) SATIŞ YAZMA
+    const stokRaf = await Store.stokRaf.all();
+    let stokDegisti = false;
+    for (const [iadeKalemId, k] of toplanmis) {
+      const iade = iadeler.find(i => i.id === iadeKalemId);
+      const adet = k.miktar;
+      iade.miktar = Math.max(0, (iade.miktar || 0) - adet);
+      if (iade.miktar <= 0) iade.durum = 'satildi';
+      iade.satisGecmisi = iade.satisGecmisi || [];
+      iade.satisGecmisi.push({ siparisId: baglam.kaynakId, siparisNo: baglam.kaynakKod, musteriId: baglam.musteriId || null, musteriAdi: baglam.musteriAdi || '', adet, tarih: baglam.tarih });
+      iade.satisTarihi = baglam.tarih;
+      iade.satisSiparisId = baglam.kaynakId;
+      iade.satisSiparisNo = baglam.kaynakKod;
+      iade.satisMusteriId = baglam.musteriId || null;
+      iade.satisMusteriAdi = baglam.musteriAdi || '';
+      iade.satilanAdet = (iade.satilanAdet || 0) + adet;
+      iade.sevkIrsaliyeNo = baglam.irsaliyeNo || iade.sevkIrsaliyeNo;
+      iade.sevkTarihi = baglam.tarih;
+      const s = stokRaf.find(x => x.ambar === 'iade_ambari' && x.refId === (iade.refId || iade.id));
+      if (s) { s.miktar = Math.max(0, (s.miktar || 0) - adet); stokDegisti = true; }
+    }
+    await Store.iadeKalemleri.save(iadeler);
+    if (stokDegisti) await Store.stokRaf.save(stokRaf);
+    return { ok: true };
+  }
+
   // İrsaliye kesilince: satılan 2. kalite kalemlerine hangi irsaliyeyle,
   // hangi gün sevk edildiği bilgisi işlenir (geçmiş defolu ürün kaydı).
   async function ikinciKaliteSevkBilgisiIsle(siparis, irsaliye) {
@@ -5715,7 +5778,7 @@ const App = (() => {
     tahsilatOdemePlaniOnayaGonder, tahsilatOnayBekleyenOnayla, tahsilatOnayBekleyenReddet,
     uretimBaslarkenHammaddeCek, uretimTamamlaninceUrunGirisiYap, sevkiyatYapilinceStoktanDus, siparisKismiSevkGuncelle,
     muhasebeKaydiOlustur, tahsilatBeklenenOnayla, siparisOnaylaninceOdemePlaniniAnindaIsle, odemeKalemiVadeFarki, odemePlaniToplamVadeFarki, siparisReddindeTeklifSorusu, kesimPlaniKaydedildiginceStokDus, kalemleriKdvGrupla, ekGiderTutar, ekGiderToplami, EK_GIDER_KATALOG, akordeonHtml, akordeonBagla, kartNeredeKullaniliyor,
-    ikinciKaliteKalemleriSatildiIsaretle, ikinciKaliteSevkBilgisiIsle, sayfayaErisebilir,
+    ikinciKaliteKalemleriSatildiIsaretle, ikinciKaliteSevkBilgisiIsle, ikinciKaliteDogrudanSatisIsle, sayfayaErisebilir,
     ikinciKaliteKullanilabilirAdet, ikinciKaliteRezervasyonSenkronize, ikinciKaliteRezervasyonKaldir, ikinciKaliteSatisGeriAl,
     qrSvg, qrIcerikUret, kodAyikla, barkodOkutModal, partiEtiketKodu, isKartiEtiketYazdir, fotografiOlcekle1080, hatSifresiDogru, receteAltYarimamulleri,
     siparisTakimlamaDurumu, isEmriIhtiyaciEkle, urunPaketOzeti, paketOzetMetni,

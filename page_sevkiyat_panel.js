@@ -264,7 +264,21 @@ PageModules.sevkiyat_panel = (() => {
         </tr>`).join('')}
       </table>`;
       el.querySelectorAll('.ir-k-miktar').forEach(inp => inp.onchange = () => {
-        kalemler[parseInt(inp.dataset.i)].miktar = parseFloat(inp.value) || 1;
+        const i = parseInt(inp.dataset.i);
+        const kalem = kalemler[i];
+        let m = parseFloat(inp.value) || 1;
+        // BULGU (T3-24): 2. kalite kalemlerde miktar, o kaleme ait TÜM
+        // taslak satırlarının toplamı kullanılabilir sınırı aşamaz.
+        if (kalem.ikinciKalite && kalem.kullanilabilir != null) {
+          const digerSatirlarToplami = kalemler.filter((k, j) => j !== i && k.iadeKalemId === kalem.iadeKalemId).reduce((a, k) => a + (k.miktar || 0), 0);
+          const izinliMax = Math.max(0, kalem.kullanilabilir - digerSatirlarToplami);
+          if (m > izinliMax) {
+            m = izinliMax;
+            App.toast(kalem.kod + ' için miktar kullanılabilir sınıra (' + izinliMax + ') düşürüldü', 'err');
+          }
+        }
+        kalem.miktar = m;
+        inp.value = m;
       });
       el.querySelectorAll('.ir-k-sil').forEach(btn => btn.onclick = () => {
         kalemler.splice(parseInt(btn.dataset.i), 1);
@@ -275,14 +289,22 @@ PageModules.sevkiyat_panel = (() => {
 
     // Kalem ekleme: tüm kaynaklardan arama listesi
     document.getElementById('ir-kalem-ekle').onclick = () => {
+      // BULGU (T3-24): 2. kalite kalemler burada rezervasyondan bağımsız
+      // olarak listeleniyordu — bir teklifte REZERVE edilmiş (başka bir
+      // müşteriye ayrılmış) bir kalem de seçilebiliyordu. Artık
+      // App.ikinciKaliteKullanilabilirAdet ile GERÇEK kullanılabilir miktar
+      // hesaplanır; kullanılabilir 0 olan kalemler listeye hiç girmez.
       const secenekler = [
         ...urunler.map(u => ({ kaynak: 'urun', kod: u.kod, ad: u.ad, birim: 'ADET' })),
         ...yarimamuller.map(y => ({ kaynak: 'yarimamul', kod: y.kod, ad: y.ad, birim: 'ADET' })),
         ...hammaddeler.map(h => ({ kaynak: 'hammadde', kod: h.stokKodu, ad: h.ad, birim: h.birim || 'ADET' })),
-        ...iadeKalemleri.filter(i => ['satista', 'fiyat_bekliyor'].includes(i.durum)).map(i => ({
-          kaynak: 'ikinci_kalite', kod: i.kod, ad: i.ad + ' [' + ({'2_kalite':'2.Kalite','defolu':'Defolu','seri_sonu':'Seri Sonu'}[i.kalite] || '2.Kalite') + ']',
-          birim: i.birim || 'ADET', iadeKalemId: i.id, ikinciKalite: true, netFiyat: i.satisFiyati || 0
-        }))
+        ...iadeKalemleri.filter(i => ['satista', 'fiyat_bekliyor'].includes(i.durum))
+          .map(i => ({ i, kullanilabilir: App.ikinciKaliteKullanilabilirAdet(i, null) }))
+          .filter(x => x.kullanilabilir > 0)
+          .map(({ i, kullanilabilir }) => ({
+            kaynak: 'ikinci_kalite', kod: i.kod, ad: i.ad + ' [' + ({'2_kalite':'2.Kalite','defolu':'Defolu','seri_sonu':'Seri Sonu'}[i.kalite] || '2.Kalite') + ']' + ' — kullanılabilir: ' + kullanilabilir,
+            birim: i.birim || 'ADET', iadeKalemId: i.id, ikinciKalite: true, netFiyat: i.satisFiyati || 0, kullanilabilir
+          }))
       ];
       const ekBody = document.createElement('div');
       ekBody.innerHTML = `
@@ -310,7 +332,16 @@ PageModules.sevkiyat_panel = (() => {
         </div>`).join('') || '<div class="muted" style="padding:12px;font-size:12px">Sonuç yok</div>';
         listeEl.querySelectorAll('.irke-satir').forEach(row => row.querySelector('button').onclick = () => {
           const s = secenekler[parseInt(row.dataset.i)];
-          kalemler.push({ kaynak: s.kaynak, kod: s.kod, ad: s.ad, miktar: 1, birim: s.birim, netFiyat: s.netFiyat || 0, kdvOrani: 20, ikinciKalite: !!s.ikinciKalite, iadeKalemId: s.iadeKalemId || null });
+          // BULGU (T3-24): 2. kalite kalem birden fazla kez eklenebiliyor/
+          // miktarı artırılabiliyordu — taslakta ZATEN eklenmiş miktar da
+          // düşülerek kullanılabilir sınırı burada da (kayıt anındaki son
+          // kontrolden ÖNCE) uygulanır.
+          if (s.ikinciKalite) {
+            const taslaktaEklenen = kalemler.filter(k => k.iadeKalemId === s.iadeKalemId).reduce((a, k) => a + (k.miktar || 0), 0);
+            const kalanKullanilabilir = s.kullanilabilir - taslaktaEklenen;
+            if (kalanKullanilabilir <= 0) { App.toast(s.kod + ' için kullanılabilir miktar kalmadı (taslakta zaten eklendi)', 'err'); return; }
+          }
+          kalemler.push({ kaynak: s.kaynak, kod: s.kod, ad: s.ad, miktar: 1, birim: s.birim, netFiyat: s.netFiyat || 0, kdvOrani: 20, ikinciKalite: !!s.ikinciKalite, iadeKalemId: s.iadeKalemId || null, kullanilabilir: s.kullanilabilir });
           kalemTabloCiz();
           App.toast('Eklendi: ' + s.kod, 'ok');
         });
@@ -323,12 +354,27 @@ PageModules.sevkiyat_panel = (() => {
     document.getElementById('ir-cancel').onclick = App.closeModal;
     document.getElementById('ir-save').onclick = async () => {
       if (!kalemler.length) { App.toast('İrsaliyede en az bir kalem olmalı', 'err'); return; }
+      const irsaliyeTarihi = document.getElementById('ir-tarih').value;
+      const irsaliyeNo = document.getElementById('ir-no').value.trim();
+
+      // BULGU (T3-24): 2. kalite satışı, irsaliye/stok/sipariş durumu
+      // KAYDEDİLMEDEN ÖNCE doğrulanır — böylece kullanılabilir miktar
+      // yetersizse HİÇBİR ŞEY kısmen kaydedilmemiş olur (tutarsız durum
+      // riski yok). Bu doğrulama ayrıca kalem ekleme/miktar değiştirme
+      // sırasındaki istemci taraflı kontrollerin SON GÜVENCESİDİR.
+      const ikKalemler = kalemler.filter(k => k.ikinciKalite && k.iadeKalemId).map(k => ({ iadeKalemId: k.iadeKalemId, kod: k.kod, miktar: k.miktar || 1 }));
+      const ikSonuc = await App.persist(() => App.ikinciKaliteDogrudanSatisIsle(ikKalemler, {
+        kaynakId: siparis.id, kaynakKod: siparis.kod, musteriId: siparis.musteriId, musteriAdi: siparis.musteriAdi,
+        tarih: irsaliyeTarihi, irsaliyeNo
+      }));
+      if (!ikSonuc.ok) { App.toast(ikSonuc.hata, 'err'); return; }
+
       const irsaliye = {
         id: App.uid('IRS'),
-        irsaliyeNo: document.getElementById('ir-no').value.trim(),
+        irsaliyeNo,
         siparisId: siparis.id, siparisKodu: siparis.kod,
         musteriId: siparis.musteriId, musteriAdi: siparis.musteriAdi,
-        tarih: document.getElementById('ir-tarih').value,
+        tarih: irsaliyeTarihi,
         aracPlaka: document.getElementById('ir-plaka').value.trim(),
         surucu: document.getElementById('ir-surucu').value.trim(),
         not: document.getElementById('ir-not').value.trim(),
@@ -356,27 +402,10 @@ PageModules.sevkiyat_panel = (() => {
       }
 
       // 2. kalite kalemlere sevk bilgisi (irsaliye no + tarih) işlenir
+      // (T3-24: doğrudan eklenen 2. kalite kalemlerin satış/stok işlemesi
+      // artık ir-save başında App.ikinciKaliteDogrudanSatisIsle ile yapılıyor —
+      // burada yalnızca sipariş kalemlerinden gelenler için sevk bilgisi işlenir)
       await App.persist(() => App.ikinciKaliteSevkBilgisiIsle(siparis, irsaliye));
-      // İrsaliyeye sonradan eklenen 2.kalite kalemler de satıldı+sevk bilgisi alır
-      const iadelerGuncel = await Store.iadeKalemleri.all();
-      let iadeDegisti = false;
-      for (const k of kalemler) {
-        if (!k.ikinciKalite || !k.iadeKalemId) continue;
-        const iade = iadelerGuncel.find(i => i.id === k.iadeKalemId);
-        if (!iade) continue;
-        if (iade.durum !== 'satildi') {
-          iade.durum = 'satildi';
-          iade.satisTarihi = irsaliye.tarih;
-          iade.satisSiparisId = siparis.id;
-          iade.satisSiparisNo = siparis.kod;
-          iade.satisMusteriAdi = siparis.musteriAdi || '';
-          iade.satilanAdet = k.miktar || 1;
-        }
-        iade.sevkIrsaliyeNo = irsaliye.irsaliyeNo;
-        iade.sevkTarihi = irsaliye.tarih;
-        iadeDegisti = true;
-      }
-      if (iadeDegisti) await App.persist(() => Store.iadeKalemleri.save(iadelerGuncel));
 
       App.toast('İrsaliye kaydedildi, stok düşüldü. Fatura için Cari İşlemler fiyat kontrolü yapacak: ' + irsaliye.irsaliyeNo, 'ok');
       App.closeModal();
