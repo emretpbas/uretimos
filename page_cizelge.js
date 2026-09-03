@@ -299,7 +299,9 @@ PageModules.cizelge = (() => {
     };
 
     const gercekSiparisler = siparisler.filter(s => ['onaylandi', 'uretimde', 'sevk_edildi'].includes(s.durum));
-    const aktifIsEmirleri = isemirleri.filter(ie => ie.durum !== 'tamamlandi');
+    // Yalnızca planlamanın ÜRETİME ALDIĞI iş emirleri "planlanan" sayılır —
+    // taslak olanlar henüz onay bekliyor, kapasiteyi işgal etmemeli.
+    const aktifIsEmirleri = isemirleri.filter(ie => ie.durum === 'uretimde');
 
     const urunPlan = new Map(), ymPlan = new Map();
     const ekle = (harita, id, adet, p) => {

@@ -25,6 +25,22 @@ PageModules.hat_takip = (() => {
     ]);
     let eklendi = false;
 
+    // ── GERİ ALMA: yanlışlıkla hatta düşmüş TASLAK iş emri kartları ─────────
+    // Önceki bir sürümde "taslak" (planlamanın henüz ÜRETİME ALMADIĞI) iş
+    // emirleri de aşağıdaki senkronizasyona dahil ediliyordu — planlama
+    // onay vermeden iş kartı sahada görünüyordu. Burada HENÜZ HİÇ İLERLEME
+    // OLMAMIŞ (barkod okutulmamış, kalite/işlem/sevk/fire yok) böyle kartlar
+    // geri alınır. Üzerinde GERÇEK iş yapılmış bir kart varsa (fiziksel
+    // üretim zaten başlamışsa) SESSİZCE SİLİNMEZ — bu durumda yönetim elle
+    // karar vermeli (iş emrini üretime almalı ya da kartı elle kapatmalı).
+    const taslakIeIdleri = new Set(isemirleri.filter(ie => ie.durum === 'taslak').map(ie => ie.id));
+    const dokunulmamisTaslakKarti = (x) => x.kaynakTip === 'ie' && taslakIeIdleri.has(x.kaynakId) && x.durum === 'aktif' &&
+      !x.barkodOkundu && !x.kaliteOnayliAdet && !x.islemTamamAdet && !x.sevkEdilenAdet && !x.fireAdet;
+    if (isler.some(dokunulmamisTaslakKarti)) {
+      isler.splice(0, isler.length, ...isler.filter(x => !dokunulmamisTaslakKarti(x)));
+      eklendi = true;
+    }
+
     const kartOlustur = (kaynakTip, kaynakId, kaynakKod, etiket, ym, rota, adet, musteriAdi) => {
       // Bu kaynak+YM için HERHANGİ bir step kartı varsa dokunma (akış başlamış)
       if (isler.some(x => x.kaynakTip === kaynakTip && x.kaynakId === kaynakId && x.yarimamulId === ym.id)) return;
@@ -42,8 +58,10 @@ PageModules.hat_takip = (() => {
       eklendi = true;
     };
 
-    // 1) İş emirleri (taslak + üretimde)
-    isemirleri.filter(ie => ie.durum !== 'tamamlandi').forEach(ie => {
+    // 1) İş emirleri — YALNIZCA planlamanın ÜRETİME ALDIĞI ("uretimde") iş
+    // emirleri hatta düşer. "taslak" olanlar planlama onayı bekliyor demektir,
+    // sahaya düşmemeli; "tamamlandi" zaten bitmiş.
+    isemirleri.filter(ie => ie.durum === 'uretimde').forEach(ie => {
       // İş emri belirli sipariş(ler)e bağlıysa (kaynakSiparisIdler) müşteri
       // adı oradan çözülür; genel/stok için açılmış iş emirlerinde (bağ yok)
       // müşteri bilgisi boş kalır — etiket bunu "Stok Üretimi" olarak gösterir.

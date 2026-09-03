@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v135'; // v135: recete agac editorunde surukle-birak ile kalem tasima
+const CACHE_NAME = 'uretimos-v136'; // v136: FIX - taslak is emirleri artik hatta/cizelgeye dusmuyor (sadece uretimde)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

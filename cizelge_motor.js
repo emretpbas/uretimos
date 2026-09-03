@@ -113,8 +113,10 @@ const CizelgeMotor = (() => {
       });
     };
 
-    // İş emirleri
-    (v.isemirleri || []).filter(ie => ie.durum !== 'tamamlandi').forEach(ie => {
+    // İş emirleri — YALNIZCA planlamanın ÜRETİME ALDIĞI ("uretimde") iş
+    // emirleri çizelgelenir. "taslak" olanlar henüz planlama onayı bekliyor —
+    // kapasiteyi/termin tahminini işgal etmemeli.
+    (v.isemirleri || []).filter(ie => ie.durum === 'uretimde').forEach(ie => {
       // İş emrinin bağlı olduğu siparişin termini öncelik verir
       const bagliSip = (v.siparisler || []).find(s => (ie.kaynakSiparisIdler || []).includes(s.id));
       (ie.uretimListesi || []).filter(k => k.tip === 'yarimamul').forEach(k => {
