@@ -3817,6 +3817,9 @@ const App = (() => {
   // Terminal ekranları AYNI bu fonksiyonu çağırır, ikisi de birebir aynı
   // etiketi üretir (kural: etiket nereden basılırsa basılsın aynı olmalı).
   function isKartiEtiketYazdir(is) {
+    const musteriSatiri = is.musteriAdi
+      ? `<div class="musteri">👤 ${escapeHtml(is.musteriAdi)}</div>`
+      : `<div class="musteri musteri-yok">Stok Üretimi — müşteriye özel değil</div>`;
     const w = window.open('', '_blank');
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>QR Etiket — ${escapeHtml(is.ymKod)}</title>
       <style>
@@ -3824,12 +3827,15 @@ const App = (() => {
         .et{width:70mm;border:1.5px solid #000;border-radius:4px;padding:5mm;margin-bottom:5mm;page-break-inside:avoid;text-align:center}
         .kod{font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:1px;margin-top:2mm}
         .ad{font-size:11px;color:#333;margin-top:1mm}
+        .musteri{font-size:11px;font-weight:bold;color:#000;margin-top:2mm;border-top:1px solid #000;padding-top:2mm}
+        .musteri-yok{font-weight:normal;font-style:italic;color:#777}
         .alt{font-size:9px;color:#666;margin-top:2mm;border-top:1px dashed #999;padding-top:2mm}
       </style></head><body>
       <div class="et">
         ${qrSvg(partiEtiketKodu(is.ymKod, is.kaynakKod), 150)}
         <div class="kod">${escapeHtml(is.ymKod)}</div>
         <div class="ad">${escapeHtml(is.ymAd || '')}</div>
+        ${musteriSatiri}
         <div class="alt">${escapeHtml(is.kaynakKod)} · ${escapeHtml(is.istasyonKod)} · ${is.gelenAdet} adet</div>
       </div>
       <script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);

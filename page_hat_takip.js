@@ -25,13 +25,13 @@ PageModules.hat_takip = (() => {
     ]);
     let eklendi = false;
 
-    const kartOlustur = (kaynakTip, kaynakId, kaynakKod, etiket, ym, rota, adet) => {
+    const kartOlustur = (kaynakTip, kaynakId, kaynakKod, etiket, ym, rota, adet, musteriAdi) => {
       // Bu kaynak+YM için HERHANGİ bir step kartı varsa dokunma (akış başlamış)
       if (isler.some(x => x.kaynakTip === kaynakTip && x.kaynakId === kaynakId && x.yarimamulId === ym.id)) return;
       const step0 = (rota.steps || [])[0];
       if (!step0) return;
       isler.push({
-        id: App.uid('IST'), kaynakTip, kaynakId, kaynakKod, kaynakEtiket: etiket,
+        id: App.uid('IST'), kaynakTip, kaynakId, kaynakKod, kaynakEtiket: etiket, musteriAdi: musteriAdi || '',
         yarimamulId: ym.id, ymKod: ym.kod, ymAd: ym.ad,
         rotaId: rota.id, rotaAd: rota.ad, stepIndex: 0,
         istasyonKod: step0.kod, istasyonTanim: step0.tanim, hat: step0.hat || 'GENEL',
@@ -44,6 +44,12 @@ PageModules.hat_takip = (() => {
 
     // 1) İş emirleri (taslak + üretimde)
     isemirleri.filter(ie => ie.durum !== 'tamamlandi').forEach(ie => {
+      // İş emri belirli sipariş(ler)e bağlıysa (kaynakSiparisIdler) müşteri
+      // adı oradan çözülür; genel/stok için açılmış iş emirlerinde (bağ yok)
+      // müşteri bilgisi boş kalır — etiket bunu "Stok Üretimi" olarak gösterir.
+      const bagliSiparisler = (ie.kaynakSiparisIdler || [])
+        .map(id => siparisler.find(x => x.id === id)).filter(Boolean);
+      const musteriAdi = [...new Set(bagliSiparisler.map(s => s.musteriAdi).filter(Boolean))].join(', ');
       (ie.uretimListesi || []).filter(k => k.tip === 'yarimamul').forEach(k => {
         const ym = yarimamuller.find(y => y.id === k.refId);
         if (!ym) return;
@@ -53,7 +59,7 @@ PageModules.hat_takip = (() => {
         if (!rotaId) return;
         const rota = rotalar.find(r => r.id === rotaId);
         if (!rota || !(rota.steps || []).length) return;
-        kartOlustur('ie', ie.id, ie.kod, ie.urunAdi || '', ym, rota, k.gerekliToplam || ie.adet || 1);
+        kartOlustur('ie', ie.id, ie.kod, ie.urunAdi || '', ym, rota, k.gerekliToplam || ie.adet || 1, musteriAdi);
       });
     });
 
@@ -78,7 +84,7 @@ PageModules.hat_takip = (() => {
         if (!ym || !ym.rotaId) return;
         const rota = rotalar.find(r => r.id === ym.rotaId);
         if (!rota || !(rota.steps || []).length) return;
-        kartOlustur('sip', s.id, s.kod, s.musteriAdi || '', ym, rota, adet);
+        kartOlustur('sip', s.id, s.kod, s.musteriAdi || '', ym, rota, adet, s.musteriAdi || '');
       });
     });
 
@@ -465,6 +471,7 @@ PageModules.hat_takip = (() => {
           <b class="mono" style="font-size:11.5px">${App.escapeHtml(x.kaynakKod)}</b>
           <span class="pill ${x.kaynakTip === 'ie' ? 'pill-purple' : 'pill-blue'}" style="font-size:9px">${x.kaynakTip === 'ie' ? 'İş Emri' : 'Sipariş'}</span>
           <span style="font-size:11.5px;margin-left:6px">${App.escapeHtml(x.ymKod)} — ${App.escapeHtml(x.ymAd)}</span>
+          ${x.musteriAdi ? `<span class="muted" style="font-size:10.5px;margin-left:6px">👤 ${App.escapeHtml(x.musteriAdi)}</span>` : ''}
           ${x.barkodOkundu ? '<span class="pill pill-green" style="font-size:9px">📶 Barkod OK</span>' : ''}
           ${x.etiketBasildi ? '<span class="pill pill-blue" style="font-size:9px">🏷 Etiket Basıldı</span>' : '<span class="pill pill-amber" style="font-size:9px">🏷 Etiket basılmadı</span>'}
         </div>
@@ -620,7 +627,7 @@ PageModules.hat_takip = (() => {
             if (hedefIs) { hedefIs.gelenAdet += adet; hedefIs.durum = 'aktif'; }
             else {
               isler.push({
-                id: App.uid('IST'), kaynakTip: is.kaynakTip, kaynakId: is.kaynakId, kaynakKod: is.kaynakKod, kaynakEtiket: is.kaynakEtiket,
+                id: App.uid('IST'), kaynakTip: is.kaynakTip, kaynakId: is.kaynakId, kaynakKod: is.kaynakKod, kaynakEtiket: is.kaynakEtiket, musteriAdi: is.musteriAdi || '',
                 yarimamulId: is.yarimamulId, ymKod: is.ymKod, ymAd: is.ymAd,
                 rotaId: is.rotaId, rotaAd: is.rotaAd, stepIndex: sonrakiIndex,
                 istasyonKod: sonraki.kod, istasyonTanim: sonraki.tanim, hat: sonraki.hat || 'GENEL',
@@ -734,7 +741,7 @@ PageModules.hat_takip = (() => {
           if (hedefIs) { hedefIs.gelenAdet += adet; hedefIs.durum = 'aktif'; }
           else {
             isler.push({
-              id: App.uid('IST'), kaynakTip: is.kaynakTip, kaynakId: is.kaynakId, kaynakKod: is.kaynakKod, kaynakEtiket: is.kaynakEtiket,
+              id: App.uid('IST'), kaynakTip: is.kaynakTip, kaynakId: is.kaynakId, kaynakKod: is.kaynakKod, kaynakEtiket: is.kaynakEtiket, musteriAdi: is.musteriAdi || '',
               yarimamulId: is.yarimamulId, ymKod: is.ymKod, ymAd: is.ymAd,
               rotaId: is.rotaId, rotaAd: is.rotaAd, stepIndex: hedefIndex,
               istasyonKod: hedefStep.kod, istasyonTanim: hedefStep.tanim, hat: hedefStep.hat || 'GENEL',

@@ -274,7 +274,7 @@ PageModules.hat_terminal = (() => {
           const kalan = x.gelenAdet - x.fireAdet;
           html += `<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--surface2)">
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-              <div><b class="mono" style="font-size:12px">${App.escapeHtml(x.ymKod)}</b> — ${App.escapeHtml(x.ymAd)}<br>
+              <div><b class="mono" style="font-size:12px">${App.escapeHtml(x.ymKod)}</b> — ${App.escapeHtml(x.ymAd)}${x.musteriAdi ? ' · 👤 ' + App.escapeHtml(x.musteriAdi) : ''}<br>
               <span class="muted" style="font-size:10.5px">${App.escapeHtml(x.kaynakKod)} · Gelen: ${kalan} · Kalite: ${x.kaliteOnayliAdet} · İşlem: ${x.islemTamamAdet} · Sevk: ${x.sevkEdilenAdet}${x.fireAdet ? ' · <b style="color:var(--red-text)">Red: ' + x.fireAdet + '</b>' : ''}</span></div>
               ${x.barkodOkundu ? '<span class="pill pill-green" style="font-size:9.5px;align-self:center">📶 QR Eşleşti</span>' : '<span class="pill pill-red" style="font-size:9.5px;align-self:center">QR bekliyor</span>'}
               ${x.etiketBasildi ? '<span class="pill pill-blue" style="font-size:9.5px;align-self:center">🏷 Etiket basıldı</span>' : '<span class="pill pill-amber" style="font-size:9.5px;align-self:center">🏷 Etiket basılmadı</span>'}
@@ -577,7 +577,7 @@ PageModules.hat_terminal = (() => {
           if (hedefIs) { hedefIs.gelenAdet += adet; hedefIs.durum = 'aktif'; }
           else {
             tumu.push({
-              id: App.uid('IST'), kaynakTip: is.kaynakTip, kaynakId: is.kaynakId, kaynakKod: is.kaynakKod, kaynakEtiket: is.kaynakEtiket,
+              id: App.uid('IST'), kaynakTip: is.kaynakTip, kaynakId: is.kaynakId, kaynakKod: is.kaynakKod, kaynakEtiket: is.kaynakEtiket, musteriAdi: is.musteriAdi || '',
               yarimamulId: is.yarimamulId, ymKod: is.ymKod, ymAd: is.ymAd,
               rotaId: is.rotaId, rotaAd: is.rotaAd, stepIndex: sonrakiIndex,
               istasyonKod: sonraki.kod, istasyonTanim: sonraki.tanim, hat: sonraki.hat || 'GENEL',
