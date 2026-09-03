@@ -10,7 +10,7 @@ PageModules.bakim_panel = (() => {
     const [tumMakinalar, bakimKayitlari, personeller, arizaKayitlari] = await Promise.all([
       Store.makinaTechizat.all(), Store.bakimKayitlari.all(), Store.personeller.all(), Store.arizaKayitlari.all()
     ]);
-    const makinalar = tumMakinalar.filter(m => m.durum === 'aktif');
+    const makinalar = tumMakinalar.filter(m => m.durum === 'aktif' || m.durum === 'arizali');
     const pasifMakinalar = tumMakinalar.filter(m => m.durum === 'atil' || m.durum === 'satildi');
     const bekleyenArizalar = arizaKayitlari.filter(a => a.durum === 'bekliyor');
 
@@ -62,7 +62,8 @@ PageModules.bakim_panel = (() => {
           <td style="font-size:11.5px">${App.escapeHtml(a.arizaSebebi)}</td>
           <td>${a.oncelik === 'acil' ? '<span class="pill pill-red">Acil</span>' : '<span class="pill pill-gray">Normal</span>'}</td>
           <td>${arizaDurumPill(a.durum)}</td>
-          <td>${a.durum === 'bekliyor' ? `<button class="btn btn-sm btn-blue bk-ariza-isle" data-id="${a.id}">İşleme Al</button>` : ''}</td>
+          <td>${a.durum === 'bekliyor' ? `<button class="btn btn-sm btn-blue bk-ariza-isle" data-id="${a.id}">İşleme Al</button>`
+            : (a.durum === 'islemde' ? `<button class="btn btn-sm btn-green bk-ariza-tamamla" data-id="${a.id}">✓ Tamamlandı</button>` : '')}</td>
         </tr>`;
       });
       html += `</table>`;
@@ -81,6 +82,26 @@ PageModules.bakim_panel = (() => {
     document.querySelectorAll('.bk-ariza-isle').forEach(b => b.onclick = () => {
       const a = arizaKayitlari.find(x => x.id === b.dataset.id);
       openArizaIslemForm(a, makinalar, () => render(main));
+    });
+    // BULGU (T3-26): arıza kayıtları 'islemde'den sonra hiç 'tamamlandi'ya
+    // geçemiyordu — durum haritasında etiket vardı ama set eden buton yoktu.
+    // BULGU (T3-25): arıza kapatılınca makinaTechizat.durum da eski haline
+    // dönmeli (AYNI makinada başka açık arıza kalmadıysa).
+    document.querySelectorAll('.bk-ariza-tamamla').forEach(b => b.onclick = async () => {
+      const a = arizaKayitlari.find(x => x.id === b.dataset.id);
+      if (!a) return;
+      a.durum = 'tamamlandi';
+      a.tamamlanmaTarihi = new Date().toISOString().slice(0, 10);
+      await App.persist(() => Store.arizaKayitlari.upsert(a));
+      const digerAcikArizalar = arizaKayitlari.filter(x => x.id !== a.id && x.makinaId === a.makinaId && (x.durum === 'bekliyor' || x.durum === 'islemde'));
+      const makina = makinalar.find(m => m.id === a.makinaId);
+      if (!digerAcikArizalar.length && makina && makina.durum === 'arizali') {
+        makina.durum = makina.oncekiDurumArizaOncesi || 'aktif';
+        delete makina.oncekiDurumArizaOncesi;
+        await App.persist(() => Store.makinaTechizat.upsert(makina));
+      }
+      App.toast('Arıza kapatıldı' + (makina ? ': ' + makina.ad : ''), 'ok');
+      render(main);
     });
   }
 
@@ -243,7 +264,7 @@ PageModules.bakim_panel = (() => {
       const personel = personeller.find(p => p.id === m.zimmetliPersonelId);
       html += `<tr>
         <td class="mono">${App.escapeHtml(m.kod)}</td>
-        <td>${App.escapeHtml(m.ad)}</td>
+        <td>${App.escapeHtml(m.ad)}${m.durum === 'arizali' ? ' <span class="pill pill-red" style="font-size:9px">⚠ Arızalı</span>' : ''}</td>
         <td><span class="pill pill-gray">${App.escapeHtml(m.kategori || '—')}</span></td>
         <td style="font-size:11.5px">${App.escapeHtml(m.konum || '—')}</td>
         <td style="font-size:11.5px">${personel ? App.escapeHtml(personel.adSoyad) : '—'}</td>

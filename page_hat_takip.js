@@ -454,22 +454,37 @@ PageModules.hat_takip = (() => {
         } catch (e) { App.toast('Geri çağrılamadı: ' + (e && e.message ? e.message : e), 'err'); }
       });
     };
-    // Seçili hattın makina BAKIM ALARMLARI (rutin bakım süresi dolanlar)
+    // Seçili hattın makina BAKIM ALARMLARI (rutin bakım süresi dolanlar) +
+    // ARIZALI MAKİNA UYARISI (T3-25: planlama/hat_takip artık arızalı
+    // makinaları görüp uyarabiliyor — makinaTechizat.durum='arizali' arıza
+    // açıldığında otomatik set ediliyor, kapanınca geri dönüyor)
     (async () => {
       const makinalar = await Store.makinaTechizat.all();
       const bugun = new Date().toISOString().slice(0, 10);
-      const alarmlar = makinalar.filter(m => {
-        if ((m.hat || m.konum || '') !== seciliHat || !m.bakimAralikGun || m.durum === 'hurda') return false;
+      const hattaki = makinalar.filter(m => (m.hat || m.konum || '') === seciliHat);
+      const arizaliMakinalar = hattaki.filter(m => m.durum === 'arizali');
+      const alarmlar = hattaki.filter(m => {
+        if (!m.bakimAralikGun || m.durum === 'hurda') return false;
         const son = m.sonBakimTarihi || m.alisTarihi;
         if (!son) return true;
         return new Date(new Date(son).getTime() + m.bakimAralikGun * 86400000).toISOString().slice(0, 10) <= bugun;
       });
       const alan = document.getElementById('ht-bakim-alarm');
-      if (alan && alarmlar.length) {
-        alan.innerHTML = `<div class="card" style="border:1.5px solid var(--red);background:var(--red-bg);margin-bottom:12px">
-          <div class="card-title" style="color:var(--red-text)">🔔 BAKIM ALARMI — bu hattaki ${alarmlar.length} makinanın rutin bakım süresi doldu</div>
-          ${alarmlar.map(m => `<div style="font-size:11.5px;padding:3px 0">⚠ <b>${App.escapeHtml(m.ad)}</b>${m.bakimSorumlusu ? ' · Sorumlu: ' + App.escapeHtml(m.bakimSorumlusu) : ''} · Son bakım: ${m.sonBakimTarihi || 'hiç'} · Aralık: ${m.bakimAralikGun} gün — <i>Bakım Planlama'dan "Rutin Bakım Yapıldı" işaretlenmeli</i></div>`).join('')}
-        </div>`;
+      if (alan) {
+        let banner = '';
+        if (arizaliMakinalar.length) {
+          banner += `<div class="card" style="border:1.5px solid var(--red);background:var(--red-bg);margin-bottom:12px">
+            <div class="card-title" style="color:var(--red-text)">⛔ ARIZALI MAKİNA — bu hattaki ${arizaliMakinalar.length} makina şu anda arızalı, iş ataması yapılmamalı</div>
+            ${arizaliMakinalar.map(m => `<div style="font-size:11.5px;padding:3px 0">⛔ <b>${App.escapeHtml(m.ad)}</b> — <i>Bakım Panel'den arıza kaydı kapatılana kadar bu makinaya iş atanmamalı</i></div>`).join('')}
+          </div>`;
+        }
+        if (alarmlar.length) {
+          banner += `<div class="card" style="border:1.5px solid var(--red);background:var(--red-bg);margin-bottom:12px">
+            <div class="card-title" style="color:var(--red-text)">🔔 BAKIM ALARMI — bu hattaki ${alarmlar.length} makinanın rutin bakım süresi doldu</div>
+            ${alarmlar.map(m => `<div style="font-size:11.5px;padding:3px 0">⚠ <b>${App.escapeHtml(m.ad)}</b>${m.bakimSorumlusu ? ' · Sorumlu: ' + App.escapeHtml(m.bakimSorumlusu) : ''} · Son bakım: ${m.sonBakimTarihi || 'hiç'} · Aralık: ${m.bakimAralikGun} gün — <i>Bakım Planlama'dan "Rutin Bakım Yapıldı" işaretlenmeli</i></div>`).join('')}
+          </div>`;
+        }
+        alan.innerHTML = banner;
       }
     })();
     wireIsKartlari(el, render, main);

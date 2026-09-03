@@ -239,7 +239,7 @@ PageModules.uretim_panel = (() => {
     body.innerHTML = `
       <div class="fgroup"><label class="flbl">Makina/Teçhizat</label>
         <select class="fselect" id="ab-makina">
-          ${makinalar.map(m => `<option value="${m.id}">${App.escapeHtml(m.kod)} — ${App.escapeHtml(m.ad)}</option>`).join('')}
+          ${makinalar.map(m => `<option value="${m.id}">${App.escapeHtml(m.kod)} — ${App.escapeHtml(m.ad)}${m.durum === 'arizali' ? ' (⚠ zaten arızalı)' : ''}</option>`).join('')}
         </select>
       </div>
       <div class="fgroup"><label class="flbl">Arıza Sebebi</label><textarea class="ftextarea" id="ab-sebep" placeholder="Arızanın ne olduğunu, ne zaman başladığını detaylı açıklayın"></textarea></div>
@@ -256,13 +256,25 @@ PageModules.uretim_panel = (() => {
     document.getElementById('ab-confirm').onclick = async () => {
       const sebep = document.getElementById('ab-sebep').value.trim();
       if (!sebep) { App.toast('Arıza sebebi zorunlu', 'err'); return; }
+      const makinaId = document.getElementById('ab-makina').value;
       const kayit = {
-        id: App.uid('ARZ'), makinaId: document.getElementById('ab-makina').value,
+        id: App.uid('ARZ'), makinaId,
         arizaSebebi: sebep, oncelik: document.getElementById('ab-oncelik').value,
         durum: 'bekliyor', tarih: new Date().toISOString().slice(0, 10)
       };
       await App.persist(() => Store.arizaKayitlari.upsert(kayit));
-      App.toast('Arıza bakım birimine bildirildi', 'ok');
+      // BULGU (T3-25): arıza açılınca makinaTechizat.durum hiç değişmiyordu —
+      // planlama/hat_takip makinanın arızalı olduğunu göremiyor, iş atanmaya
+      // devam edilebiliyordu. Artık makina 'arizali' durumuna çekilir; arıza
+      // kapatılınca (bkz. Bakım Panel "✓ Tamamlandı") önceki durumuna döner.
+      const tumMakinalar = await Store.makinaTechizat.all();
+      const makina = tumMakinalar.find(m => m.id === makinaId);
+      if (makina && makina.durum !== 'arizali') {
+        makina.oncekiDurumArizaOncesi = makina.durum;
+        makina.durum = 'arizali';
+        await App.persist(() => Store.makinaTechizat.upsert(makina));
+      }
+      App.toast('Arıza bakım birimine bildirildi, makina arızalı olarak işaretlendi', 'ok');
       App.closeModal();
       onSaved();
     };
