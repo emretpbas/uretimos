@@ -688,10 +688,13 @@ PageModules.muhasebe_panel = (() => {
     if (!tumTaksitler.length) {
       html += `<div class="empty-state" style="padding:18px 10px"><div class="edesc">Taksit yok.</div></div>`;
     } else {
-      html += `<table class="dtable"><tr><th>Vade Tarihi</th><th>Kredi</th><th class="r">Taksit Tutarı</th><th>Durum</th><th></th></tr>`;
+      html += `<table class="dtable"><tr><th>Vade Tarihi</th><th>Kredi</th><th class="r">Taksit Tutarı</th><th class="r">Anapara</th><th class="r">Faiz (Gider)</th><th>Durum</th><th></th></tr>`;
       tumTaksitler.forEach(t => {
+        const faizGosterim = t.faiz != null ? t.faiz : '—';
         html += `<tr><td style="font-size:11px">${t.tarih}</td><td>${App.escapeHtml(t.bankaAdi)} (${t.krediKod})</td>
           <td class="r">${App.fmtTL(t.tutar)}</td>
+          <td class="r">${t.anapara != null ? App.fmtTL(t.anapara) : '—'}</td>
+          <td class="r">${faizGosterim === '—' ? '—' : App.fmtTL(faizGosterim)}</td>
           <td>${t.odendi ? '<span class="pill pill-green">Ödendi</span>' : '<span class="pill pill-amber">Bekliyor</span>'}</td>
           <td>${!t.odendi ? `<button class="btn btn-sm mh-taksit-odendi" data-kredi="${t.krediId}" data-index="${t.index}">Ödendi İşaretle</button>` : ''}</td></tr>`;
       });
@@ -710,9 +713,15 @@ PageModules.muhasebe_panel = (() => {
         kr.taksitler[parseInt(b.dataset.index)].odendi = true;
         await App.persist(() => Store.bankaKredileri.save(bankaKredileri));
         const taksit = kr.taksitler[parseInt(b.dataset.index)];
+        // BULGU (T1-6): yalnızca FAİZ kısmı gerçek bir giderdir — anapara
+        // borcun geri ödenmesidir, gelir tablosunu etkilemez. Eski
+        // kayıtlarda (bu düzeltmeden önce oluşturulmuş taksitlerde) anapara/
+        // faiz kırılımı yoksa, kredinin kendi tutar/oranından geriye dönük
+        // hesaplanır (tam taksit tutarını gider yazmaktan daha doğru).
+        const faizTutari = taksit.faiz != null ? taksit.faiz : kr.krediTutari * (kr.faizOrani / 100);
         await App.persist(() => App.muhasebeKaydiOlustur({
-          tip: 'gider', kategori: 'kredi_taksiti', aciklama: kr.bankaAdi + ' kredi taksiti ödendi (' + kr.kod + ')',
-          tutar: taksit.tutar, matrah: taksit.tutar, kdvOrani: 0, kdvTutari: 0, kaynakId: kr.id, kaynakTip: 'banka_kredisi'
+          tip: 'gider', kategori: 'kredi_taksiti', aciklama: kr.bankaAdi + ' kredi taksiti ödendi (' + kr.kod + ') — yalnızca faiz gider yazıldı, anapara ' + App.fmtTL(taksit.anapara != null ? taksit.anapara : (taksit.tutar - faizTutari)) + ' borç azaltımıdır',
+          tutar: faizTutari, matrah: faizTutari, kdvOrani: 0, kdvTutari: 0, kaynakId: kr.id, kaynakTip: 'banka_kredisi'
         }));
         App.toast('Taksit ödendi olarak işaretlendi', 'ok');
         render(main);
@@ -744,10 +753,19 @@ PageModules.muhasebe_panel = (() => {
       const ilkTarih = new Date(document.getElementById('kr-ilktarih').value);
       const faizOrani = parseFloat(document.getElementById('kr-faiz').value) || 0;
       const taksitTutari = (krediTutari * (1 + (faizOrani / 100) * taksitSayisi)) / taksitSayisi;
+      // BULGU (T1-6): taksit tutarının TAMAMI muhasebede gider yazılıyordu —
+      // ama anapara (borcun geri ödenen kısmı) bir GİDER değildir, sadece
+      // bilanço borcunu azaltır; yalnızca FAİZ kısmı gerçek bir giderdir.
+      // Mevcut basit (düz oranlı, azalan bakiye değil) faiz formülüyle
+      // TUTARLI şekilde: her taksitte anapara payı sabit (krediTutari /
+      // taksitSayisi), faiz payı da sabit (krediTutari × faizOrani/100) —
+      // ikisinin toplamı zaten yukarıdaki taksitTutari'ye eşittir.
+      const anaparaPay = krediTutari / taksitSayisi;
+      const faizPay = krediTutari * (faizOrani / 100);
       const taksitler = [];
       for (let i = 0; i < taksitSayisi; i++) {
         const tarih = new Date(ilkTarih); tarih.setMonth(tarih.getMonth() + i);
-        taksitler.push({ tarih: tarih.toISOString().slice(0, 10), tutar: taksitTutari, odendi: false });
+        taksitler.push({ tarih: tarih.toISOString().slice(0, 10), tutar: taksitTutari, anapara: anaparaPay, faiz: faizPay, odendi: false });
       }
       const kredi = { id: App.uid('KRD'), kod: 'KRD-' + Date.now().toString(36).toUpperCase(), bankaAdi, krediTutari, faizOrani, taksitSayisi, taksitler, tarih: new Date().toISOString().slice(0,10) };
       await App.persist(() => Store.bankaKredileri.upsert(kredi));

@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v149'; // v149: FIX - Fatura & Irsaliye Kes formunda irsaliyeye artik kalemler kaydediliyor (e-Irsaliye uretilebiliyor)
+const CACHE_NAME = 'uretimos-v150'; // v150: FIX - banka kredisi taksitinde artik sadece faiz kismi gider yaziliyor, anapara/faiz ayriliyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
