@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v160'; // v160: FIX - MRP/manuel is emirleri icin kesim ihtiyaci artik otomatik olusuyor, Kesim Optimizasyonuna Aktar butonu veri tasiyor
+const CACHE_NAME = 'uretimos-v161'; // v161: FIX - OEE duruş suresi artik acil arizalari da (zaman damgali) sayiyor, sadece manuel durus kayitlarina bagli degil
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

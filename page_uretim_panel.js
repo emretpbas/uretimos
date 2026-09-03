@@ -268,7 +268,10 @@ PageModules.uretim_panel = (() => {
       const kayit = {
         id: App.uid('ARZ'), makinaId,
         arizaSebebi: sebep, oncelik: document.getElementById('ab-oncelik').value,
-        durum: 'bekliyor', tarih: new Date().toISOString().slice(0, 10)
+        durum: 'bekliyor', tarih: new Date().toISOString().slice(0, 10),
+        // BULGU (T3-30): OEE'nin duruş süresine (kpi_motor.js) 'acil'
+        // arızaları da katabilmesi için hassas açılış zaman damgası.
+        zaman: new Date().toISOString()
       };
       await App.persist(() => Store.arizaKayitlari.upsert(kayit));
       // BULGU (T3-25): arıza açılınca makinaTechizat.durum hiç değişmiyordu —

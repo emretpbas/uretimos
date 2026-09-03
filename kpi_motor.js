@@ -52,7 +52,25 @@ const KpiMotor = (() => {
     const toplamFire = kartlar.reduce((a, k) => a + (k.fireAdet || 0), 0);
     const gerceklesenDk = (v.sureler || []).reduce((a, s) => a + (s.dk || 0), 0);
     const standartToplamDk = bitenler.reduce((a, k) => a + standartDk(k, v.rotalar), 0);
-    const durusDk = (v.duruslar || []).reduce((a, d) => a + (d.sureMin || 0), 0);
+    // BULGU (T3-30): OEE duruş süresi yalnızca elle girilen "Duruş/Aksaklık
+    // Bildir" kayıtlarını (duruslar) sayıyordu — üretimi durduran makina
+    // arızaları (arizaKayitlari) hiç hesaba katılmıyordu, OEE olduğundan
+    // yüksek çıkıyordu. Yalnızca oncelik==='acil' (formda "üretim duruyor"
+    // olarak tanımlı) arızalar sayılır — 'normal' öncelikli arızalar
+    // üretimi durdurmaz. Süre: arızanın açılış zamanından, kapandıysa
+    // kapanış zamanına, hâlâ açıksa "şu ana" kadar geçen dakikadır. Bu
+    // hassas zaman damgaları (zaman/tamamlanmaZaman) olmayan ESKİ arıza
+    // kayıtları (bu düzeltmeden önce açılmış) hesaba katılmaz — tarih
+    // (gün) bazlı bir fark hesaplamak gerçek dışı (saatlerce değil günlerce)
+    // duruş süresi üretebileceğinden dahil edilmezler.
+    const simdi = new Date();
+    const durusDkManuel = (v.duruslar || []).reduce((a, d) => a + (d.sureMin || 0), 0);
+    const durusDkAriza = (v.arizalar || []).filter(a => a.oncelik === 'acil' && a.zaman).reduce((a, ar) => {
+      const baslangic = new Date(ar.zaman);
+      const bitis = ar.tamamlanmaZaman ? new Date(ar.tamamlanmaZaman) : simdi;
+      return a + Math.max(0, (bitis - baslangic) / 60000);
+    }, 0);
+    const durusDk = durusDkManuel + durusDkAriza;
 
     // ── 1) OEE
     // Kullanılabilirlik = (çalışılan süre) / (çalışılan + duruş)

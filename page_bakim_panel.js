@@ -92,6 +92,10 @@ PageModules.bakim_panel = (() => {
       if (!a) return;
       a.durum = 'tamamlandi';
       a.tamamlanmaTarihi = new Date().toISOString().slice(0, 10);
+      // BULGU (T3-30): OEE'nin duruş süresi hesabı (kpi_motor.js) için
+      // hassas kapanış zaman damgası — açılış zamanıyla (kayıt varsa)
+      // birlikte gerçek duruş dakikasını verir.
+      a.tamamlanmaZaman = new Date().toISOString();
       await App.persist(() => Store.arizaKayitlari.upsert(a));
       const digerAcikArizalar = arizaKayitlari.filter(x => x.id !== a.id && x.makinaId === a.makinaId && (x.durum === 'bekliyor' || x.durum === 'islemde'));
       const makina = makinalar.find(m => m.id === a.makinaId);
