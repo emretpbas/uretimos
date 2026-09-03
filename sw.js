@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v159'; // v159: FIX - acik/eylemsiz DOF varken NCR artik kapatilamiyor (kok neden analizi atlanamasin diye)
+const CACHE_NAME = 'uretimos-v160'; // v160: FIX - MRP/manuel is emirleri icin kesim ihtiyaci artik otomatik olusuyor, Kesim Optimizasyonuna Aktar butonu veri tasiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

@@ -3164,6 +3164,101 @@ const App = (() => {
     return { olusturulan, guncellenen, hammaddeOlusturulan, hammaddeGuncellenen, stokSarfEdilen, isEmriIhtiyaciOlusturulan };
   }
 
+  // ── İŞ EMRİ AÇILINCA KESİM İHTİYACI OLUŞTUR (T3-29) ─────────────────────
+  // BULGU: siparisOnaylaninceKesimIhtiyaciOlustur SADECE sipariş onayında
+  // tetikleniyordu — MRP'den (rafta eksik yarımamül → İş Emri İhtiyaçları →
+  // "İş Emrine Dönüştür") ya da manuel (İş Emirleri sayfası "+ Yeni İş
+  // Emri", "Bitmiş Ürün Stok İş Emri") açılan iş emirleri için kesim
+  // ihtiyacı HİÇ oluşmuyordu; Kesim Optimizasyonu ekranındaki "Kesim
+  // Optimizasyonuna Aktar" butonu da (page_isemri.js) yalnızca App.goTo
+  // çağırıp hiçbir veri taşımıyordu. Bu fonksiyon iş emrinin uretimListesi'ni
+  // (yarımamül/alt montaj/doğrudan hammadde kalemleri) gezip plaka
+  // referanslarını kesimIhtiyaclari'na yazar.
+  // KAPSAM: sipariş akışındaki tam BOM gezicisi kadar geniş değildir — raf
+  // stok sarfı, hammadde ihtiyacı ve paket ihtiyacı burada HESAPLANMAZ (iş
+  // emri zaten "üretilecek" olarak planlanmış somut bir talep; bu
+  // fonksiyonun tek işi Kesim Optimizasyonu'nun bu üretimden HABERDAR
+  // olmasını sağlamaktır — plaka parçalarını çıkarmak).
+  async function isEmriKesimIhtiyaciOlustur(isEmri) {
+    // İDEMPOTENTLİK: aynı desende (bkz. siparisOnaylaninceKesimIhtiyaciOlustur)
+    // — bu iş emri için kesim ihtiyacı DAHA ÖNCE işlendiyse tekrar çalıştırılmaz.
+    if (isEmri.kesimIhtiyaciIslendi) return null;
+    const [receteler, hammaddeler, kesimIhtiyaclari] = await Promise.all([
+      Store.receteler.all(), Store.hammaddeler.all(), Store.kesimIhtiyaclari.all()
+    ]);
+    const kesimToplam = new Map(); // hammaddeId (plaka) -> [{refId, ad, en, boy, adet, grainYonu, renk}]
+
+    function parcaEkle(hm, kalem, adet, kaynakId) {
+      if (!kesimToplam.has(hm.id)) kesimToplam.set(hm.id, []);
+      const liste = kesimToplam.get(hm.id);
+      const olcu = kalem.olcu || {};
+      const enVal = olcu.kabaEn || olcu.netEn || 0;
+      const boyVal = olcu.kabaBoy || olcu.netBoy || 0;
+      const parcaAnahtar = kalem.refId + ':' + enVal + ':' + boyVal + ':' + isEmri.id;
+      const mevcutParca = liste.find(p => p.refId === parcaAnahtar);
+      if (mevcutParca) mevcutParca.adet += adet;
+      else liste.push({
+        refId: parcaAnahtar, ad: hm.ad, en: enVal, boy: boyVal, adet,
+        grainYonu: hm.grainYonu || 'yok', renk: hm.renk || '',
+        ymId: kaynakId, isEmriKodu: isEmri.kod
+      });
+    }
+
+    // Çok kalemli reçeteye (yarımamül/alt montaj) iner; sadece plaka
+    // referansları kesim ihtiyacına düşer (bkz. yukarıdaki KAPSAM notu).
+    function gez(kartId, tip, carpan) {
+      const recete = tip === 'yarimamul' ? receteler.find(r => r.yarimamulId === kartId)
+        : tip === 'altmontaj' ? receteler.find(r => r.altMontajId === kartId) : null;
+      if (!recete) return;
+      recete.kalemler.forEach(k => {
+        const adet = (k.miktar || 1) * carpan;
+        if (k.tip === 'hammadde') {
+          const hm = hammaddeler.find(h => h.id === k.refId);
+          if (hm && hm.tip === 'plaka') parcaEkle(hm, k, adet, kartId);
+        } else if (k.tip === 'yarimamul' || k.tip === 'altmontaj') {
+          gez(k.refId, k.tip, adet);
+        }
+        // paket kalemleri kesim ihtiyacına dahil edilmez (kapsam dışı)
+      });
+    }
+
+    (isEmri.uretimListesi || []).forEach(item => {
+      const adet = item.gerekliToplam || 0;
+      if (adet <= 0) return;
+      if (item.tip === 'hammadde') {
+        const hm = hammaddeler.find(h => h.id === item.refId);
+        if (hm && hm.tip === 'plaka') parcaEkle(hm, item, adet, null);
+      } else if (item.tip === 'yarimamul' || item.tip === 'altmontaj') {
+        gez(item.refId, item.tip, adet);
+      }
+    });
+
+    let olusturulan = 0, guncellenen = 0;
+    kesimToplam.forEach((parcalar, hammaddeId) => {
+      let satir = kesimIhtiyaclari.find(k => k.hammaddeId === hammaddeId && k.durum === 'acik');
+      if (!satir) {
+        satir = { id: uid('KSI'), hammaddeId, durum: 'acik', parcalar: [], kaynakSiparisler: [], kaynakIsEmirleri: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
+        kesimIhtiyaclari.push(satir);
+        olusturulan++;
+      } else {
+        guncellenen++;
+      }
+      if (!satir.kaynakIsEmirleri) satir.kaynakIsEmirleri = [];
+      parcalar.forEach(p => {
+        const mevcut = satir.parcalar.find(x => x.refId === p.refId && x.manuel !== true);
+        if (mevcut) mevcut.adet += p.adet;
+        else satir.parcalar.push({ ...p, manuel: false });
+      });
+      if (!satir.kaynakIsEmirleri.includes(isEmri.id)) satir.kaynakIsEmirleri.push(isEmri.id);
+    });
+    if (kesimToplam.size) await Store.kesimIhtiyaclari.save(kesimIhtiyaclari);
+
+    isEmri.kesimIhtiyaciIslendi = true;
+    await Store.isemirleri.upsert(isEmri);
+
+    return { olusturulan, guncellenen };
+  }
+
   // ── ÜRETİM TAMAMLANINCA FAZLA ÜRETİLEN YARIMAMÜL/HAMMADDE STOĞA GERİ EKLENİR
   // İş emri kapatılırken, talep edilenden FAZLA üretilen (veya satınalmada
   // fazla sipariş edilen) miktarlar otomatik olarak ilgili rafa/stoğa eklenir.
@@ -5774,7 +5869,7 @@ const App = (() => {
     kaliteUygunsuzlukOlustur, dofOlustur, iadeAmbarinaAktar,
     switchRole, currentRoleLabel, ymBirimMaliyetHesapla, urunMaliyetHesapla,
     aktifRol: () => state.role,   // Kayıp-Kaçak/Reçete-Talep modülleri için aktif kullanıcı (rol) kimliği
-    siparisOnaylaninceKesimIhtiyaciOlustur, hammaddeIhtiyaciOnaylaSatinalmayaGonder, fazlaMalzemeyiStogaEkle,
+    siparisOnaylaninceKesimIhtiyaciOlustur, isEmriKesimIhtiyaciOlustur, hammaddeIhtiyaciOnaylaSatinalmayaGonder, fazlaMalzemeyiStogaEkle,
     satinalmaCiktiExcel, satinalmaCiktiPdf, satinalmaCiktiYazdir,
     bordroHesapla, kidemIhbarHesapla,
     get AMBARLAR() { return AMBARLAR; },

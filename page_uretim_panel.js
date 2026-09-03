@@ -146,6 +146,10 @@ PageModules.uretim_panel = (() => {
             uretimListesi: [{ tip: 'yarimamul', refId: istek.yarimamulId, miktarBirim: 1, birim: 'ADET', gerekliToplam: istek.adet, uretildi: 0, rotaId: (ym && ym.rotaId) || null }]
           };
           await App.persist(() => Store.isemirleri.upsert(ie));
+          // BULGU (T3-29): MRP kaynaklı (rafta eksik yarımamül) iş emirleri
+          // için kesim ihtiyacı hiç oluşmuyordu — Kesim Optimizasyonu
+          // ekranı bu üretimden habersiz kalıyordu.
+          await App.persist(() => App.isEmriKesimIhtiyaciOlustur(ie));
           istek.durum = 'isemrine_donduruldu';
           istek.acilanAdet = istek.adet;
           await App.persist(() => Store.uretimIsEmriIhtiyaclari.upsert(istek));
@@ -197,6 +201,10 @@ PageModules.uretim_panel = (() => {
         uretimListesi: [{ tip: 'yarimamul', refId: istek.yarimamulId, miktarBirim: 1, birim: 'ADET', gerekliToplam: adet, uretildi: 0, rotaId: document.getElementById('ied-rota').value || null }]
       };
       await App.persist(() => Store.isemirleri.upsert(ie));
+      // BULGU (T3-29): MRP kaynaklı (rafta eksik yarımamül) iş emirleri
+      // için kesim ihtiyacı hiç oluşmuyordu — Kesim Optimizasyonu ekranı
+      // bu üretimden habersiz kalıyordu.
+      await App.persist(() => App.isEmriKesimIhtiyaciOlustur(ie));
 
       istek.durum = 'isemrine_donduruldu';
       istek.acilanAdet = adet;
@@ -1348,6 +1356,10 @@ PageModules.uretim_panel = (() => {
           })
         };
         await App.persist(() => Store.isemirleri.upsert(ie));
+        // BULGU (T3-29): bitmiş ürün stok iş emri için de kesim ihtiyacı
+        // hiç oluşmuyordu — Kesim Optimizasyonu ekranı bu üretimden
+        // habersiz kalıyordu.
+        await App.persist(() => App.isEmriKesimIhtiyaciOlustur(ie));
         App.toast(`İş emri oluşturuldu: ${ie.kod} — ${d.urunKod} × ${adet} adet, ${d.ymDetay.length} yarı mamülüyle birlikte`, 'ok');
         App.closeModal();
         render(main);

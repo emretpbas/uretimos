@@ -83,7 +83,11 @@ PageModules.isemri = (() => {
       const recete = receteler.find(r => r.urunId === urunId);
       const uretimListesi = (recete ? recete.kalemler : []).map(k => ({
         tip: k.tip, refId: k.refId, miktarBirim: k.miktar, birim: k.birim,
-        gerekliToplam: k.miktar * adet, uretildi: 0
+        gerekliToplam: k.miktar * adet, uretildi: 0,
+        // BULGU (T3-29): plaka ölçü/kenar bandı bilgisi (k.olcu/k.kenarBantlari)
+        // önceden hiç taşınmıyordu — ürün reçetesinde DOĞRUDAN hammadde/plaka
+        // referansı varsa Kesim İhtiyacı bu kalemi hiç göremiyordu.
+        olcu: k.olcu || null, kenarBantlari: k.kenarBantlari || null
       }));
       const ie = {
         id: App.uid('IE'),
@@ -95,6 +99,10 @@ PageModules.isemri = (() => {
         uretimListesi
       };
       await App.persist(() => Store.isemirleri.upsert(ie));
+      // BULGU (T3-29): manuel iş emri açılınca kesim ihtiyacı hiç
+      // oluşmuyordu — Kesim Optimizasyonu ekranı bu üretimden habersiz
+      // kalıyordu.
+      await App.persist(() => App.isEmriKesimIhtiyaciOlustur(ie));
       App.toast('İş emri oluşturuldu: ' + ie.kod, 'ok');
       App.closeModal();
       detayId = ie.id;
@@ -151,7 +159,18 @@ PageModules.isemri = (() => {
       App.toast('Durum güncellendi', 'ok');
       render(main);
     };
-    document.getElementById('ie-goto-nesting').onclick = () => App.goTo('nesting');
+    document.getElementById('ie-goto-nesting').onclick = async () => {
+      // BULGU (T3-29): bu buton önceden yalnızca App.goTo('nesting') çağırıp
+      // hiçbir veri taşımıyordu — normal şartlarda kesim ihtiyacı artık iş
+      // emri OLUŞTURULURKEN otomatik işleniyor (bkz. openNewForm), ama bu
+      // güvence ağı eski (bu düzeltmeden önce açılmış) iş emirlerini de
+      // kapsar: idempotent olduğu için zaten işlenmişse no-op'tur.
+      const sonuc = await App.persist(() => App.isEmriKesimIhtiyaciOlustur(ie));
+      if (sonuc && (sonuc.olusturulan || sonuc.guncellenen)) {
+        App.toast('Kesim ihtiyacı aktarıldı: ' + sonuc.olusturulan + ' yeni, ' + sonuc.guncellenen + ' güncellenen satır', 'ok');
+      }
+      App.goTo('nesting');
+    };
 
     main.querySelectorAll('.ie-uret-input').forEach(inp => inp.onchange = async () => {
       const refId = inp.dataset.ref;
