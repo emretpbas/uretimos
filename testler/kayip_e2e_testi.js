@@ -1,13 +1,25 @@
 // Uctan uca: talep -> onay -> teslim, ve stok hareketine SAHIPLI kayit.
 const fs=require('fs'); let src=fs.readFileSync('../kayip_kacak.js','utf8');
 // Sahte Store + App
-const db={malzemeTalepleri:[],stokHareketleri:[]};
+const db={malzemeTalepleri:[],stokHareketleri:[],stokRaf:[]};
 global.Store={
   malzemeTalepleri:{all:async()=>db.malzemeTalepleri,save:async(v)=>{db.malzemeTalepleri=v;}},
   stokHareketleri:{all:async()=>db.stokHareketleri,save:async(v)=>{db.stokHareketleri=v;}},
+  stokRaf:{all:async()=>db.stokRaf,save:async(v)=>{db.stokRaf=v;}},
 };
 let _rol='ahmet';
-global.App={uid:(p)=>p+'-'+Math.random().toString(36).slice(2,8),persist:async(fn)=>fn(),aktifRol:()=>_rol};
+// app.js'deki GERÇEK stokMiktarGuncelle ile BİREBİR aynı davranış (kayıt
+// yoksa oluşturur, varsa farkla günceller) — kopya değil, gerçek fonksiyon
+// bu testte app.js'in tamamını yüklemeden birebir aynı davranışı taklit eder.
+global.App={
+  uid:(p)=>p+'-'+Math.random().toString(36).slice(2,8),persist:async(fn)=>fn(),aktifRol:()=>_rol,
+  stokMiktarGuncelle:(stokRaf,ambar,tip,refId,refKod,refAd,birim,fark)=>{
+    let s=stokRaf.find(x=>x.ambar===ambar&&x.tip===tip&&x.refId===refId);
+    if(!s){ s={id:'STK-'+ambar+'-'+tip+'-'+refId,ambar,tip,refId,refKod:refKod||'',refAd:refAd||'',miktar:0,birim:birim||'ADET'}; stokRaf.push(s); }
+    s.miktar=(s.miktar||0)+fark;
+    return s;
+  }
+};
 eval(src.replace('const KayipKacak','global.KayipKacak'));
 
 let ok=0,bad=0;const t=(a,k,x)=>{if(k){ok++;console.log('  GECTI '+a);}else{bad++;console.log('  KALDI '+a+(x!==undefined?' -> '+JSON.stringify(x):''));}};
@@ -40,6 +52,19 @@ let ok=0,bad=0;const t=(a,k,x)=>{if(k){ok++;console.log('  GECTI '+a);}else{bad+
   t('hareket onaylayan tasiyor', hrk.onaylayan==='mehmet');
   t('hareket teslimEden tasiyor', hrk.teslimEden==='depo_veli');
   t('hareket kayipTipi tasiyor', hrk.kayipTipi==='fire');
+  // BULGU: teslim önceden stokRaf'ı hiç güncellemiyordu (yalnızca log
+  // yazıyordu) — karta bağlı OLMAYAN (hammaddeId yok, serbest metin) bu
+  // talepte yapısal bir raf satırı yok, o yüzden stokRaf hâlâ boş kalmalı.
+  t('hammaddeId YOKSA stokRaf değişmiyor (serbest metin kalem)', db.stokRaf.length===0);
+
+  console.log('\n-- GERÇEK STOK DÜŞÜMÜ (hammaddeId dolu) --');
+  _rol='ahmet';
+  db.stokRaf.push({id:'STK-hammadde_deposu-hammadde-HM1',ambar:'hammadde_deposu',tip:'hammadde',refId:'HM1',refKod:'57.19.058',refAd:'Suntalam 18mm',miktar:20,birim:'M2'});
+  let rs=await KayipKacak.talepOlustur({kalemAdi:'Suntalam 18mm',hammaddeId:'HM1',miktar:5,birim:'M2',kayipTipi:'fire',gerekce:'Kesim hatasi',tahminiTutar:2000});
+  await KayipKacak.onayla(rs.talep.id,'mehmet');
+  await KayipKacak.teslimEt(rs.talep.id,'depo_veli');
+  const rafKaydi=db.stokRaf.find(x=>x.refId==='HM1');
+  t('gerçek raf stoğu 20den 15e düştü', rafKaydi && rafKaydi.miktar===15);
 
   console.log('\n-- ÇİFT ONAY (>=50.000) --');
   _rol='ali';

@@ -169,6 +169,18 @@ const KayipKacak = (() => {
     if (!gecisGecerli(talep.durum, 'teslim_edildi'))
       return { ok: false, hata: `Talep '${talep.durum}' durumunda, teslim edilemez. Önce onaylanmalı.` };
 
+    // GERÇEK STOK DÜŞÜMÜ — önceden yalnızca aşağıdaki log kaydı yazılıyor,
+    // stokRaf (rafın gerçek bakiyesi) hiç güncellenmiyordu; bu yüzden kritik
+    // stok uyarısı ve MRP hiçbir zaman bu çıkışı görmüyordu. Yalnızca gerçek
+    // bir hammadde kartına bağlı talepler için düşülür (serbest metinle
+    // girilmiş, karta bağlanmamış eski kayıtlarda düşülecek yapısal bir raf
+    // satırı yoktur — bu istisna KASITLIDIR, hata değildir).
+    if (talep.hammaddeId) {
+      const stokRaf = await Store.stokRaf.all();
+      App.stokMiktarGuncelle(stokRaf, 'hammadde_deposu', 'hammadde', talep.hammaddeId, '', talep.kalemAdi, talep.birim, -talep.miktar);
+      await Store.stokRaf.save(stokRaf);
+    }
+
     // Stoktan düş + SAHİPLİ hareket kaydı (talepEden + onaylayan + teslimEden)
     const stokHareketleri = await Store.stokHareketleri.all();
     stokHareketleri.push({

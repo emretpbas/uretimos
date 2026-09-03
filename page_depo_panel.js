@@ -871,11 +871,22 @@ PageModules.depo_panel = (() => {
     };
   }
 
-  // ── MALZEME DÜŞÜMÜ — Üretim talepleri Hammadde Deposu'ndan Üretim Ambarı'na ──
+  // ── MALZEME KARŞILAMA — Üretim'in "fazlası var mı?" talebi, Üretim
+  // Ambarı'ndaki MEVCUT FAZLA yarı mamül stoğundan karşılanır ────────────────
+  // ÖNEMLİ (BULGU/FIX): hammadde_deposu YALNIZCA hammadde/hırdavat tutar
+  // (bkz. AMBARLAR tanımı yorumu) — fazladan üretilen yarı mamül HER ZAMAN
+  // doğrudan uretim_ambari'ye eklenir (bkz. App.fazlaMalzemeyiStogaEkle:
+  // tip==='yarimamul' ? 'uretim_ambari' : 'hammadde_deposu'). Önceki sürüm
+  // burada "hammadde_deposu'ndan uretim_ambari'ye transfer" yapıyordu; ama
+  // hammadde_deposu'nda BÖYLE bir stok kaydı asla oluşmadığı için bu her
+  // zaman kaynağı boş (0) bir satırdan düşüm yapıyor, uretim_ambari'ye
+  // karşılıksız (hiçbir yerden gelmeyen) hayalet stok ekliyordu. Doğrusu:
+  // talep, uretim_ambari'nin KENDİ fazla stoğundan karşılanır (aktarım değil,
+  // tüketimdir); yeterli fazla yoksa talep KARŞILANAMAZ.
   function renderDusumTab(talepler) {
     const bekleyen = talepler.filter(t => t.durum === 'beklemede');
     let html = `<div class="card"><div class="card-hdr"><div class="card-title">Üretimden Gelen Malzeme Talepleri</div></div>
-      <div class="fhint" style="margin-bottom:8px">Onaylandığında malzeme Hammadde Deposu'ndan düşer, Üretim Ambarı'na eklenir (otomatik ambar transferi).</div>`;
+      <div class="fhint" style="margin-bottom:8px">Üretim Ambarı'ndaki FAZLA (daha önce ihtiyaçtan çok üretilmiş) yarı mamül stoğundan karşılanır. Yeterli fazla yoksa talep karşılanamaz — üretim/satınalmaya yönlendirin.</div>`;
     if (!bekleyen.length) {
       html += `<div class="empty-state" style="padding:24px 10px"><div class="edesc">Bekleyen talep yok.</div></div>`;
     } else {
@@ -883,7 +894,7 @@ PageModules.depo_panel = (() => {
       bekleyen.forEach(t => {
         html += `<tr><td class="mono">${t.kod}</td><td>${App.escapeHtml(t.kalemAdi)}</td><td class="r">${App.fmt(t.miktar, 0)} ${t.birim || ''}</td>
           <td style="font-size:11px">${t.tarih}</td>
-          <td><button class="btn btn-sm btn-green dp-dusum" data-id="${t.id}">Hammadde Deposu'ndan Düş & Üretim Ambarı'na Aktar</button></td></tr>`;
+          <td><button class="btn btn-sm btn-green dp-dusum" data-id="${t.id}">Üretim Ambarı Fazlasından Karşıla</button></td></tr>`;
       });
       html += `</table>`;
     }
@@ -895,29 +906,25 @@ PageModules.depo_panel = (() => {
     main.querySelectorAll('.dp-dusum').forEach(b => b.onclick = async () => {
       const t = talepler.find(x => x.id === b.dataset.id);
       const tumStok = await Store.stokRaf.all();
-      const mevcut = App.stokMiktarAmbar(tumStok, 'hammadde_deposu', 'yarimamul', t.kalemRefId) || App.stokMiktarAmbar(tumStok, 'hammadde_deposu', 'hammadde', t.kalemRefId);
+      const mevcut = App.stokMiktarAmbar(tumStok, 'uretim_ambari', 'yarimamul', t.kalemRefId);
       if (mevcut < t.miktar) {
-        App.toast(`Uyarı: Hammadde Deposu'nda sadece ${mevcut} adet var, talep ${t.miktar}. Eksik kalan satınalma talebine yönlendirilebilir.`, 'err');
+        App.toast(`Üretim Ambarı'nda bu yarı mamülden fazla stok yok (mevcut: ${mevcut}, talep: ${t.miktar}) — talep karşılanamadı.`, 'err');
+        return;
       }
-      // Hammadde Deposu -> Üretim Ambarı transferi (yarımamül stok talebi senaryosu)
-      App.stokTransferEt(tumStok, 'hammadde_deposu', 'uretim_ambari', 'yarimamul', t.kalemRefId, '', t.kalemAdi, t.birim || 'ADET', t.miktar);
+      // Üretim Ambarı'nın KENDİ fazla stoğundan düşülüyor — hammadde_deposu
+      // hiç devreye girmez (yarı mamül orada asla tutulmaz, bkz. yukarıdaki not).
+      App.stokMiktarGuncelle(tumStok, 'uretim_ambari', 'yarimamul', t.kalemRefId, '', t.kalemAdi, t.birim || 'ADET', -t.miktar);
       await App.persist(() => Store.stokRaf.save(tumStok));
 
       t.durum = 'karsilandi';
       await App.persist(() => Store.talepler.upsert(t));
 
-      const transfer = {
-        id: App.uid('TRF'), kaynakAmbar: 'hammadde_deposu', hedefAmbar: 'uretim_ambari',
-        kalemAdi: t.kalemAdi, miktar: t.miktar, aciklama: 'Üretim talebi karşılandı: ' + t.kod,
-        tarih: new Date().toISOString().slice(0, 10)
-      };
-      await App.persist(() => Store.ambarTransferleri.upsert(transfer));
       const hareket = {
-        id: App.uid('HRK'), tip: 'cikis', ambar: 'hammadde_deposu', kalemAdi: t.kalemAdi, miktar: t.miktar,
-        aciklama: 'Üretim talebi karşılandı (Üretim Ambarı\'na aktarıldı): ' + t.kod, tarih: new Date().toISOString().slice(0, 10)
+        id: App.uid('HRK'), tip: 'cikis', ambar: 'uretim_ambari', kalemAdi: t.kalemAdi, miktar: t.miktar,
+        aciklama: 'Üretim talebi, Üretim Ambarı\'ndaki fazla stoktan karşılandı: ' + t.kod, tarih: new Date().toISOString().slice(0, 10)
       };
       await App.persist(() => Store.stokHareketleri.upsert(hareket));
-      App.toast('Hammadde Deposu\'ndan düşüldü, Üretim Ambarı\'na aktarıldı', 'ok');
+      App.toast('Talep, Üretim Ambarı\'ndaki fazla stoktan karşılandı', 'ok');
       render(main);
     });
   }

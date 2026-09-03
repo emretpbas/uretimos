@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v137'; // v137: guvenlik denetimi FIX - hat sifreleri/banka kredileri korumaya alindi, self-servis kayitta yonetim rolu kaldirildi
+const CACHE_NAME = 'uretimos-v138'; // v138: FIX - malzeme talebi teslimati gercek stogu dusuyor, hayalet yarimamul transferi kaldirildi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
