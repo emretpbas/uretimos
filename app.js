@@ -3427,12 +3427,16 @@ const App = (() => {
   }
 
   // ── SEVKİYATTA OTOMATİK STOK ÇIKIŞI: Sevkiyat Deposu'ndan düşer ────────────
-  async function sevkiyatYapilinceStoktanDus(urunId, urunAd, miktar) {
+  async function sevkiyatYapilinceStoktanDus(urunId, urunAd, miktar, siparisId) {
     const stokRaf = await Store.stokRaf.all();
     const stokHareketleri = await Store.stokHareketleri.all();
     stokMiktarGuncelle(stokRaf, 'sevkiyat_deposu', 'urun', urunId, '', urunAd, 'ADET', -miktar);
     await Store.stokRaf.save(stokRaf);
-    stokHareketleri.push({ id: uid('HRK'), tip: 'cikis', ambar: 'sevkiyat_deposu', kalemAdi: urunAd, miktar, aciklama: 'Sevkiyat ile müşteriye gönderildi', tarih: new Date().toISOString().slice(0, 10) });
+    // siparisId burada MUTLAKA yazılmalı — İş Emri/Sipariş İptal ekranındaki
+    // "bu işe bağlı stok çıkışı yapılmış mı" engel kontrolü (bkz.
+    // page_iptal_islemleri.js engelleriBul) bu alanı arıyor; yoksa sevk
+    // edilmiş bir sipariş sarf engeli hiç tetiklenmeden "açık" görünebilirdi.
+    stokHareketleri.push({ id: uid('HRK'), tip: 'cikis', ambar: 'sevkiyat_deposu', kalemAdi: urunAd, miktar, siparisId: siparisId || null, aciklama: 'Sevkiyat ile müşteriye gönderildi', tarih: new Date().toISOString().slice(0, 10) });
     await Store.stokHareketleri.save(stokHareketleri);
   }
 

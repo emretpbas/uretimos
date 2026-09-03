@@ -86,7 +86,13 @@ PageModules.iptal_islemleri = (() => {
       return engeller;
     }
 
-    const iptalEdilebilirDurum = (d) => !['iptal', 'tamamlandi', 'kapatildi'].includes(d);
+    // 'sevk_edildi' (müşteriye zaten gönderilmiş — irsaliye/fatura kesilmiş,
+    // fiziksel mal gitmiş) ve 'reddedildi' (zaten kapanmış, geri dönüşü yok)
+    // KAPALI sayılır — bunlar "açık" listesine hiç girmemeli. Sarf kontrolü
+    // (aşağıdaki engelleriBul #4) de artık siparisId ile eşleşiyor (bkz.
+    // app.js sevkiyatYapilinceStoktanDus), ama durum kontrolü ilk ve en
+    // kesin engel olduğu için burada da açıkça hariç tutuluyor.
+    const iptalEdilebilirDurum = (d) => !['iptal', 'tamamlandi', 'kapatildi', 'sevk_edildi', 'reddedildi'].includes(d);
     const acikIsemirleri = isemirleri.filter(x => iptalEdilebilirDurum(x.durum));
     const acikSiparisler = siparisler.filter(x => iptalEdilebilirDurum(x.durum));
 

@@ -327,7 +327,7 @@ PageModules.sevkiyat_panel = (() => {
         if (kalem.kaynak !== 'urun') continue;
         const urun = tumUrunler.find(u => u.kod === kalem.kod);
         if (!urun) continue;
-        await App.persist(() => App.sevkiyatYapilinceStoktanDus(urun.id, urun.ad, kalem.miktar || 1));
+        await App.persist(() => App.sevkiyatYapilinceStoktanDus(urun.id, urun.ad, kalem.miktar || 1, siparis.id));
       }
 
       // 2. kalite kalemlere sevk bilgisi (irsaliye no + tarih) işlenir

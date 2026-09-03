@@ -273,7 +273,7 @@ PageModules.cari_panel = (() => {
         if (kalem.grup !== 'urun') continue;
         const urun = urunler.find(u => u.kod === kalem.kod);
         if (!urun) continue;
-        await App.persist(() => App.sevkiyatYapilinceStoktanDus(urun.id, urun.ad, kalem.miktar || 1));
+        await App.persist(() => App.sevkiyatYapilinceStoktanDus(urun.id, urun.ad, kalem.miktar || 1, siparis.id));
       }
 
       // Otomatik KDV'li fatura (kalem bazlı KDV oranlarına göre)
