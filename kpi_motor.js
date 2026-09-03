@@ -41,7 +41,49 @@ const KpiMotor = (() => {
     return birim * Math.max(0, kart.gelenAdet - (kart.fireAdet || 0));
   }
 
-  function hesapla(v) {
+  // ── DÖNEMSEL FİLTRE (T3-32) ──────────────────────────────────────────────
+  // BULGU: hesapla() daima TÜM GEÇMİŞİ (ömür boyu kümülatif) topluyordu —
+  // "bugünün OEE'si ne?" gibi bir soruya cevap verilemiyordu. donemFiltre
+  // OPSİYONELDİR (verilmezse eski davranış AYNEN korunur, geriye dönük
+  // uyumlu): {baslangic, bitis} (ISO YYYY-MM-DD) verilirse OEE/fire/hurda/
+  // verimlilik girdisi olan tarih taşıyan koleksiyonlar bu aralığa göre
+  // önceden süzülür. Geciken sipariş, makine doluluk, satın alma bekleyen
+  // ve personel performansı gibi ANLIK DURUM göstergeleri kasıtlı olarak
+  // filtrelenmez — bunlar "şu an" sorularıdır, geçmiş bir dönemin değil.
+  // "vardiya" filtresi KAPSAM DIŞI: vardiyalar koleksiyonunda saat bazlı
+  // başlangıç/bitiş bilgisi yok (yalnızca günlük net çalışma dakikası),
+  // bu yüzden "şu an hangi vardiyadayız" güvenilir hesaplanamaz.
+  function donemAraligiHesapla(tip, referansTarihStr) {
+    const ref = referansTarihStr ? new Date(referansTarihStr + 'T00:00:00') : new Date();
+    const bugunStr = ref.toISOString().slice(0, 10);
+    if (tip === 'gun') return { baslangic: bugunStr, bitis: bugunStr };
+    if (tip === 'hafta') {
+      const gunIndex = (ref.getDay() + 6) % 7; // Pazartesi=0 ... Pazar=6
+      const pzt = new Date(ref);
+      pzt.setDate(ref.getDate() - gunIndex);
+      return { baslangic: pzt.toISOString().slice(0, 10), bitis: bugunStr };
+    }
+    return null; // 'tumZamanlar' veya tanımsız tip -> filtresiz (ömür boyu)
+  }
+
+  // Filtre yoksa her zaman true (eski davranış); filtre varken tarihsiz
+  // kayıt GÜVENLİ VARSAYILAN olarak dışarıda bırakılır.
+  function tarihAralikta(tarihStr, donemFiltre) {
+    if (!donemFiltre) return true;
+    if (!tarihStr) return false;
+    return tarihStr >= donemFiltre.baslangic && tarihStr <= donemFiltre.bitis;
+  }
+
+  function hesapla(v, donemFiltre) {
+    if (donemFiltre) {
+      v = Object.assign({}, v, {
+        istasyonIsleri: (v.istasyonIsleri || []).filter(k => tarihAralikta(k.olusturmaTarihi, donemFiltre)),
+        sureler: (v.sureler || []).filter(s => tarihAralikta(s.tarih, donemFiltre)),
+        duruslar: (v.duruslar || []).filter(d => tarihAralikta(d.tarih, donemFiltre)),
+        arizalar: (v.arizalar || []).filter(a => tarihAralikta(a.zaman ? a.zaman.slice(0, 10) : a.tarih, donemFiltre)),
+        iadeler: (v.iadeler || []).filter(i => tarihAralikta(i.olusturmaTarihi || i.satisTarihi, donemFiltre))
+      });
+    }
     const bugun = new Date().toISOString().slice(0, 10);
     const kartlar = v.istasyonIsleri || [];
     const bitenler = kartlar.filter(k => k.durum === 'tamamlandi');
@@ -191,10 +233,12 @@ const KpiMotor = (() => {
     satinalma: 5          // üstünde birikmiş satın alma
   };
 
-  async function tumKpi() {
+  async function tumKpi(donemFiltre) {
     const v = await veriYukle();
-    return { kpi: hesapla(v), veri: v };
+    return { kpi: hesapla(v, donemFiltre), veri: v };
   }
 
-  return { tumKpi, hesapla, veriYukle, ESIK, VARDIYA_DK };
+  return { tumKpi, hesapla, veriYukle, ESIK, VARDIYA_DK, donemAraligiHesapla, tarihAralikta };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = KpiMotor;

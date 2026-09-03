@@ -10,6 +10,10 @@
 PageModules.kpi_panel = (() => {
   let activeTab = 'kpi';
   let sonBulgular = null;
+  // BULGU (T3-32): KPI/OEE her zaman ÖMÜR BOYU KÜMÜLATİF veriyi
+  // gösteriyordu — "bugünün OEE'si ne?" sorusuna cevap verilemiyordu.
+  // donemTip: 'gun' | 'hafta' | 'tumZamanlar' (varsayılan, eski davranış).
+  let donemTip = 'tumZamanlar';
 
   async function render(main, params) {
     if (params && params.tab) activeTab = params.tab;
@@ -36,7 +40,8 @@ PageModules.kpi_panel = (() => {
 
   // ── SEKME 1: KPI GÖSTERGELERİ ───────────────────────────────────────────
   async function renderKpiTab(content) {
-    const { kpi } = await KpiMotor.tumKpi();
+    const donemFiltre = KpiMotor.donemAraligiHesapla(donemTip);
+    const { kpi } = await KpiMotor.tumKpi(donemFiltre);
     const yuzde = (x) => Math.round((x || 0) * 100);
     // Renk: iyi=yeşil, sınırda=amber, kötü=kırmızı
     const renk = (deger, esik, tersMi) => {
@@ -62,7 +67,11 @@ PageModules.kpi_panel = (() => {
     const makineRenk = renk(kpi.makineDoluluk.deger, KpiMotor.ESIK.makineDoluluk);
     const satinRenk = kpi.satinalma.deger <= KpiMotor.ESIK.satinalma ? 'green' : 'amber';
 
-    let html = `<div class="grid grid-3" style="margin-bottom:14px">
+    const donemBtn = (tip, etiket) => `<button class="btn btn-sm ${donemTip === tip ? 'btn-blue' : ''} kp-donem" data-tip="${tip}">${etiket}</button>`;
+    let html = `<div style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:10px">
+      ${donemBtn('gun', 'Bugün')}${donemBtn('hafta', 'Bu Hafta')}${donemBtn('tumZamanlar', 'Tüm Zamanlar')}
+    </div>
+    <div class="grid grid-3" style="margin-bottom:14px">
       ${kart('OEE — Genel Ekipman Etkinliği', '%' + yuzde(kpi.oee.deger),
         `Kullanılabilirlik %${yuzde(kpi.oee.kullanilabilirlik)} × Performans %${yuzde(kpi.oee.performans)} × Kalite %${yuzde(kpi.oee.kalite)}`,
         oeeRenk, cubuk(kpi.oee.deger, oeeRenk))}
@@ -150,6 +159,10 @@ PageModules.kpi_panel = (() => {
         </table></div>`;
     }
     content.innerHTML = html;
+    content.querySelectorAll('.kp-donem').forEach(b => b.onclick = () => {
+      donemTip = b.dataset.tip;
+      renderKpiTab(content);
+    });
   }
 
   // ── SEKME 2: AI DENETÇİSİ ───────────────────────────────────────────────

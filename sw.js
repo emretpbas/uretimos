@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v162'; // v162: FIX - cizelgeleyici artik istasyonda kismi islenmis adedi dusuyor, tamamlanmamis adimda tekrar TAM adet planlamiyor
+const CACHE_NAME = 'uretimos-v163'; // v163: FEATURE - KPI paneline Bugun/Bu Hafta/Tum Zamanlar donem filtresi eklendi (kpi_motor.js artik omur boyu kumulatife mahkum degil)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
