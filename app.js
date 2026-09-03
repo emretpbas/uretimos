@@ -3594,6 +3594,10 @@ const App = (() => {
     // fonksiyondan hemen sonra Store.siparisler.upsert(siparis) çağırdığı
     // için burada ayrıca bir upsert gerekmez, mevcut akışa "biner".
     siparis.odemePlaniIslendi = true;
+    // irsaliyeKesilinceFaturaOlustur bu değeri okuyup faturanın
+    // odenecekBakiye'sini (genelToplam - burada zaten kasaya/cariye
+    // işlenmiş net tutar) doğru hesaplamak için kullanır — bkz. T1-1/T1-2.
+    siparis.odemePlaniNetKasaToplami = netKasaToplami;
 
     return { netKasaToplami, toplamVadeFarki, ileriTarihliNakitSayisi: ileriTarihliNakitler.length };
   }
@@ -3650,6 +3654,19 @@ const App = (() => {
     if (musteri) {
       musteri.bakiye = (musteri.bakiye || 0) - t.tutar;
       await Store.musteriler.save(musteriler);
+    }
+
+    // BULGU (T1-2): "tahsilat geldikçe düş" — bu tahsilat belirli bir
+    // faturaya bağlıysa (ileri tarihli nakit kalemi, fatura kesilirken
+    // faturaId ile eşleştirilmişti), o faturanın odenecekBakiye'si de bu
+    // tutar kadar azaltılır.
+    if (t.faturaId) {
+      const faturalar = await Store.faturalar.all();
+      const fatura = faturalar.find(f => f.id === t.faturaId);
+      if (fatura) {
+        fatura.odenecekBakiye = Math.max(0, (fatura.odenecekBakiye || 0) - t.tutar);
+        await Store.faturalar.save(faturalar);
+      }
     }
 
     // NOT: Burada AYRICA bir muhasebeKaydiOlustur() çağrılmaz — satış geliri
@@ -4880,15 +4897,22 @@ const App = (() => {
     // KULLANICI KARARI (güncel): Ödeme planındaki peşinat+çek+kredi kartı
     // ARTIK sipariş ONAYLANDIĞI anda (bkz. siparisOnaylaninceOdemePlaniniAnindaIsle)
     // anında kasaya/cariye işlenmiştir — burada (fatura/irsaliye kesiminde)
-    // BİR DAHA bakiyeye eklenmez, BİR DAHA tahsilatBeklenenler'e düşürülmez.
-    // Bu fonksiyon SADECE resmi faturayı (KDV'li) oluşturur; nakit akışı
-    // zaten sipariş onayı anında gerçekleşmiştir. Yalnızca ileri tarihli
+    // BİR DAHA tahsilatBeklenenler'e düşürülmez. Yalnızca ileri tarihli
     // NAKİT kalemler (sipariş onayında tahsilatBeklenenler'e düşürülmüş
     // olanlar) burada faturaNo referansıyla güncellenir — böylece o kalemler
     // onaylandığında doğru faturayla ilişkilendirilir.
     const pesinatTutar = (siparis.odemePlani && siparis.odemePlani.pesinatTutar) || 0;
     const odemeKalemleri = (siparis.odemePlani && siparis.odemePlani.odemeKalemleri) || [];
     const vadeTarihi = odemeKalemleri.length ? odemeKalemleri.map(k => k.tarih).filter(Boolean).sort().slice(-1)[0] || null : null;
+    // BULGU (T1-1/T1-2): sipariş onayında zaten kasaya/cariye işlenmiş NET
+    // tutar (siparis.odemePlaniNetKasaToplami — bkz. yukarıdaki fonksiyon)
+    // faturanın KDV DAHİL toplamından düşülerek gerçek "ödenecek bakiye"
+    // bulunur. Eski/eşleşmeyen kayıtlarda (alan hiç yoksa) en azından
+    // peşinat mahsup edilmiş kabul edilir. odenecekBakiye artık HER ZAMAN 0
+    // yazılmıyor — ai_denetci.js'teki "vadesi geçmiş fatura" kontrolü bu
+    // alana bakar.
+    const onayindaKasayaGirenNet = siparis.odemePlaniNetKasaToplami != null ? siparis.odemePlaniNetKasaToplami : pesinatTutar;
+    const odenecekBakiye = Math.max(0, genelToplam - onayindaKasayaGirenNet);
 
     const fatura = {
       id: uid('FTR'),
@@ -4897,11 +4921,26 @@ const App = (() => {
       irsaliyeId: irsaliye.id, irsaliyeNo: irsaliye.irsaliyeNo,
       musteriId: siparis.musteriId, musteriAdi: siparis.musteriAdi,
       matrah, kdvOrani, kdvTutari, genelToplam, kdvDetaylari,
-      pesinatMahsup: pesinatTutar, odenecekBakiye: 0, vadeTarihi,
+      pesinatMahsup: pesinatTutar, odenecekBakiye, vadeTarihi,
       odemePlaniSiparisOnayindaIslendi: true,
       tarih: new Date().toISOString().slice(0, 10)
     };
     await Store.faturalar.upsert(fatura);
+
+    // BULGU (T1-1): Müşteri cari bakiyesi yalnızca tahsilatla azalıyordu,
+    // fatura kesildiğinde HİÇ artmıyordu — açık hesap müşteriler borçsuz
+    // görünüyordu. Bakiye artık faturanın KDV DAHİL tam tutarı kadar artar;
+    // sipariş onayında zaten kasaya/cariye işlenmiş net tutar (yukarıdaki
+    // onayindaKasayaGirenNet) o an bakiyeden DÜŞÜLMÜŞ olduğundan (bkz.
+    // siparisOnaylaninceOdemePlaniniAnindaIsle), net etki doğru şekilde
+    // yalnızca gerçekten ödenmemiş kalan tutarın (odenecekBakiye ile aynı
+    // mantık) bakiyeye eklenmesi olur.
+    const tumMusteriler = await Store.musteriler.all();
+    const guncelMusteri = tumMusteriler.find(m => m.id === siparis.musteriId);
+    if (guncelMusteri) {
+      guncelMusteri.bakiye = (guncelMusteri.bakiye || 0) + genelToplam;
+      await Store.musteriler.save(tumMusteriler);
+    }
 
     // Sipariş onayında oluşturulmuş (henüz ileri tarihli nakit olduğu için
     // bekleyen) tahsilatBeklenenler kayıtlarını bu faturanın faturaId/faturaNo
