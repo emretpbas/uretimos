@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v148'; // v148: FIX - e-Fatura XML artik genel iskontoyu uyguluyor (fatura.kalemler artik kaydediliyor)
+const CACHE_NAME = 'uretimos-v149'; // v149: FIX - Fatura & Irsaliye Kes formunda irsaliyeye artik kalemler kaydediliyor (e-Irsaliye uretilebiliyor)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

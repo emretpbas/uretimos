@@ -253,6 +253,10 @@ PageModules.cari_panel = (() => {
     App.openModal({ title: 'Fatura & İrsaliye Kes', sub: siparis.kod + ' — ' + siparis.musteriAdi, body, footer, wide: true });
     document.getElementById('fi-cancel').onclick = App.closeModal;
     document.getElementById('fi-save').onclick = async () => {
+      // BULGU (T1-5): irsaliye nesnesi kalemler alanını hiç taşımıyordu — bu
+      // irsaliyeler için e-İrsaliye (UBL DespatchAdvice) üretilemiyordu
+      // (page_efatura.js kalemsiz irsaliyeyi işleyemez). Şekil,
+      // page_sevkiyat_panel.js:openIrsaliyeForm'daki DOĞRU örnekle aynı.
       const irsaliye = {
         id: App.uid('IRS'),
         irsaliyeNo: document.getElementById('fi-no').value.trim(),
@@ -261,7 +265,13 @@ PageModules.cari_panel = (() => {
         tarih: document.getElementById('fi-tarih').value,
         aracPlaka: document.getElementById('fi-plaka').value.trim(),
         surucu: document.getElementById('fi-surucu').value.trim(),
-        not: document.getElementById('fi-not').value.trim()
+        not: document.getElementById('fi-not').value.trim(),
+        kalemler: (siparis.kalemler || []).map(k => ({
+          kaynak: k.ikinciKalite ? 'ikinci_kalite' : (k.grup === 'yarimamul' ? 'yarimamul' : 'urun'),
+          kod: k.kod, ad: k.ad, miktar: k.miktar || 1, birim: k.birim || 'ADET',
+          netFiyat: k.netFiyat || 0, kdvOrani: k.kdvOrani ?? 20,
+          ikinciKalite: !!k.ikinciKalite, iadeKalemId: k.iadeKalemId || null
+        }))
       };
       await App.persist(() => Store.irsaliyeler.upsert(irsaliye));
       siparis.durum = 'sevk_edildi';
