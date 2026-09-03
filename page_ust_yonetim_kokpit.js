@@ -48,7 +48,10 @@ PageModules.ust_yonetim_kokpit = (() => {
     const acikSatinalmaTutari = satinalmaSiparisleri.filter(s => !['tamamlandi', 'reddedildi'].includes(s.durum)).reduce((a, s) => a + (s.toplamTRY || 0), 0);
 
     // Bekleyen sevkiyatlar
-    const bekleyenSevkiyat = siparisler.filter(s => s.durum === 'onaylandi' || s.durum === 'uretimde').length;
+    // T4: 's.durum === "uretimde"' KALDIRILDI — siparis.durum bu değeri
+    // hiçbir zaman almaz (üretim ilerlemesi ayrı bir alan olan
+    // s.uretimDurumu ile takip edilir); ölü kod (her zaman false).
+    const bekleyenSevkiyat = siparisler.filter(s => s.durum === 'onaylandi').length;
 
     // Personel
     const aktifPersonel = personeller.filter(p => p.durum === 'aktif');

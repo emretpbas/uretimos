@@ -144,17 +144,26 @@ PageModules.uretim_ekrani = (() => {
   }
 
   function openDurusForm(siparisler, rotalar, yarimamuller, onSaved) {
+    // T4: duruş kaydının istasyon referansı zayıftı — yalnızca serbest
+    // metin bir "kod — tanım" etiketi (istasyonAdi) tutuluyordu, hangi HATTA
+    // ait olduğu (aynı kod farklı rotalarda tekrar edebilir) veya hangi
+    // rotanın adımı olduğu güvenilir biçimde eşlenemiyordu. Ayrıca tarih
+    // her zaman "şimdi"ye sabitti — gün sonunda/ertesi gün girilen bir
+    // duruş yanlış tarihe düşüyordu. Artık seçim index bazlı yapılıp
+    // istasyonKodu/hat/rotaAdi da yapılandırılmış biçimde saklanıyor,
+    // tarih de kullanıcı tarafından seçilebiliyor (varsayılan: bugün).
     const tumIstasyonlar = [];
-    rotalar.forEach(r => r.steps.forEach(s => tumIstasyonlar.push({ rotaAdi: r.ad, kod: s.kod, tanim: s.tanim })));
+    rotalar.forEach(r => r.steps.forEach(s => tumIstasyonlar.push({ rotaAdi: r.ad, kod: s.kod, tanim: s.tanim, hat: s.hat || null })));
 
     const body = document.createElement('div');
     body.innerHTML = `
       <div class="fgroup"><label class="flbl">İstasyon</label>
         <select class="fselect" id="df-istasyon">
           <option value="">— Seçilmedi —</option>
-          ${tumIstasyonlar.map(i => `<option value="${App.escapeHtml(i.kod + ' — ' + i.tanim)}">${App.escapeHtml(i.rotaAdi)}: ${App.escapeHtml(i.kod)} — ${App.escapeHtml(i.tanim)}</option>`).join('')}
+          ${tumIstasyonlar.map((i, idx) => `<option value="${idx}">${App.escapeHtml(i.rotaAdi)}: ${App.escapeHtml(i.kod)} — ${App.escapeHtml(i.tanim)}</option>`).join('')}
         </select>
       </div>
+      <div class="fgroup"><label class="flbl">Tarih</label><input class="finput" id="df-tarih" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
       <div class="fgroup"><label class="flbl">Sorumlu Departman</label>
         <select class="fselect" id="df-bolum">
           ${App.BOLUMLER.map(b => `<option value="${b.id}">${App.escapeHtml(b.label)}</option>`).join('')}
@@ -169,11 +178,17 @@ PageModules.uretim_ekrani = (() => {
     document.getElementById('df-confirm').onclick = async () => {
       const aciklama = document.getElementById('df-aciklama').value.trim();
       if (!aciklama) { App.toast('Açıklama zorunlu', 'err'); return; }
+      const secilenIdx = document.getElementById('df-istasyon').value;
+      const secilen = secilenIdx !== '' ? tumIstasyonlar[parseInt(secilenIdx, 10)] : null;
       const kayit = {
-        id: App.uid('DRS'), istasyonAdi: document.getElementById('df-istasyon').value,
+        id: App.uid('DRS'),
+        istasyonAdi: secilen ? (secilen.kod + ' — ' + secilen.tanim) : '',
+        istasyonKodu: secilen ? secilen.kod : null,
+        hat: secilen ? secilen.hat : null,
+        rotaAdi: secilen ? secilen.rotaAdi : null,
         sorumluBolum: document.getElementById('df-bolum').value,
         aciklama, sureMin: parseInt(document.getElementById('df-sure').value) || 0,
-        tarih: new Date().toISOString().slice(0, 10)
+        tarih: document.getElementById('df-tarih').value || new Date().toISOString().slice(0, 10)
       };
       await App.persist(() => Store.duruslar.upsert(kayit));
       App.toast('Duruş kaydı oluşturuldu', 'ok');

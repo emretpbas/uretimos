@@ -37,7 +37,7 @@ t('App\'ten dışa aktarılıyor', /sevkiyatYapilinceStoktanDus, siparisKismiSev
 
 console.log('\n-- page_sevkiyat_panel.js: sevkEdilebilir artık duruma bakıyor, irsaliye varlığına değil --');
 t('sevkEdilebilir filtresi kismi_sevk_edildi\'yi de içeriyor',
-  /const sevkEdilebilir = siparisler\.filter\(s => \(s\.durum === 'onaylandi' \|\| s\.durum === 'uretimde' \|\| s\.durum === 'kismi_sevk_edildi'\) && s\.uretimDurumu === 'tamamlandi'\);/.test(sevkSrc));
+  /const sevkEdilebilir = siparisler\.filter\(s => \(s\.durum === 'onaylandi' \|\| s\.durum === 'kismi_sevk_edildi'\) && s\.uretimDurumu === 'tamamlandi'\);/.test(sevkSrc));
 t('eski "irsaliyeler.some(...)" dışlaması ARTIK YOK', !/&& !irsaliyeler\.some\(i => i\.siparisId === s\.id\)\);/.test(sevkSrc));
 t('irsaliye kesilince durum artık App.siparisKismiSevkGuncelle ile belirleniyor',
   /App\.siparisKismiSevkGuncelle\(siparis, irsaliye\.kalemler\);/.test(sevkSrc));
@@ -50,7 +50,7 @@ console.log('\n-- page_cari_panel.js: hızlı Fatura&İrsaliye formu da paylaş�
 t('openFaturaIrsaliyeForm da App.siparisKismiSevkGuncelle çağırıyor',
   /App\.siparisKismiSevkGuncelle\(siparis, irsaliye\.kalemler\);/.test(cariSrc));
 t('gecikmiş sipariş raporu kismi_sevk_edildi\'yi de kapsıyor',
-  /s\.durum === 'onaylandi' \|\| s\.durum === 'uretimde' \|\| s\.durum === 'sevk_edildi' \|\| s\.durum === 'kismi_sevk_edildi'/.test(cariSrc));
+  /s\.durum === 'onaylandi' \|\| s\.durum === 'sevk_edildi' \|\| s\.durum === 'kismi_sevk_edildi'/.test(cariSrc));
 
 console.log('\n-- app.js: irsaliyeKesilinceFaturaOlustur artık GERÇEK sevk edilen kalemlerden hesaplıyor --');
 t('faturaKaynakKalemleri irsaliye.kalemler\'i tercih ediyor',

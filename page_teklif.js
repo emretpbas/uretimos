@@ -220,7 +220,16 @@ PageModules.teklif = (() => {
   }
 
   function teklifDurumPill(d) {
-    const map = { taslak: ['Taslak', 'pill-gray'], gonderildi: ['Gönderildi', 'pill-blue'], siparise_donustu: ['Siparişe Dönüştü', 'pill-green'], siparis_reddedildi: ['Siparişi Reddedildi — Düzenlenebilir', 'pill-red'], silme_talebinde: ['Silme Talebinde', 'pill-amber'] };
+    // T4: BULGU — page_teklif_degerlendirme.js (TeklifTakipMotor) AYNI
+    // Store.teklifler kaydına 'beklemede'/'revize'/'kazanildi'/'kaybedildi'/
+    // 'iptal' durumlarını da yazabiliyor (teklif takip/değerlendirme
+    // ekranından). Bu ekranın pill'i bu değerleri hiç TANIMIYORDU — fallback
+    // her bilinmeyen durumu sessizce "Taslak" gösteriyordu. Sonuç: müşterinin
+    // fiilen KABUL ETTİĞİ (kazanildi) bir teklif burada hâlâ "Taslak" gibi
+    // görünüyordu — audit'in "müşteri kabul etti durumu yok" bulgusunun kök
+    // nedeni bu YANLIŞ ETİKETLEMEYDİ (durum aslında iki ekran arasında VAR
+    // ama burada görünmüyordu). Artık tüm bilinen durumlar tanınıyor.
+    const map = { taslak: ['Taslak', 'pill-gray'], gonderildi: ['Gönderildi', 'pill-blue'], beklemede: ['Müşteride Bekliyor', 'pill-amber'], revize: ['Revize İsteniyor', 'pill-amber'], kazanildi: ['✓ Kazanıldı (Müşteri Kabul Etti)', 'pill-green'], kaybedildi: ['✗ Kaybedildi', 'pill-red'], iptal: ['İptal / Vazgeçildi', 'pill-gray'], siparise_donustu: ['Siparişe Dönüştü', 'pill-green'], siparis_reddedildi: ['Siparişi Reddedildi — Düzenlenebilir', 'pill-red'], silme_talebinde: ['Silme Talebinde', 'pill-amber'] };
     const [l, c] = map[d] || ['Taslak', 'pill-gray'];
     return `<span class="pill ${c}">${l}</span>`;
   }
@@ -782,7 +791,7 @@ PageModules.teklif = (() => {
           <button class="btn" id="tk-back">&larr; Listeye Dön</button>
           <button class="btn" id="tk-ceki-listesi">📋 Çeki Listesi</button>
           ${t.durum === 'taslak' || t.durum === 'gonderildi' || t.durum === 'siparis_reddedildi' ? '<button class="btn" id="tk-duzenle">Düzenle</button>' : ''}
-          ${t.durum !== 'siparise_donustu' && t.durum !== 'silme_talebinde' ? '<button class="btn btn-green" id="tk-to-siparis">Siparişe Dönüştür</button>' : ''}
+          ${!['siparise_donustu', 'silme_talebinde', 'kaybedildi', 'iptal'].includes(t.durum) ? '<button class="btn btn-green" id="tk-to-siparis">Siparişe Dönüştür</button>' : ''}
           ${t.durum === 'siparise_donustu' ? '<span class="pill pill-green">Siparişe Dönüştürüldü</span>' : ''}
           ${t.durum !== 'silme_talebinde' && t.durum !== 'siparise_donustu' ? '<button class="btn btn-ghost" id="tk-sil-talep" style="color:var(--red-text)">Sil (Yönetim Onayı İle)</button>' : ''}
           ${t.durum === 'silme_talebinde' ? '<span class="pill pill-amber">Silme Talebi Yönetimde</span>' : ''}

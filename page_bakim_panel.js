@@ -528,6 +528,7 @@ PageModules.bakim_panel = (() => {
     document.getElementById('mf-save').onclick = async () => {
       const ad = document.getElementById('mf-ad').value.trim();
       if (!ad) { App.toast('Ad zorunlu', 'err'); return; }
+      const yeniSonBakim = document.getElementById('mf-sonbakim').value || d.sonBakimTarihi || null;
       const m = {
         id: d.id || App.uid('MKN'),
         kod: document.getElementById('mf-kod').value.trim() || App.uid('MKN'),
@@ -540,10 +541,26 @@ PageModules.bakim_panel = (() => {
         hat: document.getElementById('mf-hat').value.trim(),
         bakimSorumlusu: document.getElementById('mf-bakimsorumlu').value.trim(),
         bakimAralikGun: parseInt(document.getElementById('mf-bakimaralik').value) || 0,
-        sonBakimTarihi: document.getElementById('mf-sonbakim').value || d.sonBakimTarihi || null,
+        sonBakimTarihi: yeniSonBakim,
         durum: d.durum || 'aktif'
       };
       await App.persist(() => Store.makinaTechizat.upsert(m));
+      // T4: rutin bakım iki tutarsız yoldan kapatılabiliyordu — envanterdeki
+      // "✓ Rutin Bakım Yapıldı" butonu servis geçmişine (bakımKayitlari) bir
+      // kayıt işlerken, bu genel düzenleme formundan Son Bakım Tarihi
+      // değiştirmek HİÇBİR İZ BIRAKMADAN alarmı sessizce kapatıyordu. Artık
+      // (mevcut bir makinada) tarih fiilen değiştiyse aynı audit kaydı
+      // burada da işlenir — iki yol tutarlı hale getirildi.
+      if (d.id && yeniSonBakim && yeniSonBakim !== (d.sonBakimTarihi || null)) {
+        const kayitlar = await Store.bakimKayitlari.all();
+        kayitlar.push({
+          id: App.uid('BKM'), makinaId: m.id, makinaAd: m.ad,
+          tarih: yeniSonBakim, tip: 'rutin',
+          aciklama: 'Rutin bakım tarihi düzenleme formundan güncellendi (aralık: ' + (m.bakimAralikGun || '—') + ' gün)' + (m.bakimSorumlusu ? ' — Sorumlu: ' + m.bakimSorumlusu : ''),
+          maliyet: 0
+        });
+        await App.persist(() => Store.bakimKayitlari.save(kayitlar));
+      }
       App.toast('Makina/teçhizat kaydedildi', 'ok');
       App.closeModal();
       onSaved();

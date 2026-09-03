@@ -75,7 +75,10 @@ PageModules.cari_panel = (() => {
   // kesildiğinde otomatik stok düşümü ve KDV'li fatura oluşumu (kalem bazlı
   // KDV oranlarına göre ayrı alt toplamlarla) gerçekleşir.
   function renderFaturaIrsaliyeTab(siparisler, irsaliyeler, faturalar, stokRaf, urunler) {
-    const faturaKesilebilir = siparisler.filter(s => (s.durum === 'onaylandi' || s.durum === 'uretimde') && s.uretimDurumu === 'tamamlandi' && !irsaliyeler.some(i => i.siparisId === s.id));
+    // T4: 's.durum === "uretimde"' KALDIRILDI — siparis.durum bu değeri
+    // hiçbir zaman almaz (üretim ilerlemesi ayrı bir alan olan
+    // s.uretimDurumu ile takip edilir); ölü kod (her zaman false).
+    const faturaKesilebilir = siparisler.filter(s => s.durum === 'onaylandi' && s.uretimDurumu === 'tamamlandi' && !irsaliyeler.some(i => i.siparisId === s.id));
     // Sevkiyatın kestiği, Cari'nin fiyat kontrolü yapıp faturalayacağı irsaliyeler
     const faturaBekleyenIrsaliyeler = irsaliyeler.filter(i => i.faturaDurumu === 'cari_bekliyor');
 
@@ -616,7 +619,10 @@ PageModules.cari_panel = (() => {
     let html = uyariHtml + `<div class="card"><div class="tbl-wrap"><table class="dtable">
       <tr><th>Müşteri</th><th>Sipariş</th><th class="r">Tutar</th><th>Vade Tarihi</th><th>Durum</th></tr>`;
     let varMi = false;
-    siparisler.filter(s => s.durum === 'onaylandi' || s.durum === 'uretimde' || s.durum === 'sevk_edildi' || s.durum === 'kismi_sevk_edildi').forEach(s => {
+    // T4: 's.durum === "uretimde"' KALDIRILDI — siparis.durum bu değeri
+    // hiçbir zaman almaz (üretim ilerlemesi ayrı bir alan olan
+    // s.uretimDurumu ile takip edilir); ölü kod (her zaman false).
+    siparisler.filter(s => s.durum === 'onaylandi' || s.durum === 'sevk_edildi' || s.durum === 'kismi_sevk_edildi').forEach(s => {
       const m = musteriler.find(x => x.id === s.musteriId);
       const vadeGun = m ? (m.odemeVadeGun || 0) : 0;
       const siparisTarihi = new Date(s.tarih);

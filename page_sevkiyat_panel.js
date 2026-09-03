@@ -57,7 +57,10 @@ PageModules.sevkiyat_panel = (() => {
     // (App.siparisKismiSevkGuncelle'nin belirlediği) bakılır:
     // 'kismi_sevk_edildi' siparişler kalan miktarlarıyla listede kalmaya
     // devam eder, yalnızca TAM sevk edilenler ('sevk_edildi') çıkar.
-    const sevkEdilebilir = siparisler.filter(s => (s.durum === 'onaylandi' || s.durum === 'uretimde' || s.durum === 'kismi_sevk_edildi') && s.uretimDurumu === 'tamamlandi');
+    // T4: 's.durum === "uretimde"' KALDIRILDI — siparis.durum bu değeri
+    // hiçbir zaman almaz (üretim ilerlemesi ayrı bir alan olan
+    // s.uretimDurumu ile takip edilir); ölü kod (her zaman false).
+    const sevkEdilebilir = siparisler.filter(s => (s.durum === 'onaylandi' || s.durum === 'kismi_sevk_edildi') && s.uretimDurumu === 'tamamlandi');
     let html = `<div class="card">
       <div class="card-hdr"><div class="card-title">Sevkiyata Hazır Siparişler</div></div>`;
     if (!sevkEdilebilir.length) {
@@ -222,7 +225,12 @@ PageModules.sevkiyat_panel = (() => {
           kaynak: k.ikinciKalite ? 'ikinci_kalite' : (k.grup === 'yarimamul' ? 'yarimamul' : 'urun'),
           kod: k.kod, ad: k.ad, miktar: kalan, birim: k.birim || 'ADET',
           netFiyat: k.netFiyat || 0, kdvOrani: k.kdvOrani ?? 20,
-          ikinciKalite: !!k.ikinciKalite, iadeKalemId: k.iadeKalemId || null
+          ikinciKalite: !!k.ikinciKalite, iadeKalemId: k.iadeKalemId || null,
+          // T4: irsaliye kalem miktarı üst sınırsızdı — kullanıcı sipariş
+          // kaleminin miktar kutusuna herhangi bir sayı yazabiliyor, siparişte
+          // olandan (kalan miktardan) FAZLA sevk edilebiliyordu. Sipariş
+          // kaleminden gelen satırlar artık kendi kalan miktarını aşamaz.
+          maksimumMiktar: kalan
         };
       })
       .filter(k => k.miktar > 0);
@@ -258,7 +266,7 @@ PageModules.sevkiyat_panel = (() => {
         ${kalemler.map((k, i) => `<tr>
           <td><span class="pill ${k.kaynak === 'ikinci_kalite' ? 'pill-amber' : 'pill-gray'}" style="font-size:9.5px">${KAYNAK_ETIKET[k.kaynak] || k.kaynak}</span></td>
           <td><b class="mono">${App.escapeHtml(k.kod)}</b><br><span class="muted" style="font-size:10px">${App.escapeHtml(k.ad)}</span></td>
-          <td class="r"><input class="finput ir-k-miktar" data-i="${i}" type="number" value="${k.miktar}" min="0.01" step="0.01" style="width:70px;text-align:right"></td>
+          <td class="r"><input class="finput ir-k-miktar" data-i="${i}" type="number" value="${k.miktar}" min="0.01" ${k.maksimumMiktar != null ? 'max="' + k.maksimumMiktar + '"' : ''} step="0.01" style="width:70px;text-align:right"></td>
           <td class="r">${App.escapeHtml(k.birim)}</td>
           <td><button class="btn btn-icon btn-ghost ir-k-sil" data-i="${i}" style="color:var(--red-text)" type="button">&times;</button></td>
         </tr>`).join('')}
@@ -276,6 +284,10 @@ PageModules.sevkiyat_panel = (() => {
             m = izinliMax;
             App.toast(kalem.kod + ' için miktar kullanılabilir sınıra (' + izinliMax + ') düşürüldü', 'err');
           }
+        } else if (kalem.maksimumMiktar != null && m > kalem.maksimumMiktar) {
+          // T4: sipariş kaleminden gelen satır kendi kalan miktarını aşamaz.
+          m = kalem.maksimumMiktar;
+          App.toast(kalem.kod + ' için miktar sipariş miktarını (' + kalem.maksimumMiktar + ') aşamaz', 'err');
         }
         kalem.miktar = m;
         inp.value = m;

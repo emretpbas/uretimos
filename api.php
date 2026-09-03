@@ -583,6 +583,12 @@ $HASSAS_OKUMA = [
     'personelGiderleri'  => ['ik', 'muhasebe'],
     'avanslar'           => ['ik', 'muhasebe'],
     'izinKayitlari'      => ['ik'],
+    // T4: araclar/aracGiderleri (şirket araçları, zimmet, yakıt/bakım
+    // giderleri) hassas listede değildi — personelGiderleri ile aynı
+    // hassasiyette (İK'nın yönettiği, finansal içerikli varlık/gider
+    // kaydı), o yüzden aynı rol setiyle eklendi.
+    'araclar'            => ['ik', 'muhasebe'],
+    'aracGiderleri'      => ['ik', 'muhasebe'],
     // Muhasebe / finans
     'muhasebeKayitlari'  => ['muhasebe'],
     'faturalar'          => ['muhasebe', 'cari', 'teklif_siparis', 'satis'],
@@ -618,6 +624,8 @@ $HASSAS_YAZMA = [
     'personelGiderleri'  => ['ik', 'muhasebe'],
     'avanslar'           => ['ik', 'muhasebe'],
     'izinKayitlari'      => ['ik'],
+    'araclar'            => ['ik'],
+    'aracGiderleri'      => ['ik', 'muhasebe'],
     'muhasebeKayitlari'  => ['muhasebe'],
     'faturalar'          => ['muhasebe'],
     'eFaturalar'         => ['muhasebe'],

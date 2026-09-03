@@ -3489,6 +3489,11 @@ const App = (() => {
       hammaddeId: siparis.hammaddeId, kalemAdi: siparis.kalemAdi,
       siparisMiktari: siparis.miktar, birim: siparis.birim,
       durum: 'bekliyor',
+      // T4: satınalma siparişinin tahminiGirisTarihi'si depoGirisi'ne hiç
+      // kopyalanmıyordu — Operasyon panelindeki Tedarikçi Karnesi'nin teslim
+      // skoru (page_operasyon.js) yalnızca beklenenTarih+girisTarihi İKİSİ
+      // de doluyken hesaplanabiliyor, bu yüzden skor hep boş/null kalıyordu.
+      beklenenTarih: siparis.tahminiGirisTarihi || null,
       olusturmaTarihi: new Date().toISOString().slice(0, 10)
     };
     depoGirisleri.push(giris);
