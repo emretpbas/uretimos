@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v153'; // v153: FIX - Hat Terminal kalite reddinde artik "onceki operasyona geri gonder" secenegi de var
+const CACHE_NAME = 'uretimos-v154'; // v154: FIX - bitmis urun kalite duzeltmesinde artik kim/hangi istasyon izi tutuluyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

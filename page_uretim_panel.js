@@ -1071,6 +1071,8 @@ PageModules.uretim_panel = (() => {
       const malzemeToplam = harcananlar.reduce((a, h) => a + h.tutar, 0);
       const dk = parseFloat((body.querySelector('#dz-iscilik') || {}).value) || 0;
       const iscilikMaliyet = (dk / 60) * saatUcreti;
+      const yapanDeger = (body.querySelector('#dz-yapan') || {}).value || '';
+      const istasyonDeger = (body.querySelector('#dz-istasyon') || {}).value || '';
       body.innerHTML = `
         <div style="background:var(--red-bg);border-left:3px solid var(--red);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:11.5px">
           <b style="color:var(--red-text)">Kalite red gerekçesi:</b> ${App.escapeHtml(siparis.kaliteRedNotu || '—')} ${siparis.kaliteRedNcrNo ? '· <b>' + App.escapeHtml(siparis.kaliteRedNcrNo) + '</b>' : ''}
@@ -1113,6 +1115,14 @@ PageModules.uretim_panel = (() => {
           <div class="fgroup" style="flex:1"><label class="flbl">Saat Ücreti (ayarlardan)</label>
             <input class="finput" value="${App.fmtTL(saatUcreti)}/saat" disabled></div>
         </div>
+        <div class="hr"></div>
+        <div class="frow">
+          <div class="fgroup" style="flex:1"><label class="flbl">İşlemi Yapan (Ad Soyad) <span style="color:var(--red-text)">*</span></label>
+            <input class="finput" id="dz-yapan" placeholder="Ad Soyad" value="${App.escapeHtml(yapanDeger)}"></div>
+          <div class="fgroup" style="flex:1"><label class="flbl">İstasyon / Bölüm <span style="color:var(--red-text)">*</span></label>
+            <input class="finput" id="dz-istasyon" placeholder="örn. Montaj-2, Boyahane" value="${App.escapeHtml(istasyonDeger)}"></div>
+        </div>
+        <div class="fhint" style="margin-top:-4px">Bitmiş ürün düzeltmesi hat iş kartı sistemine (istasyonIsleri) dahil değildir — bu iki alan, kim/hangi bölümde düzeltme yaptığının en az izini bırakır.</div>
         <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;font-size:12.5px;display:flex;justify-content:space-between">
           <span>Malzeme: <b>${App.fmtTL(malzemeToplam)}</b> + İşçilik: <b>${App.fmtTL(iscilikMaliyet)}</b></span>
           <span>Toplam Düzeltme Gideri: <b style="color:var(--red-text)">${App.fmtTL(malzemeToplam + iscilikMaliyet)}</b></span>
@@ -1141,6 +1151,15 @@ PageModules.uretim_panel = (() => {
       const dk = parseFloat(body.querySelector('#dz-iscilik').value) || 0;
       const malzemeToplam = harcananlar.reduce((a, h) => a + h.tutar, 0);
       const iscilikMaliyet = (dk / 60) * saatUcreti;
+      // BULGU (T3-22): bitmiş ürün kalite reddi düzeltmesi hiçbir istasyon
+      // kartı (istasyonIsleri) oluşturmuyor/güncellemiyor — yarımamül
+      // düzeyindeki red akışlarından (page_hat_takip.js/page_hat_terminal.js)
+      // KOPUKtu, "kim/hangi istasyonda düzeltti" izi yoktu (yalnızca
+      // App.currentRoleLabel() ile rol adı tutuluyordu, kişi/istasyon
+      // bilgisi hiç yoktu). En azından bu izi bırakan iki alan eklendi.
+      const islemiYapan = body.querySelector('#dz-yapan').value.trim();
+      const istasyon = body.querySelector('#dz-istasyon').value.trim();
+      if (!islemiYapan || !istasyon) { App.toast('İşlemi yapan ve istasyon/bölüm zorunlu', 'err'); return; }
 
       // Düzeltme gider kaydı → Yönetim Raporlarına girer
       const giderler = await Store.duzeltmeGiderleri.all();
@@ -1152,6 +1171,7 @@ PageModules.uretim_panel = (() => {
         malzemeler: harcananlar.map(h => ({ ...h })),
         iscilikDk: dk, iscilikMaliyet, malzemeMaliyet: malzemeToplam,
         toplamMaliyet: malzemeToplam + iscilikMaliyet,
+        islemiYapan, istasyon,
         kaydeden: App.currentRoleLabel()
       });
       await App.persist(() => Store.duzeltmeGiderleri.save(giderler));

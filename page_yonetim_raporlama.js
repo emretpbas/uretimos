@@ -128,7 +128,7 @@ PageModules.yonetim_raporlama = (() => {
             <div class="kpi"><div class="kpi-lbl">Ortalama Gider / Kayıt</div><div class="kpi-val purple">${App.fmtTL(toplamGider / duzeltmeGiderleri.length)}</div></div>
           </div>
           <table class="dtable" style="font-size:11px">
-            <tr><th>Tarih</th><th>Sipariş</th><th>Müşteri</th><th>NCR</th><th>Sonuç</th><th>Sorunlu YM</th><th class="r">Malzeme</th><th class="r">İşçilik</th><th class="r">Toplam</th></tr>
+            <tr><th>Tarih</th><th>Sipariş</th><th>Müşteri</th><th>NCR</th><th>Sonuç</th><th>Sorunlu YM</th><th>İşlemi Yapan</th><th>İstasyon/Bölüm</th><th class="r">Malzeme</th><th class="r">İşçilik</th><th class="r">Toplam</th></tr>
             ${duzeltmeGiderleri.slice().reverse().map(g => {
               const [sl, sc] = SONUC_ETIKET[g.sonuc] || [g.sonuc, 'pill-gray'];
               return `<tr><td style="font-size:10.5px">${g.tarih}</td><td class="mono">${App.escapeHtml(g.siparisKod || '—')}</td>
@@ -136,6 +136,8 @@ PageModules.yonetim_raporlama = (() => {
                 <td class="mono" style="font-size:10.5px">${App.escapeHtml(g.ncrNo || '—')}</td>
                 <td><span class="pill ${sc}" style="font-size:9.5px">${sl}</span></td>
                 <td style="font-size:10.5px">${App.escapeHtml(g.yarimamulKod || '—')}</td>
+                <td style="font-size:10.5px">${App.escapeHtml(g.islemiYapan || '—')}</td>
+                <td style="font-size:10.5px">${App.escapeHtml(g.istasyon || '—')}</td>
                 <td class="r">${App.fmtTL(g.malzemeMaliyet || 0)} <span class="muted" style="font-size:9px">(${(g.malzemeler || []).length})</span></td>
                 <td class="r">${App.fmtTL(g.iscilikMaliyet || 0)} <span class="muted" style="font-size:9px">${g.iscilikDk || 0}dk</span></td>
                 <td class="r"><b style="color:var(--red-text)">${App.fmtTL(g.toplamMaliyet || 0)}</b></td></tr>`;
