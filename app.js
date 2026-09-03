@@ -4914,12 +4914,29 @@ const App = (() => {
     const onayindaKasayaGirenNet = siparis.odemePlaniNetKasaToplami != null ? siparis.odemePlaniNetKasaToplami : pesinatTutar;
     const odenecekBakiye = Math.max(0, genelToplam - onayindaKasayaGirenNet);
 
+    // BULGU (T1-4): fatura nesnesi kendi kalemler alanını hiç kaydetmiyordu
+    // — bu yüzden page_efatura.js (ve efatura_motor.js:ublOlustur) ham
+    // sipariş.kalemler'e (iskonto UYGULANMAMIŞ netFiyat) düşüyor, e-Fatura
+    // XML'i gerçek fatura tutarından daha YÜKSEK bir matrah/toplamla
+    // üretiliyordu. Genel iskonto (kalemleriKdvGrupla ile AYNI kural: 2.
+    // kalite/defolu kalemler iskontodan muaf) burada kalem bazında
+    // UYGULANIP fatura.kalemler'e kaydedilir — efatura_motor.js dual-mode
+    // (Node'da da çalışır) olduğu için App'e bağımlı olamaz, bu yüzden
+    // iskonto burada, kaynakta uygulanır; ublOlustur zaten miktar×netFiyat
+    // çarpımını kullandığından ekstra bir değişikliğe gerek kalmaz.
+    const genelIskontoYuzde = siparis.genelIskontoYuzde || 0;
+    const faturaKalemleri = (siparis.kalemler || []).map(k => ({
+      ...k,
+      netFiyat: k.ikinciKalite ? (k.netFiyat || 0) : (k.netFiyat || 0) * (1 - genelIskontoYuzde / 100)
+    }));
+
     const fatura = {
       id: uid('FTR'),
       faturaNo: 'FTR-' + Date.now().toString(36).toUpperCase(),
       siparisId: siparis.id, siparisKod: siparis.kod,
       irsaliyeId: irsaliye.id, irsaliyeNo: irsaliye.irsaliyeNo,
       musteriId: siparis.musteriId, musteriAdi: siparis.musteriAdi,
+      kalemler: faturaKalemleri,
       matrah, kdvOrani, kdvTutari, genelToplam, kdvDetaylari,
       pesinatMahsup: pesinatTutar, odenecekBakiye, vadeTarihi,
       odemePlaniSiparisOnayindaIslendi: true,
