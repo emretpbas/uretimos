@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v164'; // v164: FIX - personel avansi artik muhasebe kaydi olusturuyor, bordro netOdenecek/avansKesintisi kalici yaziliyor ve avans mahsubu bordroya isleniyor
+const CACHE_NAME = 'uretimos-v165'; // v165: FIX - yillik izin bakiyesi artik negatife dusemiyor, kidem hesabi gecmis yillar icin dogru (bugune degil o yilin sonuna gore)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
