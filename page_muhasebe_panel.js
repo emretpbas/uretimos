@@ -52,7 +52,7 @@ PageModules.muhasebe_panel = (() => {
 
     const content = document.getElementById('mh-tab-content');
     if (activeTab === 'ozet') content.innerHTML = renderOzetTab(muhasebeKayitlari);
-    else if (activeTab === 'defter') content.innerHTML = renderDefterTab(muhasebeKayitlari, tahsilatlar);
+    else if (activeTab === 'defter') content.innerHTML = renderDefterTab(muhasebeKayitlari);
     else if (activeTab === 'tahsilat') { content.innerHTML = renderTahsilatTab(tahsilatlar, tahsilatBeklenenler, musteriler); wireTahsilatTab(musteriler, siparisler, tahsilatBeklenenler, render, main); }
     else if (activeTab === 'tedarikciodeme') { content.innerHTML = renderTedarikciOdemeTab(tedarikciOdemeleri, tedarikciler, satinalmaSiparisleri); wireTedarikciOdemeTab(tedarikciler, satinalmaSiparisleri, musteriCekleri, render, main); }
     else if (activeTab === 'vadefarki') { content.innerHTML = renderVadeFarkiTab(vadeFarkiKayitlari); }
@@ -67,11 +67,18 @@ PageModules.muhasebe_panel = (() => {
   // Gerçek bir "Basit Usul İşletme Defteri" değildir, ama aynı mantıkla
   // (tarih sırasıyla gelir/gider, kümülatif bakiye) bir görünüm sunar —
   // satınalma ödemeleri, maaş ödemeleri ve diğer giderler dahil edilir.
-  function renderDefterTab(muhasebeKayitlari, tahsilatlar) {
-    const tumKayitlar = [
-      ...muhasebeKayitlari.map(k => ({ tarih: k.tarih, aciklama: k.aciklama, tip: k.tip, tutar: k.tutar, kategori: k.kategori })),
-      ...tahsilatlar.map(t => ({ tarih: t.tarih, aciklama: 'Tahsilat: ' + (t.musteriAdi || ''), tip: 'gelir', tutar: t.tutar, kategori: 'tahsilat' }))
-    ].sort((a, b) => (a.tarih || '').localeCompare(b.tarih || ''));
+  // BULGU: bu sekme önceden muhasebeKayitlari (fatura kesilince TAHAKKUK
+  // esasıyla oluşan "satis_faturasi" geliri) İLE tahsilatlar (aynı satışın
+  // DAHA SONRA tahsil edilmesiyle oluşan kayıt) toplamını AYRI AYRI "gelir"
+  // olarak topluyordu — aynı satış İKİ KEZ sayılıyordu. Gelir-Gider
+  // Özeti'ndeki (renderOzetTab) doğru mantık — YALNIZCA muhasebeKayitlari
+  // (tahakkuk esası) — buraya da uygulandı; tahsilatlar zaten aynı satışın
+  // nakit akışı görünümüdür (bkz. Tahsilatlar sekmesi), burada tekrar
+  // sayılmaz.
+  function renderDefterTab(muhasebeKayitlari) {
+    const tumKayitlar = muhasebeKayitlari
+      .map(k => ({ tarih: k.tarih, aciklama: k.aciklama, tip: k.tip, tutar: k.tutar, kategori: k.kategori }))
+      .sort((a, b) => (a.tarih || '').localeCompare(b.tarih || ''));
 
     let kumulatif = 0;
     let html = `<div class="card"><div class="card-hdr"><div class="card-title">Basit Usul Defter Mantığında Gelir-Gider Hareketleri</div></div>

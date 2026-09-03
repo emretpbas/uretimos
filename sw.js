@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v146'; // v146: FIX - musteri cari bakiyesi artik fatura kesilince artiyor, fatura.odenecekBakiye dogru hesaplaniyor
+const CACHE_NAME = 'uretimos-v147'; // v147: FIX - Basit Usul Defter geliri artik cift saymiyor (tahsilat + fatura tahakkuku ayri ayri toplanmiyordu)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
