@@ -3798,6 +3798,44 @@ const App = (() => {
     }
   }
 
+  // ── ÜRETİM PARTİSİ ETİKET KURALI ────────────────────────────────────────
+  // Fiziksel parti/iş kartı etiketi için KARARLI kimlik: yarımamül kodu +
+  // kaynak (iş emri/sipariş) kodu birleşimi. Parça istasyondan istasyona
+  // geçerken bu iki alan da yeni iş kartına AYNEN kopyalanır (bkz.
+  // page_hat_takip.js / page_hat_terminal.js sevk akışları) — bu yüzden
+  // TEK fiziksel etiket üretimin sonuna kadar geçerli kalır, yeniden
+  // basılmaz. SADECE yarımamül koduyla etiketlenseydi, aynı parça tipini
+  // AYNI ANDA üreten FARKLI sipariş/iş emirleri sahada birbirine karışabilir
+  // (etiket doğru tip olsa da yanlış partiye ait olabilir) — kaynak kodu
+  // eklenerek tarama hem "doğru parça mı" hem "doğru parti mi" sorusunu
+  // birlikte cevaplar.
+  function partiEtiketKodu(ymKod, kaynakKod) {
+    return String(ymKod || '') + '@' + String(kaynakKod || '');
+  }
+
+  // İş kartı (üretim partisi) için TEK etiket yazdırır — Hat Takip ve Hat
+  // Terminal ekranları AYNI bu fonksiyonu çağırır, ikisi de birebir aynı
+  // etiketi üretir (kural: etiket nereden basılırsa basılsın aynı olmalı).
+  function isKartiEtiketYazdir(is) {
+    const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>QR Etiket — ${escapeHtml(is.ymKod)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;margin:0;padding:8mm}
+        .et{width:70mm;border:1.5px solid #000;border-radius:4px;padding:5mm;margin-bottom:5mm;page-break-inside:avoid;text-align:center}
+        .kod{font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:1px;margin-top:2mm}
+        .ad{font-size:11px;color:#333;margin-top:1mm}
+        .alt{font-size:9px;color:#666;margin-top:2mm;border-top:1px dashed #999;padding-top:2mm}
+      </style></head><body>
+      <div class="et">
+        ${qrSvg(partiEtiketKodu(is.ymKod, is.kaynakKod), 150)}
+        <div class="kod">${escapeHtml(is.ymKod)}</div>
+        <div class="ad">${escapeHtml(is.ymAd || '')}</div>
+        <div class="alt">${escapeHtml(is.kaynakKod)} · ${escapeHtml(is.istasyonKod)} · ${is.gelenAdet} adet</div>
+      </div>
+      <script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);
+    w.document.close();
+  }
+
   // ── TELEFONLA BARKOD OKUTMA MODALI ──────────────────────────────────────
   // Telefon kamerasıyla (BarcodeDetector destekliyse) canlı tarama yapar;
   // desteklenmeyen cihazlarda kod elle girilir. `beklenen` verilirse okunan
@@ -5326,7 +5364,7 @@ const App = (() => {
     muhasebeKaydiOlustur, tahsilatBeklenenOnayla, siparisOnaylaninceOdemePlaniniAnindaIsle, siparisReddindeTeklifSorusu, kesimPlaniKaydedildiginceStokDus, kalemleriKdvGrupla, ekGiderTutar, ekGiderToplami, EK_GIDER_KATALOG, akordeonHtml, akordeonBagla, kartNeredeKullaniliyor,
     ikinciKaliteKalemleriSatildiIsaretle, ikinciKaliteSevkBilgisiIsle, sayfayaErisebilir,
     ikinciKaliteKullanilabilirAdet, ikinciKaliteRezervasyonSenkronize, ikinciKaliteRezervasyonKaldir, ikinciKaliteSatisGeriAl,
-    qrSvg, qrIcerikUret, kodAyikla, barkodOkutModal, fotografiOlcekle1080, hatSifresiDogru, receteAltYarimamulleri,
+    qrSvg, qrIcerikUret, kodAyikla, barkodOkutModal, partiEtiketKodu, isKartiEtiketYazdir, fotografiOlcekle1080, hatSifresiDogru, receteAltYarimamulleri,
     siparisTakimlamaDurumu, isEmriIhtiyaciEkle, urunPaketOzeti, paketOzetMetni,
     olculerdenHacim, elleOlcuVarMi, olcuAgirlikCoz, olcuOzetMetni, olcuKaynakRozeti,
     cekiListesiUret, hammaddeBirimFiyatTRY,

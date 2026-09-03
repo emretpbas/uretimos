@@ -37,7 +37,7 @@ PageModules.hat_takip = (() => {
         istasyonKod: step0.kod, istasyonTanim: step0.tanim, hat: step0.hat || 'GENEL',
         gelenAdet: adet, kaliteOnayliAdet: 0, islemTamamAdet: 0, sevkEdilenAdet: 0, fireAdet: 0,
         kaliteOnaylari: [], islemOnaylari: [], sevkler: [], redler: [],
-        barkodOkundu: false, durum: 'aktif', olusturmaTarihi: new Date().toISOString().slice(0, 10)
+        barkodOkundu: false, etiketBasildi: false, durum: 'aktif', olusturmaTarihi: new Date().toISOString().slice(0, 10)
       });
       eklendi = true;
     };
@@ -466,6 +466,7 @@ PageModules.hat_takip = (() => {
           <span class="pill ${x.kaynakTip === 'ie' ? 'pill-purple' : 'pill-blue'}" style="font-size:9px">${x.kaynakTip === 'ie' ? 'İş Emri' : 'Sipariş'}</span>
           <span style="font-size:11.5px;margin-left:6px">${App.escapeHtml(x.ymKod)} — ${App.escapeHtml(x.ymAd)}</span>
           ${x.barkodOkundu ? '<span class="pill pill-green" style="font-size:9px">📶 Barkod OK</span>' : ''}
+          ${x.etiketBasildi ? '<span class="pill pill-blue" style="font-size:9px">🏷 Etiket Basıldı</span>' : '<span class="pill pill-amber" style="font-size:9px">🏷 Etiket basılmadı</span>'}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${adimRozet('Gelen', x.gelenAdet - x.fireAdet, x.gelenAdet, 'var(--text)')}
@@ -526,25 +527,18 @@ PageModules.hat_takip = (() => {
       if (is) QrDosya.linkAc('yarimamul', is.yarimamulId, is.ymKod);
     });
     el.querySelectorAll('.ht-qr').forEach(b => b.onclick = async () => {
-      const { is } = await isiBul(b.dataset.id);
+      const { isler, is } = await isiBul(b.dataset.id);
       if (!is) return;
-      const w = window.open('', '_blank');
-      w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>QR Etiket — ${App.escapeHtml(is.ymKod)}</title>
-        <style>
-          body{font-family:Arial,sans-serif;margin:0;padding:8mm}
-          .et{width:70mm;border:1.5px solid #000;border-radius:4px;padding:5mm;margin-bottom:5mm;page-break-inside:avoid;text-align:center}
-          .kod{font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:1px;margin-top:2mm}
-          .ad{font-size:11px;color:#333;margin-top:1mm}
-          .alt{font-size:9px;color:#666;margin-top:2mm;border-top:1px dashed #999;padding-top:2mm}
-        </style></head><body>
-        <div class="et">
-          ${App.qrSvg(is.ymKod, 150)}
-          <div class="kod">${App.escapeHtml(is.ymKod)}</div>
-          <div class="ad">${App.escapeHtml(is.ymAd || '')}</div>
-          <div class="alt">${App.escapeHtml(is.kaynakKod)} · ${App.escapeHtml(is.istasyonKod)} · ${is.gelenAdet} adet</div>
-        </div>
-        <script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);
-      w.document.close();
+      App.isKartiEtiketYazdir(is);
+      // Basma kaydı: RULE — etiket bu partide daha önce basılmadıysa ilk
+      // basımın kim/ne zaman yaptığı izlenir (istasyondan istasyona taşınır).
+      if (!is.etiketBasildi) {
+        is.etiketBasildi = true;
+        is.etiketTarihi = bugun();
+        is.etiketBasan = App.aktifRol();
+        await App.persist(() => Store.istasyonIsleri.save(isler));
+        render(main);
+      }
     });
 
     // 1) QR Okut (manuel tuş — ileride el terminali istasyon tanımı)
@@ -632,7 +626,12 @@ PageModules.hat_takip = (() => {
                 istasyonKod: sonraki.kod, istasyonTanim: sonraki.tanim, hat: sonraki.hat || 'GENEL',
                 gelenAdet: adet, kaliteOnayliAdet: 0, islemTamamAdet: 0, sevkEdilenAdet: 0, fireAdet: 0,
                 kaliteOnaylari: [], islemOnaylari: [], sevkler: [], redler: [],
-                barkodOkundu: false, durum: 'aktif', olusturmaTarihi: bugun()
+                // Etiket AYNI fiziksel partiyle birlikte seyahat eder — basılma
+                // bilgisi (varsa) önceki istasyondan aynen taşınır, yeniden
+                // basılması GEREKMEZ (bkz. App.partiEtiketKodu açıklaması).
+                barkodOkundu: false, etiketBasildi: is.etiketBasildi || false,
+                etiketTarihi: is.etiketTarihi || null, etiketBasan: is.etiketBasan || null,
+                durum: 'aktif', olusturmaTarihi: bugun()
               });
             }
           }
@@ -741,7 +740,9 @@ PageModules.hat_takip = (() => {
               istasyonKod: hedefStep.kod, istasyonTanim: hedefStep.tanim, hat: hedefStep.hat || 'GENEL',
               gelenAdet: adet, kaliteOnayliAdet: 0, islemTamamAdet: 0, sevkEdilenAdet: 0, fireAdet: 0,
               kaliteOnaylari: [], islemOnaylari: [], sevkler: [], redler: [],
-              barkodOkundu: false, durum: 'aktif', olusturmaTarihi: bugun()
+              barkodOkundu: false, etiketBasildi: is.etiketBasildi || false,
+              etiketTarihi: is.etiketTarihi || null, etiketBasan: is.etiketBasan || null,
+              durum: 'aktif', olusturmaTarihi: bugun()
             });
           }
         }

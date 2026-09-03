@@ -277,9 +277,11 @@ PageModules.hat_terminal = (() => {
               <div><b class="mono" style="font-size:12px">${App.escapeHtml(x.ymKod)}</b> — ${App.escapeHtml(x.ymAd)}<br>
               <span class="muted" style="font-size:10.5px">${App.escapeHtml(x.kaynakKod)} · Gelen: ${kalan} · Kalite: ${x.kaliteOnayliAdet} · İşlem: ${x.islemTamamAdet} · Sevk: ${x.sevkEdilenAdet}${x.fireAdet ? ' · <b style="color:var(--red-text)">Red: ' + x.fireAdet + '</b>' : ''}</span></div>
               ${x.barkodOkundu ? '<span class="pill pill-green" style="font-size:9.5px;align-self:center">📶 QR Eşleşti</span>' : '<span class="pill pill-red" style="font-size:9.5px;align-self:center">QR bekliyor</span>'}
+              ${x.etiketBasildi ? '<span class="pill pill-blue" style="font-size:9.5px;align-self:center">🏷 Etiket basıldı</span>' : '<span class="pill pill-amber" style="font-size:9.5px;align-self:center">🏷 Etiket basılmadı</span>'}
             </div>
             <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-              ${!x.barkodOkundu ? `<button class="btn btn-sm ho-barkod" data-id="${x.id}">📷 QR Okut (Telefon)</button>` : ''}
+              ${!x.etiketBasildi ? `<button class="btn btn-sm btn-ghost ho-etiket" data-id="${x.id}">🏷 Etiket Yazdır</button>` : ''}
+              ${!x.barkodOkundu ? `<button class="btn btn-sm ho-barkod" data-id="${x.id}" ${!x.etiketBasildi ? 'disabled title="Önce parti etiketi basılmalı"' : ''}>📷 QR Okut (Telefon)</button>` : ''}
               <button class="btn btn-sm btn-blue ho-kalite" data-id="${x.id}" ${(!x.barkodOkundu || kalan - x.kaliteOnayliAdet <= 0) ? 'disabled' : ''}>✓ Kalite</button>
               <button class="btn btn-sm ho-red" data-id="${x.id}" style="background:var(--red);color:#fff;border:none"
                 ${(!x.barkodOkundu || kalan - x.kaliteOnayliAdet <= 0) ? 'disabled' : ''}>✕ Kalite Reddi</button>
@@ -347,15 +349,34 @@ PageModules.hat_terminal = (() => {
       return { tumu, is: tumu.find(x => x.id === id) };
     };
 
-    // BARKOD: telefon kamerasıyla okut — YARI MAMÜL KODUYLA EŞLEŞMEDEN
-    // üretime (kalite onayına) BAŞLANAMAZ.
+    // 🏷 ETİKET YAZDIR: parti etiketi henüz basılmadıysa terminalden basılabilir
+    // (kural: etiket önce basılır, sonra okutulur — bkz. aşağıdaki gate).
+    main.querySelectorAll('.ho-etiket').forEach(b => b.onclick = async () => {
+      const { tumu, is } = await isiBul(b.dataset.id);
+      if (!is) return;
+      App.isKartiEtiketYazdir(is);
+      if (!is.etiketBasildi) {
+        is.etiketBasildi = true;
+        is.etiketTarihi = new Date().toISOString().slice(0, 10);
+        is.etiketBasan = oturum.isim;
+        await App.persist(() => Store.istasyonIsleri.save(tumu));
+        render(main);
+      }
+    });
+
+    // BARKOD: telefon kamerasıyla okut — parti etiketi (yarı mamül kodu +
+    // kaynak iş emri/sipariş kodu) EŞLEŞMEDEN üretime (kalite onayına)
+    // BAŞLANAMAZ. Yalnızca yarımamül kodu kontrol edilseydi, aynı parça
+    // tipini aynı anda üreten FARKLI siparişler/iş emirleri sahada
+    // birbirine karışabilirdi — kaynak kodu da eşleşmeyi zorunlu kılar.
     main.querySelectorAll('.ho-barkod').forEach(b => b.onclick = async () => {
       const { tumu, is } = await isiBul(b.dataset.id);
       if (!is) return;
+      if (!is.etiketBasildi) { App.toast('Önce bu parti için etiket basılmalı ("🏷 Etiket Yazdır")', 'err'); return; }
       App.barkodOkutModal({
         baslik: '📷 Parça QR Kodu Okut — ' + is.istasyonKod,
-        beklenen: is.ymKod,
-        aciklama: `Gelen yarı mamül: <b>${App.escapeHtml(is.ymKod)} — ${App.escapeHtml(is.ymAd)}</b><br>Okunan QR bu kodla <b>eşleşmezse üretime başlanamaz</b>.`,
+        beklenen: App.partiEtiketKodu(is.ymKod, is.kaynakKod),
+        aciklama: `Gelen yarı mamül: <b>${App.escapeHtml(is.ymKod)} — ${App.escapeHtml(is.ymAd)}</b> · Kaynak: <b>${App.escapeHtml(is.kaynakKod)}</b><br>Okunan QR bu partinin etiketiyle <b>eşleşmezse üretime başlanamaz</b>.`,
         onOkundu: async () => {
           is.barkodOkundu = true;
           is.barkodTarihi = new Date().toISOString().slice(0, 10);
@@ -562,7 +583,9 @@ PageModules.hat_terminal = (() => {
               istasyonKod: sonraki.kod, istasyonTanim: sonraki.tanim, hat: sonraki.hat || 'GENEL',
               gelenAdet: adet, kaliteOnayliAdet: 0, islemTamamAdet: 0, sevkEdilenAdet: 0, fireAdet: 0,
               kaliteOnaylari: [], islemOnaylari: [], sevkler: [], redler: [],
-              barkodOkundu: false, durum: 'aktif', olusturmaTarihi: new Date().toISOString().slice(0, 10)
+              barkodOkundu: false, etiketBasildi: is.etiketBasildi || false,
+              etiketTarihi: is.etiketTarihi || null, etiketBasan: is.etiketBasan || null,
+              durum: 'aktif', olusturmaTarihi: new Date().toISOString().slice(0, 10)
             });
           }
         }

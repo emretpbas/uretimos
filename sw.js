@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v129'; // v129: hammadde ic tutarlilik taramasi (anahtarsiz, yerel) eklendi
+const CACHE_NAME = 'uretimos-v130'; // v130: uretim parti etiketi kurali (QR'a kaynak kodu da eklendi, basilmadan okutulamaz)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
