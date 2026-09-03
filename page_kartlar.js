@@ -1035,6 +1035,14 @@ PageModules.kartlar = (() => {
         <div class="fgroup"><label class="flbl">GYG Oranı (%, manuel — kalem+rota maliyetine uygulanır)</label><input class="finput" id="f-gyg" type="number" step="0.1" value="${d.gygOraniYuzde || 0}"></div>
       </div>
       <div class="hr"></div>
+      <div class="flbl" style="margin-bottom:8px">Üretim Kapasitesi (Planlama) — boş/0 = sınırsız</div>
+      <div class="fhint" style="margin-top:-4px;margin-bottom:8px">Bu üründen belirli bir dönemde en fazla kaç adet üretilebileceğini sınırlar. Üretim Çizelgesi'ndeki <b>🎯 Ürün Kapasitesi</b> sekmesinde bu limitle o dönemde PLANLANAN (siparişlerden gelen) adet karşılaştırılır.</div>
+      <div class="frow">
+        <div class="fgroup"><label class="flbl">Günlük Maks. Adet</label><input class="finput" id="f-kap-gunluk" type="number" min="0" value="${d.kapasiteGunlukMax || ''}"></div>
+        <div class="fgroup"><label class="flbl">Haftalık Maks. Adet</label><input class="finput" id="f-kap-haftalik" type="number" min="0" value="${d.kapasiteHaftalikMax || ''}"></div>
+        <div class="fgroup"><label class="flbl">Aylık Maks. Adet</label><input class="finput" id="f-kap-aylik" type="number" min="0" value="${d.kapasiteAylikMax || ''}"></div>
+      </div>
+      <div class="hr"></div>
       <div class="flbl" style="margin-bottom:8px">Ölçü, Hacim ve Ağırlık (Elle — Maliyet, Fiyat, Üretim ve Sevkiyat Ekranlarında Görünür)</div>
       <div class="fhint" style="margin-bottom:8px">Boş bırakırsanız reçetedeki paket kalemlerinden otomatik hesaplanır. Değer girerseniz o değer kullanılır.</div>
       <div class="frow">
@@ -1110,7 +1118,8 @@ PageModules.kartlar = (() => {
     };
     document.getElementById('f-cancel').onclick = App.closeModal;
     document.getElementById('f-yeni-rota').onclick = () => {
-      const guncelD = { ...d, kod: document.getElementById('f-kod').value, ad: document.getElementById('f-ad').value, aciklama: document.getElementById('f-aciklama').value, amortismanGideri: document.getElementById('f-amortisman').value, gygOraniYuzde: document.getElementById('f-gyg').value, gorseller };
+      const guncelD = { ...d, kod: document.getElementById('f-kod').value, ad: document.getElementById('f-ad').value, aciklama: document.getElementById('f-aciklama').value, amortismanGideri: document.getElementById('f-amortisman').value, gygOraniYuzde: document.getElementById('f-gyg').value,
+        kapasiteGunlukMax: document.getElementById('f-kap-gunluk').value, kapasiteHaftalikMax: document.getElementById('f-kap-haftalik').value, kapasiteAylikMax: document.getElementById('f-kap-aylik').value, gorseller };
       App.closeModal();
       PageModules.rota.openRotaEditorModal(null, (yeniRota) => {
         if (yeniRota) guncelD.rotaId = yeniRota.id;
@@ -1128,6 +1137,9 @@ PageModules.kartlar = (() => {
         rotaId: document.getElementById('f-rota').value || null,
         amortismanGideri: parseFloat(document.getElementById('f-amortisman').value) || 0,
         gygOraniYuzde: parseFloat(document.getElementById('f-gyg').value) || 0,
+        kapasiteGunlukMax: parseFloat(document.getElementById('f-kap-gunluk').value) || 0,
+        kapasiteHaftalikMax: parseFloat(document.getElementById('f-kap-haftalik').value) || 0,
+        kapasiteAylikMax: parseFloat(document.getElementById('f-kap-aylik').value) || 0,
         // Ölçü / hacim / ağırlık — elle girilir, boşsa reçeteden hesaplanır.
         // Birimler: cm ve kg. Hacim türetilmiş değerdir, SAKLANMAZ; her
         // gösterimde App.olculerdenHacim ile yeniden hesaplanır ki ölçü

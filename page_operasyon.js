@@ -7,31 +7,39 @@
 //   5) Plan vs Fiili     : reçete maliyeti ile gerçekleşen maliyet farkı
 // ════════════════════════════════════════════════════════════════════════════
 PageModules.operasyon = (() => {
-  let activeTab = 'vardiya';
+  // Sekme yerine AKORDEON: her birim kendi başlığına tıklanınca açılıp
+  // kapanır (bkz. App.akordeonHtml/akordeonBagla — page_yonetim_raporlama.js
+  // ile aynı desen). Sekmelerin aksine birden fazla bölüm aynı anda açık
+  // tutulabilir, tek sayfada yukarıdan aşağı gezilir.
+  const YUKLENIYOR = '<div style="padding:24px;text-align:center"><div class="loading-spin" style="margin:0 auto"></div></div>';
 
-  async function render(main, params) {
-    if (params && params.tab) activeTab = params.tab;
+  async function render(main) {
     main.innerHTML = `
       <div class="page-hdr">
         <div><div class="page-title">Operasyon Yönetimi</div>
-        <div class="page-sub">Vardiya, parti izlenebilirliği, envanter sayımı, tedarikçi karnesi ve maliyet sapma analizi</div></div>
+        <div class="page-sub">Vardiya, parti izlenebilirliği, envanter sayımı, tedarikçi karnesi ve maliyet sapma analizi — başlığa tıklayıp açın/kapatın</div></div>
       </div>
-      <div class="tabs">
-        <div class="tab ${activeTab === 'vardiya' ? 'active' : ''}" data-tab="vardiya">🕐 Vardiyalar</div>
-        <div class="tab ${activeTab === 'lot' ? 'active' : ''}" data-tab="lot">🔖 Lot / Parti Takibi</div>
-        <div class="tab ${activeTab === 'sayim' ? 'active' : ''}" data-tab="sayim">📋 Envanter Sayımı</div>
-        <div class="tab ${activeTab === 'tedarikci' ? 'active' : ''}" data-tab="tedarikci">🏅 Tedarikçi Karnesi</div>
-        <div class="tab ${activeTab === 'maliyet' ? 'active' : ''}" data-tab="maliyet">💹 Plan vs Fiili Maliyet</div>
-      </div>
-      <div id="op-content"><div style="padding:40px;text-align:center"><div class="loading-spin" style="margin:0 auto"></div></div></div>`;
-    main.querySelectorAll('.tab').forEach(t => t.onclick = () => { activeTab = t.dataset.tab; render(main); });
+      ${App.akordeonHtml([
+        { baslik: 'Vardiyalar', ikon: '🕐', altBaslik: 'kapasite tabanı', icerikHtml: `<div id="op-acc-vardiya">${YUKLENIYOR}</div>` },
+        { baslik: 'Lot / Parti Takibi', ikon: '🔖', icerikHtml: `<div id="op-acc-lot">${YUKLENIYOR}</div>` },
+        { baslik: 'Envanter Sayımı', ikon: '📋', icerikHtml: `<div id="op-acc-sayim">${YUKLENIYOR}</div>` },
+        { baslik: 'Tedarikçi Karnesi', ikon: '🏅', icerikHtml: `<div id="op-acc-tedarikci">${YUKLENIYOR}</div>` },
+        { baslik: 'Plan vs Fiili Maliyet', ikon: '💹', icerikHtml: `<div id="op-acc-maliyet">${YUKLENIYOR}</div>` }
+      ])}`;
+    App.akordeonBagla(main);
 
-    const c = document.getElementById('op-content');
-    if (activeTab === 'vardiya') await renderVardiya(c, render, main);
-    else if (activeTab === 'lot') await renderLot(c, render, main);
-    else if (activeTab === 'sayim') await renderSayim(c, render, main);
-    else if (activeTab === 'tedarikci') await renderTedarikci(c);
-    else await renderMaliyet(c);
+    // Her bölüm KENDİ konteynerine çizilir ve kendi kendini yeniden çizen
+    // bir callback alır — bir bölümdeki kaydet/sil işlemi yalnızca O
+    // bölümü tazeler, akordeonun açık/kapalı durumunu bozmaz.
+    const vC = document.getElementById('op-acc-vardiya');
+    const lC = document.getElementById('op-acc-lot');
+    const sC = document.getElementById('op-acc-sayim');
+    const tC = document.getElementById('op-acc-tedarikci');
+    const mC = document.getElementById('op-acc-maliyet');
+    const vRender = (m) => renderVardiya(vC, vRender, m || main);
+    const lRender = (m) => renderLot(lC, lRender, m || main);
+    const sRender = (m) => renderSayim(sC, sRender, m || main);
+    await Promise.all([vRender(main), lRender(main), sRender(main), renderTedarikci(tC), renderMaliyet(mC)]);
   }
 
   // ══ 1) VARDİYALAR ═══════════════════════════════════════════════════════

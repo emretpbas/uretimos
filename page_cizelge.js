@@ -32,6 +32,7 @@ PageModules.cizelge = (() => {
         <div class="tab ${activeTab === 'gantt' ? 'active' : ''}" data-tab="gantt">📅 Çizelge (Gantt)</div>
         <div class="tab ${activeTab === 'doluluk' ? 'active' : ''}" data-tab="doluluk">📊 Hat Doluluk</div>
         <div class="tab ${activeTab === 'termin' ? 'active' : ''}" data-tab="termin">⏰ Termin Riski</div>
+        <div class="tab ${activeTab === 'urun_kapasite' ? 'active' : ''}" data-tab="urun_kapasite">🎯 Ürün Kapasitesi</div>
       </div>
       <div id="cz-content"><div style="padding:40px;text-align:center"><div class="loading-spin" style="margin:0 auto"></div></div></div>`;
 
@@ -39,8 +40,14 @@ PageModules.cizelge = (() => {
     document.getElementById('cz-yenile').onclick = () => render(main);
     document.getElementById('cz-haftasonu').onchange = (e) => { haftaSonuCalis = e.target.checked; render(main); };
 
-    if (!sonuc) sonuc = await CizelgeMotor.tamCizelge({ haftaSonuCalis });
     const content = document.getElementById('cz-content');
+
+    // Ürün Kapasitesi sekmesi hat/rota tabanlı sonlu-kapasite çizelgesinden
+    // BAĞIMSIZDIR (kart bazlı bir üst limit karşılaştırması) — çizelgelenecek
+    // operasyon olmasa da (bkz. aşağıdaki erken çıkış) çalışabilmeli.
+    if (activeTab === 'urun_kapasite') { await renderUrunKapasite(content); return; }
+
+    if (!sonuc) sonuc = await CizelgeMotor.tamCizelge({ haftaSonuCalis });
 
     if (!sonuc.operasyonSayisi) {
       content.innerHTML = `<div class="card"><div class="empty-state" style="padding:30px">
@@ -263,6 +270,134 @@ PageModules.cizelge = (() => {
           render(main, { tab: 'termin' });
         });
     });
+  }
+
+  // ── SEKME 4: ÜRÜN KAPASİTESİ ────────────────────────────────────────────
+  // Ürün/Yarı Mamül kartlarında tanımlı GÜNLÜK/HAFTALIK/AYLIK maks. adet
+  // limitleriyle, o dönem için PLANLANMIŞ adedi (gerçek siparişler + açık
+  // iş emirleri) karşılaştırır. Hat/rota tabanlı sonlu-kapasite çizelgesinden
+  // (Gantt/Hat Doluluk) BAĞIMSIZ, kart bazlı bir üst-limit kontrolüdür —
+  // örn. tek bir kalıp/özel makinanın günde en fazla N adet üretebilmesi
+  // gibi hat kapasitesiyle ifade edilemeyen darboğazlar için kullanılır.
+  // Limit tanımlanmayan kartlar listede GÖRÜNMEZ (sınırsız kabul edilir).
+  async function renderUrunKapasite(content) {
+    content.innerHTML = '<div style="padding:40px;text-align:center"><div class="loading-spin" style="margin:0 auto"></div></div>';
+    const [urunler, yarimamuller, siparisler, isemirleri, receteler] = await Promise.all([
+      Store.urunler.all(), Store.yarimamuller.all(), Store.siparisler.all(), Store.isemirleri.all(), Store.receteler.all()
+    ]);
+
+    const bg = new Date().toISOString().slice(0, 10);
+    const gEkle = (t, g) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() + g); return d.toISOString().slice(0, 10); };
+    const bgGun = new Date(bg + 'T00:00:00').getDay(); // 0=Paz..6=Cmt
+    const haftaBas = gEkle(bg, -((bgGun + 6) % 7));    // Pazartesi başlangıç
+    const haftaSon = gEkle(haftaBas, 6);
+    const buAy = bg.slice(0, 7);
+
+    const pencereye = (tarih) => {
+      if (!tarih) return { gun: false, hafta: false, ay: false };
+      return { gun: tarih === bg, hafta: tarih >= haftaBas && tarih <= haftaSon, ay: tarih.slice(0, 7) === buAy };
+    };
+
+    const gercekSiparisler = siparisler.filter(s => ['onaylandi', 'uretimde', 'sevk_edildi'].includes(s.durum));
+    const aktifIsEmirleri = isemirleri.filter(ie => ie.durum !== 'tamamlandi');
+
+    const urunPlan = new Map(), ymPlan = new Map();
+    const ekle = (harita, id, adet, p) => {
+      if (!id || !adet) return;
+      const m = harita.get(id) || { gun: 0, hafta: 0, ay: 0 };
+      if (p.gun) m.gun += adet; if (p.hafta) m.hafta += adet; if (p.ay) m.ay += adet;
+      harita.set(id, m);
+    };
+
+    gercekSiparisler.forEach(s => {
+      const p = pencereye(s.uretimTermini || s.tarih);
+      if (!p.gun && !p.hafta && !p.ay) return;
+      (s.kalemler || []).forEach(kalem => {
+        if (kalem.ikinciKalite) return;
+        if (kalem.grup === 'urun') {
+          const urun = urunler.find(u => u.kod === kalem.kod);
+          if (!urun) return;
+          ekle(urunPlan, urun.id, kalem.miktar || 0, p);
+          App.receteAltYarimamulleri('urun', urun.id, receteler, { carpan: kalem.miktar || 1 })
+            .forEach((mik, ymId) => ekle(ymPlan, ymId, mik, p));
+        } else if (kalem.grup === 'yarimamul') {
+          const ym = yarimamuller.find(y => y.kod === kalem.kod);
+          if (ym) ekle(ymPlan, ym.id, kalem.miktar || 0, p);
+        }
+      });
+    });
+
+    aktifIsEmirleri.forEach(ie => {
+      const p = pencereye(ie.tarih);
+      if (!p.gun && !p.hafta && !p.ay) return;
+      (ie.uretimListesi || []).filter(k => k.tip === 'yarimamul').forEach(k => {
+        ekle(ymPlan, k.refId, k.gerekliToplam || ie.adet || 0, p);
+      });
+    });
+
+    const bosPencere = { gun: 0, hafta: 0, ay: 0 };
+    const satirlar = [];
+    urunler.filter(u => u.kapasiteGunlukMax || u.kapasiteHaftalikMax || u.kapasiteAylikMax).forEach(u => {
+      satirlar.push({
+        tip: 'Ürün', kod: u.kod, ad: u.ad, plan: urunPlan.get(u.id) || bosPencere,
+        limit: { gun: u.kapasiteGunlukMax || 0, hafta: u.kapasiteHaftalikMax || 0, ay: u.kapasiteAylikMax || 0 }
+      });
+    });
+    yarimamuller.filter(y => y.kapasiteGunlukMax || y.kapasiteHaftalikMax || y.kapasiteAylikMax).forEach(y => {
+      satirlar.push({
+        tip: 'Yarı Mamül', kod: y.kod, ad: y.ad, plan: ymPlan.get(y.id) || bosPencere,
+        limit: { gun: y.kapasiteGunlukMax || 0, hafta: y.kapasiteHaftalikMax || 0, ay: y.kapasiteAylikMax || 0 }
+      });
+    });
+
+    if (!satirlar.length) {
+      content.innerHTML = `<div class="card"><div class="empty-state" style="padding:30px">
+        <div class="etitle">Kapasite limiti tanımlı kart yok</div>
+        <div class="edesc">Ürün Kartları veya Yarı Mamüller ekranından bir karta günlük/haftalık/aylık maksimum adet girin — buradan izlenmeye başlar.</div></div></div>`;
+      return;
+    }
+
+    const hucre = (plan, limit) => {
+      if (!limit) return '<span class="muted">sınırsız</span>';
+      const p = Math.min(100, Math.round((plan / limit) * 100));
+      const renk = plan > limit ? 'red' : p >= 85 ? 'amber' : 'green';
+      return `<div style="min-width:100px">
+        <div style="display:flex;justify-content:space-between;gap:4px;font-size:10px;margin-bottom:2px;white-space:nowrap">
+          <b style="color:var(--${renk}-text)">${App.fmt(plan, 0)} / ${App.fmt(limit, 0)}</b>
+          ${plan > limit ? '<span style="color:var(--red-text)">⚠</span>' : ''}
+        </div>
+        <div style="height:6px;background:var(--bg);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${p}%;background:var(--${renk})"></div></div></div>`;
+    };
+
+    const asilanlar = satirlar.filter(s =>
+      (s.limit.gun && s.plan.gun > s.limit.gun) || (s.limit.hafta && s.plan.hafta > s.limit.hafta) || (s.limit.ay && s.plan.ay > s.limit.ay));
+
+    let html = '';
+    if (asilanlar.length) {
+      html += `<div class="card" style="border:1.5px solid var(--red);background:var(--red-bg);margin-bottom:12px">
+        <div class="card-title" style="color:var(--red-text)">🚧 KAPASİTE AŞIMI — ${asilanlar.length} kalem</div>
+        ${asilanlar.map(s => `<div style="font-size:11.5px;padding:3px 0">⚠ <b>${App.escapeHtml(s.kod)}</b> — ${App.escapeHtml(s.ad)}: planlanan adet en az bir dönemde limiti aşıyor.</div>`).join('')}
+      </div>`;
+    }
+
+    html += `<div class="card">
+      <div class="card-hdr"><div class="card-title">🎯 Ürün / Yarı Mamül Kapasite Kullanımı</div></div>
+      <div class="fhint" style="margin-bottom:8px">Planlanan adet = onaylı/üretimdeki siparişler (üretim terminine göre) + açık iş emirleri (tarihe göre). Limit tanımlanmayan kartlar burada görünmez.</div>
+      <div style="overflow-x:auto">
+      <table class="dtable" style="font-size:11.5px">
+        <tr><th>Tip</th><th>Kod</th><th>Ad</th><th>Bugün</th><th>Bu Hafta</th><th>Bu Ay</th></tr>
+        ${satirlar.sort((a, b) => a.kod.localeCompare(b.kod)).map(s => `<tr>
+          <td><span class="pill ${s.tip === 'Ürün' ? 'pill-blue' : 'pill-purple'}" style="font-size:9px">${s.tip}</span></td>
+          <td class="mono">${App.escapeHtml(s.kod)}</td>
+          <td>${App.escapeHtml(s.ad)}</td>
+          <td>${hucre(s.plan.gun, s.limit.gun)}</td>
+          <td>${hucre(s.plan.hafta, s.limit.hafta)}</td>
+          <td>${hucre(s.plan.ay, s.limit.ay)}</td>
+        </tr>`).join('')}
+      </table></div>
+    </div>`;
+    content.innerHTML = html;
   }
 
   return { render };

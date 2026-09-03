@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v132'; // v132: gunluk kapasite duzeltmeleri + site ici arama (Ctrl/Cmd+K) eklendi
+const CACHE_NAME = 'uretimos-v133'; // v133: urun/yarimamul bazli kapasite planlamasi + operasyon yonetimi akordeon
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

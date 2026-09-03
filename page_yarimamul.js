@@ -179,6 +179,15 @@ PageModules.yarimamul = (() => {
       <div class="fgroup"><label class="flbl">Açıklama / Not</label><textarea class="ftextarea" id="f-aciklama">${App.escapeHtml(d.aciklama || '')}</textarea></div>
 
       <div class="hr"></div>
+      <div class="flbl" style="margin-bottom:8px">Üretim Kapasitesi (Planlama) — boş/0 = sınırsız</div>
+      <div class="fhint" style="margin-top:-4px;margin-bottom:8px">Bu yarı mamülden belirli bir dönemde en fazla kaç adet üretilebileceğini sınırlar (darboğaz makina/kalıp vb.). Üretim Çizelgesi'ndeki <b>🎯 Ürün Kapasitesi</b> sekmesinde bu limitle o dönemde PLANLANAN adet karşılaştırılır.</div>
+      <div class="frow">
+        <div class="fgroup"><label class="flbl">Günlük Maks. Adet</label><input class="finput" id="f-kap-gunluk" type="number" min="0" value="${d.kapasiteGunlukMax || ''}"></div>
+        <div class="fgroup"><label class="flbl">Haftalık Maks. Adet</label><input class="finput" id="f-kap-haftalik" type="number" min="0" value="${d.kapasiteHaftalikMax || ''}"></div>
+        <div class="fgroup"><label class="flbl">Aylık Maks. Adet</label><input class="finput" id="f-kap-aylik" type="number" min="0" value="${d.kapasiteAylikMax || ''}"></div>
+      </div>
+
+      <div class="hr"></div>
       <div class="flbl" style="margin-bottom:8px">Amortisman ve GYG (Maliyete Eklenir)</div>
       <div class="frow">
         <div class="fgroup"><label class="flbl">Amortisman Gideri (₺, sabit rakam)</label><input class="finput" id="f-amortisman" type="number" step="0.01" value="${d.amortismanGideri || 0}"></div>
@@ -252,6 +261,7 @@ PageModules.yarimamul = (() => {
         referansFiyat: document.getElementById('f-reffiyat').value, referansDvz: document.getElementById('f-refdvz').value,
         hammaddeId: document.getElementById('f-hammadde').value,
         amortismanGideri: document.getElementById('f-amortisman').value, gygOraniYuzde: document.getElementById('f-gyg').value,
+        kapasiteGunlukMax: document.getElementById('f-kap-gunluk').value, kapasiteHaftalikMax: document.getElementById('f-kap-haftalik').value, kapasiteAylikMax: document.getElementById('f-kap-aylik').value,
         aciklama: document.getElementById('f-aciklama').value
       };
       App.closeModal();
@@ -281,6 +291,9 @@ PageModules.yarimamul = (() => {
         rotaId: document.getElementById('f-rota').value || null,
         amortismanGideri: parseFloat(document.getElementById('f-amortisman').value) || 0,
         gygOraniYuzde: parseFloat(document.getElementById('f-gyg').value) || 0,
+        kapasiteGunlukMax: parseFloat(document.getElementById('f-kap-gunluk').value) || 0,
+        kapasiteHaftalikMax: parseFloat(document.getElementById('f-kap-haftalik').value) || 0,
+        kapasiteAylikMax: parseFloat(document.getElementById('f-kap-aylik').value) || 0,
         aciklama: document.getElementById('f-aciklama').value.trim(),
         gorseller
       };
