@@ -89,3 +89,56 @@ Test::dogru(isset($r['veri']['sifreHash']) && strpos($r['veri']['sifreHash'], '$
             'Yönetim bcrypt hash üretebiliyor');
 $r = Test::istek('?action=sifreHashle', 'POST', ['sifre' => '12']);
 Test::esit(400, $r['kod'], 'Kısa şifre reddediliyor');
+
+// ── hatSifresiDogrula: ham liste HİÇ ifşa edilmeden sunucuda doğrulama ────
+// Önceki sürümde Store.hatSifreleri.all() ile TÜM hat/birim şifreleri
+// istemciye iniyordu (page_yukleme_onay.js). Artık bu uç yalnızca true/false
+// döner; ham koleksiyon da hassas listede olduğu için genel get ile
+// düz personel tarafından okunamaz.
+Test::bolum('Hat/birim şifresi — sunucu tarafı doğrulama, ifşa yok');
+
+$r = Test::istek('?action=hatSifresiDogrula', 'POST', ['hat' => 'TANIMSIZ HAT', 'sifre' => 'x'], false);
+Test::esit(401, $r['kod'], 'hatSifresiDogrula: oturumsuz istek reddediliyor');
+
+$depoEposta2 = 'test-depo-guvenlik@ornek.com';
+Test::istek('?action=hesapTalepEt', 'POST', [
+    'ad' => 'Test Depo Guvenlik', 'email' => $depoEposta2, 'rol' => 'depo', 'sifre' => 'DepoTestSifre456'
+], false);
+$talepler2 = Test::oku('hesapTalepleri');
+$depoTalep2 = null;
+foreach ($talepler2 as $t) { if (($t['email'] ?? '') === $depoEposta2) { $depoTalep2 = $t; break; } }
+Test::dogru($depoTalep2 !== null, 'Test için geçici depo hesabı talebi oluşturuldu (güvenlik testi)');
+Test::istek('?action=hesapTalepiKarar', 'POST', ['id' => $depoTalep2['id'], 'karar' => 'onayla'], null);
+$depoTok2 = (function () use ($depoEposta2) {
+    $r = Test::istek('?action=login', 'POST', ['kullaniciAdi' => 'testdepoguvenlik', 'sifre' => 'DepoTestSifre456'], false);
+    return $r['veri']['token'] ?? null;
+})();
+Test::dogru(!empty($depoTok2), 'Geçici depo hesabıyla giriş başarılı (güvenlik testi)');
+
+// Tanımsız hat/birim için varsayılan '1234' sunucuda doğrulanıyor
+$r = Test::istek('?action=hatSifresiDogrula', 'POST', ['hat' => 'TANIMSIZ HAT', 'sifre' => '1234'], $depoTok2);
+Test::dogru(!empty($r['veri']['ok']), 'Varsayılan 1234 şifresi doğru kabul ediliyor (herhangi bir giriş yapmış rol çağırabiliyor)');
+$r = Test::istek('?action=hatSifresiDogrula', 'POST', ['hat' => 'TANIMSIZ HAT', 'sifre' => 'yanlis'], $depoTok2);
+Test::dogru(empty($r['veri']['ok']), 'Yanlış birim şifresi reddediliyor');
+Test::dogru(strpos(json_encode($r), '1234') === false, 'Yanıt hiçbir şifreyi düz metin göstermiyor');
+
+Test::yaz('hatSifreleri', [['hat' => 'ÖZEL BİRİM', 'sifreHash' => password_hash('gizliBirim9', PASSWORD_DEFAULT)]]);
+$r = Test::istek('?action=hatSifresiDogrula', 'POST', ['hat' => 'ÖZEL BİRİM', 'sifre' => 'gizliBirim9'], $depoTok2);
+Test::dogru(!empty($r['veri']['ok']), 'Tanımlı birim şifresi (depo rolü) doğru kabul ediliyor');
+Test::dogru(strpos(json_encode($r), 'gizliBirim9') === false, 'Doğru şifre bile yanıtta düz metin görünmüyor');
+
+// Ham koleksiyon artık genel get ile düz personel tarafından okunamıyor
+$r = Test::istek('?action=get&key=hatSifreleri', 'GET', null, $depoTok2);
+Test::esit(403, $r['kod'], 'hatSifreleri genel get ile (depo rolü) okunamıyor');
+$r = Test::istek('?action=get&key=hatOperatorleri', 'GET', null, $depoTok2);
+Test::esit(403, $r['kod'], 'hatOperatorleri genel get ile (depo rolü) okunamıyor');
+$r = Test::istek('?action=get&key=hatSifreTalepleri', 'GET', null, $depoTok2);
+Test::esit(403, $r['kod'], 'hatSifreTalepleri genel get ile (depo rolü) okunamıyor');
+$r = Test::istek('?action=get&key=bankaKredileri', 'GET', null, $depoTok2);
+Test::esit(403, $r['kod'], 'bankaKredileri genel get ile (depo rolü) okunamıyor');
+
+// Yönetim yine erişebiliyor (yönetim bypass + doğru yetkilendirilmiş roller)
+$r = Test::istek('?action=get&key=hatSifreleri', 'GET', null);
+Test::esit(200, $r['kod'], 'hatSifreleri yönetim tarafından okunabiliyor');
+$r = Test::istek('?action=get&key=bankaKredileri', 'GET', null);
+Test::esit(200, $r['kod'], 'bankaKredileri yönetim tarafından okunabiliyor');

@@ -452,6 +452,22 @@ const Store = (() => {
 
   function oturumVarMi() { return tokenGetir() !== ''; }
 
+  // Birim/hat şifresini SUNUCUDA doğrular — ham hatSifreleri listesi hiçbir
+  // zaman tarayıcıya inmez (Sevkiyat Yükleme Onayı gibi tam operatör oturumu
+  // açmayan, sadece birim şifresi soran ekranlar için). apiFetch KULLANILIR
+  // (oturumsuz değil — çağıran zaten ana uygulamaya giriş yapmış olmalı).
+  async function hatSifresiDogrula(hat, sifre) {
+    try {
+      const res = await apiFetch(API_URL + '?action=hatSifresiDogrula', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hat, sifre })
+      });
+      const data = await res.json().catch(() => ({}));
+      return !!(res.ok && data.ok);
+    } catch (e) { return false; }
+  }
+
   // ── HAT OPERATÖR TERMİNALİ (oturumsuz uçlar) ──────────────────────────────
   // Operatörler ÜretimOS hesabıyla girmez: ana giriş ekranındaki terminal
   // tuşuyla gelir. Bu üç uç düz fetch kullanır (apiFetch DEĞİL) — 401 dönerse
@@ -544,11 +560,13 @@ const Store = (() => {
   }
 
   // Bekleyen bir hesap talebini onaylar/reddeder (sadece yonetim).
-  async function hesapTalepiKarar(id, karar) {
+  async function hesapTalepiKarar(id, karar, rolOverride) {
+    const govde = { id, karar };
+    if (rolOverride) govde.rol = rolOverride;
     const res = await apiFetch(API_URL + '?action=hesapTalepiKarar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, karar })
+      body: JSON.stringify(govde)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error || 'Karar kaydedilemedi');
@@ -692,7 +710,7 @@ const Store = (() => {
   return {
     get, set, del, listKeys, setIfAbsent,
     login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, hatVerisiGetir, sunucuModu,
-    hatListesiGetir, hatOperatorGiris, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
+    hatListesiGetir, hatOperatorGiris, hatSifresiDogrula, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,

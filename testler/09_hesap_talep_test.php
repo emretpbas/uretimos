@@ -137,6 +137,38 @@ foreach ($talepler as $t) { if (($t['email'] ?? '') === $eposta3) { $t3 = $t; br
 $r = Test::istek('?action=hesapTalepiKarar', 'POST', ['id' => $t3['id'], 'karar' => 'onayla'], null);
 Test::esit('aysearge2', $r['veri']['kullaniciAdi'] ?? null, 'Çakışan kullanıcı adının sonuna sayı eklendi');
 
+// ── "Üst Yönetim" self-servis kayıtta seçilemez, yalnızca onaylayan ────────
+// yönetim, mevcut bir başvuruyu bilinçli şekilde yükseltebilir. Bu, kendi
+// kendine tam yetkili hesap talep etme yetki yükseltme açığını kapatır.
+Test::bolum('Kendi kendine kayıtta "yonetim" rolü seçilemez, onayda yükseltilebilir');
+
+$r = Test::istek('?action=hesapTalepEt', 'POST', [
+    'ad' => 'Sahte Yönetici', 'email' => 'sahteyonetici@ornek.com', 'rol' => 'yonetim', 'sifre' => 'GucluSifre789'
+], false);
+Test::esit(400, $r['kod'], '"yonetim" rolüyle self-servis talep reddediliyor');
+
+$eposta4 = 'terfi.adayi@ornek.com';
+Test::istek('?action=hesapTalepEt', 'POST', [
+    'ad' => 'Terfi Adayı', 'email' => $eposta4, 'rol' => 'depo', 'sifre' => 'TerfiSifre123'
+], false);
+$talepler = Test::oku('hesapTalepleri');
+$t4 = null;
+foreach ($talepler as $t) { if (($t['email'] ?? '') === $eposta4) { $t4 = $t; break; } }
+Test::dogru($t4 !== null && $t4['rol'] === 'depo', 'Talep "depo" rolüyle bekliyor');
+
+$r = Test::istek('?action=hesapTalepiKarar', 'POST', ['id' => $t4['id'], 'karar' => 'onayla', 'rol' => 'boyle_bir_rol_yok'], null);
+Test::esit(400, $r['kod'], 'Onayda geçersiz rol override reddediliyor');
+
+$r = Test::istek('?action=hesapTalepiKarar', 'POST', ['id' => $t4['id'], 'karar' => 'onayla', 'rol' => 'yonetim'], null);
+Test::esit(200, $r['kod'], 'Yönetim, onayda "yonetim" rolüne YÜKSELTEBİLİYOR');
+$kullanicilar = Test::oku('kullaniciler');
+$yeniKullanici = null;
+foreach ($kullanicilar as $k) { if (($k['kullaniciAdi'] ?? '') === ($r['veri']['kullaniciAdi'] ?? null)) { $yeniKullanici = $k; break; } }
+Test::dogru($yeniKullanici !== null && $yeniKullanici['rol'] === 'yonetim', 'Oluşan kullanıcının rolü fiilen "yonetim" oldu');
+$talepGuncel = null;
+foreach (Test::oku('hesapTalepleri') as $t) { if ($t['id'] === $t4['id']) { $talepGuncel = $t; break; } }
+Test::esit('yonetim', $talepGuncel['atananRol'] ?? null, 'İstenenden farklı verilen rol izi (atananRol) tutuldu');
+
 Test::bolum('Şifre Değiştirme — güç kuralı');
 
 $r = Test::istek('?action=changePassword', 'POST', ['userId' => 'USR-arge', 'yeniSifre' => 'kisa1'], null);

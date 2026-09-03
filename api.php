@@ -483,8 +483,13 @@ function epostaGonder($aliciEposta, $konu, $govde) {
 // Talep edilebilir birim/rol listesi — app.js'teki ROLLER menü listesiyle
 // AYNI (bkz. app.js başındaki $ROLLER dizisi), 'admin' hariç: o gerçek bir
 // hesap rolü değil, yalnızca yönetim'in "tümünü gör" arayüz görünümüdür.
+// NOT: 'yonetim' (tam admin / YONETIM_HER_SEYE_ERISIR bypass rolü) BİLEREK
+// bu listede DEĞİL — oturumsuz bir ziyaretçinin self-servis formdan doğrudan
+// tam yetkili hesap talep edebilmesi ciddi bir yetki yükseltme riskidir.
+// Üst yönetim hesabı yalnızca mevcut bir yönetim kullanıcısı tarafından
+// (Kullanıcı Yönetimi ekranından elle) açılmalıdır.
 const TALEP_EDILEBILIR_ROLLER = [
-    'yonetim', 'arge', 'teknik_ofis', 'satinalma', 'uretim_planlama', 'depo',
+    'arge', 'teknik_ofis', 'satinalma', 'uretim_planlama', 'depo',
     'cari', 'teklif_siparis', 'satis', 'sevkiyat', 'muhasebe', 'kalite',
     'uretim', 'isg', 'ik', 'bakim', 'pazarlama'
 ];
@@ -589,6 +594,7 @@ $HASSAS_OKUMA = [
     'tedarikciOdemeleri' => ['muhasebe', 'satinalma'],
     'vadeFarkiKayitlari' => ['muhasebe', 'cari'],
     'ciroHedefleri'      => ['muhasebe', 'satis'],
+    'bankaKredileri'     => ['muhasebe', 'yonetim'],
     // Cari / müşteri-tedarikçi ticari veri
     'musteriler'         => ['cari', 'teklif_siparis', 'satis', 'muhasebe', 'sevkiyat'],
     'tedarikciler'       => ['satinalma', 'cari', 'muhasebe'],
@@ -596,6 +602,12 @@ $HASSAS_OKUMA = [
     // Kullanıcı hesapları — hiçbir düz personel görmemeli
     'kullaniciler'       => [],   // yalnızca yonetim (aşağıdaki kural gereği)
     'hesapTalepleri'     => [],   // yalnızca yonetim — ad/e-posta/şifre hash'i taşır
+    // Hat/terminal kimlik bilgileri — düz personel okuyamamalı. Doğrulama
+    // artık hatSifresiDogrula ucundan SUNUCUDA yapılıyor (bkz. yukarı),
+    // bu yüzden hiçbir ekranın bu koleksiyonu ham okumasına gerek kalmadı.
+    'hatSifreleri'       => ['admin', 'yonetim', 'uretim_planlama'],
+    'hatOperatorleri'    => ['admin', 'yonetim', 'uretim_planlama'],
+    'hatSifreTalepleri'  => ['admin', 'yonetim', 'uretim_planlama'],
 ];
 
 // Hassas koleksiyon => bu koleksiyona YAZABİLEN roller (okumadan daha dar)
@@ -616,11 +628,15 @@ $HASSAS_YAZMA = [
     'tedarikciOdemeleri' => ['muhasebe', 'satinalma'],
     'vadeFarkiKayitlari' => ['muhasebe'],
     'ciroHedefleri'      => ['muhasebe'],
+    'bankaKredileri'     => ['muhasebe', 'yonetim'],
     'musteriler'         => ['cari', 'teklif_siparis', 'satis'],
     'tedarikciler'       => ['satinalma', 'cari'],
     'teklifKarsilastirma'=> ['satinalma'],
     'kullaniciler'       => [],   // yalnızca özel şifre uçlarından (get/set ile hiç yazılamaz)
     'hesapTalepleri'     => [],   // yalnızca özel hesapTalep uçlarından
+    'hatSifreleri'       => ['admin', 'yonetim', 'uretim_planlama'],
+    'hatOperatorleri'    => ['admin', 'yonetim', 'uretim_planlama'],
+    'hatSifreTalepleri'  => ['admin', 'yonetim', 'uretim_planlama'],
 ];
 
 // Bir oturumun $key koleksiyonuna erişimini denetler. Yetki yoksa 403 döner
@@ -906,6 +922,35 @@ try {
         $pdo->prepare('DELETE FROM sessions WHERE expires_at < :n')->execute([':n' => time()]);
         auditYaz($pdo, 'operatör:' . $isim, 'hat_giris', 'hatGiris', ['rol' => 'hat_operator', 'sayfa' => $hat]);
         respond(['ok' => true, 'token' => $token, 'operator' => ['isim' => $isim, 'hat' => $hat]]);
+    }
+
+    // 2b) hatSifresiDogrula: birim/hat şifresini SUNUCU TARAFINDA doğrular —
+    //     istemciye HİÇBİR ZAMAN ham hatSifreleri listesi gönderilmez. Tam
+    //     operatör oturumu açmayan, yalnızca birim şifresi soran ekranlar
+    //     içindir (örn. Sevkiyat Yükleme Onayı). Herhangi bir GİRİŞ YAPMIŞ
+    //     personel çağırabilir (bu ekranlara rol kısıtı yok) — yalnızca
+    //     true/false döner, şifreyi asla ifşa etmez. Aynı hatGiris'teki gibi
+    //     düz metin şifreler ilk başarılı doğrulamada hash'e göçürülür.
+    elseif ($action === 'hatSifresiDogrula') {
+        oturumZorunlu($pdo);
+        $body = readJsonBody();
+        $hat = trim((string)($body['hat'] ?? ''));
+        $sifre = (string)($body['sifre'] ?? '');
+        if ($hat === '') respond(['error' => 'Hat/birim adı zorunlu'], 400);
+        $hatSifreleri = kvOku($pdo, 'hatSifreleri');
+        $index = -1;
+        foreach ($hatSifreleri as $i => $hs) { if (($hs['hat'] ?? '') === $hat) { $index = $i; break; } }
+        if ($index < 0) respond(['ok' => hash_equals('1234', $sifre)]);
+        $kayit = $hatSifreleri[$index];
+        if (($kayit['sifreHash'] ?? '') === '' && ($kayit['sifre'] ?? '') === '') {
+            respond(['ok' => hash_equals('1234', $sifre)]);
+        }
+        $sonuc = opSifreDogru($kayit, $sifre);
+        if ($sonuc && isset($kayit['sifreHash'])) {
+            $hatSifreleri[$index] = $kayit;
+            kvYaz($pdo, 'hatSifreleri', $hatSifreleri);
+        }
+        respond(['ok' => $sonuc]);
     }
 
     // 3) hatSifreTalep: şifresi olmayan operatörün yönetim onayına düşen şifre
@@ -1954,6 +1999,13 @@ try {
         $id = (string)($body['id'] ?? '');
         $karar = (string)($body['karar'] ?? '');
         if (!in_array($karar, ['onayla', 'reddet'], true)) respond(['error' => 'Geçersiz karar'], 400);
+        // Onaylayan yönetim, başvurunun rolünü İSTERSE yükseltebilir (örn.
+        // 'yonetim' — bu rol kamuya açık TALEP_EDILEBILIR_ROLLER'da BİLEREK
+        // yok; tek yol, MEVCUT bir yönetimin burada elle seçmesidir).
+        $rolOverride = isset($body['rol']) ? (string)$body['rol'] : null;
+        if ($rolOverride !== null && !in_array($rolOverride, array_merge(TALEP_EDILEBILIR_ROLLER, ['yonetim']), true)) {
+            respond(['error' => 'Geçersiz rol'], 400);
+        }
 
         $talepler = kvOku($pdo, 'hesapTalepleri');
         $bulunanIdx = -1;
@@ -1984,16 +2036,20 @@ try {
             if (!$carpisma) break;
             $sira++; $kadi = $tabanAdi . $sira;
         }
+        $verilenRol = $rolOverride !== null ? $rolOverride : $talep['rol'];
         $kullanicilar[] = [
-            'id' => 'USR-' . bin2hex(random_bytes(4)), 'kullaniciAdi' => $kadi, 'rol' => $talep['rol'],
+            'id' => 'USR-' . bin2hex(random_bytes(4)), 'kullaniciAdi' => $kadi, 'rol' => $verilenRol,
             'ad' => $talep['ad'], 'email' => $talep['email'] ?? '', 'sifreHash' => $talep['sifreHash']
         ];
         kullanicilariYaz($pdo, $kullanicilar);
         $talepler[$bulunanIdx]['durum'] = 'onaylandi';
         $talepler[$bulunanIdx]['kararTarihi'] = date('Y-m-d');
         $talepler[$bulunanIdx]['atananKullaniciAdi'] = $kadi;
+        if ($rolOverride !== null && $rolOverride !== $talep['rol']) {
+            $talepler[$bulunanIdx]['atananRol'] = $rolOverride; // istenen ≠ verilen — iz bırak
+        }
         kvYaz($pdo, 'hesapTalepleri', $talepler);
-        auditYaz($pdo, $oturum['kullanici_adi'], 'hesap_talebi_onaylandi', 'hesapTalepleri', ['rol' => $talep['rol'] ?? null]);
+        auditYaz($pdo, $oturum['kullanici_adi'], 'hesap_talebi_onaylandi', 'hesapTalepleri', ['istenenRol' => $talep['rol'] ?? null, 'verilenRol' => $verilenRol]);
         epostaGonder($talep['email'] ?? '', 'ÜretimOS — Hesabınız Onaylandı',
             "Merhaba " . ($talep['ad'] ?? '') . ",\n\nÜretimOS hesabınız onaylandı.\nKullanıcı adınız: $kadi\nBaşvuru sırasında belirlediğiniz şifre ile giriş yapabilirsiniz.");
         respond(['ok' => true, 'kullaniciAdi' => $kadi]);

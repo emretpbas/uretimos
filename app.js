@@ -1033,7 +1033,12 @@ const App = (() => {
   // belirlenir (sunucu yalnızca hash'ini saklar) — böylece onaydan sonra
   // ayrıca bir "şifrenizi e-postayla iletiyoruz" adımına gerek kalmaz.
   function hesapTalepFormuAc() {
-    const rolSecenekleri = ROLLER.filter(r => r.id !== 'admin');
+    // 'admin' (görünüm rozeti, gerçek rol değil) ve 'yonetim' (tam yetkili
+    // rol) kamuya açık self-servis formda BİLEREK YOK — bkz. api.php
+    // TALEP_EDILEBILIR_ROLLER yorumu. Üst Yönetim hesabı yalnızca mevcut bir
+    // yönetim kullanıcısının Hesap Talepleri onay ekranından "Verilecek Rol"
+    // ile yükseltmesiyle açılabilir.
+    const rolSecenekleri = ROLLER.filter(r => r.id !== 'admin' && r.id !== 'yonetim');
     const body = document.createElement('div');
     body.innerHTML = `
       <div class="fhint" style="margin-bottom:12px">Talebiniz yönetici onayına düşer; onaylanınca burada belirlediğiniz kullanıcı adı ve şifreyle giriş yapabilirsiniz.</div>
@@ -1629,18 +1634,24 @@ const App = (() => {
       <div class="card-hdr"><div class="card-title">Bekleyen Talepler (${bekleyenler.length})</div></div>
       ${!bekleyenler.length ? '<div class="muted" style="font-size:11.5px;padding:8px 0 16px">Bekleyen hesap talebi yok.</div>' : `
       <table class="dtable" style="font-size:12px;margin-bottom:18px">
-        <tr><th>Ad Soyad</th><th>E-posta</th><th>Birim/Rol</th><th>Tarih</th><th></th></tr>
+        <tr><th>Ad Soyad</th><th>E-posta</th><th>İstenen</th><th>Verilecek Rol</th><th>Tarih</th><th></th></tr>
         ${bekleyenler.map(t => `<tr>
           <td>${escapeHtml(t.ad || '')}</td>
           <td class="mono" style="font-size:10.5px">${escapeHtml(t.email || '')}</td>
           <td>${escapeHtml(ROL_ETIKET[t.rol] || t.rol || '')}</td>
+          <td>
+            <select class="fselect ht-rol-sec" data-id="${t.id}" style="font-size:11px;padding:3px 4px">
+              ${ROLLER.filter(r => r.id !== 'admin').map(r => `<option value="${r.id}" ${r.id === t.rol ? 'selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
+            </select>
+          </td>
           <td class="mono" style="font-size:10.5px">${escapeHtml(t.tarih || '')}</td>
           <td style="white-space:nowrap">
             <button class="btn btn-sm btn-green ht-onayla" data-id="${t.id}" style="padding:3px 8px;font-size:11px">✓ Onayla</button>
             <button class="btn btn-sm ht-reddet" data-id="${t.id}" style="padding:3px 8px;font-size:11px">✕ Reddet</button>
           </td>
         </tr>`).join('')}
-      </table>`}
+      </table>
+      <div class="fhint" style="margin-top:-10px;margin-bottom:16px">"Verilecek Rol" varsayılan olarak başvurunun kendi seçtiği rolle gelir — başvuru sahibi hiçbir zaman <b>Üst Yönetim</b>'i seçemez (kayıt formunda bu seçenek yoktur), ama siz onaylarken güvendiğiniz bir başvuruyu isterseniz buradan Üst Yönetim'e yükseltebilirsiniz.</div>`}
       ${kararliler.length ? `
       <div class="card-hdr"><div class="card-title">Son Kararlar</div></div>
       <table class="dtable" style="font-size:11px">
@@ -1648,7 +1659,7 @@ const App = (() => {
         ${kararliler.map(t => `<tr>
           <td>${escapeHtml(t.ad || '')}</td>
           <td class="mono" style="font-size:10px">${escapeHtml(t.email || '')}</td>
-          <td>${escapeHtml(ROL_ETIKET[t.rol] || t.rol || '')}</td>
+          <td>${escapeHtml(ROL_ETIKET[t.rol] || t.rol || '')}${t.atananRol ? ' → <b>' + escapeHtml(ROL_ETIKET[t.atananRol] || t.atananRol) + '</b>' : ''}</td>
           <td><span class="pill ${t.durum === 'onaylandi' ? 'pill-green' : 'pill-red'}" style="font-size:9px">${t.durum === 'onaylandi' ? 'Onaylandı' : 'Reddedildi'}</span></td>
           <td class="mono" style="font-size:10px">${escapeHtml(t.atananKullaniciAdi || '—')}</td>
           <td class="mono" style="font-size:10px">${escapeHtml(t.kararTarihi || '')}</td>
@@ -1658,12 +1669,23 @@ const App = (() => {
     openModal({ title: '👥 Hesap Talepleri', body, wide: true, footer: '<button class="btn" id="ht-kapat">Kapat</button>' });
     document.getElementById('ht-kapat').onclick = closeModal;
     body.querySelectorAll('.ht-onayla').forEach(b => b.onclick = async () => {
-      b.disabled = true;
-      try {
-        const sonuc = await Store.hesapTalepiKarar(b.dataset.id, 'onayla');
-        toast('Hesap onaylandı — kullanıcı adı: ' + sonuc.kullaniciAdi, 'ok');
-        closeModal(); openHesapTalepleriModal();
-      } catch (e) { b.disabled = false; toast('Hata: ' + e.message, 'err'); }
+      const rolSec = body.querySelector('.ht-rol-sec[data-id="' + b.dataset.id + '"]');
+      const secilenRol = rolSec ? rolSec.value : null;
+      const talep = bekleyenler.find(t => t.id === b.dataset.id);
+      const yukseltiliyor = talep && secilenRol && secilenRol !== talep.rol;
+      const onayla = async () => {
+        b.disabled = true;
+        try {
+          const sonuc = await Store.hesapTalepiKarar(b.dataset.id, 'onayla', secilenRol);
+          toast('Hesap onaylandı — kullanıcı adı: ' + sonuc.kullaniciAdi, 'ok');
+          closeModal(); openHesapTalepleriModal();
+        } catch (e) { b.disabled = false; toast('Hata: ' + e.message, 'err'); }
+      };
+      if (yukseltiliyor) {
+        confirmDialog(`${escapeHtml(talep.ad || '')} başvurusu <b>${escapeHtml(ROL_ETIKET[talep.rol] || talep.rol)}</b> istemişti — onu <b>${escapeHtml(ROL_ETIKET[secilenRol] || secilenRol)}</b> rolüyle onaylamak üzeresiniz. Emin misiniz?`, onayla);
+      } else {
+        onayla();
+      }
     });
     body.querySelectorAll('.ht-reddet').forEach(b => b.onclick = async () => {
       b.disabled = true;
@@ -4264,11 +4286,11 @@ const App = (() => {
   // ── HAT / BİRİM ŞİFRE KONTROLÜ ─────────────────────────────────────────
   // Her hat ve sevkiyat yükleme birimi için ayrı şifre. Tanımlanmamışsa
   // varsayılan '1234' — yönetim Hat & İstasyon Takibi'ndeki 🔑 Hat Şifreleri
-  // ekranından değiştirir.
+  // ekranından değiştirir. Doğrulama SUNUCUDA yapılır (Store.hatSifresiDogrula)
+  // — ham şifre listesi artık istemciye HİÇ inmiyor (bkz. hatSifreleri artık
+  // hassas koleksiyon listesinde, api.php).
   async function hatSifresiDogru(hatAdi, girilen) {
-    const kayitlar = await Store.hatSifreleri.all();
-    const k = kayitlar.find(x => x.hat === hatAdi);
-    return String(girilen || '') === String((k && k.sifre) || '1234');
+    return Store.hatSifresiDogrula(hatAdi, girilen || '');
   }
 
   // ── REÇETE ALT KIRILIMI: TÜM YARI MAMÜLLERİ REKÜRSİF TOPLA ──────────────
