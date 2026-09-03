@@ -88,9 +88,22 @@ const CizelgeMotor = (() => {
   // yalnızca KALAN işi planlar).
   function operasyonlariCikar(v) {
     const ops = [];
-    const bitmisAdimlar = new Set(
-      (v.istasyonIsleri || []).filter(k => k.durum === 'tamamlandi')
-        .map(k => k.kaynakTip + ':' + k.kaynakId + ':' + k.yarimamulId + ':' + k.stepIndex));
+    // BULGU (T3-31): istasyon adımı önceden yalnızca TAM tamamlandi ise
+    // atlanıyordu (bitmisAdimlar Set'i) — bir kart kalite/işlem'de KISMİ
+    // ilerleme kaydetmiş (örn. işlemTamamAdet>0) ama henüz TAMAMEN sevk
+    // edilmediği için durum hâlâ 'aktif' ise, çizelge o adımın TÜM
+    // (gerekli) adedini yeniden planlıyordu — zaten yapılmış işi ikinci
+    // kez kapasiteye yüklüyordu, hat yükü/termin tahmini olduğundan
+    // yüksek çıkıyordu. Kart anahtarına göre (kaynakTip:kaynakId:ymId:
+    // stepIndex) tek bir arama haritası kurulur; kalan adet, o adımda
+    // HENÜZ İŞLENMEMİŞ (fire düşülmüş gelenAdet - işlemTamamAdet) miktar
+    // olarak hesaplanır — sevk aşaması ayrı bir kapasite tüketmediği için
+    // (rota adımının dk süresi işlem süresidir) işlemi biten ama henüz
+    // sevk edilmemiş adet çizelgeye tekrar girmez.
+    const kartHaritasi = new Map();
+    (v.istasyonIsleri || []).forEach(k => {
+      kartHaritasi.set(k.kaynakTip + ':' + k.kaynakId + ':' + k.yarimamulId + ':' + k.stepIndex, k);
+    });
 
     const isEkle = (kaynakTip, kaynakId, kaynakKod, ymId, adet, rotaId, termin, oncelik) => {
       const ym = (v.yarimamuller || []).find(y => y.id === ymId);
@@ -99,14 +112,20 @@ const CizelgeMotor = (() => {
       const adimlar = (rota.steps || []).filter(s => s.hat && s.hat !== 'TAŞIMA');
       adimlar.forEach((st, si) => {
         const gercekIndex = (rota.steps || []).indexOf(st);
-        if (bitmisAdimlar.has(kaynakTip + ':' + kaynakId + ':' + ymId + ':' + gercekIndex)) return;
+        const kart = kartHaritasi.get(kaynakTip + ':' + kaynakId + ':' + ymId + ':' + gercekIndex);
+        let kalanAdet = adet;
+        if (kart) {
+          if (kart.durum === 'tamamlandi') return; // adım TAMAMEN bitti, atla
+          kalanAdet = Math.max(0, (kart.gelenAdet || 0) - (kart.fireAdet || 0) - (kart.islemTamamAdet || 0));
+          if (kalanAdet <= 0) return; // işlem tamamen bitti (yalnızca sevk kaldı) — kapasite planlamasına girmez
+        }
         ops.push({
           id: kaynakId + '|' + ymId + '|' + gercekIndex,
           kaynakTip, kaynakId, kaynakKod,
           ymId, ymKod: ym.kod, ymAd: ym.ad,
           adimSira: si, toplamAdim: adimlar.length,
           istasyonKod: st.kod, istasyonTanim: st.tanim, hat: st.hat,
-          adet, birimDk: st.dk || 0, sureDk: (st.dk || 0) * adet,
+          adet: kalanAdet, birimDk: st.dk || 0, sureDk: (st.dk || 0) * kalanAdet,
           termin: termin || null, oncelik: oncelik || 5,
           isAnahtari: kaynakId + '|' + ymId   // aynı YM'nin adımları sıralı olmalı
         });

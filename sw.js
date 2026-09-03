@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v161'; // v161: FIX - OEE duruş suresi artik acil arizalari da (zaman damgali) sayiyor, sadece manuel durus kayitlarina bagli degil
+const CACHE_NAME = 'uretimos-v162'; // v162: FIX - cizelgeleyici artik istasyonda kismi islenmis adedi dusuyor, tamamlanmamis adimda tekrar TAM adet planlamiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
