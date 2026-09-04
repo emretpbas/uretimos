@@ -68,8 +68,9 @@ PageModules.is_emri_formu = (() => {
         <div class="fhint" style="margin-bottom:8px">
           <b>SWOOD rapor ZIP'i (mobilya için önerilen)</b> — SolidWorks SWOOD eklentisinin
           ürettiği kesim listesi (Saw Cut Export) boy/en/adet/malzemeyi doğrudan taşır,
-          rapordaki teknik resim/görseller de burada gösterilir. Yalnızca kenar bandı
-          (PVC/SOFT) yönünü siz işaretlersiniz.<br>
+          rapordaki teknik resim/görseller de burada gösterilir. Bu liste boş gelirse
+          "Stoklar" raporu (ReportStocks) yedek olarak otomatik denenir. Yalnızca kenar
+          bandı (PVC/SOFT) yönünü siz işaretlersiniz.<br>
           <b>STEP (AP203/AP214)</b> — Boy, En ve Kalınlık geometriden kesin okunur.<br>
           <b>PDF/DWG</b>'de ölçüler bağımsız yazılardır; hangi ölçünün hangi parçaya ait
           olduğu kesin bilinemez. Bu kaynaklarda malzeme kodları ve parça adları okunur,
@@ -634,7 +635,9 @@ PageModules.is_emri_formu = (() => {
 
       if (/\.zip$/.test(ad)) {
         const sonuc = await SwoodOkuyucu.oku(f);
-        const u = IsEmriUretici.swoodDenUret(sonuc.csvSatirlari, {});
+        const u = sonuc.csvSatirlari.length
+          ? IsEmriUretici.swoodDenUret(sonuc.csvSatirlari, {})
+          : IsEmriUretici.swoodStoklarDenUret(sonuc.stokPanelleri, {});
         form.satirlar = u.satirlar;
         form.kaynak = 'SWOOD: ' + f.name;
         if (!form.isEmriIsmi) form.isEmriIsmi = f.name.replace(/\.zip$/i, '');

@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v167'; // v167: Is Emri Formu'na SWOOD rapor ZIP'i (SolidWorks SWOOD eklentisi) ice aktarim eklendi - kesim listesi satirlara donusuyor, teknik resimler gosteriliyor
+const CACHE_NAME = 'uretimos-v168'; // v168: SWOOD ice aktarimda Saw Cut Export bossa "Stoklar" raporu (ReportStocks.html) yedek kaynak olarak okunuyor - gercek boy/en/kalinlik/malzeme/kenar bandi verisi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

@@ -277,6 +277,48 @@ const IsEmriUretici = (() => {
     };
   }
 
+  // ── SWOOD "STOKLAR" RAPORUNDAN ÜRET (Docs/*_ReportStocks.html — Saw Cut
+  // Export boş geldiğinde yedek kaynak) ──────────────────────────────────────
+  // Bu rapor her panel için LENGTH/WIDTH/THICKNESS'i (kalınlık artık
+  // MATERIAL metninden TAHMİN edilmiyor, doğrudan HTML'den okunuyor — CSV
+  // yolundan bile daha güvenilir) ve Edgeband(N) satırlarında kenar bandı
+  // MALZEMESİ + ADEDİNİ (0/1/2) verir. Adet bilgisi CSV'nin EBF/EBB/EBL/EBR
+  // bayraklarından daha netse de, hangi kenarın (boy mu en mi) bantlandığı
+  // yine belirtilmez — aynı güvenlik ilkesiyle PVC/SOFT sütunları OTOMATİK
+  // doldurulmaz, malzeme+adet açıklamaya not düşülür.
+  function swoodStoklarDenUret(panelSatirlari, secenek) {
+    const ay = secenek || {};
+    const pay = ay.kabaPay != null ? +ay.kabaPay : VARSAYILAN_PAY.kaplamali;
+    const satirlar = [];
+    (panelSatirlari || []).forEach((p, i) => {
+      const renkM = (p.malzeme || '').match(MALZEME_RENK_KALIBI);
+      const renk = renkM ? renkM[0] : '';
+      const kenarNotu = (p.kenarBantlari || [])
+        .map(k => Math.round(k.adet) + 'x ' + k.malzeme).join(', ');
+
+      const aciklamaParcalari = [p.malzeme];
+      if (p.description && p.description !== p.ad) aciklamaParcalari.push(p.description);
+      if (kenarNotu) aciklamaParcalari.push('SWOOD kenar bandı: ' + kenarNotu + ' — PVC/SOFT sütununu kontrol edin');
+
+      const rowAy = { ...ay, renk: renk || ay.renk };
+      const satir = satirKur({
+        parcaAdi: p.ad || ('Parça ' + (i + 1)),
+        boy: say(p.boy), en: say(p.en), kalinlik: say(p.kalinlik),
+        adet: say(p.adet) || 1,
+        aciklama: aciklamaParcalari.filter(Boolean).join(' · ')
+      }, i + 1, pay, rowAy);
+      satirlar.push(satir);
+    });
+    return {
+      satirlar,
+      uyari: satirlar.length
+        ? 'SWOOD "Stoklar" raporundan ' + satirlar.length + ' parça satırı aktarıldı (Saw Cut Export boştu) — ' +
+          'kenar bandı malzemesi ve adedi açıklamaya not düşüldü, YÖNÜ (boy/en) raporda belirtilmediği için ' +
+          'PVC/SOFT sütunları OTOMATİK doldurulmadı. Kaydetmeden önce kontrol edin.'
+        : 'SWOOD raporunda ne kesim listesi (Saw Cut Export) ne de Stoklar raporunda okunabilir bir panel bulundu.'
+    };
+  }
+
   // ── ÖZET (formun sağ bloğu) ──────────────────────────────────────────────
   // Gruplama ÖNCELİKLE seçilen plaka hammaddeye göre yapılır (plakaKodu) —
   // aynı plakadan kesilen tüm parçaların m² toplamı tek grupta görünür.
@@ -308,7 +350,7 @@ const IsEmriUretici = (() => {
 
   return {
     VARSAYILAN_PAY, BANT_TABLOSU, bantGrubu,
-    malzemeCikar, urunlerCikar, stepDenUret, pdfDenUret, swoodDenUret,
+    malzemeCikar, urunlerCikar, stepDenUret, pdfDenUret, swoodDenUret, swoodStoklarDenUret,
     satirKur, bantHesapla, kenarBandiOzeti, ozet, isEmriKodu
   };
 })();
