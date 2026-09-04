@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v171'; // v171: Montaj semasi AI okuma prompt'u genisletildi - bilesenler artik sayfanin herhangi bir yerinde (dagitik ikon/aksesuar bolumleri dahil) taniniyor, sadece alttaki NO/SIZE/QTY tablosuyla sinirli degil
+const CACHE_NAME = 'uretimos-v172'; // v172: Google Vision OCR artik dagitik ikon/aksesuar semalarindaki tek basina olcu/vida kodlarini (M6X45 gibi) da satir olarak buluyor - AI gerekmiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

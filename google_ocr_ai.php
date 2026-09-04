@@ -161,12 +161,44 @@ function googleOcrYatayTabloOku($kelimeler) {
     return count($parcalar) ? $parcalar : null;
 }
 
-// Google Vision TEXT_DETECTION yanıtını parça listesine çevirir. Önce
-// KONUM TABANLI yatay tablo yeniden inşasını dener (yukarı bkz.); o
-// bulamazsa (tablo bu düzende değilse) düz metni satır satır okuyan eski
-// yönteme düşer — bu ikinci yöntem baidu_ocr_ai.php / page_montaj_semasi.js
-// içindeki ocrMetnindenParcalarCikar() ile BİREBİR AYNIDIR (NO AD ADET ya
-// da AD ADET satır deseni). Saf fonksiyon — ağ, dosya, DB yok.
+// ── DAĞINIK ÖLÇÜ/VİDA KODU TARAMASI — SON ÇARE ──────────────────────────────
+// Bazı montaj kılavuzları (özellikle "Accessories Diagram" gibi başlıklı
+// simge/ikon ızgaraları) ne NO/QTY tablosu ne de düzenli AD+ADET satırı
+// içerir: her ikonun altında/yanında YALNIZCA bir ölçü/vida kodu yazar
+// (M6X45, H6X45, Ø8X40, M6 gibi) — bir isim, bir tablo satırı YOKTUR.
+// İkonun kendisi (Allen anahtarı, vida, pul çizimi) metin taşımadığından
+// OCR bunun NE olduğunu asla okuyamaz — bu, AI görme gerektiren dürüst bir
+// sınırdır. Ama en azından SAYFADA GEÇEN HER ölçü/kod, kullanıcının "hangi
+// ikona bakıp ne yazmalıyım" diye başlayabileceği bir satır olarak
+// sunulabilir — hiçbir isim UYDURULMAZ, yalnızca görülen kod bildirilir.
+// Yalnızca paths 1/2 (tablo/satır) hiçbir sonuç bulamadığında denenir.
+function googleOcrOlcuKodlariBul($kelimeler) {
+    // "M6X45", "H6X45", "Ø8X40", "6X30", "M6" gibi kodlar OCR'da genelde TEK
+    // kelime olarak okunur (aralarında boşluk yok). Salt sayı (sayfa no,
+    // "2026" gibi yıl, adet rakamı) ya da harf dizisi (diyagram alt yazısı
+    // "Step"/"Instructions" gibi) KESİNLİKLE eşleşmez — en az bir harf+rakam
+    // VEYA bir X/× ayıracı zorunludur.
+    $KALIP = '/^[MHDØ]{1,2}\d+(?:[.,]\d+)?(?:[X×]\d+(?:[.,]\d+)?)?(?:MM)?$/ui';
+    $KALIP_X = '/^\d+(?:[.,]\d+)?[X×]\d+(?:[.,]\d+)?(?:MM)?$/ui';
+    $sayac = [];
+    foreach ($kelimeler as $k) {
+        $metin = trim((string)($k['metin'] ?? ''));
+        if ($metin === '' || preg_match('/^\d+$/', $metin)) continue; // salt sayı — kod değil
+        if (!preg_match($KALIP, $metin) && !preg_match($KALIP_X, $metin)) continue;
+        $norm = strtoupper($metin);
+        $sayac[$norm] = ($sayac[$norm] ?? 0) + 1;
+    }
+    return array_keys($sayac);
+}
+
+// Google Vision TEXT_DETECTION yanıtını parça listesine çevirir. Sırasıyla
+// dener: (1) KONUM TABANLI yatay NO/SIZE/QTY tablosu yeniden inşası, (2) düz
+// metni satır satır okuyan NO AD ADET / AD ADET deseni (baidu_ocr_ai.php /
+// page_montaj_semasi.js içindeki ocrMetnindenParcalarCikar() ile BİREBİR
+// AYNI), (3) ikisi de sonuç vermezse (şema "Accessories Diagram" gibi
+// dağınık ikon ızgaralarından oluşuyorsa) sayfada geçen dağınık ölçü/vida
+// kodlarını satır olarak sunar — isim UYDURULMAZ, kullanıcı ikona bakıp
+// adlandırır. Saf fonksiyon — ağ, dosya, DB yok.
 function googleOcrYanitAyristir($googleYanit) {
     $yanitlar = is_array($googleYanit) ? ($googleYanit['responses'] ?? []) : [];
     $ilk = (is_array($yanitlar) && count($yanitlar)) ? $yanitlar[0] : null;
@@ -209,13 +241,30 @@ function googleOcrYanitAyristir($googleYanit) {
         if ($ad === '' || $adet === null || $adet <= 0) continue; // eksik/geçersiz satır sessizce atlanır
         $parcalar[] = ['no' => $no, 'tahminiAd' => $ad, 'olcuSpec' => '', 'adet' => $adet];
     }
-    if (!count($parcalar)) {
-        return ['ok' => false, 'hata' => 'Google Vision OCR şemada geçerli bir satır/tablo bulamadı. Görsel net olmayabilir — AI ile okumayı deneyin.'];
+    if (count($parcalar)) {
+        return [
+            'ok' => true, 'parcalar' => $parcalar,
+            'genelNot' => 'Bu satırlar Google Cloud Vision OCR ile üretildi — AI görme kadar isabetli DEĞİLDİR. '
+                . 'Bağlamı anlamaz, yalnızca karakter tanır: "Ad" ile "Ölçü/Spec" ayrımı yapılamadığından ikisi birlikte '
+                . '"AI Tahmini Ad" sütununa yazılmıştır. Her satırı dikkatle kontrol edin.'
+        ];
     }
-    return [
-        'ok' => true, 'parcalar' => $parcalar,
-        'genelNot' => 'Bu satırlar Google Cloud Vision OCR ile üretildi — AI görme kadar isabetli DEĞİLDİR. '
-            . 'Bağlamı anlamaz, yalnızca karakter tanır: "Ad" ile "Ölçü/Spec" ayrımı yapılamadığından ikisi birlikte '
-            . '"AI Tahmini Ad" sütununa yazılmıştır. Her satırı dikkatle kontrol edin.'
-    ];
+
+    // ── SON ÇARE: ne tablo ne düzenli satır bulundu — dağınık ölçü/vida
+    // kodu taraması (bkz. googleOcrOlcuKodlariBul üzerindeki açıklama).
+    $kodlar = googleOcrOlcuKodlariBul($kelimeler);
+    if (count($kodlar)) {
+        $kodParcalari = array_map(function ($kod) {
+            return ['no' => '', 'tahminiAd' => 'Şemadaki ilgili simgeye bakıp adı siz yazın', 'olcuSpec' => $kod, 'adet' => 1];
+        }, $kodlar);
+        return [
+            'ok' => true, 'parcalar' => $kodParcalari,
+            'genelNot' => 'Bu şemada düzenli bir NO/AD/ADET tablosu bulunamadı (örn. ikon/aksesuar ızgarası biçiminde '
+                . 'olabilir) — bunun yerine sayfada geçen HER ölçü/vida kodu (M6X45 gibi) ayrı bir satır olarak '
+                . 'listelendi. İkonların ne olduğunu OCR OKUYAMAZ — "Ad" alanları yer tutucudur, her satırı şemadaki '
+                . 'ilgili simgeye bakıp SİZ adlandırmalı ve adedi düzeltmelisiniz (varsayılan adet: 1).'
+        ];
+    }
+
+    return ['ok' => false, 'hata' => 'Google Vision OCR şemada geçerli bir satır/tablo bulamadı (dağınık ölçü/vida kodu da yok). Görsel net olmayabilir — daha yüksek çözünürlükte tekrar deneyin.'];
 }

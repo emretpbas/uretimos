@@ -112,7 +112,43 @@ $sadeceDagiticiKelimeler = ['responses' => [['textAnnotations' => [
     kelimeOlustur('Step', 60, 50), kelimeOlustur('1', 90, 50),
 ]]]];
 $r6 = googleOcrYanitAyristir($sadeceDagiticiKelimeler);
-Test::dogru($r6['ok'] === false, 'NO/QTY etiketi yoksa tablo yeniden inşası devreye girmiyor (ok:false — bulunacak satır da yok)');
+Test::dogru($r6['ok'] === false, 'NO/QTY etiketi yoksa VE dağınık ölçü kodu da yoksa ok:false (yalnızca "Step"/"1" gibi alakasız kelimeler kod sayılmaz)');
+
+Test::bolum('Google Vision OCR — DAĞINIK ÖLÇÜ/VİDA KODU (ikon/aksesuar ızgarası — ne tablo ne AD+ADET satırı var)');
+
+// Gerçek bir kullanıcı raporunda görülen senaryo: "Accessories Diagram" /
+// "Installation Diagram" gibi ayrı başlıklı ikon ızgaraları — her ikonun
+// altında SADECE bir ölçü/vida kodu yazar (H6X45, M6X45...), ne NO/QTY
+// tablosu ne düzenli "ad adet" satırı vardır. Başlık kelimeleri ve adım
+// numaraları (Accessories/Diagram/Installation/1/2/3) KOD SAYILMAMALI.
+$ikonIzgarasi = ['responses' => [['textAnnotations' => array_merge(
+    [['description' => 'hepsi', 'boundingPoly' => ['vertices' => []]]],
+    [kelimeOlustur('Accessories', 50, 20), kelimeOlustur('Diagram', 150, 20)],
+    [kelimeOlustur('H6X45', 60, 120), kelimeOlustur('M6X45', 160, 120),
+     kelimeOlustur('M6X35', 260, 120), kelimeOlustur('M6X25', 360, 120), kelimeOlustur('M6', 460, 120)],
+    [kelimeOlustur('Installation', 50, 300), kelimeOlustur('Diagram', 180, 300)],
+    [kelimeOlustur('1', 60, 350), kelimeOlustur('2', 160, 350), kelimeOlustur('3', 260, 350)]
+)]]];
+$r7 = googleOcrYanitAyristir($ikonIzgarasi);
+Test::dogru($r7['ok'] === true, 'İkon ızgarası bile olsa ok:true döner (dağınık kod taraması devreye girer)');
+Test::esit(5, count($r7['parcalar'] ?? []), 'Tam 5 ölçü/vida kodu bulundu (başlık/adım kelimeleri hariç)');
+$kodlar = array_column($r7['parcalar'], 'olcuSpec');
+Test::dogru(in_array('H6X45', $kodlar) && in_array('M6X45', $kodlar) && in_array('M6X35', $kodlar)
+    && in_array('M6X25', $kodlar) && in_array('M6', $kodlar), 'Tüm kodlar (H6X45/M6X45/M6X35/M6X25/M6) doğru okundu');
+Test::dogru(!in_array('ACCESSORIES', $kodlar) && !in_array('DIAGRAM', $kodlar) && !in_array('INSTALLATION', $kodlar),
+    'Bölüm başlıkları ("Accessories"/"Diagram"/"Installation") kod SAYILMADI');
+Test::dogru($r7['parcalar'][0]['adet'] === 1, 'Adet gerçek bilgi yokken dürüstçe varsayılan 1');
+Test::dogru($r7['parcalar'][0]['no'] === '', 'no alanı boş bırakılır (şemada numara yok)');
+Test::dogru(strpos($r7['parcalar'][0]['tahminiAd'], 'siz yazın') !== false, 'Ad UYDURULMAZ — ikona bakıp yazması için kullanıcıya yönlendirir');
+Test::dogru(strpos($r7['genelNot'] ?? '', 'OKUYAMAZ') !== false, 'genelNot dürüstçe OCR\'ın ikonu okuyamadığını belirtiyor');
+
+// Salt sayılar (sayfa no, yıl gibi) ve harf-only kelimeler kod sayılmamalı
+Test::dogru(googleOcrOlcuKodlariBul([
+    ['metin' => '2026', 'x' => 0, 'y' => 0], ['metin' => 'Adet', 'x' => 0, 'y' => 0],
+    ['metin' => 'STEP', 'x' => 0, 'y' => 0]
+]) === [], 'Salt sayı / harf-only kelimeler dağınık kod taramasında YOK sayılır');
+Test::dogru(in_array('M6X45', googleOcrOlcuKodlariBul([['metin' => 'm6x45', 'x' => 0, 'y' => 0]])),
+    'Küçük harfli kod da (m6x45) normalize edilip tanınır');
 
 Test::bolum('Google Vision OCR — uç nokta (HTTP, gerçek ağ çağrısı YOK)');
 
