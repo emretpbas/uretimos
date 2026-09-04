@@ -178,8 +178,12 @@ PageModules.montaj_semasi = (() => {
 
       <div class="card" style="margin-bottom:12px">
         <div class="fhint" style="margin-bottom:10px">
-          <b>Ne yapılır:</b> Şemadaki NO/ölçü/adet tablosu AI ile okunur, siz her satırı mevcut
-          hammadde/yarı mamül kartıyla eşleştirirsiniz.<br>
+          <b>Ne yapılır:</b> Sayfa düzeni ne olursa olsun (klasik NO/ölçü/adet tablosu, ya da
+          "Accessories Diagram"/"Installation Diagram" gibi ayrı simge/ikon bölümlerine dağılmış
+          bileşenler) — <b>AI ile Dene</b> yöntemi tüm sayfayı tarayıp her parça/vida/aksesuar
+          kalemini bulur; siz her satırı mevcut hammadde/yarı mamül kartıyla eşleştirirsiniz.
+          Varsayılan <b>Google Vision</b> yalnızca düz metin tablolarında işe yarar — dağınık
+          şemalarda "geçerli satır bulunamadı" derse AI yöntemini deneyin.<br>
           <b>Ne yapılmaz:</b> Parça KODU ve FİYAT asla uydurulmaz — sadece görselde görüneni
           bildirir; eşleşme siz onaylamadan kaydedilmez.
         </div>

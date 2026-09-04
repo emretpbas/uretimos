@@ -2,12 +2,17 @@
 // ════════════════════════════════════════════════════════════════════════════
 // MONTAJ ŞEMASI AI GÖRME — Anthropic çağrısı ve yanıt ayrıştırma
 // ────────────────────────────────────────────────────────────────────────────
-// Montaj şeması PDF'leri (patlatılmış çizim + NO/SIZE/QTY tablosu) metin
-// KATMANI TAŞIMAZ — tablodaki numaralar bile vektör çizimdir (pdf.js ile
-// doğrulandı: sayfa başına 0 metin öğesi). Kural tabanlı çıkarım imkânsız;
-// bu yüzden görsel Anthropic'in vision API'sine gönderilip yapılandırılmış
-// (tool_use) yanıt istenir. Dönen isim/ölçü TAHMİNDİR — kaydetmeden önce
-// kullanıcı gözden geçirir (page_montaj_semasi.js ekranında zorunlu kılınır).
+// Montaj şeması PDF'leri metin KATMANI TAŞIMAZ — tablodaki/etikeetteki
+// numaralar bile vektör çizimdir (pdf.js ile doğrulandı: sayfa başına 0
+// metin öğesi). Kural tabanlı çıkarım imkânsız; bu yüzden görsel Anthropic'in
+// vision API'sine gönderilip yapılandırılmış (tool_use) yanıt istenir.
+// Sayfa düzeni SABİT DEĞİLDİR — klasik "altta NO/SIZE/QTY tablosu, üstte
+// patlatılmış çizim" biçimi olabileceği gibi, ayrı başlıklı bölümlere
+// (Accessories Diagram, Installation Diagram gibi) dağılmış simge/ikon
+// ızgaraları da olabilir; prompt bu yüzden "sayfanın TAMAMINI tara" der
+// (bkz. api.php'deki $istekGovdesi metni). Dönen isim/ölçü TAHMİNDİR —
+// kaydetmeden önce kullanıcı gözden geçirir (page_montaj_semasi.js
+// ekranında zorunlu kılınır).
 //
 // AYRI DOSYA OLMASININ SEBEBİ: api.php'nin gövdesi top-level çalışan bir
 // istek yönlendiricisidir (require edilince anında HTTP yanıtlamaya

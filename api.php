@@ -1155,10 +1155,10 @@ try {
 
         $istekGovdesi = [
             'model' => 'claude-sonnet-5',
-            'max_tokens' => 4096,
+            'max_tokens' => 8192,
             'tools' => [[
                 'name' => 'receteKalemleriBildir',
-                'description' => 'Montaj şemasındaki NO/SIZE/QTY parça tablosunu yapılandırılmış biçimde bildirir.',
+                'description' => 'Montaj şemasında/kılavuzunda bulunan HER parça/vida/aksesuar kalemini, sayfada nerede olursa olsun, yapılandırılmış biçimde bildirir.',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => [
@@ -1167,15 +1167,15 @@ try {
                             'items' => [
                                 'type' => 'object',
                                 'properties' => [
-                                    'no' => ['type' => 'string', 'description' => 'Şemadaki parça/kalem numarası'],
+                                    'no' => ['type' => 'string', 'description' => 'Şemadaki parça/kalem numarası — görselde numara/harf yoksa boş bırak'],
                                     'tahminiAd' => ['type' => 'string', 'description' => 'Parçanın görünümünden tahmin edilen adı/türü (Türkçe)'],
                                     'olcuSpec' => ['type' => 'string', 'description' => 'Ölçü/vida tipi gibi teknik özellik metni, yoksa boş bırak'],
-                                    'adet' => ['type' => 'number', 'description' => 'Adet']
+                                    'adet' => ['type' => 'number', 'description' => 'Adet — görselde açık yazmıyorsa simgenin tekrar sayısından tahmin et, hiç belirlenemiyorsa 1 yaz']
                                 ],
                                 'required' => ['no', 'tahminiAd', 'adet']
                             ]
                         ],
-                        'genelNot' => ['type' => 'string', 'description' => 'Belirsiz/okunaksız kısımlar için genel not']
+                        'genelNot' => ['type' => 'string', 'description' => 'Belirsiz/okunaksız kısımlar veya adedi tahmin edilen kalemler için genel not']
                     ],
                     'required' => ['parcalar']
                 ]
@@ -1186,10 +1186,18 @@ try {
                 'content' => [
                     ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mediaType, 'data' => $gorselB64]],
                     ['type' => 'text', 'text' =>
-                        "Bu görsel bir mobilya/sandalye parçasının PATLATILMIŞ MONTAJ ŞEMASIDIR. " .
-                        "Alt kısımdaki NO/SKETCH/SIZE/QTY tablosunu ve üstteki numaralandırılmış çizimi kullanarak " .
-                        "her parça/vida/pul kalemini çıkar. SADECE görselde gerçekten gördüğünü bildir, " .
-                        "asla parça kodu veya fiyat UYDURMA. Ölçü/boyut bilgisi yoksa olcuSpec alanını boş bırak."]
+                        "Bu görsel bir mobilya/sandalye ürününün montaj şeması/kılavuzudur. SAYFA DÜZENİ SABİT DEĞİLDİR — " .
+                        "klasik biçim (altta NO/SKETCH/SIZE/QTY tablosu + üstte numaralandırılmış patlatılmış çizim) " .
+                        "olabileceği gibi, ayrı başlıklı bölümler halinde de olabilir (örn. \"Accessories Diagram\", " .
+                        "\"Installation Diagram\", \"Instructions for use\") — bu durumda her bölümdeki simge/ikon " .
+                        "ızgarasının altında/yanında yazan kod, ölçü (örn. \"M6X45\") ve varsa adet bilgisi de birer " .
+                        "ayrı parça kalemidir; hatta tek başına bir vida/somun/pul/altıgen anahtar simgesi + altındaki " .
+                        "ölçü yazısı bile (adet numarası hiç olmasa dahi) geçerli bir kalemdir. BİLEŞENLER SAYFANIN " .
+                        "HERHANGİ BİR YERİNDE OLABİLİR — sayfanın TAMAMINI (üst, alt, sol, sağ, her ayrı bölüm/tablo) " .
+                        "tara ve gördüğün HER ayrı parça/vida/aksesuar kalemini çıkar, tek bir bölümle sınırlı kalma. " .
+                        "SADECE görselde gerçekten gördüğünü bildir, asla parça kodu veya fiyat UYDURMA. Adet açıkça " .
+                        "yazılı değilse simgenin görseldeki tekrar sayısından tahmin et; hiç belirlenemiyorsa 1 yaz ve " .
+                        "bunu genelNot alanında belirt. Ölçü/boyut bilgisi yoksa olcuSpec alanını boş bırak."]
                 ]
             ]]
         ];
