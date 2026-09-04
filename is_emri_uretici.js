@@ -286,10 +286,59 @@ const IsEmriUretici = (() => {
   // bayraklarından daha netse de, hangi kenarın (boy mu en mi) bantlandığı
   // yine belirtilmez — aynı güvenlik ilkesiyle PVC/SOFT sütunları OTOMATİK
   // doldurulmaz, malzeme+adet açıklamaya not düşülür.
+  // Kenar bandı malzeme metninden (örn. "KENAR BANT PVC BEYAZ 1*22 5778GB
+  // EGGER") kalınlık*genişlik kalıbındaki ilk sayı (kalınlık) okunur ve
+  // formun 4 sabit grubundan (PVC 2mm/1mm/0,40mm/SOFT) hangisine ait olduğu
+  // belirlenir. Kalıp bulunamazsa (ör. "SOFT" adlı özel bir ürün) 'soft'
+  // varsayılan/geniş kapsamlı gruptur.
+  function kenarBandiGrubuBul(malzeme) {
+    const m = String(malzeme || '').match(/(\d+(?:[.,]\d+)?)\s*\*\s*\d+/);
+    if (m) {
+      const k = parseFloat(m[1].replace(',', '.'));
+      if (Math.abs(k - 2) < 0.3) return 'pvc2';
+      if (Math.abs(k - 1) < 0.3) return 'pvc1';
+      if (Math.abs(k - 0.4) < 0.15) return 'pvc040';
+    }
+    return 'soft';
+  }
+
+  function bantMetniNormalize(s) {
+    return String(s || '').toUpperCase().replace(/[.,;:()\/]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  // Kenar bandı malzeme metnini mevcut hammadde kartları (tip:'kenar_bandi')
+  // arasından ADA GÖRE eşleştirir — SWOOD kodu ÜretimOS stok koduyla aynı
+  // FORMATTA gelmez, yalnızca açıklama metni gelir. Yanlış karta bağlamak
+  // (kart bazlı tüketim/maliyet takibini bozar) boş bırakmaktan daha
+  // pahalıdır — bu yüzden yüksek güven eşiği (>=0.7) altında kalan
+  // eşleşmeler DÖNDÜRÜLMEZ, kullanıcı elle seçer.
+  function kenarBandiKartiBul(malzemeMetni, kartlar) {
+    const hedef = bantMetniNormalize(malzemeMetni);
+    if (!hedef || !kartlar || !kartlar.length) return null;
+    let enIyi = null, enIyiSkor = 0;
+    kartlar.forEach(k => {
+      const ad = bantMetniNormalize(k.ad);
+      if (!ad) return;
+      let skor;
+      if (ad === hedef) skor = 1;
+      else if (hedef.includes(ad) || ad.includes(hedef)) skor = 0.9;
+      else {
+        const kelimelerAd = ad.split(' ').filter(w => w.length > 1);
+        const kelimelerHedef = new Set(hedef.split(' ').filter(w => w.length > 1));
+        const ortak = kelimelerAd.filter(w => kelimelerHedef.has(w)).length;
+        skor = kelimelerAd.length ? (ortak / Math.max(kelimelerAd.length, kelimelerHedef.size)) : 0;
+        if (ortak < 3) skor *= 0.5;
+      }
+      if (skor > enIyiSkor) { enIyiSkor = skor; enIyi = k; }
+    });
+    return enIyiSkor >= 0.7 ? enIyi : null;
+  }
+
   function swoodStoklarDenUret(panelSatirlari, secenek) {
     const ay = secenek || {};
     const pay = ay.kabaPay != null ? +ay.kabaPay : VARSAYILAN_PAY.kaplamali;
     const satirlar = [];
+    const bantAdaylari = [];
     (panelSatirlari || []).forEach((p, i) => {
       const renkM = (p.malzeme || '').match(MALZEME_RENK_KALIBI);
       const renk = renkM ? renkM[0] : '';
@@ -308,9 +357,12 @@ const IsEmriUretici = (() => {
         aciklama: aciklamaParcalari.filter(Boolean).join(' · ')
       }, i + 1, pay, rowAy);
       satirlar.push(satir);
+      bantAdaylari.push((p.kenarBantlari || []).map(k => ({
+        grup: kenarBandiGrubuBul(k.malzeme), malzeme: k.malzeme, adet: k.adet
+      })));
     });
     return {
-      satirlar,
+      satirlar, bantAdaylari,
       uyari: satirlar.length
         ? 'SWOOD "Stoklar" raporundan ' + satirlar.length + ' parça satırı aktarıldı (Saw Cut Export boştu) — ' +
           'kenar bandı malzemesi ve adedi açıklamaya not düşüldü, YÖNÜ (boy/en) raporda belirtilmediği için ' +
@@ -351,6 +403,7 @@ const IsEmriUretici = (() => {
   return {
     VARSAYILAN_PAY, BANT_TABLOSU, bantGrubu,
     malzemeCikar, urunlerCikar, stepDenUret, pdfDenUret, swoodDenUret, swoodStoklarDenUret,
+    kenarBandiGrubuBul, kenarBandiKartiBul,
     satirKur, bantHesapla, kenarBandiOzeti, ozet, isEmriKodu
   };
 })();

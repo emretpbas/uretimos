@@ -167,6 +167,34 @@ PageModules.is_emri_formu = (() => {
     await Promise.all(form.satirlar.map(kartlaEslestir));
   }
 
+  // ── SWOOD KENAR BANDI ↔ HAMMADDE KARTI (yalnızca KART eşleştirir, YÖN
+  // atamaz) ──────────────────────────────────────────────────────────────
+  // swoodStoklarDenUret() her satır için hangi PVC/SOFT grubuna ait kenar
+  // bandı malzemeleri geçtiğini (bantAdaylari) döndürür ama boy/en'i 0
+  // bırakır — hangi kenarın bantlı olduğu SWOOD raporunda belirtilmez.
+  // Burada YALNIZCA "bu grup için doğru hammadde kartı hangisi" sorusu
+  // çözülür (IsEmriUretici.kenarBandiKartiBul — yüksek güven eşiği altında
+  // eşleşme döndürmez), boy/en dokunulmadan kalır; kullanıcı hangi kenarın
+  // bantlı olduğunu işaretlediğinde kart zaten hazır olur.
+  async function kenarBantlariEslestir(satirlar, bantAdaylari) {
+    if (!bantAdaylari || !bantAdaylari.length) return 0;
+    let kartlar = [];
+    try {
+      const hammaddeler = await Store.hammaddeler.all();
+      kartlar = hammaddeler.filter(h => h.tip === 'kenar_bandi' && h.stokKodu);
+    } catch (e) { return 0; }
+    let eslesen = 0;
+    satirlar.forEach((s, i) => {
+      (bantAdaylari[i] || []).forEach(aday => {
+        const grup = s[aday.grup];
+        if (!grup || grup.bandKartId) return;
+        const kart = IsEmriUretici.kenarBandiKartiBul(aday.malzeme, kartlar);
+        if (kart) { grup.bandKartId = kart.id; grup.bandKodu = kart.stokKodu; grup.bandAd = kart.ad || ''; eslesen++; }
+      });
+    });
+    return eslesen;
+  }
+
   // Manuel seçim: SADECE yarı mamül kartları arasından — "kalem_secici"
   // ekranı üzerinden seçtirir, satıra bağlar. (Hammadde/hırdavat/plaka/kenar
   // bandı için ayrı sütunlar var: Plaka Hammadde, PVC/SOFT bant seçicileri.)
@@ -643,7 +671,9 @@ PageModules.is_emri_formu = (() => {
         if (!form.isEmriIsmi) form.isEmriIsmi = f.name.replace(/\.zip$/i, '');
         ekBilgi = null;
         swoodResimler = sonuc.teknikResimler;
+        const esleslenKartSayisi = await kenarBantlariEslestir(u.satirlar, u.bantAdaylari);
         const tumUyarilar = [u.uyari, ...sonuc.uyarilar].filter(Boolean);
+        if (esleslenKartSayisi) tumUyarilar.push(esleslenKartSayisi + ' kenar bandı stok kartıyla otomatik eşleştirildi — yalnızca hangi kenarda (boy/en) olduğunu seçmeniz yeterli.');
         durum.innerHTML = u.satirlar.length
           ? `<span style="color:var(--green-text)">✓ ${u.satirlar.length} parça satırı SWOOD raporundan aktarıldı</span>` +
             (tumUyarilar.length ? `<div style="margin-top:4px;color:var(--amber-text)">⚠ ${tumUyarilar.map(x => App.escapeHtml(x)).join('<br>⚠ ')}</div>` : '')

@@ -180,6 +180,39 @@ console.log('\n-- is_emri_uretici.js: swoodStoklarDenUret "Stoklar" panellerini 
   const rBos = IsEmriUretici.swoodStoklarDenUret([], {});
   t('boş liste -> 0 satır', rBos.satirlar.length === 0);
   t('boş liste için uygun uyarı', /ne kesim listesi.*ne de Stoklar raporunda/.test(rBos.uyari));
+
+  console.log('\n  -- bantAdaylari: her satır için grup+malzeme+adet döndürülür, kart HENÜZ atanmaz --');
+  t('bantAdaylari.length satırlarla eşleşiyor', r.bantAdaylari.length === r.satirlar.length);
+  t('1. satırın 2 bant adayı var', r.bantAdaylari[0].length === 2);
+  t('her iki aday da pvc1 grubuna düştü (1*22 kalınlık)', r.bantAdaylari[0].every(a => a.grup === 'pvc1'));
+  t('aday malzeme/adet doğru taşındı', r.bantAdaylari[0][0].malzeme === 'KENAR BANT PVC BEYAZ 1*22 5778GB EGGER' && r.bantAdaylari[0][0].adet === 1);
+  t('bant adayı olsa bile satırın pvc1.bandKartId HÂLÂ null (kart eşleme ayrı adım — page katmanında)', s0.pvc1.bandKartId === null);
+}
+
+console.log('\n-- is_emri_uretici.js: kenarBandiGrubuBul — kalınlığa göre PVC 2mm/1mm/0,40mm/SOFT grubu --');
+{
+  t('1*22 -> pvc1', IsEmriUretici.kenarBandiGrubuBul('KENAR BANT PVC BEYAZ 1*22 5778GB EGGER') === 'pvc1');
+  t('2*22 -> pvc2', IsEmriUretici.kenarBandiGrubuBul('KENAR BANT PVC BAROK 2*22 6742 LM-1 EGGER') === 'pvc2');
+  t('0,40*22 -> pvc040', IsEmriUretici.kenarBandiGrubuBul('KENAR BANT PVC ANTRASİT GRİ 0,40*22 EGGER') === 'pvc040');
+  t('kalınlık deseni yoksa -> soft (varsayılan)', IsEmriUretici.kenarBandiGrubuBul('SOFT DOKULU ÖZEL KENAR') === 'soft');
+  t('boş/tanımsız girdi -> soft', IsEmriUretici.kenarBandiGrubuBul('') === 'soft');
+}
+
+console.log('\n-- is_emri_uretici.js: kenarBandiKartiBul — SWOOD malzeme metnini hammadde kartına eşler --');
+{
+  const kartlar = [
+    { id: 'HM1', stokKodu: '50.011.10.001.00', ad: 'KENAR BANT PVC BEYAZ 1*22 5778GB EGGER' },
+    { id: 'HM2', stokKodu: '50.011.10.002.00', ad: 'KENAR BANT PVC ANTRASİT GRİ 1*22 EGGER' },
+    { id: 'HM3', stokKodu: '50.011.10.003.00', ad: 'TAMAMEN FARKLI BİR ÜRÜN ADI' }
+  ];
+  t('tam (normalize edilmiş) eşleşme kartı buluyor',
+    (IsEmriUretici.kenarBandiKartiBul('KENAR BANT PVC BEYAZ 1*22 5778GB EGGER', kartlar) || {}).id === 'HM1');
+  t('çok kelimeli güçlü örtüşme eşleşiyor (>=3 ortak kelime)',
+    (IsEmriUretici.kenarBandiKartiBul('KENAR BANT PVC ANTRASİT GRİ 1*22 EGGER (yeni parti)', kartlar) || {}).id === 'HM2');
+  t('alakasız metin İÇİN eşleşme YOK (düşük güven — yanlış kart bağlamaktan daha güvenli)',
+    IsEmriUretici.kenarBandiKartiBul('BAMBAŞKA BİR METİN', kartlar) === null);
+  t('boş kart listesi -> null', IsEmriUretici.kenarBandiKartiBul('HERHANGİ BİR ŞEY', []) === null);
+  t('boş malzeme metni -> null', IsEmriUretici.kenarBandiKartiBul('', kartlar) === null);
 }
 
 console.log('\n-- swood_okuyucu.js: oku() Saw Cut Export boşsa Stoklar raporuna düşüyor (kaynak-doğrulama) --');
@@ -196,6 +229,12 @@ t('dosyaOku artık .zip dalını işliyor', /if \(\/\\\.zip\$\/\.test\(ad\)\) \{
 t('SwoodOkuyucu.oku çağrılıyor', /const sonuc = await SwoodOkuyucu\.oku\(f\);/.test(pageSrc));
 t('csvSatirlari doluysa swoodDenUret çağrılıyor', /const u = sonuc\.csvSatirlari\.length[\s\S]{0,20}\? IsEmriUretici\.swoodDenUret\(sonuc\.csvSatirlari, \{\}\)/.test(pageSrc));
 t('csvSatirlari boşsa swoodStoklarDenUret\'e (yedek kaynak) düşülüyor', /: IsEmriUretici\.swoodStoklarDenUret\(sonuc\.stokPanelleri, \{\}\);/.test(pageSrc));
+t('kenarBantlariEslestir fonksiyonu tanımlı', /async function kenarBantlariEslestir\(satirlar, bantAdaylari\) \{/.test(pageSrc));
+t('kenar bandı eşleştirme Store.hammaddeler\'den tip:kenar_bandi filtreliyor', /h\.tip === 'kenar_bandi' && h\.stokKodu/.test(pageSrc));
+t('IsEmriUretici.kenarBandiKartiBul çağrılıyor', /IsEmriUretici\.kenarBandiKartiBul\(aday\.malzeme, kartlar\)/.test(pageSrc));
+t('zaten bandKartId doluysa ÜZERİNE YAZILMIYOR (kullanıcı elle seçtiyse dokunulmaz)', /if \(!grup \|\| grup\.bandKartId\) return;/.test(pageSrc));
+t('.zip akışında kenarBantlariEslestir çağrılıyor', /const esleslenKartSayisi = await kenarBantlariEslestir\(u\.satirlar, u\.bantAdaylari\);/.test(pageSrc));
+t('eşleşen kart sayısı kullanıcıya bildiriliyor', /kenar bandı stok kartıyla otomatik eşleştirildi/.test(pageSrc));
 t('ipucu metni "Stoklar" raporu yedek kaynağını açıklıyor', /"Stoklar" raporu \(ReportStocks\) yedek olarak otomatik denenir/.test(pageSrc));
 t('PDF önizleme artık href="#" kullanıyor (data: URL\'ye doğrudan navigasyon YOK — Chrome bunu engelliyor)',
   /<a href="#" class="ie-swood-pdf"/.test(pageSrc));

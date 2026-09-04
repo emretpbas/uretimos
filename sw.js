@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v169'; // v169: SWOOD teknik resim (PDF) onizlemesi artik blob: URL kullaniyor - Chrome data: URL'ye dogrudan yeni sekme navigasyonunu engelliyordu, tiklaninca hicbir sey acilmiyordu
+const CACHE_NAME = 'uretimos-v170'; // v170: SWOOD kenar bandi malzemeleri artik hammadde kartlariyla otomatik eslesiyor (yon/boy-en hala elle secilir - guvenlik ilkesi korunuyor)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
