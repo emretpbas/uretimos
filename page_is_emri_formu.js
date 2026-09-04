@@ -708,6 +708,19 @@ PageModules.is_emri_formu = (() => {
     });
   }
 
+  // data: URL'yi Blob'a çevirir — tarayıcılar (Chrome dahil) güvenlik
+  // nedeniyle bir bağlantı tıklamasından doğrudan data: adresine YENİ SEKME
+  // açılmasını ENGELLER (adres çubuğu boş/döner kalır, hiçbir şey yüklenmez).
+  // blob: adresleri bu kısıtlamaya tabi değildir.
+  function dataUrlBlobUrlYap(dataUrl) {
+    const virgul = dataUrl.indexOf(',');
+    const mimeM = /data:(.*?);base64/.exec(dataUrl.slice(0, virgul));
+    const ikili = atob(dataUrl.slice(virgul + 1));
+    const bayt = new Uint8Array(ikili.length);
+    for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bayt], { type: (mimeM && mimeM[1]) || 'application/octet-stream' }));
+  }
+
   // SWOOD raporundan gelen teknik resim/görselleri (PDF veya JPG/PNG) küçük
   // önizlemeler halinde gösterir — tıklanınca tam boyutlu yeni sekmede açılır.
   function teknikResimlerCiz() {
@@ -717,13 +730,18 @@ PageModules.is_emri_formu = (() => {
       <div class="fhint" style="margin-bottom:6px"><b>📐 SWOOD Teknik Resim/Görselleri</b> — referans için, tıklayınca büyük açılır.</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         ${swoodResimler.map((r, i) => r.tip === 'pdf'
-          ? `<a href="${r.dataUrl}" target="_blank" rel="noopener" class="ie-swood-pdf" data-i="${i}"
+          ? `<a href="#" class="ie-swood-pdf" data-i="${i}"
               style="display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11.5px;text-decoration:none;color:inherit">
               📄 ${App.escapeHtml(r.ad)}</a>`
           : `<img src="${r.dataUrl}" data-i="${i}" class="ie-swood-img" alt="${App.escapeHtml(r.ad)}"
               style="width:110px;height:110px;object-fit:cover;border:1px solid var(--border);border-radius:8px;cursor:pointer">`
         ).join('')}
       </div>`;
+    el.querySelectorAll('.ie-swood-pdf').forEach(a => a.onclick = (e) => {
+      e.preventDefault();
+      const r = swoodResimler[parseInt(a.dataset.i)];
+      window.open(dataUrlBlobUrlYap(r.dataUrl), '_blank', 'noopener');
+    });
     el.querySelectorAll('.ie-swood-img').forEach(img => img.onclick = () => {
       const r = swoodResimler[parseInt(img.dataset.i)];
       const body = document.createElement('div');

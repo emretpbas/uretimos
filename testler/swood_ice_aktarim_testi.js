@@ -197,6 +197,10 @@ t('SwoodOkuyucu.oku çağrılıyor', /const sonuc = await SwoodOkuyucu\.oku\(f\)
 t('csvSatirlari doluysa swoodDenUret çağrılıyor', /const u = sonuc\.csvSatirlari\.length[\s\S]{0,20}\? IsEmriUretici\.swoodDenUret\(sonuc\.csvSatirlari, \{\}\)/.test(pageSrc));
 t('csvSatirlari boşsa swoodStoklarDenUret\'e (yedek kaynak) düşülüyor', /: IsEmriUretici\.swoodStoklarDenUret\(sonuc\.stokPanelleri, \{\}\);/.test(pageSrc));
 t('ipucu metni "Stoklar" raporu yedek kaynağını açıklıyor', /"Stoklar" raporu \(ReportStocks\) yedek olarak otomatik denenir/.test(pageSrc));
+t('PDF önizleme artık href="#" kullanıyor (data: URL\'ye doğrudan navigasyon YOK — Chrome bunu engelliyor)',
+  /<a href="#" class="ie-swood-pdf"/.test(pageSrc));
+t('dataUrlBlobUrlYap fonksiyonu tanımlı (data: -> blob: dönüşümü)', /function dataUrlBlobUrlYap\(dataUrl\) \{/.test(pageSrc));
+t('PDF tıklamasında blob: URL\'si window.open ile açılıyor', /window\.open\(dataUrlBlobUrlYap\(r\.dataUrl\), '_blank', 'noopener'\);/.test(pageSrc));
 t('swoodResimler modül durumu tanımlı', /let swoodResimler = \[\];/.test(pageSrc));
 t('"Yeni Form" ile swoodResimler de temizleniyor', /form = bosForm\(\); ekBilgi = null; swoodResimler = \[\]; render\(main\);/.test(pageSrc));
 t('teknikResimlerCiz fonksiyonu tanımlı', /function teknikResimlerCiz\(\) \{/.test(pageSrc));
