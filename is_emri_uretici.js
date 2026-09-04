@@ -228,6 +228,55 @@ const IsEmriUretici = (() => {
     };
   }
 
+  // ── SWOOD RAPORUNDAN ÜRET (Saw Cut Export CSV — en güvenilir kaynaklardan
+  // biri, STEP'ten bile üstün: ölçü/malzeme/parça adı SWOOD'un kendi kesim
+  // listesinden gelir, tahmin gerekmez) ─────────────────────────────────────
+  // BULGU: EBF/EBB/EBL/EBR (4 kenarın hangisinde bant olduğu) alanları hangi
+  // SWOOD sürümünde nasıl doldurulduğu doğrulanmadan BOY/EN yönüne KESİN
+  // eşlenemez — bu yüzden (PDF/DWG okuyucularıyla AYNI ilke: yanlış yön
+  // ataması boş bırakmaktan pahalıdır) PVC sütunları otomatik doldurulmaz;
+  // hangi kenarlarda bant olduğu satırın açıklamasına NOT düşülür, kullanıcı
+  // PVC/SOFT sütununu elle işaretler.
+  const MALZEME_KALINLIK_KALIBI = /(\d+(?:[.,]\d+)?)\s*mm/i;
+  const MALZEME_RENK_KALIBI = /\b(ME[ŞS]E|CEV[İI]Z|BEYAZ|ANTRAS[İI]T|SİYAH|GRİ|Bİ[Nn]OM|LAM[İI]NANT)[\wçğıöşüÇĞİÖŞÜ ]{0,18}/i;
+  const SWOOD_KENAR_ALANLARI = [['EBF', 'Ön'], ['EBB', 'Arka'], ['EBL', 'Sol'], ['EBR', 'Sağ']];
+
+  function swoodDenUret(csvSatirlari, secenek) {
+    const ay = secenek || {};
+    const pay = ay.kabaPay != null ? +ay.kabaPay : VARSAYILAN_PAY.kaplamali;
+    const satirlar = [];
+    (csvSatirlari || []).forEach((r, i) => {
+      const malzeme = r.MATERIAL || '';
+      const kalinlik = (malzeme.match(MALZEME_KALINLIK_KALIBI) || [])[1];
+      const renk = (malzeme.match(MALZEME_RENK_KALIBI) || [])[0] || '';
+      const bantliKenarlar = SWOOD_KENAR_ALANLARI.filter(([alan]) => (r[alan] || '').trim()).map(([, ad]) => ad);
+
+      const aciklamaParcalari = [malzeme];
+      if (r.CABINET_NAME) aciklamaParcalari.push('Dolap: ' + r.CABINET_NAME + (r.CABINET_POSITION ? ' (' + r.CABINET_POSITION + ')' : ''));
+      if (r.GRAIN && r.GRAIN.trim()) aciklamaParcalari.push('Tahıl: ' + r.GRAIN.trim());
+      if (bantliKenarlar.length) aciklamaParcalari.push('SWOOD kenar bantlı: ' + bantliKenarlar.join(',') + ' — PVC sütununu kontrol edin');
+
+      const rowAy = { ...ay, paketNo: r.CABINET_NAME || ay.paketNo, renk: renk || ay.renk };
+      const satir = satirKur({
+        parcaAdi: r.DESC || ('Parça ' + (i + 1)),
+        parcaKodu: r.SAP_CODE || '',
+        boy: say(r.LENGHT), en: say(r.WIDTH),
+        kalinlik: kalinlik ? say(kalinlik) : 0,
+        adet: say(r.QTY) || 1,
+        aciklama: aciklamaParcalari.filter(Boolean).join(' · ')
+      }, i + 1, pay, rowAy);
+      satirlar.push(satir);
+    });
+    return {
+      satirlar,
+      uyari: satirlar.length
+        ? 'SWOOD\'dan ' + satirlar.length + ' parça satırı aktarıldı — kenar bandı (PVC/SOFT) yönleri ' +
+          'SWOOD raporunda güvenilir biçimde ayırt edilemediği için OTOMATİK doldurulmadı, açıklama ' +
+          'sütununda hangi kenarlarda bant olduğu not edildi. Kaydetmeden önce kontrol edin.'
+        : 'SWOOD raporunda kesim listesi (Saw Cut Export) satırı bulunamadı.'
+    };
+  }
+
   // ── ÖZET (formun sağ bloğu) ──────────────────────────────────────────────
   // Gruplama ÖNCELİKLE seçilen plaka hammaddeye göre yapılır (plakaKodu) —
   // aynı plakadan kesilen tüm parçaların m² toplamı tek grupta görünür.
@@ -259,7 +308,7 @@ const IsEmriUretici = (() => {
 
   return {
     VARSAYILAN_PAY, BANT_TABLOSU, bantGrubu,
-    malzemeCikar, urunlerCikar, stepDenUret, pdfDenUret,
+    malzemeCikar, urunlerCikar, stepDenUret, pdfDenUret, swoodDenUret,
     satirKur, bantHesapla, kenarBandiOzeti, ozet, isEmriKodu
   };
 })();

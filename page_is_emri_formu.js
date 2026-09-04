@@ -1,11 +1,12 @@
 // ════════════════════════════════════════════════════════════════════════════
 // İŞ EMRİ FORMU EKRANI (FR.29) — teknik resimden üretim
-// STEP / DWG / PDF yükle → düzenlenebilir tablo → antetli Excel + PDF
+// STEP / DWG / PDF / SWOOD ZIP yükle → düzenlenebilir tablo → antetli Excel + PDF
 // ════════════════════════════════════════════════════════════════════════════
 PageModules.is_emri_formu = (() => {
 
   let form = null;      // { baslik, satirlar, kaynak }
   let ekBilgi = null;   // PDF'ten gelen malzeme/ölçü önerileri
+  let swoodResimler = []; // SWOOD raporundan çıkan teknik resim/görsel önizlemeleri
 
   // ── KARTA EKLE / TAKİP ET — sekme tanımları ───────────────────────────────
   // Her sekme: hangi Store koleksiyonundan okunur, "kod" alanının adı (yoksa
@@ -65,15 +66,19 @@ PageModules.is_emri_formu = (() => {
       <div class="card" style="margin-bottom:12px">
         <div class="card-hdr"><div class="card-title">1️⃣ Teknik Resim Yükle</div></div>
         <div class="fhint" style="margin-bottom:8px">
-          <b>STEP (AP203/AP214) en iyi sonucu verir</b> — Boy, En ve Kalınlık geometriden
-          kesin okunur, elle girmeye gerek kalmaz.<br>
+          <b>SWOOD rapor ZIP'i (mobilya için önerilen)</b> — SolidWorks SWOOD eklentisinin
+          ürettiği kesim listesi (Saw Cut Export) boy/en/adet/malzemeyi doğrudan taşır,
+          rapordaki teknik resim/görseller de burada gösterilir. Yalnızca kenar bandı
+          (PVC/SOFT) yönünü siz işaretlersiniz.<br>
+          <b>STEP (AP203/AP214)</b> — Boy, En ve Kalınlık geometriden kesin okunur.<br>
           <b>PDF/DWG</b>'de ölçüler bağımsız yazılardır; hangi ölçünün hangi parçaya ait
           olduğu kesin bilinemez. Bu kaynaklarda malzeme kodları ve parça adları okunur,
           ölçüleri siz doldurursunuz. Yanlış ölçüyle iş emri açmak, boş bırakmaktan pahalıdır.
         </div>
-        <input type="file" id="ie-dosya" accept=".step,.stp,.STEP,.STP,.pdf,.dwg" style="font-size:12px">
+        <input type="file" id="ie-dosya" accept=".step,.stp,.STEP,.STP,.pdf,.dwg,.zip,.ZIP" style="font-size:12px">
         <div id="ie-durum" style="margin-top:6px;font-size:11.5px"></div>
         <div id="ie-ek" style="margin-top:8px"></div>
+        <div id="ie-swood-resim" style="margin-top:8px"></div>
       </div>
 
       <div class="card" style="margin-bottom:12px">
@@ -116,7 +121,7 @@ PageModules.is_emri_formu = (() => {
     document.getElementById('ie-dosya').onchange = (e) => dosyaOku(main, e);
     document.getElementById('ie-temizle').onclick = () => {
       App.confirmDialog('Form temizlensin mi? Girilen veriler kaybolur.', () => {
-        form = bosForm(); ekBilgi = null; render(main);
+        form = bosForm(); ekBilgi = null; swoodResimler = []; render(main);
       });
     };
     document.getElementById('ie-satir-ekle').onclick = () => {
@@ -134,6 +139,7 @@ PageModules.is_emri_formu = (() => {
 
     tabloCiz(main);
     if (ekBilgi) ekBilgiCiz();
+    if (swoodResimler.length) teknikResimlerCiz();
   }
 
   // ── PARÇA KODU ↔ YARI MAMÜL KARTI ────────────────────────────────────────
@@ -626,8 +632,26 @@ PageModules.is_emri_formu = (() => {
         return;
       }
 
+      if (/\.zip$/.test(ad)) {
+        const sonuc = await SwoodOkuyucu.oku(f);
+        const u = IsEmriUretici.swoodDenUret(sonuc.csvSatirlari, {});
+        form.satirlar = u.satirlar;
+        form.kaynak = 'SWOOD: ' + f.name;
+        if (!form.isEmriIsmi) form.isEmriIsmi = f.name.replace(/\.zip$/i, '');
+        ekBilgi = null;
+        swoodResimler = sonuc.teknikResimler;
+        const tumUyarilar = [u.uyari, ...sonuc.uyarilar].filter(Boolean);
+        durum.innerHTML = u.satirlar.length
+          ? `<span style="color:var(--green-text)">✓ ${u.satirlar.length} parça satırı SWOOD raporundan aktarıldı</span>` +
+            (tumUyarilar.length ? `<div style="margin-top:4px;color:var(--amber-text)">⚠ ${tumUyarilar.map(x => App.escapeHtml(x)).join('<br>⚠ ')}</div>` : '')
+          : `<span style="color:var(--red-text)">✕ ${tumUyarilar.map(x => App.escapeHtml(x)).join('<br>')}</span>`;
+        await tumSatirlariEslestir();
+        render(main);
+        return;
+      }
+
       durum.innerHTML = '<span style="color:var(--red-text)">Desteklenmeyen dosya. ' +
-        'STEP (.step/.stp), PDF veya DWG yükleyin.</span>';
+        'STEP (.step/.stp), PDF, DWG veya SWOOD rapor ZIP\'i yükleyin.</span>';
     } catch (err) {
       durum.innerHTML = '<span style="color:var(--red-text)">✕ ' +
         App.escapeHtml((err && err.message) || String(err)) + '</span>';
@@ -678,6 +702,31 @@ PageModules.is_emri_formu = (() => {
       await tumSatirlariEslestir();
       App.toast('Kod boş satırlara atandı.', 'ok');
       render(document.querySelector('main') || document.body);
+    });
+  }
+
+  // SWOOD raporundan gelen teknik resim/görselleri (PDF veya JPG/PNG) küçük
+  // önizlemeler halinde gösterir — tıklanınca tam boyutlu yeni sekmede açılır.
+  function teknikResimlerCiz() {
+    const el = document.getElementById('ie-swood-resim');
+    if (!el || !swoodResimler.length) return;
+    el.innerHTML = `
+      <div class="fhint" style="margin-bottom:6px"><b>📐 SWOOD Teknik Resim/Görselleri</b> — referans için, tıklayınca büyük açılır.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${swoodResimler.map((r, i) => r.tip === 'pdf'
+          ? `<a href="${r.dataUrl}" target="_blank" rel="noopener" class="ie-swood-pdf" data-i="${i}"
+              style="display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11.5px;text-decoration:none;color:inherit">
+              📄 ${App.escapeHtml(r.ad)}</a>`
+          : `<img src="${r.dataUrl}" data-i="${i}" class="ie-swood-img" alt="${App.escapeHtml(r.ad)}"
+              style="width:110px;height:110px;object-fit:cover;border:1px solid var(--border);border-radius:8px;cursor:pointer">`
+        ).join('')}
+      </div>`;
+    el.querySelectorAll('.ie-swood-img').forEach(img => img.onclick = () => {
+      const r = swoodResimler[parseInt(img.dataset.i)];
+      const body = document.createElement('div');
+      body.innerHTML = `<img src="${r.dataUrl}" style="width:100%;border-radius:8px">`;
+      App.openModal({ title: r.ad, body, footer: `<button class="btn" id="ie-resim-kapat">Kapat</button>`, wide: true });
+      document.getElementById('ie-resim-kapat').onclick = App.closeModal;
     });
   }
 

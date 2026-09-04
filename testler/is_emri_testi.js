@@ -105,8 +105,9 @@ t('bant metraji hesaplaniyor', I.bantHesapla(bs)>0);
 t('bos bantta metraj 0', I.bantHesapla(yan)===0);
 
 console.log('\n-- EKRAN VE CIKTILAR --');
-t('STEP/PDF/DWG kabul ediliyor', /accept="\.step,\.stp,\.STEP,\.STP,\.pdf,\.dwg"/.test(pg));
-t('STEP tercih edilmesi aciklanmis', /STEP \(AP203\/AP214\) en iyi sonucu verir/.test(pg));
+t('STEP/PDF/DWG/SWOOD ZIP kabul ediliyor', /accept="\.step,\.stp,\.STEP,\.STP,\.pdf,\.dwg,\.zip,\.ZIP"/.test(pg));
+t('STEP tercih edilmesi aciklanmis', /STEP \(AP203\/AP214\)<\/b> — Boy, En ve Kalınlık geometriden kesin okunur/.test(pg));
+t('SWOOD rapor ZIP acikilanmis (mobilya icin onerilen)', /SWOOD rapor ZIP'i \(mobilya için önerilen\)/.test(pg));
 t('wireframe uyarisi var', /Wireframe seçilirse ölçüler çıkmaz/.test(pg));
 t('FR.29 dokuman no formda', /FR\.29/.test(pg));
 t('Holzma\\/Ima\\/Rover\\/Delik alanlari', /holzma[\s\S]{0,80}ima[\s\S]{0,80}rover[\s\S]{0,80}delik/.test(pg));

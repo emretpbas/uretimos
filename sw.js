@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v166'; // v166: T4 kucuk iyilestirmeler - araclar/aracGiderleri hassas listede, olu kod temizligi, irsaliye miktar siniri, tedarikci karnesi teslim skoru, rutin bakim/durus kaydi tutarliligi, teklif durum etiketleme
+const CACHE_NAME = 'uretimos-v167'; // v167: Is Emri Formu'na SWOOD rapor ZIP'i (SolidWorks SWOOD eklentisi) ice aktarim eklendi - kesim listesi satirlara donusuyor, teknik resimler gosteriliyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
