@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v176'; // v176: Guvenlik/temizlik - baidu/google anahtar dosyalari .htaccess'te korunuyor, VPS_KURULUM.md eksik kurulum adimlarini anlatiyor, kullanilmayan aiBulgulari/dosyalar koleksiyonlari kaldirildi
+const CACHE_NAME = 'uretimos-v177'; // v177: Kidem tazminati damga vergisi dahil NET hesaplaniyor (kidemIhbarHesapla, page_ik_tazminat.js, page_ust_yonetim_kokpit.js)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

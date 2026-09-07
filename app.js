@@ -2275,8 +2275,20 @@ const App = (() => {
     return vergi;
   }
 
-  // Kıdem tazminatı: her tam yıl için brüt maaş (tavan ile sınırlı) × yıl sayısı.
-  // İhbar tazminatı: kıdem yılına göre değişen hafta sayısı × haftalık brüt ücret.
+  // Kıdem tazminatı: her tam yıl için brüt maaş (tavan ile sınırlı) × yıl sayısı,
+  // kesirli yıl da AYNI oranla dahil edilir (1475 sayılı Kanun Madde 14 —
+  // "bir yıldan artan süreler için de aynı oran üzerinden ödeme yapılır").
+  // Kıdem tazminatı gelir vergisinden İSTİSNADIR (zaten tavanla sınırlı olması
+  // bunun sebebidir) ama DAMGA VERGİSİNE tabidir — brüt tutarın TAMAMI
+  // üzerinden (bordro damga vergisindeki asgari ücret istisnası BURADA
+  // uygulanmaz, o yalnızca aylık ücrete özgüdür), binde oranı Ayarlar'daki
+  // aynı damgaVergisiOraniBinde'den okunur.
+  // İhbar tazminatı: kıdem yılına göre değişen hafta sayısı × haftalık brüt
+  // ücret — BRÜT tutardır; kıdem tazminatının aksine gelir vergisi
+  // istisnası YOKTUR (normal ücret gibi kümülatif dilime göre vergilenir,
+  // bu yüzden kesin NET rakam personelin o ayki kümülatif matrahına bağlıdır
+  // ve burada hesaplanmaz — ekranda brüt olarak gösterilip net olmadığı
+  // açıkça belirtilir).
   function kidemIhbarHesapla(personel, ayrilmaTarihi, ayarlar) {
     const iseGiris = new Date(personel.iseGirisTarihi);
     const ayrilis = ayrilmaTarihi ? new Date(ayrilmaTarihi) : new Date();
@@ -2286,6 +2298,8 @@ const App = (() => {
     const gunlukBrut = personel.brutMaas / 30;
     const tavanliGunlukUcret = Math.min(gunlukBrut, ayarlar.kidemTazminatiTavani / 30);
     const kidemTazminati = tavanliGunlukUcret * 30 * yilSayisi;
+    const kidemDamgaVergisi = kidemTazminati * ((ayarlar.damgaVergisiOraniBinde ?? 7.59) / 1000);
+    const netKidemTazminati = kidemTazminati - kidemDamgaVergisi;
 
     let ihbarHaftasi = 2;
     for (const d of BORDRO_AYARLARI_VARSAYILAN.ihbarSuresiHaftalar) {
@@ -2294,7 +2308,10 @@ const App = (() => {
     const haftalikBrut = personel.brutMaas / 4.33;
     const ihbarTazminati = haftalikBrut * ihbarHaftasi;
 
-    return { yilSayisi, kidemTazminati, ihbarHaftasi, ihbarTazminati, toplamTazminat: kidemTazminati + ihbarTazminati };
+    return {
+      yilSayisi, kidemTazminati, kidemDamgaVergisi, netKidemTazminati,
+      ihbarHaftasi, ihbarTazminati, toplamTazminat: netKidemTazminati + ihbarTazminati
+    };
   }
 
   function uid(prefix) { return (prefix || 'ID') + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }

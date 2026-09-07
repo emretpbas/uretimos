@@ -69,9 +69,10 @@ PageModules.ust_yonetim_kokpit = (() => {
     const toplamMakinaDegeri = makinalar.reduce((a, m) => a + (m.alisFiyati || 0), 0);
     const toplamYillikAmortisman = makinalar.reduce((a, m) => a + (m.alisFiyati / (m.amortismanYili || 10)), 0);
 
-    // Kıdem tazminatı yükü
+    // Kıdem tazminatı yükü — NET (damga vergisi düşülmüş) tutar: şirketin
+    // gerçekte ödeyeceği rakam budur, brüt değil (bkz. App.kidemIhbarHesapla).
     const tazminatHesaplari = aktifPersonel.map(p => App.kidemIhbarHesapla(p, null, ayarlar));
-    const toplamKidemYuku = tazminatHesaplari.reduce((a, h) => a + h.kidemTazminati, 0);
+    const toplamKidemYuku = tazminatHesaplari.reduce((a, h) => a + h.netKidemTazminati, 0);
 
     // En çok satan ürünler (sipariş kalemlerinden)
     const urunSatisToplam = new Map();
