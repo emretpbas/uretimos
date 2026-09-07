@@ -584,3 +584,4 @@ const MasaTasarim = (() => {
 
   return { ac, listeAc, urunAgacinaIsle };
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = MasaTasarim;

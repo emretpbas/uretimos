@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v178'; // v178: analitik_motor.js dual-mode yapildi (module.exports), ilk kez birim testi yazildi
+const CACHE_NAME = 'uretimos-v179'; // v179: masa_cizim.js ve masa_tasarim.js icin ilk kez birim testi yazildi (masa_tasarim.js dual-mode yapildi)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
