@@ -724,7 +724,6 @@ const Store = (() => {
     isemirleri: coll('isemirleri'),
     kesimPlanlari: coll('kesimPlanlari'),
     fiyatListeleri: coll('fiyatListeleri'),
-    dosyalar: coll('dosyalar'),
 
     // ── YENİ KOLEKSİYONLAR (departman akışları) ───────────────────────────────
     talepler: coll('talepler'),                   // üretim/depo -> satınalma (hammadde/hırdavat/yarımamül talebi)
@@ -808,7 +807,6 @@ const Store = (() => {
     isgKkdZimmet: coll('isgKkdZimmet'),
     isgEgitimler: coll('isgEgitimler'),
     isgSaglikMuayene: coll('isgSaglikMuayene'),
-    aiBulgulari: coll('aiBulgulari'),
     aiRaporlari: coll('aiRaporlari'),
     kontrolPlanlari: coll('kontrolPlanlari'),            // Kalite kontrol planı — hangi parçada, hangi istasyonda, hangi özellik, hangi toleransla ölçülür
     olcumKayitlari: coll('olcumKayitlari'),              // Operatörün girdiği ölçüm sonuçları (uygun/uygunsuz + değer) — kök neden analizinin ham verisi
@@ -918,7 +916,6 @@ const Store = (() => {
       await setIfAbsent('isemirleri', []);
       await setIfAbsent('kesimPlanlari', []);
       await setIfAbsent('fiyatListeleri', []);
-      await setIfAbsent('dosyalar', []);
       await setIfAbsent('talepler', []);
       await setIfAbsent('satinalmaTalepleri', []);
       await setIfAbsent('teklifKarsilastirma', []);
@@ -1036,7 +1033,7 @@ const Store = (() => {
       const TUM_VERI_KOLEKSIYONLARI = [
         'hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler',
         'receteler', 'rotalar', 'isemirleri', 'kesimPlanlari', 'fiyatListeleri',
-        'dosyalar', 'talepler', 'satinalmaTalepleri', 'teklifKarsilastirma',
+        'talepler', 'satinalmaTalepleri', 'teklifKarsilastirma',
         'stokRaf', 'stokHareketleri', 'musteriler', 'tedarikciler', 'teklifler',
         'siparisler', 'irsaliyeler', 'sevkiyatProgrami', 'kesimIhtiyaclari', 'dolapTasarimlari', 'masaTasarimlari', 'mekanlar', 'malzemeTalepleri', 'receteTalepleri', 'hatDurumlari', 'firsatlar', 'crmAktiviteler', 'kampanyalar', 'numuneler', 'fiyatListeleri', 'projeler',
         'hammaddeIhtiyaclari', 'satinalmaSiparisleri', 'kritikStokSeviyeleri',
@@ -1064,7 +1061,7 @@ const Store = (() => {
         'eFaturalar', 'firmaCekleri', 'iadeKalemleri', 'siparisRevizyonlari',
         'tedarikciIadeFaturalari',
         // ── SİSTEM ÜRETİMİ KAYITLAR ────────────────────────────────────────
-        'bildirimler', 'aiBulgulari', 'aiRaporlari'
+        'bildirimler', 'aiRaporlari'
       ];
       // KORUNANLAR (bilerek silinmez — bunlar veri değil KURULUM bilgisidir):
       //   kullaniciler    → silinirse kimse sisteme giremez

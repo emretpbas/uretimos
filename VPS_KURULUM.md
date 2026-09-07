@@ -121,6 +121,55 @@ Anahtar hiçbir yolla tanımlı değilse ekran silinmiş/uydurma veri ÜRETMEZ �
 sunucu açık bir "AI görme servisi yapılandırılmamış" hatası döner. Her çağrı
 görsel başına küçük bir API maliyeti taşır (Anthropic konsolundan izlenebilir).
 
+## Alternatif/Ücretsiz OCR Servisleri (Montaj Şemasından Reçete — isteğe bağlı)
+
+Yukarıdaki Anthropic AI ücretlidir. Aynı ekranda "Diğer yöntemler" altında iki
+ÜCRETSİZ (kotalı) alternatif de var — hiçbiri zorunlu değil, hangisini
+kurarsanız o buton çalışır, kurmadığınız "yapılandırılmamış" hatası verir.
+Anahtar okuma deseni AYNI (önce ortam değişkeni, sonra `.gitignore`'da olan
+yerel bir dosya — deploy hiç dokunmaz):
+
+**Baidu OCR** (Çin bulut hesabı gerektirir — bkz. `baidu_ocr_ai.php` başındaki
+not, Türkiye telefon/SMS doğrulamasında tıkanabilir):
+```php
+// baidu_anahtari.php (api.php ile aynı klasör)
+<?php
+return ['apiKey' => '...', 'secretKey' => '...'];
+```
+veya ortam değişkenleri: `URETIMOS_BAIDU_API_KEY`, `URETIMOS_BAIDU_SECRET_KEY`.
+
+**Google Cloud Vision OCR** (kredi kartıyla anında açılan hesap, ayda 1000
+birim ücretsiz kota, telefon/SMS doğrulaması yok — bkz. `google_ocr_ai.php`):
+```php
+// google_anahtari.php (api.php ile aynı klasör)
+<?php
+return 'AIza...'; // Google Cloud Vision API anahtarınız
+```
+veya ortam değişkeni: `URETIMOS_GOOGLE_VISION_KEY`.
+
+## Hammadde Piyasa Fiyat Arama (isteğe bağlı — Satınalma/ARGE/Yönetim)
+
+**Satınalma → Hammadde Fiyat Anomalileri** ekranındaki "Piyasa Fiyatı Ara"
+özelliği Google Custom Search API kullanır (bkz. `piyasa_fiyat_ai.php`).
+Kurulmazsa ekranın geri kalanı (TCMB kur karşılaştırması) normal çalışmaya
+devam eder, yalnızca bu buton "yapılandırılmamış" der.
+
+1. [Google Cloud Console](https://console.cloud.google.com) → **Custom
+   Search API**'yi etkinleştirin, bir API anahtarı oluşturun.
+2. [Programmable Search Engine](https://programmablesearchengine.google.com/)
+   üzerinden bir arama motoru (cx) oluşturun ("Tüm web'i ara" seçili olsun).
+3. Anahtarı tanımlayın:
+```php
+// google_arama_anahtari.php (api.php ile aynı klasör)
+<?php
+return ['apiKey' => '...', 'cx' => '...'];
+```
+veya ortam değişkenleri: `URETIMOS_GOOGLE_SEARCH_KEY`, `URETIMOS_GOOGLE_SEARCH_CX`.
+
+Dördü de (`anthropic_anahtari.php`, `baidu_anahtari.php`, `google_anahtari.php`,
+`google_arama_anahtari.php`) `.htaccess`'te web'den doğrudan erişime karşı
+ikinci bir katmanla korunur.
+
 ## HTTPS (zorunlu tavsiye)
 
 ```bash

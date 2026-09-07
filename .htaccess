@@ -14,10 +14,12 @@ RedirectMatch 404 ^/?backups/.*$
     Require all denied
 </FilesMatch>
 
-# AI görme servisi API anahtarının (Anthropic) sunucuda elle oluşturulan
-# yerel dosyası — çalıştırılsa bile çıktı üretmez (sadece bir string döner),
-# ama yine de doğrudan web erişimini ikinci katman olarak engelliyoruz.
-<FilesMatch "^anthropic_anahtari\.php$">
+# AI görme/OCR/arama servislerinin (Anthropic, Baidu OCR, Google Vision OCR,
+# Google Custom Search) API anahtarlarının sunucuda elle oluşturulan yerel
+# dosyaları — çalıştırılsalar bile çıktı üretmezler (sadece bir string/dizi
+# dönerler), ama yine de doğrudan web erişimini ikinci katman olarak
+# engelliyoruz (bkz. api.php'deki anahtar okuma mantığı).
+<FilesMatch "^(anthropic_anahtari|baidu_anahtari|google_anahtari|google_arama_anahtari)\.php$">
     Require all denied
 </FilesMatch>
 
