@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v172'; // v172: Google Vision OCR artik dagitik ikon/aksesuar semalarindaki tek basina olcu/vida kodlarini (M6X45 gibi) da satir olarak buluyor - AI gerekmiyor
+const CACHE_NAME = 'uretimos-v173'; // v173: Montaj semasi okuma butonlari artik "Failed to fetch" gibi ham tarayici hatalarini anlasilir Turkce mesaja ceviriyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

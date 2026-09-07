@@ -304,6 +304,24 @@ PageModules.montaj_semasi = (() => {
     document.getElementById('ms-oku-ocr').onclick = () => ocrIleOku(main);
   }
 
+  // Tarayıcının fetch() hatalarını ("Failed to fetch" gibi bağlamsız İngilizce
+  // metinler — sunucuya HİÇ ulaşılamadığında, HTTP yanıtı bile alınamadan
+  // atılır) kullanıcının anlayacağı, olası nedenleri sıralayan bir mesaja
+  // çevirir. api.php'nin kendisi döndürdüğü (Türkçe, açıklayıcı) hatalar bu
+  // filtreden ETKİLENMEDEN olduğu gibi geçer — yalnızca ağ katmanı hataları
+  // hedeflenir (bkz. ag_entegrasyon.js'deki agHatasiCevir ile AYNI ilke,
+  // ama burada hedef KENDİ api.php'miz — CORS değil sunucu/ağ sorunu odaklı).
+  function agHatasiCevirMontaj(err) {
+    const m = String((err && err.message) || err || '');
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m)) {
+      return 'Sunucuya ulaşılamadı (yanıt bile alınamadı). Olası sebepler: ' +
+        '(1) internet bağlantınız o an kesildi, (2) görsel çok büyük/karmaşık olduğu için ' +
+        'sunucu zaman aşımına uğradı, (3) sunucu geçici olarak meşgul. ' +
+        'Birkaç saniye bekleyip tekrar deneyin; tekrarlarsa daha küçük/daha az sayfalı bir PDF deneyin.';
+    }
+    return m;
+  }
+
   async function aiIleOku(main) {
     const durum = document.getElementById('ms-durum-mesaj') || document.getElementById('ms-durum');
     durum.innerHTML = '<span class="muted">Görsel AI\'ya gönderiliyor, birkaç saniye sürebilir…</span>';
@@ -317,7 +335,7 @@ PageModules.montaj_semasi = (() => {
       durum.innerHTML = `<span style="color:var(--green-text)">✓ ${satirlar.length} satır okundu (AI tahmini — gözden geçirin)</span>`;
       sonucCiz(main);
     } catch (err) {
-      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
+      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(agHatasiCevirMontaj(err))}</span>`;
     }
   }
 
@@ -337,7 +355,7 @@ PageModules.montaj_semasi = (() => {
       durum.innerHTML = `<span style="color:var(--green-text)">✓ ${satirlar.length} satır okundu (Baidu OCR — gözden geçirin)</span>`;
       sonucCiz(main);
     } catch (err) {
-      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
+      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(agHatasiCevirMontaj(err))}</span>`;
     }
   }
 
@@ -360,7 +378,7 @@ PageModules.montaj_semasi = (() => {
       durum.innerHTML = `<span style="color:var(--green-text)">✓ ${satirlar.length} satır okundu (Google Vision — gözden geçirin)</span>`;
       sonucCiz(main);
     } catch (err) {
-      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
+      durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(agHatasiCevirMontaj(err))}</span>`;
     }
   }
 
