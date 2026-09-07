@@ -230,3 +230,4 @@ const KurulumDurumu = (() => {
 
   return { ac, olc };
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = KurulumDurumu;

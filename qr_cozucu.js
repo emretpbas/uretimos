@@ -568,3 +568,4 @@ const QrCozucu = (() => {
 
   return { canvastanOku, griCoz, ikiliyeCevir, bulucuAra, rsDuzelt };
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = QrCozucu;

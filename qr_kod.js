@@ -399,3 +399,4 @@ const QrKod = (() => {
 
   return { uret, svg, veriKapasitesi, SURUMLER };
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = QrKod;
