@@ -524,3 +524,4 @@ const AnalitikMotor = (() => {
            durusPareto, firePareto, stokYaslandirma, malzemeVerimi, satisHunisi,
            lotIzlenebilirlik, paretoOlustur };
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = AnalitikMotor;

@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v177'; // v177: Kidem tazminati damga vergisi dahil NET hesaplaniyor (kidemIhbarHesapla, page_ik_tazminat.js, page_ust_yonetim_kokpit.js)
+const CACHE_NAME = 'uretimos-v178'; // v178: analitik_motor.js dual-mode yapildi (module.exports), ilk kez birim testi yazildi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
