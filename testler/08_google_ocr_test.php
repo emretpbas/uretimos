@@ -150,6 +150,60 @@ Test::dogru(googleOcrOlcuKodlariBul([
 Test::dogru(in_array('M6X45', googleOcrOlcuKodlariBul([['metin' => 'm6x45', 'x' => 0, 'y' => 0]])),
     'Küçük harfli kod da (m6x45) normalize edilip tanınır');
 
+Test::bolum('Google Vision OCR — HARF+ADET REFERANS ETİKETLERİ (A#1, G#4 gibi) — GERÇEK bir kullanıcı şeması');
+
+// Kullanıcının paylaştığı gerçek bir sandalye montaj şemasını taklit eder:
+// "Accessories Diagram" bölümünde HER ikonun üstünde bir harf+GERÇEK adet
+// etiketi var (A#1..F#1 tekil parçalar, G#4 dört tekerlek, H#1, sonra
+// vidalı grupta hem harf+adet HEM ölçü kodu birlikte: I#6/M6X45, J#4/M6X35,
+// K#3/M8X25, L#10/M6, ardından M#2/N#1/P#1). Önceki sürüm YALNIZCA ölçü
+// kodlarını (M6X45 gibi) buluyordu, harf+adet etiketli 15 parçayı (asıl
+// çoğunluk!) tamamen KAÇIRIYORDU — kullanıcı "tüm parçaları alması gerekli"
+// diye bildirdi.
+$aksesuarIzgarasi = ['responses' => [['textAnnotations' => array_merge(
+    [['description' => 'hepsi', 'boundingPoly' => ['vertices' => []]]],
+    [kelimeOlustur('Accessories', 50, 20), kelimeOlustur('Diagram', 150, 20)],
+    [kelimeOlustur('A#1', 60, 70), kelimeOlustur('B#1', 160, 70), kelimeOlustur('C#1', 260, 70),
+     kelimeOlustur('D#1', 360, 70), kelimeOlustur('E#1', 460, 70), kelimeOlustur('F#1', 560, 70),
+     kelimeOlustur('G#4', 660, 70)],
+    [kelimeOlustur('H#1', 60, 120),
+     kelimeOlustur('I#6', 160, 120), kelimeOlustur('M6X45', 160, 150),
+     kelimeOlustur('J#4', 260, 120), kelimeOlustur('M6X35', 260, 150),
+     kelimeOlustur('K#3', 360, 120), kelimeOlustur('M8X25', 360, 150),
+     kelimeOlustur('L#10', 460, 120), kelimeOlustur('M6', 460, 150),
+     kelimeOlustur('M#2', 560, 120), kelimeOlustur('N#1', 660, 120), kelimeOlustur('P#1', 760, 120)]
+)]]];
+$r8 = googleOcrYanitAyristir($aksesuarIzgarasi);
+Test::dogru($r8['ok'] === true, 'ok:true döner');
+Test::esit(19, count($r8['parcalar'] ?? []), 'TÜM parçalar bulundu: 15 harf+adet etiketi + 4 ölçü kodu = 19 satır');
+$harfler = array_column($r8['parcalar'], 'no');
+foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'] as $beklenen) {
+    Test::dogru(in_array($beklenen, $harfler, true), "\"$beklenen\" harfli referans etiketi satıra dönüştü");
+}
+$harfAdetleri = [];
+foreach ($r8['parcalar'] as $p) if ($p['no'] !== '') $harfAdetleri[$p['no']] = $p['adet'];
+Test::esit(4, $harfAdetleri['G'] ?? null, 'G#4 -> adet GERÇEKTEN 4 (varsayılan 1 DEĞİL — şemada yazılı)');
+Test::esit(6, $harfAdetleri['I'] ?? null, 'I#6 -> adet 6');
+Test::esit(10, $harfAdetleri['L'] ?? null, 'L#10 -> iki haneli adet (10) doğru okundu');
+Test::esit(1, $harfAdetleri['A'] ?? null, 'A#1 -> adet 1');
+$olcuKodlari = array_column(array_filter($r8['parcalar'], fn($p) => $p['no'] === ''), 'olcuSpec');
+Test::dogru(in_array('M6X45', $olcuKodlari) && in_array('M6X35', $olcuKodlari)
+    && in_array('M8X25', $olcuKodlari) && in_array('M6', $olcuKodlari),
+    'Harf etiketleriyle AYNI hücrelerde duran ölçü kodları da AYRICA satıra eklendi');
+Test::dogru(strpos($r8['genelNot'] ?? '', 'GÜVENİLİRDİR') !== false,
+    'genelNot harf+adet etiketlerinin adedinin TAHMİN değil GERÇEK olduğunu belirtiyor');
+
+Test::dogru(googleOcrParcaEtiketleriBul([
+    ['metin' => 'Accessories', 'x' => 0, 'y' => 0], ['metin' => 'Diagram', 'x' => 0, 'y' => 0],
+    ['metin' => '1', 'x' => 0, 'y' => 0], ['metin' => 'M6X45', 'x' => 0, 'y' => 0]
+]) === [], 'Başlık kelimeleri, salt sayılar ve ölçü kodları harf+adet etiketiyle KARIŞMAZ');
+Test::esit(0, count(googleOcrParcaEtiketleriBul([['metin' => 'AB#0', 'x' => 0, 'y' => 0]])),
+    'Adet 0 (ör. yanlış OCR okuması) geçersiz sayılır — atlanır');
+$tekrarli = googleOcrParcaEtiketleriBul([
+    ['metin' => 'A#1', 'x' => 0, 'y' => 0], ['metin' => 'A#1', 'x' => 100, 'y' => 100]
+]);
+Test::esit(1, count($tekrarli), 'Aynı harf iki kez geçerse (nadir OCR tekrarı) yalnızca BİR satır üretilir');
+
 Test::bolum('Google Vision OCR — uç nokta (HTTP, gerçek ağ çağrısı YOK)');
 
 $r = Test::istek('?action=montajSemasiOkuGoogle', 'POST', ['gorselB64' => 'x', 'mediaType' => 'image/png'], false);

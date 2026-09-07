@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v173'; // v173: Montaj semasi okuma butonlari artik "Failed to fetch" gibi ham tarayici hatalarini anlasilir Turkce mesaja ceviriyor
+const CACHE_NAME = 'uretimos-v174'; // v174: Google Vision artik harf+adet referans etiketlerini de (A#1, G#4 gibi) buluyor - ikon izgarasindaki TUM parcalar (once sadece olcu kodlari yakalaniyordu, cogunluk kaciyordu)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

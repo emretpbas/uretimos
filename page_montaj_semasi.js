@@ -179,10 +179,11 @@ PageModules.montaj_semasi = (() => {
       <div class="card" style="margin-bottom:12px">
         <div class="fhint" style="margin-bottom:10px">
           <b>Ne yapılır:</b> Şemadaki NO/ölçü/adet tablosu <b>Google Vision</b> ile okunur. Şema
-          klasik bir tablo yerine "Accessories Diagram" gibi ayrı simge bölümlerine dağılmış
-          ölçü/vida kodlarından (M6X45 gibi) oluşuyorsa, bu kodlar da tek tek satır olarak
-          bulunur — hangi simgeye ait olduğunu OCR okuyamayacağı için adı siz yazarsınız.
-          Siz her satırı mevcut hammadde/yarı mamül kartıyla eşleştirirsiniz.<br>
+          klasik bir tablo yerine "Accessories Diagram" gibi ayrı simge bölümlerine dağılmışsa,
+          her simgenin üstündeki harf+adet etiketi (A#1, G#4 gibi — adedi GERÇEKTEN şemada
+          yazılı olduğu için güvenilirdir) VE ayrı duran ölçü/vida kodları (M6X45 gibi) TEK TEK
+          satır olarak bulunur — hangi simgeye ait olduğunu OCR okuyamayacağı için adı siz
+          yazarsınız. Siz her satırı mevcut hammadde/yarı mamül kartıyla eşleştirirsiniz.<br>
           <b>Ne yapılmaz:</b> Parça KODU ve FİYAT asla uydurulmaz — sadece görselde görüneni
           bildirir; eşleşme siz onaylamadan kaydedilmez.
         </div>

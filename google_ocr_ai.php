@@ -191,6 +191,33 @@ function googleOcrOlcuKodlariBul($kelimeler) {
     return array_keys($sayac);
 }
 
+// ── HARF+ADET REFERANS ETİKETLERİ (A#1, G#4, L×10 gibi) ─────────────────────
+// "Accessories Diagram" tipi ızgaralarda HER ikonun üstünde/altında bir
+// referans harfi + GERÇEK adet yazar (örn. "A#1" tek koltuk minderi, "G#4"
+// dört tekerlek, "L#10" on pul). Bu, googleOcrOlcuKodlariBul()'daki ölçü
+// kodlarından (M6X45 gibi) FARKLI bir bilgidir — ikonun NE olduğunu yine
+// OCR okuyamaz, ama ADET burada TAHMİN değil GERÇEKTEN ŞEMADA YAZILI bir
+// değerdir, bu yüzden ayrı ve daha güvenilir bir kaynak olarak ele alınır.
+// Ayırıcı "#" veya "×/x/X" olabilir (üreticiye göre değişir); harf hemen
+// ardından ayırıcı gelmeli — "M6X45" gibi ölçü kodlarıyla KARIŞMAZ, çünkü
+// oradaki desen harf+RAKAM+ayırıcı+rakamdır, burada ayırıcı harften hemen
+// sonra gelir (arada rakam yoktur).
+function googleOcrParcaEtiketleriBul($kelimeler) {
+    $KALIP = '/^([A-Z]{1,2})[#×xX](\d{1,3})$/u';
+    $gorulen = [];
+    $sonuc = [];
+    foreach ($kelimeler as $k) {
+        $metin = trim((string)($k['metin'] ?? ''));
+        if ($metin === '' || !preg_match($KALIP, $metin, $m)) continue;
+        $harf = strtoupper($m[1]);
+        $adet = (int)$m[2];
+        if ($adet <= 0 || isset($gorulen[$harf])) continue; // aynı harf tekrar geçerse ilkini tut
+        $gorulen[$harf] = true;
+        $sonuc[] = ['harf' => $harf, 'adet' => $adet];
+    }
+    return $sonuc;
+}
+
 // Google Vision TEXT_DETECTION yanıtını parça listesine çevirir. Sırasıyla
 // dener: (1) KONUM TABANLI yatay NO/SIZE/QTY tablosu yeniden inşası, (2) düz
 // metni satır satır okuyan NO AD ADET / AD ADET deseni (baidu_ocr_ai.php /
@@ -250,21 +277,38 @@ function googleOcrYanitAyristir($googleYanit) {
         ];
     }
 
-    // ── SON ÇARE: ne tablo ne düzenli satır bulundu — dağınık ölçü/vida
-    // kodu taraması (bkz. googleOcrOlcuKodlariBul üzerindeki açıklama).
+    // ── SON ÇARE: ne tablo ne düzenli satır bulundu — dağınık ölçü/vida kodu VE
+    // harf+adet referans etiketi taraması (bkz. googleOcrOlcuKodlariBul ve
+    // googleOcrParcaEtiketleriBul üzerindeki açıklamalar). İKİSİ DE toplanır —
+    // "Accessories Diagram" gibi ızgaralarda HEM ikon-başı harf+adet etiketleri
+    // (A#1, G#4...) HEM de ayrı bir hücrede duran ölçü kodları (M6X45...) aynı
+    // anda bulunabilir; şemadaki HER parçanın satıra yansıması için ikisi de
+    // gerekir, biri bulunduğunda diğerini aramayı BIRAKMAK bazı parçaları atlar.
+    $etiketler = googleOcrParcaEtiketleriBul($kelimeler);
     $kodlar = googleOcrOlcuKodlariBul($kelimeler);
-    if (count($kodlar)) {
-        $kodParcalari = array_map(function ($kod) {
-            return ['no' => '', 'tahminiAd' => 'Şemadaki ilgili simgeye bakıp adı siz yazın', 'olcuSpec' => $kod, 'adet' => 1];
-        }, $kodlar);
+    if (count($etiketler) || count($kodlar)) {
+        $parcalar = [];
+        foreach ($etiketler as $e) {
+            $parcalar[] = [
+                'no' => $e['harf'],
+                'tahminiAd' => 'Şemadaki "' . $e['harf'] . '" numaralı simgeye bakıp adı siz yazın',
+                'olcuSpec' => '', 'adet' => $e['adet']
+            ];
+        }
+        foreach ($kodlar as $kod) {
+            $parcalar[] = ['no' => '', 'tahminiAd' => 'Şemadaki ilgili simgeye bakıp adı siz yazın', 'olcuSpec' => $kod, 'adet' => 1];
+        }
         return [
-            'ok' => true, 'parcalar' => $kodParcalari,
-            'genelNot' => 'Bu şemada düzenli bir NO/AD/ADET tablosu bulunamadı (örn. ikon/aksesuar ızgarası biçiminde '
-                . 'olabilir) — bunun yerine sayfada geçen HER ölçü/vida kodu (M6X45 gibi) ayrı bir satır olarak '
-                . 'listelendi. İkonların ne olduğunu OCR OKUYAMAZ — "Ad" alanları yer tutucudur, her satırı şemadaki '
-                . 'ilgili simgeye bakıp SİZ adlandırmalı ve adedi düzeltmelisiniz (varsayılan adet: 1).'
+            'ok' => true, 'parcalar' => $parcalar,
+            'genelNot' => 'Bu şemada düzenli bir NO/AD/ADET tablosu bulunamadı (ikon/aksesuar ızgarası biçiminde). '
+                . (count($etiketler) ? 'Harf+adet referans etiketleri (A#1, G#4 gibi) bulundu — bunların ADEDİ şemada '
+                    . 'gerçekten yazılı olduğu için GÜVENİLİRDİR, yalnızca "Ad" tahminidir. ' : '')
+                . (count($kodlar) ? 'Ayrıca sayfada geçen HER ölçü/vida kodu (M6X45 gibi) ayrı satır olarak eklendi — '
+                    . 'bunların adedi şemada AYRICA yazılı değilse varsayılan 1\'dir, kontrol edin. ' : '')
+                . 'İkonların ne olduğunu OCR OKUYAMAZ — "Ad" alanları yer tutucudur, her satırı şemadaki ilgili '
+                . 'simgeye/harfe bakıp SİZ adlandırmalısınız.'
         ];
     }
 
-    return ['ok' => false, 'hata' => 'Google Vision OCR şemada geçerli bir satır/tablo bulamadı (dağınık ölçü/vida kodu da yok). Görsel net olmayabilir — daha yüksek çözünürlükte tekrar deneyin.'];
+    return ['ok' => false, 'hata' => 'Google Vision OCR şemada geçerli bir satır/tablo bulamadı (dağınık ölçü/vida kodu veya harf+adet etiketi de yok). Görsel net olmayabilir — daha yüksek çözünürlükte tekrar deneyin.'];
 }
