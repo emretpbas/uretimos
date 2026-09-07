@@ -52,6 +52,55 @@ t('segmentte yoksa Tumu ye duser', P.listeFiyatBul(fl,'U2','Bayi').fiyat===500);
 t('hicbirinde yoksa null', P.listeFiyatBul(fl,'U9','Bayi')===null);
 t('pasif liste kullanilmiyor', P.listeFiyatBul([{segment:'Bayi',durum:'pasif',kalemler:[{urunId:'U1',fiyat:1}]}],'U1','Bayi')===null);
 
+console.log('\n-- TOPLU EXCEL FIYAT GIRISI: fiyatDosyasiniCoz --');
+{
+  const urunler = [{ id: 'U1', kod: 'CT.D.80200', ad: 'Gardırop' }, { id: 'U2', kod: 'CT.D.90100', ad: 'Şifonyer' }];
+  const tumSatirlar = [
+    ['Ürün Adı', 'Kod', 'Açıklama', 'Fiyat'],
+    ['Gardırop', 'CT.D.80200', '', '12.500,50'],
+    ['Şifonyer', 'ct.d.90100', '', '4500'],
+    ['Olmayan Ürün', 'CT.D.99999', '', '1000'],
+    ['', '', '', ''],
+    ['Boş kod satırı', '', '', '2000'],
+    ['Negatif fiyat', 'CT.D.80200', '', '-50']
+  ];
+  const { kayitlar, hatalar } = P.fiyatDosyasiniCoz(tumSatirlar, urunler);
+  t('başlık satırı otomatik bulundu, boş/hatalı satırlar hariç 3 geçerli satır ayrıştırıldı', kayitlar.length === 3);
+  t('Türkçe ondalık (12.500,50) doğru sayıya çevrildi', kayitlar[0].fiyat === 12500.5);
+  t('kod büyük/küçük harf duyarsız eşleşiyor (ct.d.90100 -> U2)', kayitlar[1].urunId === 'U2' && kayitlar[1].eslesti === true);
+  t('sistemde olmayan kod eslesti:false ama kayıt listede kalıyor (önizlemede gösterilsin diye)',
+    kayitlar[2].kod === 'CT.D.99999' && kayitlar[2].eslesti === false && kayitlar[2].urunId === null);
+  t('boş kod satırı hata listesine düştü, kayıtlara girmedi', hatalar.some(h => /kod boş/.test(h)));
+  t('negatif fiyat reddedildi (hata listesinde)', hatalar.some(h => /geçersiz fiyat/.test(h)));
+
+  console.log('\n  -- başlık satırı bulunamazsa anlamlı hata döner --');
+  const basliksiz = P.fiyatDosyasiniCoz([['A', 'B'], ['1', '2']], urunler);
+  t('Kod/Fiyat sütunu yoksa boş kayıt + anlamlı hata', basliksiz.kayitlar.length === 0 && /Başlık satırı bulunamadı/.test(basliksiz.hatalar[0]));
+
+  console.log('\n  -- boş dosya çökmeden anlamlı hata döner --');
+  const bos = P.fiyatDosyasiniCoz([], urunler);
+  t('0/1 satırlık dosya "veri satırı yok" hatası döner', /veri satırı yok/.test(bos.hatalar[0]));
+}
+
+console.log('\n-- TOPLU EXCEL FIYAT GIRISI: fiyatListesineTopluUygula --');
+{
+  const liste = { id: 'FLS-1', kalemler: [{ urunId: 'U1', kod: 'CT.D.80200', ad: 'Gardırop', fiyat: 10000 }] };
+  const kayitlar = [
+    { kod: 'CT.D.80200', urunId: 'U1', ad: 'Gardırop', fiyat: 12500.5, eslesti: true },   // mevcut -> GUNCELLENIR
+    { kod: 'CT.D.90100', urunId: 'U2', ad: 'Şifonyer', fiyat: 4500, eslesti: true },        // yeni -> EKLENIR
+    { kod: 'CT.D.99999', urunId: null, ad: null, fiyat: 1000, eslesti: false }              // eşleşmedi -> ATLANIR
+  ];
+  const sonuc = P.fiyatListesineTopluUygula(liste, kayitlar);
+  t('1 kalem güncellendi, 1 kalem eklendi, 1 kalem atlandı', sonuc.guncellenen === 1 && sonuc.eklenen === 1 && sonuc.atlanan === 1);
+  t('sonuç kalemler dizisinde toplam 2 kalem var (1 mevcut+güncel, 1 yeni)', sonuc.kalemler.length === 2);
+  t('U1 kaleminin fiyatı GÜNCEL değere yükseltildi', sonuc.kalemler.find(k => k.urunId === 'U1').fiyat === 12500.5);
+  t('U2 kalemi doğru alanlarla eklendi', (() => {
+    const u2 = sonuc.kalemler.find(k => k.urunId === 'U2');
+    return u2 && u2.kod === 'CT.D.90100' && u2.ad === 'Şifonyer' && u2.fiyat === 4500;
+  })());
+  t('orijinal liste MUTATE EDİLMEDİ (kalemler hâlâ eski 1 elemanlı)', liste.kalemler.length === 1 && liste.kalemler[0].fiyat === 10000);
+}
+
 console.log('\n-- NUMUNE DONUS ORANI --');
 const n=[{durum:'siparise_dondu',siparisTutari:50000,maliyet:500},
          {durum:'siparise_dondu',siparisTutari:30000,maliyet:400},

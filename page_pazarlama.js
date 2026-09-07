@@ -273,7 +273,7 @@ PageModules.pazarlama = (() => {
         yoksa "Tümü" listesi, o da yoksa ürünün temel fiyatı kullanılır.
       </div>
       ${listeler.length ? `<table class="dtable">
-        <tr><th>Liste</th><th>Segment</th><th class="r">Kalem</th><th>Geçerlilik</th><th>Durum</th></tr>
+        <tr><th>Liste</th><th>Segment</th><th class="r">Kalem</th><th>Geçerlilik</th><th>Durum</th><th></th></tr>
         ${listeler.map(l => `<tr>
           <td><b>${App.escapeHtml(l.ad)}</b></td>
           <td>${App.escapeHtml(l.segment || 'Tümü')}</td>
@@ -281,12 +281,17 @@ PageModules.pazarlama = (() => {
           <td style="font-size:11px">${l.baslangic || '—'} → ${l.bitis || '—'}</td>
           <td><span class="pill ${l.durum === 'aktif' ? 'pill-green' : 'pill-gray'}" style="font-size:9.5px">
             ${l.durum === 'aktif' ? 'Aktif' : 'Pasif'}</span></td>
+          <td><button class="btn btn-sm pz-excel-kalem" data-id="${l.id}">📥 Excel ile Kalem Ekle</button></td>
         </tr>`).join('')}
       </table>` : `<div class="empty-state" style="padding:20px">
         <div class="edesc">Henüz fiyat listesi yok. Farklı bayi/segmentlere farklı fiyat veriyorsanız
         burada tanımlayın — teklif aşamasında otomatik kullanılır.</div></div>`}
     </div>`;
     document.getElementById('pz-yeni-fl').onclick = () => fiyatListesiFormu(main);
+    el.querySelectorAll('.pz-excel-kalem').forEach(b => b.onclick = () => {
+      const l = listeler.find(x => x.id === b.dataset.id);
+      if (l) topluFiyatGirisiModali(l, main);
+    });
   }
 
   function fiyatListesiFormu(main) {
@@ -303,8 +308,8 @@ PageModules.pazarlama = (() => {
           <div class="fgroup"><label class="flbl">Başlangıç</label><input class="finput" id="fl-bas" type="date"></div>
           <div class="fgroup"><label class="flbl">Bitiş</label><input class="finput" id="fl-bit" type="date"></div>
         </div>
-        <div class="fhint">Liste oluşturulduktan sonra ürün fiyatları eklenir.
-          Toplu fiyat girişi için Excel aktarımı ileride eklenebilir.</div>`,
+        <div class="fhint">Liste oluşturulduktan sonra "📥 Excel ile Kalem Ekle" ile
+          ürün fiyatlarını toplu yükleyin.</div>`,
       footer: `<button class="btn" id="fl-vaz">Vazgeç</button><button class="btn btn-green" id="fl-kaydet">Oluştur</button>`
     });
     document.getElementById('fl-vaz').onclick = App.closeModal;
@@ -324,6 +329,88 @@ PageModules.pazarlama = (() => {
         App.closeModal(); App.toast('Fiyat listesi oluşturuldu.', 'ok');
         render(main);
       } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); }
+    };
+  }
+
+  // ── EXCEL İLE TOPLU KALEM EKLEME ─────────────────────────────────────────
+  // Fiyat listesi oluşturulduktan sonra kalem eklemenin TEK yolu buydu: hiç
+  // yoktu — liste her zaman boş kalıyordu. Dosya okuma (XLSX) ve önizleme
+  // burada, eşleme/birleştirme mantığı PazarlamaMotor'da (saf, test edilir).
+  async function topluFiyatGirisiModali(liste, main) {
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:10px">
+        <b>"${App.escapeHtml(liste.ad)}"</b> listesine Excel/CSV ile toplu kalem ekleyin.
+        Dosyada biri <b>"Kod"</b> (ürün kodu), diğeri <b>"Fiyat"</b> adını taşıyan iki sütun olmalı.
+        Sistemde kodu bulunmayan satırlar atlanır; zaten listede olan bir kod varsa fiyatı güncellenir.
+      </div>
+      <input type="file" id="pz-fl-dosya" accept=".xlsx,.xls,.csv"
+        style="padding:9px;border:1px solid var(--border);border-radius:8px;width:100%;font-size:12.5px">
+      <div id="pz-fl-durum" style="margin-top:8px;font-size:12px"></div>
+      <div id="pz-fl-onizleme"></div>`;
+    App.openModal({ title: '📥 Excel ile Toplu Kalem Ekle', sub: liste.ad, body, wide: true,
+      footer: `<button class="btn" id="pz-fl-kapat">Kapat</button>` });
+    document.getElementById('pz-fl-kapat').onclick = App.closeModal;
+
+    document.getElementById('pz-fl-dosya').onchange = async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const durum = document.getElementById('pz-fl-durum');
+      durum.innerHTML = '<span class="muted">Dosya okunuyor…</span>';
+      try {
+        const buf = await f.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const tumSatirlar = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        const urunler = await Store.urunler.all();
+        const { kayitlar, hatalar } = PazarlamaMotor.fiyatDosyasiniCoz(tumSatirlar, urunler);
+        durum.innerHTML = `<span style="color:var(--green-text)">✓ ${App.escapeHtml(f.name)} okundu — ${kayitlar.length} satır ayrıştırıldı</span>`;
+        onizlemeCiz(kayitlar, hatalar, liste, main);
+      } catch (err) {
+        durum.innerHTML = `<span style="color:var(--red-text)">✕ ${App.escapeHtml(err.message || String(err))}</span>`;
+        document.getElementById('pz-fl-onizleme').innerHTML = '';
+      }
+    };
+  }
+
+  function onizlemeCiz(kayitlar, hatalar, liste, main) {
+    const el = document.getElementById('pz-fl-onizleme');
+    const eslesenler = kayitlar.filter(k => k.eslesti);
+    const eslesmeyenler = kayitlar.filter(k => !k.eslesti);
+    el.innerHTML = `
+      <div class="kpi-row" style="margin:10px 0">
+        <div class="kpi-card"><div class="kpi-label">EŞLEŞTİ</div><div class="kpi-value">${eslesenler.length}</div></div>
+        <div class="kpi-card"><div class="kpi-label">KOD BULUNAMADI</div><div class="kpi-value">${eslesmeyenler.length}</div></div>
+        <div class="kpi-card"><div class="kpi-label">HATALI SATIR</div><div class="kpi-value">${hatalar.length}</div></div>
+      </div>
+      ${hatalar.length ? `<div class="card" style="margin-bottom:10px;background:var(--amber-bg)">
+        <div style="padding:6px;font-size:11.5px;color:var(--amber-text)">
+          ${hatalar.slice(0, 8).map(h => '⚠ ' + App.escapeHtml(h)).join('<br>')}
+          ${hatalar.length > 8 ? `<br>… ve ${hatalar.length - 8} satır daha` : ''}
+        </div></div>` : ''}
+      <div class="tbl-wrap" style="max-height:280px"><table class="dtable">
+        <tr><th>Kod</th><th>Ürün</th><th class="r">Fiyat</th><th>Durum</th></tr>
+        ${kayitlar.slice(0, 200).map(k => `<tr>
+          <td class="mono" style="font-size:11px">${App.escapeHtml(k.kod)}</td>
+          <td style="font-size:11.5px">${k.ad ? App.escapeHtml(k.ad) : '<span class="muted">—</span>'}</td>
+          <td class="r">${App.fmtTL(k.fiyat)}</td>
+          <td>${k.eslesti ? '<span class="pill pill-green" style="font-size:9px">eşleşti</span>'
+            : '<span class="pill pill-red" style="font-size:9px">kod bulunamadı</span>'}</td>
+        </tr>`).join('')}
+      </table></div>
+      ${kayitlar.length > 200 ? `<div class="fhint">İlk 200 satır gösteriliyor, tümü içe aktarılır.</div>` : ''}
+      <button class="btn btn-green" id="pz-fl-aktar" style="margin-top:8px" ${eslesenler.length ? '' : 'disabled'}>
+        ✓ ${eslesenler.length} Kalemi İçe Aktar</button>`;
+    document.getElementById('pz-fl-aktar').onclick = async () => {
+      const btn = document.getElementById('pz-fl-aktar');
+      btn.disabled = true; btn.textContent = 'Aktarılıyor…';
+      const sonuc = PazarlamaMotor.fiyatListesineTopluUygula(liste, kayitlar);
+      liste.kalemler = sonuc.kalemler;
+      await App.persist(() => Store.fiyatListeleri.upsert(liste));
+      App.closeModal();
+      App.toast(`✓ ${sonuc.eklenen} yeni kalem eklendi, ${sonuc.guncellenen} kalemin fiyatı güncellendi` +
+        (sonuc.atlanan ? ` (${sonuc.atlanan} kod bulunamadı, atlandı)` : ''), 'ok');
+      render(main);
     };
   }
 

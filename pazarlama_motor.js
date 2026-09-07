@@ -82,6 +82,64 @@ const PazarlamaMotor = (() => {
     return null;
   }
 
+  // ── TOPLU EXCEL FİYAT GİRİŞİ ─────────────────────────────────────────────
+  // Fiyat listeleri kurulduktan sonra kalem eklemenin TEK yolu buydu: hiçbiri
+  // — liste boş kalıyordu (page_pazarlama.js'teki eski not: "Toplu fiyat
+  // girişi için Excel aktarımı ileride eklenebilir"). Bu iki saf fonksiyon
+  // (DOM/Store'a dokunmaz — page_pazarlama.js yalnızca XLSX.read/sheet_to_json
+  // ile dosyayı 2 boyutlu diziye çevirip buraya verir) o boşluğu kapatır.
+  const sayiCoz = (v) => {
+    if (v === null || v === undefined || v === '') return null;
+    const s = String(v).replace(/\s/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  };
+
+  // tumSatirlar: XLSX.utils.sheet_to_json(ws, {header:1}) çıktısı (dizi dizisi).
+  // Başlık satırı otomatik bulunur (kod ve fiyat benzeri sütun içeren ilk satır).
+  function fiyatDosyasiniCoz(tumSatirlar, urunler) {
+    const satirlar = tumSatirlar || [];
+    if (satirlar.length < 2) return { kayitlar: [], hatalar: ['Dosyada veri satırı yok.'] };
+
+    const norm = (b) => String(b || '').toLocaleLowerCase('tr').trim();
+    let bIdx = -1, kodIdx = -1, fiyatIdx = -1;
+    for (let i = 0; i < Math.min(10, satirlar.length); i++) {
+      const basliklar = (satirlar[i] || []).map(norm);
+      const k = basliklar.findIndex(b => b === 'kod' || b === 'ürün kodu' || b === 'urun kodu' || b.includes('kod'));
+      const f = basliklar.findIndex(b => b === 'fiyat' || b === 'liste fiyatı' || b === 'liste fiyati' || b.includes('fiyat'));
+      if (k >= 0 && f >= 0) { bIdx = i; kodIdx = k; fiyatIdx = f; break; }
+    }
+    if (bIdx < 0) return { kayitlar: [], hatalar: ['Başlık satırı bulunamadı — bir sütun "Kod", diğeri "Fiyat" adını taşımalı.'] };
+
+    const urunIndeks = new Map((urunler || []).map(u => [String(u.kod || '').toLocaleUpperCase('tr'), u]));
+    const kayitlar = [], hatalar = [];
+    satirlar.slice(bIdx + 1).forEach((r, i) => {
+      if (!r || !r.some(c => String(c ?? '').trim() !== '')) return;
+      const kod = String(r[kodIdx] ?? '').trim();
+      if (!kod) { hatalar.push(`Satır ${bIdx + i + 2}: kod boş — atlandı`); return; }
+      const fiyat = sayiCoz(r[fiyatIdx]);
+      if (fiyat == null || fiyat < 0) { hatalar.push(`Satır ${bIdx + i + 2}: geçersiz fiyat — atlandı (${kod})`); return; }
+      const urun = urunIndeks.get(kod.toLocaleUpperCase('tr'));
+      kayitlar.push({ kod, urunId: urun ? urun.id : null, ad: urun ? urun.ad : null, fiyat, eslesti: !!urun });
+    });
+    return { kayitlar, hatalar };
+  }
+
+  // kayitlar: fiyatDosyasiniCoz() çıktısındaki .kayitlar (yalnızca eslesti:true
+  // olanlar uygulanır). liste MUTATE EDİLMEZ — yeni kalemler dizisi döner,
+  // kaydetmek çağıranın sorumluluğundadır (Store.fiyatListeleri.upsert).
+  function fiyatListesineTopluUygula(liste, kayitlar) {
+    const kalemler = (liste.kalemler || []).map(k => ({ ...k }));
+    let eklenen = 0, guncellenen = 0, atlanan = 0;
+    (kayitlar || []).forEach(kay => {
+      if (!kay.eslesti || !kay.urunId) { atlanan++; return; }
+      const mevcut = kalemler.find(k => k.urunId === kay.urunId);
+      if (mevcut) { mevcut.fiyat = kay.fiyat; guncellenen++; }
+      else { kalemler.push({ urunId: kay.urunId, kod: kay.kod, ad: kay.ad, fiyat: kay.fiyat }); eklenen++; }
+    });
+    return { kalemler, eklenen, guncellenen, atlanan };
+  }
+
   // ── NUMUNE DÖNÜŞ ORANI ───────────────────────────────────────────────────
   // Pazarlama harcamasının en ölçülebilir kalemi: gönderilen numunenin ne
   // kadarı siparişe döndü? Sonuçlanmamış numuneler orana dahil edilmez.
@@ -190,7 +248,8 @@ const PazarlamaMotor = (() => {
     KAMPANYA_TIPLERI, SEGMENTLER, NUMUNE_DURUM,
     gecerliMi, gecerliKampanyalar, fiyatUygula, listeFiyatBul,
     numuneDonusOrani, takipBekleyenler,
-    kampanyaOlustur, numuneGonder, numuneDurumGuncelle
+    kampanyaOlustur, numuneGonder, numuneDurumGuncelle,
+    fiyatDosyasiniCoz, fiyatListesineTopluUygula
   };
 })();
 
