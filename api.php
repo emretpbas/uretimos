@@ -1167,15 +1167,15 @@ try {
                             'items' => [
                                 'type' => 'object',
                                 'properties' => [
-                                    'no' => ['type' => 'string', 'description' => 'Şemadaki parça/kalem numarası — görselde numara/harf yoksa boş bırak'],
-                                    'tahminiAd' => ['type' => 'string', 'description' => 'Parçanın görünümünden tahmin edilen adı/türü (Türkçe)'],
+                                    'no' => ['type' => 'string', 'description' => 'Şemadaki parça/kalem numarası veya harfi (örn. "A#1" etiketindeki "A") — görselde numara/harf yoksa boş bırak'],
+                                    'tahminiAd' => ['type' => 'string', 'description' => 'İkonun ŞEKLİNE ve mobilya/sandalye/vida-cıvata bilgine dayanarak tahmin ettiğin SPESİFİK Türkçe ad (örn. "Sırtlık gövdesi", "Oturma minderi", "Baş dayama", "Kol dayama", "Tilt mekanizması", "Taban ayağı (yıldız)", "Teker (caster)", "Gaz lifti pistonu", "Alyan anahtarı", "Vida", "Pul/rondela", "Bağlantı klipsi/braketi gibi) — sadece "bakıp siz yazın" gibi yer tutucu YAZMA, gerçekten TAHMİN ET; emin değilsen tahminini yap ama genelNot\'ta belirt'],
                                     'olcuSpec' => ['type' => 'string', 'description' => 'Ölçü/vida tipi gibi teknik özellik metni, yoksa boş bırak'],
-                                    'adet' => ['type' => 'number', 'description' => 'Adet — görselde açık yazmıyorsa simgenin tekrar sayısından tahmin et, hiç belirlenemiyorsa 1 yaz']
+                                    'adet' => ['type' => 'number', 'description' => 'Adet — "A#1", "G×4", "L*10" gibi harf+sayı referans etiketlerinde sayı kısmı GERÇEK/YAZILI adettir (tahmin değildir); hiçbir sayı yoksa simgenin görseldeki tekrar sayısından tahmin et, hiç belirlenemiyorsa 1 yaz']
                                 ],
                                 'required' => ['no', 'tahminiAd', 'adet']
                             ]
                         ],
-                        'genelNot' => ['type' => 'string', 'description' => 'Belirsiz/okunaksız kısımlar veya adedi tahmin edilen kalemler için genel not']
+                        'genelNot' => ['type' => 'string', 'description' => 'Belirsiz/okunaksız kısımlar, adedi tahmin edilen kalemler VE etiket ile çizimin çeliştiği durumlar (örn. etiket 1 yazıyor ama şemada 5 aynı simge çizili) için genel not']
                     ],
                     'required' => ['parcalar']
                 ]
@@ -1194,10 +1194,25 @@ try {
                         "ayrı parça kalemidir; hatta tek başına bir vida/somun/pul/altıgen anahtar simgesi + altındaki " .
                         "ölçü yazısı bile (adet numarası hiç olmasa dahi) geçerli bir kalemdir. BİLEŞENLER SAYFANIN " .
                         "HERHANGİ BİR YERİNDE OLABİLİR — sayfanın TAMAMINI (üst, alt, sol, sağ, her ayrı bölüm/tablo) " .
-                        "tara ve gördüğün HER ayrı parça/vida/aksesuar kalemini çıkar, tek bir bölümle sınırlı kalma. " .
-                        "SADECE görselde gerçekten gördüğünü bildir, asla parça kodu veya fiyat UYDURMA. Adet açıkça " .
-                        "yazılı değilse simgenin görseldeki tekrar sayısından tahmin et; hiç belirlenemiyorsa 1 yaz ve " .
-                        "bunu genelNot alanında belirt. Ölçü/boyut bilgisi yoksa olcuSpec alanını boş bırak."]
+                        "tara ve gördüğün HER ayrı parça/vida/aksesuar kalemini çıkar, tek bir bölümle sınırlı kalma.\n\n" .
+                        "AD TAHMİNİ: Her ikonun ŞEKLİNE bak ve mobilya/ofis sandalyesi bilgini kullanarak SPESİFİK bir " .
+                        "Türkçe ad tahmin et (sırtlık gövdesi, oturma minderi, baş dayama, kol dayama, tilt/tansiyon " .
+                        "mekanizması, taban ayağı/yıldız gövde, teker (caster), gaz lifti pistonu, alyan anahtarı, " .
+                        "vida, pul/rondela, bağlantı klipsi/braketi gibi) — kurulum diyagramındaki (Installation Diagram) " .
+                        "montaj sırası ve konum da hangi parçanın ne olduğuna dair ipucu verir, onu da kullan. Emin " .
+                        "olamadığın bir ad için bile TAHMİNİNİ yaz (\"bakıp siz yazın\" gibi boş bir yer tutucu YAZMA), " .
+                        "ama emin olmadığını genelNot'ta belirt — kod/fiyat UYDURMAKLA aynı şey değildir, bu ad tahmini " .
+                        "zaten kullanıcı tarafından onaylanmadan hiçbir yere kaydedilmeyecek.\n\n" .
+                        "ADET: \"A#1\", \"G×4\", \"L*10\" gibi harf+sayı referans etiketlerinde ayırıcıdan sonraki sayı " .
+                        "GERÇEK/ŞEMADA YAZILI bir adettir, tahmin değildir — bunu adet alanına AYNEN yaz. Ayrıca aynı " .
+                        "parçanın çizimde kaç kez tekrarlandığını da (örn. kaç teker/vida ikonu çizili) SAY ve etiketteki " .
+                        "sayı ile KARŞILAŞTIR; ikisi UYUŞMUYORSA (örn. etiket \"1\" yazıyor ama 5 aynı simge çizili) bunu " .
+                        "mutlaka genelNot alanında açıkça belirt, adet alanına ETİKETTE YAZILI olanı yaz (çizimdeki " .
+                        "tekrar sayısını değil). Hiç sayı/etiket yoksa simgenin tekrar sayısından tahmin et, hiç " .
+                        "belirlenemiyorsa 1 yaz ve bunu da genelNot'ta belirt.\n\n" .
+                        "SADECE görselde gerçekten gördüğünü bildir, asla parça KODU veya FİYAT UYDURMA (bunlar ad " .
+                        "tahmininden farklı — şemada yazmayan bir kod/fiyat asla üretme). Ölçü/boyut bilgisi yoksa " .
+                        "olcuSpec alanını boş bırak."]
                 ]
             ]]
         ];

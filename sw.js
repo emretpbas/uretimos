@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v174'; // v174: Google Vision artik harf+adet referans etiketlerini de (A#1, G#4 gibi) buluyor - ikon izgarasindaki TUM parcalar (once sadece olcu kodlari yakalaniyordu, cogunluk kaciyordu)
+const CACHE_NAME = 'uretimos-v175'; // v175: AI ile Oku (Anthropic vision) artik ikon sekline bakip gercek parca adi tahmin ediyor (sirtlik/kol dayama/teker gibi) ve etiket-cizim celiskilerini (1 yazip 5 simge gibi) genelNot'ta belirtiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
