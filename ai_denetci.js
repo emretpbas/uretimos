@@ -32,8 +32,9 @@ const AiDenetci = (() => {
   // Her bulgu: {id, birim, seviye, baslik, aciklama, otomatik(bool), aksiyonTip, veri}
   async function tara() {
     const { kpi, veri } = await KpiMotor.tumKpi();
-    const [musteriCekleri, firmaCekleri, faturalar, musteriler] = await Promise.all([
-      Store.musteriCekleri.all(), Store.firmaCekleri.all(), Store.faturalar.all(), Store.musteriler.all()]);
+    const [musteriCekleri, firmaCekleri, faturalar, musteriler, depoGirisleri] = await Promise.all([
+      Store.musteriCekleri.all(), Store.firmaCekleri.all(), Store.faturalar.all(), Store.musteriler.all(),
+      Store.depoGirisleri.all()]);
     const bulgular = [];
     const bugun = new Date().toISOString().slice(0, 10);
     const ekle = (b) => bulgular.push({ id: App.uid('AIB'), tarih: bugun, ...b });
@@ -126,7 +127,12 @@ const AiDenetci = (() => {
     // Kritik seviyenin altına düşen hammaddeler → OTOMATİK satın alma talebi
     const kritikDusenler = [];
     (veri.kritikStok || []).forEach(ks => {
-      const stok = (veri.stokRaf || []).filter(s => s.tip === 'hammadde' && s.refId === ks.hammaddeId)
+      // BULGU: ambar filtresi yoktu — iade_ambari'ndaki (kalite reddi,
+      // üretimde KULLANILAMAZ) miktar da "elde stok" sayılıp kritik seviye
+      // karşılaştırmasını yanıltıyor, bu da gerekli otomatik satınalma
+      // talebinin hiç açılmamasına yol açabiliyordu (bkz. mrp_motor.js'teki
+      // aynı düzeltme — tek gerçek kullanılabilir stok kaynağı hammadde_deposu).
+      const stok = (veri.stokRaf || []).filter(s => s.tip === 'hammadde' && s.refId === ks.hammaddeId && s.ambar === 'hammadde_deposu')
         .reduce((a, s) => a + (s.miktar || 0), 0);
       if (stok < (ks.kritikSeviye || 0)) {
         const hm = (veri.hammaddeler || []).find(h => h.id === ks.hammaddeId);
@@ -144,6 +150,19 @@ const AiDenetci = (() => {
         aciklama: kritikDusenler.slice(0, 4).map(k => `${k.kod}: ${k.stok}/${k.kritik} ${k.birim}`).join(', ') +
           '. AI, eksik malzemeler için otomatik satın alma talebi açabilir.',
         otomatik: true, aksiyonTip: 'satinalma_talebi_ac', veri: { kalemler: kritikDusenler } });
+    }
+
+    // BULGU: Depo Girişi ekranındaki "eksik teslimat" toast'u Satınalma'ya
+    // bildirim gönderildiğini SÖYLÜYORDU ama gerçekte hiçbir yere yazılmıyordu
+    // — Satınalma'nın kısa teslimattan haberdar olmasının TEK gerçek yolu
+    // burasıdır (bildirim merkezi, tüm birimlerin tek ortak uyarı kanalı).
+    const eksikTeslimatlar = (depoGirisleri || []).filter(g =>
+      (g.eksikMiktar || 0) > 0 && g.durum !== 'tamamlandi' && g.durum !== 'reddedildi');
+    if (eksikTeslimatlar.length) {
+      ekle({ birim: 'satinalma', seviye: 'uyari', baslik: eksikTeslimatlar.length + ' depo girişinde EKSİK TESLİMAT var',
+        aciklama: eksikTeslimatlar.slice(0, 4).map(g => `${g.kalemAdi || g.hammaddeAd || '—'}: ${g.eksikMiktar} ${g.birim || ''} eksik geldi (irsaliye ${g.irsaliyeNo || '—'})`).join(', ') +
+          '. Tedarikçiyle eksik kısmın tamamlanması veya siparişin güncellenmesi gerekebilir.',
+        otomatik: false, aksiyonTip: 'eksik_teslimat_takip', veri: { girisIdler: eksikTeslimatlar.map(g => g.id) } });
     }
 
     // ══ SATIN ALMA ══

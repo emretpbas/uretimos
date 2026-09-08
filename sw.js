@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v182'; // v182: Kayip-Kacak/Recete-Talep gorev ayriligi artik GERCEK kullanici kimligi kullaniyor (role degil), cift onay esigi Ayarlar'dan geliyor (sabit 50000 degil)
+const CACHE_NAME = 'uretimos-v183'; // v183: Depo denetimi - manuel stok duzeltmesi bayat anlik goruntuyle fark hesaplamiyor, tekil kalite sorunu karantina durumuna dusuyor, MRP/AI Denetci iade_ambari stogunu artik "elde stok" saymiyor, gercek eksik teslimat bildirimi eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

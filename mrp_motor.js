@@ -181,7 +181,13 @@ const MrpMotor = (() => {
     brut.forEach((brutDizi, hmId) => {
       const hm = v.hammaddeler.find(h => h.id === hmId);
       if (!hm) return;
-      const eldeki = v.stokRaf.filter(s => s.tip === 'hammadde' && s.refId === hmId)
+      // BULGU: ambar filtresi YOKTU — iade_ambari'ndaki (kalite reddi, tedarikçiye
+      // iade bekleyen, ÜRETİMDE KULLANILAMAZ) miktar da "elde stok" sayılıp net
+      // ihtiyacı ve satınalma önerisini yapay olarak düşürüyordu. Depo Panel'in
+      // kendi kritik stok/karşılama sekmeleri zaten yalnızca hammadde_deposu'nu
+      // sayıyor (App.stokMiktarAmbar(stokRaf, 'hammadde_deposu', ...)) — MRP de
+      // aynı, tek gerçek kullanılabilir stok kaynağıyla hesaplamalı.
+      const eldeki = v.stokRaf.filter(s => s.tip === 'hammadde' && s.refId === hmId && s.ambar === 'hammadde_deposu')
         .reduce((a, s) => a + (s.miktar || 0), 0);
       const emniyet = hm.emniyetStogu || 0;
       const tedarikSuresi = hm.tedarikSuresiGun != null ? hm.tedarikSuresiGun : o.varsayilanTedarikSuresi;

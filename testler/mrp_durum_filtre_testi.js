@@ -72,5 +72,38 @@ console.log('\n-- calistir: tamamlanmış/reddedilmiş satınalma siparişi "yol
   }
 }
 
+console.log('\n-- BULGU (T50): "elde stok" hesabı artık yalnızca hammadde_deposu\'nu sayıyor (iade_ambari HARİÇ) --');
+{
+  // iade_ambari = kalite reddi / tedarikçiye iade bekleyen, ÜRETİMDE
+  // KULLANILAMAZ stok. Eskiden ambar filtresi olmadığından bu miktar da
+  // "elde stok" sayılıp net ihtiyacı/satınalma önerisini yapay olarak
+  // düşürüyordu (bkz. app.js:iadeAmbarinaAktar — kalite reddedilen
+  // hammadde tam bu ambara, aynı tip+refId anahtarıyla yazılır).
+  const v = ornekVeri();
+  v.satinalmaSiparisleri = []; // yolda sipariş yok, yalnızca elde stoğu test ediyoruz
+  v.stokRaf = [
+    { tip: 'hammadde', refId: 'H1', ambar: 'iade_ambari', miktar: 1000, birim: 'ADET' } // KULLANILAMAZ
+  ];
+  const sonuc = MrpMotor.calistir(v, { ufukHafta: 12 });
+  const satir = sonuc.satirlar.find(s => s.hammaddeId === 'H1');
+  t('iade_ambari\'ndaki 1000 adet "elde stok" SAYILMIYOR — H1 hâlâ satır üretiyor (kritik ihtiyaç gizlenmedi)', !!satir);
+  if (satir) {
+    t('ilk hafta projeksiyonu iade_ambari stoğunu YOK sayıyor (eski bug: 1000 ile ihtiyaç tamamen kapanmış görünürdü)',
+      satir.haftaDetay.some(h => (h.onerilen || 0) > 0));
+  }
+
+  // Aynı senaryo ama gerçek kullanılabilir stok hammadde_deposu'nda olsun —
+  // bu durumda ihtiyaç GERÇEKTEN kapanmalı (ambar filtresi doğru sayıyorsa).
+  const v2 = ornekVeri();
+  v2.satinalmaSiparisleri = [];
+  v2.stokRaf = [
+    { tip: 'hammadde', refId: 'H1', ambar: 'hammadde_deposu', miktar: 1000, birim: 'ADET' }
+  ];
+  const sonuc2 = MrpMotor.calistir(v2, { ufukHafta: 12 });
+  const satir2 = sonuc2.satirlar.find(s => s.hammaddeId === 'H1');
+  t('hammadde_deposu\'ndaki 1000 adet GERÇEKTEN sayılıyor — ihtiyaç kapandığından satınalma önerisi yok',
+    !satir2 || !satir2.haftaDetay.some(h => (h.onerilen || 0) > 0));
+}
+
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

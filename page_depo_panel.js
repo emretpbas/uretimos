@@ -59,9 +59,11 @@ PageModules.depo_panel = (() => {
   // ── DEPO GİRİŞİ — satınalma siparişi onayında otomatik "beklenen giriş" ────
   // oluşur (bkz. app.js: satinalmaSiparisiOnaylaninceDepoGirisiOlustur). Depocu
   // irsaliye/fatura no girer; cari kart (tedarikçi) kontrolü yapılır; gelen
-  // miktar sipariş miktarından azsa "eksik teslimat" otomatik tespit edilip
-  // satınalmaya bildirim düşer; kalite problemi bildirilirse karantina stoğuna
-  // alınır. Onaylanan giriş Hammadde Deposu'na stok ekler.
+  // miktar sipariş miktarından azsa "eksik teslimat" otomatik tespit edilir
+  // (ai_denetci.js periyodik taramasında Satınalma'ya Bildirim Merkezi
+  // üzerinden düşer — bkz. ai_denetci.js "eksik teslimat" bulgusu); kalite
+  // problemi bildirilirse karantina stoğuna alınır. Onaylanan giriş Hammadde
+  // Deposu'na stok ekler.
 
   // ══════════════════════════════════════════════════════════════════════════
   // GİRİŞ KAYIT DEFTERİ (LOG)
@@ -429,11 +431,22 @@ PageModules.depo_panel = (() => {
       // Depo onayı artık stoğa DİREKT eklemez — tüm girişler (kalite problemi
       // bildirilsin ya da bildirilmesin) Kalite Kontrol onayını bekler. Stok,
       // sadece Kalite onayladıktan sonra eklenir.
-      giris.durum = 'depo_onayladi_kalite_bekliyor';
+      // BULGU: kaliteProblemi işaretlense bile durum hep 'depo_onayladi_
+      // kalite_bekliyor' yazılıyordu — toplu giriş formu ile TUTARSIZ (o,
+      // kaliteProblemi=true iken durum='karantina' yazıyor). Giriş Kayıt
+      // Defteri ve "Tamamlanmış/Karantinadaki Girişler" tabloları rengi/etiketi
+      // yalnızca durum alanına bakarak belirlediğinden, tek tek girilen kalite
+      // şüpheli teslimat bu iki denetim ekranında SIRADAN (amber) görünüyor,
+      // kırmızı KARANTİNA etiketini hiç almıyordu.
+      giris.durum = kaliteProblemi ? 'karantina' : 'depo_onayladi_kalite_bekliyor';
       await App.persist(() => Store.depoGirisleri.upsert(giris));
 
       if (eksikMi) {
-        App.toast(`Depo onayı verildi, Kalite onayına gönderildi (stok HENÜZ EKLENMEDİ). ⚠ Eksik teslimat: ${eksikMiktar} ${giris.birim} eksik geldi, Satınalma birimine bildirim gönderildi.`, 'err');
+        // BULGU: Satınalma'ya gerçekte HİÇBİR bildirim gönderilmiyordu (ne
+        // Store.bildirimler'e yazılıyor ne de Satınalma ekranında gösteriliyor)
+        // — bu mesaj kullanıcıyı yanlış bilgilendiriyordu. Toplu giriş formunun
+        // (aşağıdaki mesajla tutarlı) dürüst haliyle değiştirildi.
+        App.toast(`Depo onayı verildi, Kalite onayına gönderildi (stok HENÜZ EKLENMEDİ). ⚠ Eksik teslimat: ${eksikMiktar} ${giris.birim} eksik geldi.`, 'err');
       } else {
         App.toast('⏳ Depo onayı verildi ama stok HENÜZ EKLENMEDİ — Kalite Kontrol onayladığında stoğa işlenecek: ' + giris.kalemAdi, 'ok');
       }
@@ -499,9 +512,17 @@ PageModules.depo_panel = (() => {
       else if (tip === 'yarimamul') { const y = yarimamuller.find(x => x.id === id); refKod = y ? y.kod : ''; refAd = y ? y.ad : ''; }
       else { const u = urunler.find(x => x.id === id); refKod = u ? u.kod : ''; refAd = u ? u.ad : ''; }
 
-      const eskiMiktar = App.stokMiktarAmbar(stokRaf, ambar, tip, id);
-      const fark = yeniMiktar - eskiMiktar;
+      // BULGU: eskiMiktar önceden render anındaki (potansiyel olarak BAYAT)
+      // `stokRaf` kapanışından okunuyor, fark ise az önce ÇEKİLMİŞ (güncel)
+      // `tumStok` üzerine uygulanıyordu — ekran açıkken başka bir işlem
+      // (ör. Kalite'nin depo girişini onaylaması) stoğu değiştirmişse, fark
+      // yanlış hesaplanıp güncel stoğun üzerine bindirilir ve kullanıcının
+      // yazdığı "gerçek sayılan miktar" DEĞİL, tutarsız bir toplam kaydedilir.
+      // Düzeltme: eskiMiktar da AYNI güncel `tumStok` anlık görüntüsünden
+      // okunur — staleness penceresi sıfırlanır.
       const tumStok = await Store.stokRaf.all();
+      const eskiMiktar = App.stokMiktarAmbar(tumStok, ambar, tip, id);
+      const fark = yeniMiktar - eskiMiktar;
       App.stokMiktarGuncelle(tumStok, ambar, tip, id, refKod, refAd, birim, fark);
       await App.persist(() => Store.stokRaf.save(tumStok));
 
