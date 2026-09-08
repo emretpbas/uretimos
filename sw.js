@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v184'; // v184: ISG denetimi - ayrilmis personel secili kayitlarda kaybolmuyor (kkd/egitim/saglik/kaza), kazasiz gun ramak kalayi da sayan yanlis hesaptan duzeltildi, kaza tarihi gelecege girilemiyor, gercek kaza kok neden analizi olmadan KAPANDI'ya alinamiyor
+const CACHE_NAME = 'uretimos-v185'; // v185: CRM denetimi - kim/temsilci artik gercek kullanici kimligi (rol degil), CRM'den teklife eslesmeyen musteri artik sessizce ilk musteriye duşmuyor (placeholder+dogrulama), teklif Kazanildi/Kaybedildi/Iptal/Siparise-donustu artik CRM firsatina geri yaziliyor, cift tiklama korumasi eklendi, 6 Aylik Tahmin ve pazarlama kampanya/numune tarihleri UTC yuvarlama hatasindan duzeltildi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

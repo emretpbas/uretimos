@@ -22,6 +22,17 @@ const PazarlamaMotor = (() => {
 
   const SEGMENTLER = ['Tümü', 'Bayi', 'Proje/Müteahhit', 'Perakende', 'İhracat', 'Kurumsal'];
 
+  // Yerel "bugün" (YYYY-MM-DD) — new Date().toISOString() UTC'ye çevirir;
+  // Türkiye UTC+3 olduğundan gece yarısından sonraki ~3 saat boyunca bir
+  // önceki günü döndürür (kampanya başlangıç/bitiş ve numune tarihlerinde
+  // yanlış gün karşılaştırmasına yol açardı). getFullYear/Month/Date yerel
+  // saat diliminde okur, hiçbir zaman UTC'ye çevrilmez.
+  const bugunYerel = () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
+
   const NUMUNE_DURUM = {
     hazirlaniyor: 'Hazırlanıyor', gonderildi: 'Gönderildi',
     teslim: 'Teslim Edildi', geri_bildirim: 'Geri Bildirim Alındı',
@@ -34,7 +45,7 @@ const PazarlamaMotor = (() => {
   // gün üzerinden konuşulur).
   function gecerliMi(kampanya, tarih, segment) {
     if (!kampanya || kampanya.durum !== 'aktif') return false;
-    const g = (tarih || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const g = (tarih || bugunYerel()).slice(0, 10);
     if (kampanya.baslangic && g < kampanya.baslangic) return false;
     if (kampanya.bitis && g > kampanya.bitis) return false;
     if (segment && kampanya.segment && kampanya.segment !== 'Tümü'
@@ -212,7 +223,7 @@ const PazarlamaMotor = (() => {
       temsilci: temsilci || (App.aktifRol ? App.aktifRol() : ''),
       firsatId: firsatId || null,
       durum: 'hazirlaniyor',
-      tarih: new Date().toISOString().slice(0, 10),
+      tarih: bugunYerel(),
       gonderimTarihi: '', geriBildirim: '', siparisTutari: 0,
       not: (not || '').trim()
     };
@@ -235,7 +246,7 @@ const PazarlamaMotor = (() => {
     }
     n.durum = durum;
     if (durum === 'gonderildi' && !n.gonderimTarihi) {
-      n.gonderimTarihi = new Date().toISOString().slice(0, 10);
+      n.gonderimTarihi = bugunYerel();
     }
     if (geriBildirim != null) n.geriBildirim = String(geriBildirim).trim();
     if (siparisTutari != null) n.siparisTutari = +siparisTutari || 0;
@@ -245,7 +256,7 @@ const PazarlamaMotor = (() => {
   }
 
   return {
-    KAMPANYA_TIPLERI, SEGMENTLER, NUMUNE_DURUM,
+    KAMPANYA_TIPLERI, SEGMENTLER, NUMUNE_DURUM, bugunYerel,
     gecerliMi, gecerliKampanyalar, fiyatUygula, listeFiyatBul,
     numuneDonusOrani, takipBekleyenler,
     kampanyaOlustur, numuneGonder, numuneDurumGuncelle,

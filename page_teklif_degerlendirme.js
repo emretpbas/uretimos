@@ -227,19 +227,33 @@ PageModules.teklif_degerlendirme = (() => {
           }
         };
 
+        let tk;
         if (tip === 'proje') {
           const projeler = await Store.projeler.all();
           const p = projeler.find(x => x.id === projeId);
-          const tk = p && (p.teklifler || []).find(x => x.id === id);
+          tk = p && (p.teklifler || []).find(x => x.id === id);
           if (!tk) { App.toast('Teklif bulunamadı.', 'err'); return; }
           yama(tk);
           await App.persist(() => Store.topluGuncelle('projeler', [p], 1));
         } else {
           const teklifler = await Store.teklifler.all();
-          const tk = teklifler.find(x => x.id === id);
+          tk = teklifler.find(x => x.id === id);
           if (!tk) { App.toast('Teklif bulunamadı.', 'err'); return; }
           yama(tk);
           await App.persist(() => Store.topluGuncelle('teklifler', [tk], 1));
+        }
+        // BULGU (T52): CRM fırsatından gelen bir teklif burada Kaybedildi/
+        // İptal/Kazanıldı'ya alınsa da bağlı fırsat CRM'de hâlâ açık
+        // ("Teklif Verildi") kalıyordu — CRM'in tahmin/boru hattı hesabı ve
+        // "14 gündür hareket yok" ihmal uyarısı zaten kapanmış bir anlaşmayı
+        // hâlâ hesaba katıyordu. Fırsat bağlıysa CRM aşaması da güncellenir
+        // (bağlantı yoksa veya CRM zaten kapalıysa sessizce atlanır).
+        if (tk.firsatId && typeof CRM !== 'undefined' && ['kazanildi', 'kaybedildi', 'iptal'].includes(yeni)) {
+          const hedefAsama = yeni === 'kazanildi' ? 'kazanildi' : 'kaybedildi';
+          const crmGerekce = yeni === 'kaybedildi' ? (ek.kayipSebebi || 'Teklif kaybedildi')
+            : (yeni === 'iptal' ? 'Teklif iptal edildi' : '');
+          try { await CRM.asamaDegistir(tk.firsatId, hedefAsama, crmGerekce); }
+          catch (e) { /* CRM senkronu başarısızsa teklif takibi yine de kayıtlı */ }
         }
         App.closeModal(); App.toast('Teklif takibi güncellendi.', 'ok');
         render(main);

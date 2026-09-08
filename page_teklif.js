@@ -243,15 +243,29 @@ PageModules.teklif = (() => {
       if (ham) {
         const t = JSON.parse(ham);
         sessionStorage.removeItem('crm_teklif_taslak');
+        // BULGU (T52): müşteri eşleşmezse (ör. CRM'de henüz cari kartı
+        // olmayan bir aday fırsatı) draft.musteriId üstteki VARSAYILAN
+        // (musteriler[0] — listedeki ilk müşteri, hangisiyse) olarak
+        // sessizce kalıyordu; kullanıcı fark etmeden TAMAMEN ALAKASIZ bir
+        // müşteriye teklif kesebiliyordu. Artık eşleşme yoksa müşteri boş
+        // bırakılır ve kullanıcı açıkça uyarılır.
+        let musteriBulundu = true;
         if (t.musteriId) draft.musteriId = t.musteriId;
         else if (t.musteriAdi) {
           const m = musteriler.find(x => (x.unvan || x.ad || '') === t.musteriAdi);
           if (m) draft.musteriId = m.id;
+          else musteriBulundu = false;
         }
         draft.firsatId = t.firsatId || null;
         draft.baslik = t.baslik || '';
         if (typeof App !== 'undefined' && App.toast) {
-          App.toast('CRM fırsatından geldi: ' + (t.baslik || ''), 'ok');
+          if (musteriBulundu) {
+            App.toast('CRM fırsatından geldi: ' + (t.baslik || ''), 'ok');
+          } else {
+            draft.musteriId = '';
+            App.toast('CRM fırsatındaki müşteri ("' + (t.musteriAdi || '') +
+              '") sistemde bulunamadı — lütfen müşteri seçin veya ekleyin.', 'err');
+          }
         }
       }
     } catch (e) { /* taslak okunamazsa normal akış */ }
@@ -311,6 +325,7 @@ PageModules.teklif = (() => {
           <button class="btn btn-sm" id="tk-new-musteri">+ Yeni Müşteri Ekle</button>
         </div>
         <select class="fselect" id="tk-musteri">
+          ${!musteriler.some(m => m.id === d.musteriId) ? '<option value="" selected>— Müşteri seçin —</option>' : ''}
           ${musteriler.map(m => `<option value="${m.id}" ${d.musteriId === m.id ? 'selected' : ''}>${App.escapeHtml(m.unvan)}</option>`).join('')}
         </select>
       </div>
@@ -514,6 +529,10 @@ PageModules.teklif = (() => {
     document.getElementById('tk-save-draft').onclick = async () => {
       if (!d.kalemler.length) { App.toast('En az bir kalem eklemelisiniz', 'err'); return; }
       const musteri = musteriler.find(m => m.id === d.musteriId);
+      // BULGU (T52): d.musteriId boş/eşleşmez kalabiliyordu (CRM'den gelen
+      // eşleşmeyen aday, veya silinmiş müşteri) — bu durumda musteriAdi ''
+      // ile sessizce kaydediliyordu. Artık geçerli bir müşteri şart.
+      if (!musteri) { App.toast('Müşteri seçilmeli', 'err'); return; }
       const araToplam = d.kalemler.reduce((a, k) => a + k.netFiyat * k.miktar, 0);
       const genelIskontoYuzde = d.genelIskontoYuzde || 0;
       const egHesapKaydet = App.ekGiderToplami(d.ekGiderler || [], ekGiderOlcusu(d));
@@ -915,6 +934,15 @@ PageModules.teklif = (() => {
           await App.persist(() => Store.siparisler.upsert(taslakSiparis));
           t.durum = 'siparise_donustu';
           await App.persist(() => Store.teklifler.upsert(t));
+          // BULGU (T52): teklif siparişe dönüşünce bağlı CRM fırsatı hâlâ
+          // "Teklif Verildi" aşamasında kalıyordu — boru hattı/tahmin zaten
+          // kazanılmış bir anlaşmayı hâlâ açık sayıyordu. Fırsat varsa otomatik
+          // "Kazanıldı"ya taşınır (bağlantı yoksa veya zaten kapalıysa sessizce
+          // atlanır — teklif kaydı bundan etkilenmez).
+          if (t.firsatId && typeof CRM !== 'undefined') {
+            try { await CRM.asamaDegistir(t.firsatId, 'kazanildi', 'Teklif siparişe dönüştü: ' + taslakSiparis.kod); }
+            catch (e) { /* CRM senkronu başarısızsa sipariş/teklif yine de kayıtlı */ }
+          }
           App.toast('Sipariş oluşturuldu ve Cari Onayına gönderildi: ' + taslakSiparis.kod, 'ok');
           render(main);
         }

@@ -151,10 +151,15 @@ PageModules.crm = (() => {
 
   // ── AYLIK TAHMİN ─────────────────────────────────────────────────────────
   function tahminCiz(el, firsatlar) {
+    // BULGU (T52): new Date().toISOString() yerel tarihi UTC'ye çevirir —
+    // Türkiye UTC+3 olduğundan ayın 1'i gece yarısından sonraki ~3 saat
+    // boyunca bir önceki ayın etiketi üretilirdi (ör. 1 Ekim 01:00 yerelde
+    // "2026-09" dönerdi). Ay/yıl artık yerel bileşenlerden okunuyor.
     const aylar = [];
+    const simdi = new Date();
     for (let i = 0; i < 6; i++) {
-      const d = new Date(); d.setMonth(d.getMonth() + i);
-      aylar.push(d.toISOString().slice(0, 7));
+      const d = new Date(simdi.getFullYear(), simdi.getMonth() + i, 1);
+      aylar.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
     }
     const adlar = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
       'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
@@ -212,7 +217,7 @@ PageModules.crm = (() => {
           <div class="fgroup"><label class="flbl">Beklenen Kapanış</label>
             <input class="finput" id="fr-kapanis" type="date"></div>
           <div class="fgroup"><label class="flbl">Temsilci</label>
-            <input class="finput" id="fr-temsilci" value="${App.escapeHtml(App.aktifRol())}"></div>
+            <input class="finput" id="fr-temsilci" value="${App.escapeHtml(App.aktifKullaniciAdi ? App.aktifKullaniciAdi() : App.aktifRol())}"></div>
           <div class="fgroup"><label class="flbl">Proje işi mi?</label>
             <select class="fselect" id="fr-proje"><option value="">Hayır — standart sipariş</option>
               <option value="1">Evet — proje (aşamalı/hakedişli)</option></select></div>
@@ -223,7 +228,9 @@ PageModules.crm = (() => {
       wide: true
     });
     document.getElementById('fr-vaz').onclick = App.closeModal;
-    document.getElementById('fr-kaydet').onclick = async () => {
+    document.getElementById('fr-kaydet').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;   // çift tıklamada mükerrer fırsat açılmasın
       try {
         const musteriAdi = document.getElementById('fr-musteri').value.trim();
         const m = musteriler.find(x => (x.unvan || x.ad || '') === musteriAdi);
@@ -237,11 +244,11 @@ PageModules.crm = (() => {
           aciklama: document.getElementById('fr-aciklama').value,
           projeMi: !!document.getElementById('fr-proje').value
         });
-        if (!r.ok) { App.toast(r.hata, 'err'); return; }
+        if (!r.ok) { App.toast(r.hata, 'err'); btn.disabled = false; return; }
         App.closeModal();
         App.toast('Fırsat oluşturuldu: ' + r.firsat.kod, 'ok');
         render(main);
-      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); }
+      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
     };
   }
 
@@ -348,17 +355,19 @@ PageModules.crm = (() => {
         footer: `<button class="btn" id="pd-vaz">Vazgeç</button><button class="btn btn-green" id="pd-olustur">Projeyi Oluştur</button>`
       });
       document.getElementById('pd-vaz').onclick = () => { App.closeModal(); firsatDetay(main, id); };
-      document.getElementById('pd-olustur').onclick = async () => {
+      document.getElementById('pd-olustur').onclick = async (ev) => {
+        const btn = ev.currentTarget;
+        btn.disabled = true;   // çift tıklamada aynı fırsattan iki proje açılmasın
         try {
           const r = await CRM.projeyeDonustur(id, {
             baslangic: document.getElementById('pd-bas').value,
             bitis: document.getElementById('pd-bit').value
           });
-          if (!r.ok) { App.toast(r.hata, 'err'); return; }
+          if (!r.ok) { App.toast(r.hata, 'err'); btn.disabled = false; return; }
           App.closeModal();
           App.toast('Proje oluşturuldu: ' + r.proje.kod, 'ok');
           App.goTo('proje');
-        } catch (e) { App.toast('Dönüştürülemedi: ' + (e && e.message ? e.message : e), 'err'); }
+        } catch (e) { App.toast('Dönüştürülemedi: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
       };
     };
 
@@ -377,7 +386,9 @@ PageModules.crm = (() => {
         App.goTo('teklif');
       } catch (e) { App.toast('Hazırlanamadı: ' + (e && e.message ? e.message : e), 'err'); }
     };
-    document.getElementById('fd-akt-ekle').onclick = async () => {
+    document.getElementById('fd-akt-ekle').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;   // çift tıklamada mükerrer aktivite kaydı olmasın
       try {
         const r = await CRM.aktiviteEkle({
           firsatId: id, tip: document.getElementById('fd-tip').value,
@@ -385,27 +396,29 @@ PageModules.crm = (() => {
           sonrakiAdim: document.getElementById('fd-sonraki').value,
           sonrakiTarih: document.getElementById('fd-sonraki-tarih').value
         });
-        if (!r.ok) { App.toast(r.hata, 'err'); return; }
+        if (!r.ok) { App.toast(r.hata, 'err'); btn.disabled = false; return; }
         App.closeModal();
         App.toast('Aktivite kaydedildi.', 'ok');
         firsatDetay(main, id);
-      } catch (e) { App.toast('Kaydedilemedi: ' + (e && e.message ? e.message : e), 'err'); }
+      } catch (e) { App.toast('Kaydedilemedi: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
     };
-    document.querySelectorAll('.fd-asama').forEach(b => b.onclick = async () => {
+    document.querySelectorAll('.fd-asama').forEach(b => b.onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;   // çift tıklamada aynı aşama geçişi iki kez işlenmesin
       try {
-        const hedef = b.dataset.a;
+        const hedef = btn.dataset.a;
         let gerekce = '';
         if (hedef === 'kaybedildi') {
           gerekce = await new Promise(res => App.redGerekceDialog('Kayıp Sebebi',
             'Bu fırsat neden kaybedildi? (fiyat, termin, rakip, ihtiyaç değişti…)', g => res(g)));
-          if (!gerekce) return;
+          if (!gerekce) { btn.disabled = false; return; }
         }
         const r = await CRM.asamaDegistir(id, hedef, gerekce);
-        if (!r.ok) { App.toast(r.hata, 'err'); return; }
+        if (!r.ok) { App.toast(r.hata, 'err'); btn.disabled = false; return; }
         App.closeModal();
         App.toast('Aşama güncellendi: ' + CRM.asamaBul(hedef).ad, 'ok');
         render(main);
-      } catch (e) { App.toast('Güncellenemedi: ' + (e && e.message ? e.message : e), 'err'); }
+      } catch (e) { App.toast('Güncellenemedi: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
     });
   }
 

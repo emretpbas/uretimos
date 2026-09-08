@@ -40,6 +40,13 @@ const CRM = (() => {
   const asamaBul = (id) => ASAMALAR.find(a => a.id === id) || ASAMALAR[0];
   const acikMi = (f) => !['kazanildi', 'kaybedildi'].includes(f.asama);
 
+  // Gerçek kişi kimliği: aynı role sahip FARKLI çalışanlar (ör. iki satış
+  // temsilcisi) App.aktifRol() ile AYNI kişi sanılırdı — "bu görüşmeyi/aşama
+  // değişikliğini kim yaptı" bilgisi ayırt edilemezdi. Bireysel hesapla giriş
+  // yapıldıysa gerçek kullanıcı adı, yoksa geriye dönük uyumla role düşer.
+  const kimlik = () => (typeof App !== 'undefined' && App.aktifKullaniciAdi) ? App.aktifKullaniciAdi()
+    : ((typeof App !== 'undefined' && App.aktifRol) ? App.aktifRol() : '');
+
   // ── SATIŞ TAHMİNİ ────────────────────────────────────────────────────────
   // Ağırlıklı boru hattı: her fırsatın tutarı × aşama olasılığı.
   // Kapalı fırsatlar (kazanıldı/kaybedildi) tahmine girmez — onlar gerçekleşmiş.
@@ -124,12 +131,12 @@ const CRM = (() => {
       kaynak: kaynak || 'Diğer',
       asama: 'yeni',
       beklenenKapanis: beklenenKapanis || '',
-      temsilci: temsilci || (App.aktifRol ? App.aktifRol() : ''),
+      temsilci: temsilci || kimlik(),
       aciklama: (aciklama || '').trim(),
       projeMi: !!projeMi,
       teklifId: null, siparisId: null, projeId: null,
       olusturmaTarihi: new Date().toISOString(),
-      asamaGecmisi: [{ asama: 'yeni', tarih: new Date().toISOString(), kim: App.aktifRol ? App.aktifRol() : '' }]
+      asamaGecmisi: [{ asama: 'yeni', tarih: new Date().toISOString(), kim: kimlik() }]
     };
     const liste = await Store.firsatlar.all();
     liste.push(f);
@@ -151,7 +158,7 @@ const CRM = (() => {
     f.asamaGecmisi = f.asamaGecmisi || [];
     f.asamaGecmisi.push({
       asama: yeniAsama, tarih: new Date().toISOString(),
-      kim: App.aktifRol ? App.aktifRol() : '', gerekce: (gerekce || '').trim()
+      kim: kimlik(), gerekce: (gerekce || '').trim()
     });
     if (yeniAsama === 'kazanildi' || yeniAsama === 'kaybedildi') {
       f.kapanisTarihi = new Date().toISOString();
@@ -170,7 +177,7 @@ const CRM = (() => {
       tarih: tarih || new Date().toISOString(),
       sonrakiAdim: (sonrakiAdim || '').trim(),
       sonrakiTarih: sonrakiTarih || '',
-      kim: App.aktifRol ? App.aktifRol() : ''
+      kim: kimlik()
     };
     await App.persist(() => Store.topluEkle('crmAktiviteler', [a], 1));
     return { ok: true, aktivite: a };
@@ -231,7 +238,7 @@ const CRM = (() => {
       f.asama = 'teklif';
       f.asamaGecmisi = f.asamaGecmisi || [];
       f.asamaGecmisi.push({ asama: 'teklif', tarih: new Date().toISOString(),
-        kim: App.aktifRol ? App.aktifRol() : '', gerekce: 'Teklif oluşturuldu: ' + (teklifKod || '') });
+        kim: kimlik(), gerekce: 'Teklif oluşturuldu: ' + (teklifKod || '') });
     }
     await App.persist(() => Store.topluGuncelle('firsatlar', [f], 1));
     return { ok: true, firsat: f };

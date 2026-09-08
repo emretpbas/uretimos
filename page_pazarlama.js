@@ -17,7 +17,7 @@ PageModules.pazarlama = (() => {
       Store.fiyatListeleri.all(), Store.musteriler.all()
     ]);
 
-    const bugun = new Date().toISOString().slice(0, 10);
+    const bugun = PazarlamaMotor.bugunYerel();
     const aktifKmp = kampanyalar.filter(k => PazarlamaMotor.gecerliMi(k, bugun));
     const don = PazarlamaMotor.numuneDonusOrani(numuneler);
     const takip = PazarlamaMotor.takipBekleyenler(numuneler, 21);
