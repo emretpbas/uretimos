@@ -196,7 +196,10 @@ const VARSAYILAN_AYARLAR = {
 
   // ── Cari / Vade Farkı Parametresi (manuel, TCMB politika faizine göre siz güncellersiniz) ──
   aylikVadeFarkiFaizOrani: 4.25, // % (aylık) — Cari İşlemler ve Yönetim onayında vadesi geçen bakiyeler için kullanılır
-  kdvOraniYuzde: 20 // % varsayılan KDV oranı (otomatik fatura oluşturmada kullanılır, müşteri carisinde farklı tanımlıysa o öncelikli olur)
+  kdvOraniYuzde: 20, // % varsayılan KDV oranı (otomatik fatura oluşturmada kullanılır, müşteri carisinde farklı tanımlıysa o öncelikli olur)
+
+  // ── Kayıp-Kaçak / Malzeme Talep Parametresi ──────────────────────────────
+  ciftOnayTutarEsigi: 50000 // ₺ — bu tutar üstü malzeme talepleri ikinci bir yetkilinin onayını da ister (kayip_kacak.js)
 };
 
 // ── Örnek müşteri (cari) seed verisi ─────────────────────────────────────────

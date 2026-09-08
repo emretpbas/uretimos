@@ -1,4 +1,4 @@
-const fs=require('fs'); let src=fs.readFileSync('../recete_talep.js','utf8');
+const fs=require('fs'), path=require('path'); let src=fs.readFileSync(path.join(__dirname,'..','recete_talep.js'),'utf8');
 const db={receteTalepleri:[],receteler:[{id:'RC-1',yarimamulId:'YM-1',ad:'R',kalemler:[
   {id:'RK-A',tip:'hammadde',refId:'HM-1',miktar:2.1,birim:'METRE'},
   {id:'RK-B',tip:'hammadde',refId:'HM-2',miktar:65,birim:'GRAM'}]}]};

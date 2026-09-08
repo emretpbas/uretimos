@@ -2023,6 +2023,9 @@ const App = (() => {
       <div class="hr"></div>
       <div class="flbl" style="margin-bottom:8px">Cari / Vade Farkı Parametresi</div>
       <div class="fgroup"><label class="flbl">Aylık Vade Farkı Faiz Oranı (%) — TCMB politika faizine göre siz güncelleyin</label><input class="finput" id="set-vade-farki-faiz" type="number" value="${a.aylikVadeFarkiFaizOrani ?? 4.25}" step="0.05"></div>
+      <div class="hr"></div>
+      <div class="flbl" style="margin-bottom:8px">Kayıp-Kaçak / Malzeme Talep Parametresi</div>
+      <div class="fgroup"><label class="flbl">Çift Onay Gerektiren Tutar Eşiği (₺) — bu tutar üstü malzeme talepleri ikinci bir yetkilinin onayını da ister</label><input class="finput" id="set-cift-onay-esik" type="number" value="${a.ciftOnayTutarEsigi ?? 50000}" step="1000"></div>
       <div class="hr" style="margin-top:20px;border-color:#EF4444"></div>
       <div style="background:#FEF2F2;border:1.5px solid #EF4444;border-radius:10px;padding:16px 18px;margin-top:4px">
         <div style="color:#991B1B;font-weight:700;font-size:14px;margin-bottom:8px">⚠ TEHLİKELİ BÖLGE — SİSTEMİ SIFIRLA</div>
@@ -2121,7 +2124,8 @@ const App = (() => {
         issizlikIsverenPrimYuzde: parseFloat(document.getElementById('set-issizlik-isveren').value) || 2,
         damgaVergisiOraniBinde: parseFloat(document.getElementById('set-damga').value) || 7.59,
         kidemTazminatiTavani: parseFloat(document.getElementById('set-kidem-tavan').value) || 53919.68,
-        aylikVadeFarkiFaizOrani: parseFloat(document.getElementById('set-vade-farki-faiz').value) || 4.25
+        aylikVadeFarkiFaizOrani: parseFloat(document.getElementById('set-vade-farki-faiz').value) || 4.25,
+        ciftOnayTutarEsigi: parseFloat(document.getElementById('set-cift-onay-esik').value) || 50000
       };
       await persist(() => Store.setAyarlar(next));
       state.ayarlar = next;
@@ -5890,7 +5894,12 @@ const App = (() => {
     escapeHtml, fmt, fmtTL, fmtPct, uid, toTRY, fileToDataUrl, fotografKucult, confirmDialog, redGerekceDialog,
     kaliteUygunsuzlukOlustur, dofOlustur, iadeAmbarinaAktar,
     switchRole, currentRoleLabel, ymBirimMaliyetHesapla, urunMaliyetHesapla,
-    aktifRol: () => state.role,   // Kayıp-Kaçak/Reçete-Talep modülleri için aktif kullanıcı (rol) kimliği
+    aktifRol: () => state.role,   // Rol kimliği (rota/ekran erişim kontrolü için)
+    // Kayıp-Kaçak/Reçete-Talep modüllerindeki görev ayrılığı kontrolü (talep
+    // eden ≠ onaylayan) için GERÇEK kişi kimliği: bireysel hesapla giriş
+    // yapıldıysa kullanıcı adı, yalnızca eski rol-bazlı girişte role düşer —
+    // aksi halde aynı rolü paylaşan iki farklı çalışan tek kişi sayılırdı.
+    aktifKullaniciAdi: () => (state.kullanici && state.kullanici.kullaniciAdi) || state.role,
     siparisOnaylaninceKesimIhtiyaciOlustur, isEmriKesimIhtiyaciOlustur, hammaddeIhtiyaciOnaylaSatinalmayaGonder, fazlaMalzemeyiStogaEkle,
     satinalmaCiktiExcel, satinalmaCiktiPdf, satinalmaCiktiYazdir,
     bordroHesapla, kidemIhbarHesapla,

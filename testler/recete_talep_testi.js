@@ -1,4 +1,4 @@
-const fs=require('fs'); let src=fs.readFileSync('../recete_talep.js','utf8');
+const fs=require('fs'), path=require('path'); let src=fs.readFileSync(path.join(__dirname,'..','recete_talep.js'),'utf8');
 const db={receteTalepleri:[],receteler:[{id:'RC-1',yarimamulId:'YM-100',ad:'Test Recete',kalemler:[]}]};
 global.Store={
   receteTalepleri:{all:async()=>db.receteTalepleri,save:async(v)=>{db.receteTalepleri=v;}},
@@ -80,6 +80,18 @@ let ok=0,bad=0;const t=(a,k,x)=>{if(k){ok++;console.log('  GECTI '+a);}else{bad+
   t('onaylanmis talep geri cekilEMEZ', (await ReceteTalep.talepGeriCek(gc2.talep.id,'operator_ahmet')).ok===false);
   let gc3=await ReceteTalep.eksikMalzemeTalep({ymId:'YM-100',hammaddeId:'HM-I',hammaddeAd:'I',miktar:1,birim:'adet',gerekce:'test',operator:'operator_ahmet'});
   t('baskasi geri cekEMEZ', (await ReceteTalep.talepGeriCek(gc3.talep.id,'baskasi')).ok===false);
+
+  console.log('\n-- BULGU (T49): aktifKullanici() artık ROL değil GERÇEK kullanıcı kimliği döndürüyor --');
+  {
+    // Bireysel hesapla giriş yapılmışsa App.aktifKullaniciAdi() önceliklidir
+    global.App.aktifKullaniciAdi = () => 'operator_ahmet.yilmaz';
+    t('bireysel hesap kullanıcı adını döner (rol DEĞİL)', ReceteTalep.aktifKullanici()==='operator_ahmet.yilmaz');
+    // Bireysel hesap yoksa (fonksiyon tanımsız/boş dönerse) role düşer
+    global.App.aktifKullaniciAdi = () => null;
+    t('bireysel hesap yoksa role DÜŞER (geriye dönük uyum)', ReceteTalep.aktifKullanici()===_rol);
+    delete global.App.aktifKullaniciAdi;
+    t('aktifKullaniciAdi hiç tanımlı değilse de role DÜŞER (eski App sürümüyle uyum)', ReceteTalep.aktifKullanici()===_rol);
+  }
 
   console.log('\nSONUC: '+ok+' gecti, '+bad+' kaldi');
   process.exit(bad?1:0);

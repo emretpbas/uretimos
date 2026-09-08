@@ -42,10 +42,14 @@ const KayipKacak = (() => {
   }
 
   // Belirli tutar/miktar üstü talepler çift onay ister mi?
-  // (Eşik yönetim ayarından gelebilir; şimdilik sabit örnek eşik.)
-  const CIFT_ONAY_TUTAR_ESIGI = 50000; // TRY — bu tutar üstü ikinci onay ister
-  function ciftOnayGerekli(tahminiTutar) {
-    return (+tahminiTutar || 0) >= CIFT_ONAY_TUTAR_ESIGI;
+  // Eşik Ayarlar'dan (ciftOnayTutarEsigi) gelir — sabit değildir, yönetim
+  // fabrikanın büyüklüğüne göre değiştirebilir. ayarlar verilmezse (örn.
+  // App henüz yüklenmemişse) VARSAYILAN_AYARLAR'daki değerle aynı 50000
+  // varsayılanı kullanılır.
+  const CIFT_ONAY_TUTAR_ESIGI_VARSAYILAN = 50000; // TRY
+  function ciftOnayGerekli(tahminiTutar, ayarlar) {
+    const esik = (ayarlar && ayarlar.ciftOnayTutarEsigi != null) ? +ayarlar.ciftOnayTutarEsigi : CIFT_ONAY_TUTAR_ESIGI_VARSAYILAN;
+    return (+tahminiTutar || 0) >= esik;
   }
 
   // Durum geçişinin geçerli olup olmadığını kontrol eder (durum makinesi).
@@ -61,11 +65,18 @@ const KayipKacak = (() => {
   }
 
   // ── AKTİF KULLANICI ───────────────────────────────────────────────────────
-  // Mevcut sistemde kimlik rol bazlı (state.role). Kişi bazlı izleme için
-  // rolü kullanıcı kimliği olarak alıyoruz; ileride gerçek kullanıcı hesabı
-  // eklenince buraya kullanıcı ID'si gelir.
+  // Görev ayrılığı kontrolü (gorevAyriligiGecerli) bu kimliği talepEden/
+  // onaylayan olarak karşılaştırır — bu yüzden GERÇEK kişi kimliği olmalı.
+  // Yalnızca role dayanırsa (ör. iki farklı depo çalışanı da "depo" rolünde
+  // ise) sistem ikisini AYNI kişi sanır: biri talep edip AYNI ROLDEKİ farklı
+  // biri onaylasa bile görev ayrılığı YANLIŞLIKLA ihlal edilmiş sayılabilir
+  // (veya tam tersi, denetimde "kim yaptı" sorusu cevapsız kalır). Bu yüzden
+  // önce App.aktifKullaniciAdi() (giriş yapan hesabın kullanıcı adı) denenir;
+  // yalnızca eski/rol-bazlı girişte (bireysel hesap yoksa) role düşülür.
   function aktifKullanici() {
-    const rol = (typeof App !== 'undefined' && App.aktifRol) ? App.aktifRol() : null;
+    if (typeof App === 'undefined') return 'bilinmeyen';
+    if (App.aktifKullaniciAdi) { const k = App.aktifKullaniciAdi(); if (k) return k; }
+    const rol = App.aktifRol ? App.aktifRol() : null;
     return rol || 'bilinmeyen';
   }
 
@@ -85,7 +96,7 @@ const KayipKacak = (() => {
       gerekce: gerekce.trim(),
       isEmriId: isEmriId || null,
       tahminiTutar: +tahminiTutar || 0,
-      ciftOnayGerekli: ciftOnayGerekli(tahminiTutar),
+      ciftOnayGerekli: ciftOnayGerekli(tahminiTutar, (typeof App !== 'undefined' && App.state && App.state.ayarlar) || null),
       durum: 'beklemede',
       talepEden: aktifKullanici(),
       talepTarihi: new Date().toISOString(),
@@ -232,7 +243,7 @@ const KayipKacak = (() => {
   }
 
   return {
-    KAYIP_TIPLERI, CIFT_ONAY_TUTAR_ESIGI,
+    KAYIP_TIPLERI, CIFT_ONAY_TUTAR_ESIGI_VARSAYILAN,
     gorevAyriligiGecerli, ciftOnayGerekli, gecisGecerli, aktifKullanici,
     talepOlustur, onayla, reddet, teslimEt
   };

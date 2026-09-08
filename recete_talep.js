@@ -41,8 +41,13 @@ const ReceteTalep = (() => {
     return { gecerli: true, sebep: null };
   }
 
+  // Görev ayrılığı GERÇEK kişi kimliği ister (bkz. kayip_kacak.js aktifKullanici
+  // ile aynı gerekçe) — bireysel hesapla giriş yapıldıysa kullanıcı adı,
+  // yalnızca eski rol-bazlı girişte role düşülür.
   function aktifKullanici() {
-    return (typeof App !== 'undefined' && App.aktifRol) ? (App.aktifRol() || 'bilinmeyen') : 'bilinmeyen';
+    if (typeof App === 'undefined') return 'bilinmeyen';
+    if (App.aktifKullaniciAdi) { const k = App.aktifKullaniciAdi(); if (k) return k; }
+    return (App.aktifRol && App.aktifRol()) || 'bilinmeyen';
   }
 
   // ── EKSİK MALZEME TALEBİ (reçetede yok, hammadde kartı VAR) ───────────────

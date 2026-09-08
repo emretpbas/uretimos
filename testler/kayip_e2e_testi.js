@@ -1,5 +1,5 @@
 // Uctan uca: talep -> onay -> teslim, ve stok hareketine SAHIPLI kayit.
-const fs=require('fs'); let src=fs.readFileSync('../kayip_kacak.js','utf8');
+const fs=require('fs'), path=require('path'); let src=fs.readFileSync(path.join(__dirname,'..','kayip_kacak.js'),'utf8');
 // Sahte Store + App
 const db={malzemeTalepleri:[],stokHareketleri:[],stokRaf:[],hammaddeler:[],muhasebeKayitlari:[]};
 global.Store={
@@ -98,6 +98,16 @@ let ok=0,bad=0;const t=(a,k,x)=>{if(k){ok++;console.log('  GECTI '+a);}else{bad+
   // Farkli kisi ikinci onay
   let o3=await KayipKacak.onayla(bid,'veli');
   t('farkli kisi ikinci onay -> onaylandi', o3.ok && o3.talep.durum==='onaylandi');
+
+  console.log('\n-- BULGU (T49): ÇİFT ONAY EŞİĞİ Ayarlar\'dan (App.state.ayarlar) OKUNUYOR --');
+  App.state.ayarlar.ciftOnayTutarEsigi = 5000; // yönetim eşiği düşürdü
+  _rol='ali';
+  let c1=await KayipKacak.talepOlustur({kalemAdi:'Vida',miktar:10,birim:'kutu',kayipTipi:'bakim_onarim',gerekce:'Bakım sarfı',tahminiTutar:6000});
+  t('Ayarlar\'daki düşük eşik (5.000) uygulanıyor — 6.000 TL çift onay istiyor', c1.talep.ciftOnayGerekli===true);
+  App.state.ayarlar.ciftOnayTutarEsigi = 200000; // yönetim eşiği yükseltti
+  let c2=await KayipKacak.talepOlustur({kalemAdi:'Vida',miktar:10,birim:'kutu',kayipTipi:'bakim_onarim',gerekce:'Bakım sarfı',tahminiTutar:80000});
+  t('Ayarlar\'daki yüksek eşik (200.000) uygulanıyor — eski sabit 50.000 ARTIK devrede değil', c2.talep.ciftOnayGerekli===false);
+  delete App.state.ayarlar.ciftOnayTutarEsigi; // ayar hiç girilmemiş gibi
 
   console.log('\n-- RED --');
   _rol='ahmet';

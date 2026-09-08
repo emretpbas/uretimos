@@ -122,7 +122,7 @@ PageModules.malzeme_talep = (() => {
         <div style="display:flex;gap:6px;margin-bottom:6px">
           <input id="mt-miktar" type="number" step="0.001" min="0" placeholder="Miktar" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px">
           <input id="mt-birim" placeholder="birim" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px">
-          <input id="mt-tutar" type="number" step="0.01" min="0" placeholder="~Tutar ₺" style="width:100px;padding:8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px" title="Tahmini tutar — ${KayipKacak.CIFT_ONAY_TUTAR_ESIGI} ₺ üstü çift onay ister">
+          <input id="mt-tutar" type="number" step="0.01" min="0" placeholder="~Tutar ₺" style="width:100px;padding:8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px" title="Tahmini tutar — ${App.fmtTL((App.state.ayarlar && App.state.ayarlar.ciftOnayTutarEsigi) ?? KayipKacak.CIFT_ONAY_TUTAR_ESIGI_VARSAYILAN)} üstü çift onay ister">
         </div>
         <label class="flbl">Çıkış / Kayıp Tipi</label>
         <select id="mt-tip" class="fselect" style="width:100%;margin-bottom:6px">
@@ -185,7 +185,7 @@ PageModules.malzeme_talep = (() => {
     // ── Onayla / Reddet / Teslim ───────────────────────────────────────────
     main.querySelectorAll('.mt-onay').forEach(b => b.onclick = async () => {
       try {
-        const r = await KayipKacak.onayla(b.dataset.id, App.aktifRol());
+        const r = await KayipKacak.onayla(b.dataset.id, KayipKacak.aktifKullanici());
         if (!r.ok) { App.toast(r.hata, 'err'); return; }
         App.toast(r.ikinciOnayBekliyor ? 'İlk onay verildi — ikinci onay farklı bir yetkiliden gerekiyor.' : 'Talep onaylandı, teslime hazır.', 'ok');
         render(main);
@@ -196,7 +196,7 @@ PageModules.malzeme_talep = (() => {
       try {
         const sebep = App.redGerekceDialog ? await App.redGerekceDialog('Talep reddi') : prompt('Red sebebi:');
         if (!sebep) return;
-        const r = await KayipKacak.reddet(b.dataset.id, App.aktifRol(), sebep);
+        const r = await KayipKacak.reddet(b.dataset.id, KayipKacak.aktifKullanici(), sebep);
         if (!r.ok) { App.toast(r.hata, 'err'); return; }
         App.toast('Talep reddedildi.', 'ok');
         render(main);
@@ -205,7 +205,7 @@ PageModules.malzeme_talep = (() => {
 
     main.querySelectorAll('.mt-teslim').forEach(b => b.onclick = async () => {
       try {
-        const r = await KayipKacak.teslimEt(b.dataset.id, App.aktifRol());
+        const r = await KayipKacak.teslimEt(b.dataset.id, KayipKacak.aktifKullanici());
         if (!r.ok) { App.toast(r.hata, 'err'); return; }
         App.toast('Teslim edildi — stok hareketi sahipli olarak kaydedildi.', 'ok');
         render(main);

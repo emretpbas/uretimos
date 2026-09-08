@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v181'; // v181: Pazarlama fiyat listesine Excel ile toplu kalem ekleme ozelligi eklendi (eskiden kalem eklemenin hic yolu yoktu)
+const CACHE_NAME = 'uretimos-v182'; // v182: Kayip-Kacak/Recete-Talep gorev ayriligi artik GERCEK kullanici kimligi kullaniyor (role degil), cift onay esigi Ayarlar'dan geliyor (sabit 50000 degil)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

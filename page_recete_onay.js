@@ -136,14 +136,14 @@ PageModules.recete_onay = (() => {
 
     // Planlama onayı
     main.querySelectorAll('.ro-planla-onay').forEach(b => b.onclick = async () => {
-      const r = await ReceteTalep.planlamaOnayla(b.dataset.id, App.aktifRol());
+      const r = await ReceteTalep.planlamaOnayla(b.dataset.id, ReceteTalep.aktifKullanici());
       if (r.ok) { App.toast('Planlama onayı verildi — ARGE/Teknik onayına geçti.', 'ok'); render(main); }
       else App.toast(r.hata, 'err');
     });
 
     // ARGE/Teknik onayı → reçeteye işle
     main.querySelectorAll('.ro-arge-onay').forEach(b => b.onclick = async () => {
-      const r = await ReceteTalep.argeTeknikOnayla(b.dataset.id, App.aktifRol());
+      const r = await ReceteTalep.argeTeknikOnayla(b.dataset.id, ReceteTalep.aktifKullanici());
       if (r.ok) { App.toast(r.miktarGuncellendi ? 'Onaylandı — reçetedeki miktar güncellendi.' : 'Onaylandı ve reçeteye alt kalem olarak eklendi.', 'ok'); render(main); }
       else App.toast(r.hata, 'err');
     });
@@ -152,7 +152,7 @@ PageModules.recete_onay = (() => {
     main.querySelectorAll('.ro-red').forEach(b => b.onclick = async () => {
       const sebep = await App.redGerekceDialog ? await App.redGerekceDialog('Talep reddi') : prompt('Red sebebi:');
       if (!sebep) return;
-      const r = await ReceteTalep.reddet(b.dataset.id, App.aktifRol(), sebep);
+      const r = await ReceteTalep.reddet(b.dataset.id, ReceteTalep.aktifKullanici(), sebep);
       if (r.ok) { App.toast('Talep reddedildi.', 'ok'); render(main); }
       else App.toast(r.hata, 'err');
     });
