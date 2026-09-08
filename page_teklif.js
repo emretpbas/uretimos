@@ -279,7 +279,14 @@ PageModules.teklif = (() => {
     ]);
     const ayarlar = App.state.ayarlar;
     const duzenlemeModu = !!d.editingId;
-    const sonListe = fiyatListeleri[fiyatListeleri.length - 1];
+    // BULGU (T53): Pazarlama'nın segment/bayi fiyat listeleri eskiden AYNI
+    // fiyatListeleri koleksiyonuna yazılıyordu (artık ayrı bir koleksiyonda,
+    // bkz. storage.js) — burada yine de yalnızca GERÇEK katalog listeleri
+    // (page_fiyat.js'in her zaman ürettiği 'kod' alanı ile) seçilir; olası
+    // eski/kalıntı kayıtlar (kod'suz) "son liste" sanılıp kataloğu görünmez
+    // kılmaz.
+    const katalogListeleri = fiyatListeleri.filter(l => l.kod);
+    const sonListe = katalogListeleri[katalogListeleri.length - 1];
     const sonListeKalemleri = sonListe ? sonListe.kalemler : [];
     // Eski (manuel) listelerde "tip" alanı yoktu — hepsi ürün kabul edilir.
     // ÖNEMLİ: Yalnızca liste fiyatı OLUŞMUŞ (maliyeti hesaplanabilmiş, eksik

@@ -14,7 +14,10 @@ PageModules.pazarlama = (() => {
     }
     const [kampanyalar, numuneler, fiyatListeleri, musteriler] = await Promise.all([
       Store.kampanyalar.all(), Store.numuneler.all(),
-      Store.fiyatListeleri.all(), Store.musteriler.all()
+      // BULGU (T53): eskiden Store.fiyatListeleri (page_fiyat.js'in maliyet/
+      // katalog listeleriyle AYNI koleksiyon) okunuyordu — artık kendi ayrı
+      // koleksiyonu var (bkz. storage.js).
+      Store.pazarlamaFiyatListeleri.all(), Store.musteriler.all()
     ]);
 
     const bugun = PazarlamaMotor.bugunYerel();
@@ -68,8 +71,13 @@ PageModules.pazarlama = (() => {
       <div class="card-hdr"><div class="card-title">Kampanyalar</div>
         <button class="btn btn-sm btn-blue" id="pz-yeni-kmp">+ Yeni Kampanya</button></div>
       <div class="fhint" style="margin-bottom:8px">
-        Kampanyalar <b>üst üste binmez</b> — bir teklifte yalnızca en avantajlı olan uygulanır.
-        Bu kasıtlıdır: çakışan kampanyalar kontrolsüz iskonto üretir ve marjı görünmez şekilde eritir.
+        <!-- BULGU (T53): eski metin "bir teklifte yalnızca en avantajlı olan
+             uygulanır" diyordu — bu YANLIŞTI, kampanyalar Teklif/Sipariş
+             akışına hiç bağlı değil, hiçbir otomatik uygulama yok. -->
+        Kampanyalar burada <b>kayıt/takip amaçlıdır</b> — teklif/sipariş
+        ekranına otomatik yansımaz. İskontoyu Teklif ekranında kalem
+        bazında elle uygulayın; birden fazla kampanya varsa hangisinin
+        geçerli olacağına satışçı karar verir.
       </div>
       ${sirali.length ? `<div class="tbl-wrap"><table class="dtable">
         <tr><th>Kod</th><th>Kampanya</th><th>Tip</th><th class="r">Değer</th>
@@ -137,7 +145,9 @@ PageModules.pazarlama = (() => {
       wide: true
     });
     document.getElementById('km-vaz').onclick = App.closeModal;
-    document.getElementById('km-kaydet').onclick = async () => {
+    document.getElementById('km-kaydet').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;   // çift tıklamada mükerrer kampanya oluşmasın
       try {
         const r = await PazarlamaMotor.kampanyaOlustur({
           ad: document.getElementById('km-ad').value,
@@ -149,10 +159,10 @@ PageModules.pazarlama = (() => {
           kapsam: document.getElementById('km-kapsam').value,
           aciklama: document.getElementById('km-aciklama').value
         });
-        if (!r.ok) { App.toast(r.hata, 'err'); return; }
+        if (!r.ok) { App.toast(r.hata, 'err'); btn.disabled = false; return; }
         App.closeModal(); App.toast('Kampanya oluşturuldu: ' + r.kampanya.kod, 'ok');
         render(main);
-      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); }
+      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
     };
   }
 
@@ -213,7 +223,9 @@ PageModules.pazarlama = (() => {
       wide: true
     });
     document.getElementById('nm-vaz').onclick = App.closeModal;
-    document.getElementById('nm-kaydet').onclick = async () => {
+    document.getElementById('nm-kaydet').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;   // çift tıklamada mükerrer numune kaydı olmasın
       try {
         const musteriAdi = document.getElementById('nm-musteri').value.trim();
         const m = musteriler.find(x => (x.unvan || x.ad || '') === musteriAdi);
@@ -224,10 +236,10 @@ PageModules.pazarlama = (() => {
           maliyet: document.getElementById('nm-maliyet').value,
           not: document.getElementById('nm-not').value
         });
-        if (!r.ok) { App.toast(r.hata, 'err'); return; }
+        if (!r.ok) { App.toast(r.hata, 'err'); btn.disabled = false; return; }
         App.closeModal(); App.toast('Numune kaydedildi: ' + r.numune.kod, 'ok');
         render(main);
-      } catch (e) { App.toast('Kaydedilemedi: ' + (e && e.message ? e.message : e), 'err'); }
+      } catch (e) { App.toast('Kaydedilemedi: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
     };
   }
 
@@ -269,8 +281,13 @@ PageModules.pazarlama = (() => {
       <div class="card-hdr"><div class="card-title">Fiyat Listeleri</div>
         <button class="btn btn-sm btn-blue" id="pz-yeni-fl">+ Yeni Liste</button></div>
       <div class="fhint" style="margin-bottom:8px">
-        Segment bazlı liste fiyatları. Teklif hazırlanırken önce müşterinin segmentine ait liste,
-        yoksa "Tümü" listesi, o da yoksa ürünün temel fiyatı kullanılır.
+        <!-- BULGU (T53): eski metin "teklif hazırlanırken otomatik kullanılır"
+             diyordu — bu YANLIŞTI, bu listeler Teklif/Sipariş ekranına hiç
+             bağlı değil (o ekranlar yalnızca Fiyatlama/page_fiyat.js'in
+             katalog listesini kullanır). -->
+        Segment bazlı liste fiyatları — burada <b>kayıt/referans amaçlıdır</b>,
+        Teklif ekranına otomatik yansımaz. Teklif ekranı yalnızca
+        Fiyatlama'daki katalog (maliyet bazlı) listeyi kullanır.
       </div>
       ${listeler.length ? `<table class="dtable">
         <tr><th>Liste</th><th>Segment</th><th class="r">Kalem</th><th>Geçerlilik</th><th>Durum</th><th></th></tr>
@@ -285,7 +302,7 @@ PageModules.pazarlama = (() => {
         </tr>`).join('')}
       </table>` : `<div class="empty-state" style="padding:20px">
         <div class="edesc">Henüz fiyat listesi yok. Farklı bayi/segmentlere farklı fiyat veriyorsanız
-        burada tanımlayın — teklif aşamasında otomatik kullanılır.</div></div>`}
+        burada kayıt altına alın (referans amaçlıdır, teklif ekranına otomatik yansımaz).</div></div>`}
     </div>`;
     document.getElementById('pz-yeni-fl').onclick = () => fiyatListesiFormu(main);
     el.querySelectorAll('.pz-excel-kalem').forEach(b => b.onclick = () => {
@@ -313,10 +330,12 @@ PageModules.pazarlama = (() => {
       footer: `<button class="btn" id="fl-vaz">Vazgeç</button><button class="btn btn-green" id="fl-kaydet">Oluştur</button>`
     });
     document.getElementById('fl-vaz').onclick = App.closeModal;
-    document.getElementById('fl-kaydet').onclick = async () => {
+    document.getElementById('fl-kaydet').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;   // çift tıklamada aynı isimde iki liste açılmasın
       try {
         const ad = document.getElementById('fl-ad').value.trim();
-        if (!ad) { App.toast('Liste adı zorunlu.', 'err'); return; }
+        if (!ad) { App.toast('Liste adı zorunlu.', 'err'); btn.disabled = false; return; }
         const l = {
           id: App.uid('FLS'), ad,
           segment: document.getElementById('fl-segment').value,
@@ -325,10 +344,10 @@ PageModules.pazarlama = (() => {
           durum: 'aktif', kalemler: [],
           olusturmaTarihi: new Date().toISOString()
         };
-        await App.persist(() => Store.topluEkle('fiyatListeleri', [l], 1));
+        await App.persist(() => Store.topluEkle('pazarlamaFiyatListeleri', [l], 1));
         App.closeModal(); App.toast('Fiyat listesi oluşturuldu.', 'ok');
         render(main);
-      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); }
+      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
     };
   }
 
@@ -406,7 +425,7 @@ PageModules.pazarlama = (() => {
       btn.disabled = true; btn.textContent = 'Aktarılıyor…';
       const sonuc = PazarlamaMotor.fiyatListesineTopluUygula(liste, kayitlar);
       liste.kalemler = sonuc.kalemler;
-      await App.persist(() => Store.fiyatListeleri.upsert(liste));
+      await App.persist(() => Store.pazarlamaFiyatListeleri.upsert(liste));
       App.closeModal();
       App.toast(`✓ ${sonuc.eklenen} yeni kalem eklendi, ${sonuc.guncellenen} kalemin fiyatı güncellendi` +
         (sonuc.atlanan ? ` (${sonuc.atlanan} kod bulunamadı, atlandı)` : ''), 'ok');

@@ -737,7 +737,15 @@ const Store = (() => {
     crmAktiviteler: coll('crmAktiviteler'),        // CRM: görüşme/arama/ziyaret kaydı
     kampanyalar: coll('kampanyalar'),              // Pazarlama: kampanya ve fiyat listesi
     numuneler: coll('numuneler'),                  // Pazarlama: numune gönderim ve dönüş takibi
-    fiyatListeleri: coll('fiyatListeleri'),        // Pazarlama: segment/bayi bazlı fiyat listesi
+    // BULGU (T53): bu satır eskiden 'fiyatListeleri' ile AYNI koleksiyona
+    // yazıyordu (yukarıda satır 726) — page_fiyat.js'in maliyet/katalog fiyat
+    // listeleriyle (page_teklif.js/page_siparis.js'in "son liste" olarak
+    // okuduğu, {listeFiyati,eksikKalemVarMi,tip} şemalı) TAMAMEN FARKLI bir
+    // şema ({segment,baslangic,bitis,durum} + Excel'den {urunId,kod,ad,fiyat}
+    // kalemleri) paylaşıyordu. Pazarlama'dan yeni bir segment/bayi listesi
+    // açmak, dizinin SON elemanı olduğundan Teklif/Sipariş ekranlarının
+    // kataloğunu tamamen görünmez kılabiliyordu. Artık ayrı bir koleksiyon.
+    pazarlamaFiyatListeleri: coll('pazarlamaFiyatListeleri'), // Pazarlama: segment/bayi bazlı fiyat listesi
     projeler: coll('projeler'),                    // Proje: aşama/hakediş takibi
     tedarikciler: coll('tedarikciler'),             // tedarikçi kartları
     teklifler: coll('teklifler'),                  // müşteriye sunulan teklif (liste fiyatı + iskonto)
@@ -934,7 +942,7 @@ const Store = (() => {
       await setIfAbsent('receteTalepleri', []);
       await setIfAbsent('projeler', []);
       await setIfAbsent('kampanyalar', []);
-      await setIfAbsent('fiyatListeleri', []);
+      await setIfAbsent('pazarlamaFiyatListeleri', []);
       await setIfAbsent('numuneler', []);
       await setIfAbsent('crmAktiviteler', []);
       await setIfAbsent('firsatlar', []);
@@ -1035,7 +1043,7 @@ const Store = (() => {
         'receteler', 'rotalar', 'isemirleri', 'kesimPlanlari', 'fiyatListeleri',
         'talepler', 'satinalmaTalepleri', 'teklifKarsilastirma',
         'stokRaf', 'stokHareketleri', 'musteriler', 'tedarikciler', 'teklifler',
-        'siparisler', 'irsaliyeler', 'sevkiyatProgrami', 'kesimIhtiyaclari', 'dolapTasarimlari', 'masaTasarimlari', 'mekanlar', 'malzemeTalepleri', 'receteTalepleri', 'hatDurumlari', 'firsatlar', 'crmAktiviteler', 'kampanyalar', 'numuneler', 'fiyatListeleri', 'projeler',
+        'siparisler', 'irsaliyeler', 'sevkiyatProgrami', 'kesimIhtiyaclari', 'dolapTasarimlari', 'masaTasarimlari', 'mekanlar', 'malzemeTalepleri', 'receteTalepleri', 'hatDurumlari', 'firsatlar', 'crmAktiviteler', 'kampanyalar', 'numuneler', 'pazarlamaFiyatListeleri', 'projeler',
         'hammaddeIhtiyaclari', 'satinalmaSiparisleri', 'kritikStokSeviyeleri',
         'ciroHedefleri', 'makinaTechizat', 'bakimKayitlari', 'arizaKayitlari',
         'urunKaliteOnaylari', 'uretimIstasyonTakip', 'duruslar', 'personeller',

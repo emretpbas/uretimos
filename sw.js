@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v185'; // v185: CRM denetimi - kim/temsilci artik gercek kullanici kimligi (rol degil), CRM'den teklife eslesmeyen musteri artik sessizce ilk musteriye duşmuyor (placeholder+dogrulama), teklif Kazanildi/Kaybedildi/Iptal/Siparise-donustu artik CRM firsatina geri yaziliyor, cift tiklama korumasi eklendi, 6 Aylik Tahmin ve pazarlama kampanya/numune tarihleri UTC yuvarlama hatasindan duzeltildi
+const CACHE_NAME = 'uretimos-v186'; // v186: Pazarlama denetimi - pazarlamaFiyatListeleri artik fiyatListeleri (katalog) ile AYNI koleksiyonu paylasmiyor (Pazarlama'dan yeni liste acmak Teklif/Siparis kataloglarini gorunmez kilabiliyordu), kampanya/segment "otomatik uygulanir" yaniltici iddiasi duzeltildi, Excel Fiyat sutunu tespiti tam eslesmeyi once deniyor, cift tiklama korumasi + mukerrer kod dedup + fiyat<=0 ve negatif kampanya degeri reddi eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

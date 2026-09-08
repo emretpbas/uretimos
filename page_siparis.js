@@ -142,7 +142,12 @@ PageModules.siparis = (() => {
       Store.hammaddeler.all(), Store.yarimamuller.all(), Store.receteler.all(), Store.rotalar.all(), Store.altMontajlar.all(), Store.paketler.all()
     ]);
     const ayarlar = App.state.ayarlar;
-    const sonListe = fiyatListeleri[fiyatListeleri.length - 1];
+    // BULGU (T53): bkz. page_teklif.js — yalnızca 'kod' alanı olan GERÇEK
+    // katalog listeleri "son liste" seçimine dahil edilir; Pazarlama'nın
+    // segment/bayi listeleri artık ayrı koleksiyonda (storage.js) ama olası
+    // eski/kalıntı kayıtlara karşı burada da savunma amaçlı filtrelenir.
+    const katalogListeleri = fiyatListeleri.filter(l => l.kod);
+    const sonListe = katalogListeleri[katalogListeleri.length - 1];
     const duzenlemeModu = !!d.editingId;
 
     // ── Üç kategoriden de seçenek üret: Ürün (bitmiş), Yarı Mamül, Hammadde ──

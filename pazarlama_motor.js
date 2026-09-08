@@ -53,11 +53,27 @@ const PazarlamaMotor = (() => {
     return true;
   }
 
-  // Verilen tarih/segment için geçerli kampanyalar (en yüksek indirim önde)
+  // Verilen tarih/segment için geçerli kampanyalar.
+  // BULGU (T53): eskiden farklı tipteki kampanyalar (%, ₺, gün, hediye) aynı
+  // ham 'deger' alanına göre sıralanıyordu — birimler uyumsuz olduğundan
+  // (ör. "60 gün vade" değeri 60, "%10 indirim" değeri 10 — sayısal olarak
+  // vade önce gelirdi ama fiyatı hiç değiştirmez) yanlış "en avantajlı"
+  // sırası üretiyordu. Artık fiyatı GERÇEKTEN değiştiren tipler
+  // (yuzde_indirim, tutar_indirim) önce gelir; farklı tipler arası gerçek
+  // TL karşılaştırması ancak bir liste fiyatıyla mümkündür (bkz.
+  // fiyatUygula) — burada yalnızca AYNI tip kendi arasında değere göre
+  // sıralanır.
+  const FIYAT_DEGISTIREN_TIPLER = ['yuzde_indirim', 'tutar_indirim'];
   function gecerliKampanyalar(kampanyalar, tarih, segment) {
     return (kampanyalar || [])
       .filter(k => gecerliMi(k, tarih, segment))
-      .sort((a, b) => (+b.deger || 0) - (+a.deger || 0));
+      .sort((a, b) => {
+        const aFiyatEtkili = FIYAT_DEGISTIREN_TIPLER.includes(a.tip);
+        const bFiyatEtkili = FIYAT_DEGISTIREN_TIPLER.includes(b.tip);
+        if (aFiyatEtkili !== bFiyatEtkili) return aFiyatEtkili ? -1 : 1;
+        if (a.tip !== b.tip) return 0;
+        return (+b.deger || 0) - (+a.deger || 0);
+      });
   }
 
   // ── İNDİRİMLİ FİYAT ──────────────────────────────────────────────────────
@@ -113,11 +129,21 @@ const PazarlamaMotor = (() => {
     if (satirlar.length < 2) return { kayitlar: [], hatalar: ['Dosyada veri satırı yok.'] };
 
     const norm = (b) => String(b || '').toLocaleLowerCase('tr').trim();
+    // BULGU (T53): tam eşleşme ("Fiyat"/"Liste Fiyatı") her zaman fuzzy
+    // eşleşmeden ("...fiyat..." içeren HERHANGİ bir sütun) ÖNCE denenir.
+    // Eskiden findIndex soldan sağa ilk "fiyat" GEÇEN sütunu (ör. tedarikçi
+    // dosyalarında sıkça önce gelen "Alış Fiyatı") seçebiliyordu — "Liste
+    // Fiyatı" (satış) sütunu varken sessizce maliyet sütunu okunabiliyordu.
+    const bul = (basliklar, tamlar, icerir) => {
+      let idx = basliklar.findIndex(b => tamlar.includes(b));
+      if (idx === -1) idx = basliklar.findIndex(b => b.includes(icerir));
+      return idx;
+    };
     let bIdx = -1, kodIdx = -1, fiyatIdx = -1;
     for (let i = 0; i < Math.min(10, satirlar.length); i++) {
       const basliklar = (satirlar[i] || []).map(norm);
-      const k = basliklar.findIndex(b => b === 'kod' || b === 'ürün kodu' || b === 'urun kodu' || b.includes('kod'));
-      const f = basliklar.findIndex(b => b === 'fiyat' || b === 'liste fiyatı' || b === 'liste fiyati' || b.includes('fiyat'));
+      const k = bul(basliklar, ['kod', 'ürün kodu', 'urun kodu'], 'kod');
+      const f = bul(basliklar, ['fiyat', 'liste fiyatı', 'liste fiyati'], 'fiyat');
       if (k >= 0 && f >= 0) { bIdx = i; kodIdx = k; fiyatIdx = f; break; }
     }
     if (bIdx < 0) return { kayitlar: [], hatalar: ['Başlık satırı bulunamadı — bir sütun "Kod", diğeri "Fiyat" adını taşımalı.'] };
@@ -129,16 +155,35 @@ const PazarlamaMotor = (() => {
       const kod = String(r[kodIdx] ?? '').trim();
       if (!kod) { hatalar.push(`Satır ${bIdx + i + 2}: kod boş — atlandı`); return; }
       const fiyat = sayiCoz(r[fiyatIdx]);
-      if (fiyat == null || fiyat < 0) { hatalar.push(`Satır ${bIdx + i + 2}: geçersiz fiyat — atlandı (${kod})`); return; }
+      // BULGU (T53): fiyat=0 satırları eskiden sessizce geçerli kabul
+      // edilip 0₺ olarak listeye giriyordu (boş hücre veya kaynak dosya
+      // hatası fark edilmeden atlanıyordu).
+      if (fiyat == null || fiyat <= 0) { hatalar.push(`Satır ${bIdx + i + 2}: geçersiz fiyat — atlandı (${kod})`); return; }
       const urun = urunIndeks.get(kod.toLocaleUpperCase('tr'));
       kayitlar.push({ kod, urunId: urun ? urun.id : null, ad: urun ? urun.ad : null, fiyat, eslesti: !!urun });
     });
-    return { kayitlar, hatalar };
+
+    // BULGU (T53): aynı dosyada aynı ürün kodu birden fazla satırda geçerse
+    // (kopyala-yapıştır hatası veya birleştirilmiş sayfa) eskiden HER satır
+    // ayrı bir "eklendi"/"güncellendi" sayacına giriyordu — kullanıcıya
+    // yanıltıcı bir özet ("2 kalem işlendi") gösteriliyordu, oysa net etki
+    // 1 kalemdir. Son satır kazanır (en güncel fiyat); mükerrer olan
+    // satırlar ayrı bir uyarı olarak raporlanır, sessizce yutulmaz.
+    const sonKayit = new Map();
+    kayitlar.forEach((k, i) => {
+      if (k.urunId) {
+        if (sonKayit.has(k.urunId)) hatalar.push(`"${k.kod}" dosyada birden fazla satırda geçiyor — son fiyat (${k.fiyat}) kullanıldı`);
+        sonKayit.set(k.urunId, i);
+      }
+    });
+    const dedupKayitlar = kayitlar.filter((k, i) => !k.urunId || sonKayit.get(k.urunId) === i);
+
+    return { kayitlar: dedupKayitlar, hatalar };
   }
 
   // kayitlar: fiyatDosyasiniCoz() çıktısındaki .kayitlar (yalnızca eslesti:true
   // olanlar uygulanır). liste MUTATE EDİLMEZ — yeni kalemler dizisi döner,
-  // kaydetmek çağıranın sorumluluğundadır (Store.fiyatListeleri.upsert).
+  // kaydetmek çağıranın sorumluluğundadır (Store.pazarlamaFiyatListeleri.upsert).
   function fiyatListesineTopluUygula(liste, kayitlar) {
     const kalemler = (liste.kalemler || []).map(k => ({ ...k }));
     let eklenen = 0, guncellenen = 0, atlanan = 0;
@@ -190,6 +235,13 @@ const PazarlamaMotor = (() => {
     if (!tip) return { ok: false, hata: 'Kampanya tipi seçilmeli.' };
     if (tip === 'yuzde_indirim' && (+deger < 0 || +deger > 100)) {
       return { ok: false, hata: 'Yüzde indirim 0-100 arasında olmalı.' };
+    }
+    // BULGU (T53): tutar_indirim/hediye/vade için hiçbir alt sınır kontrolü
+    // yoktu — negatif bir 'deger' (ör. -500) kabul edilirse fiyatUygula
+    // (Math.max(0, f - deger)) bunu "indirim" yerine fiyatı ARTTIRAN bir
+    // işleme çevirirdi.
+    if (tip !== 'yuzde_indirim' && +deger < 0) {
+      return { ok: false, hata: 'Değer negatif olamaz.' };
     }
     if (baslangic && bitis && bitis < baslangic) {
       return { ok: false, hata: 'Bitiş tarihi başlangıçtan önce olamaz.' };
