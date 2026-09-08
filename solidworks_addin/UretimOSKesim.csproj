@@ -46,7 +46,10 @@
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </Reference>
     <Reference Include="SolidWorksTools">
-      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorksTools.dll</HintPath>
+      <!-- NOT: bu dosya bazı kurulumlarda api\redist yerine SOLIDWORKS ana
+           klasöründe duruyor (küçük harfle "solidworkstools.dll") — yol
+           bulunamazsa Windows'ta arama yapıp gerçek konumu buraya yazın. -->
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\solidworkstools.dll</HintPath>
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </Reference>
     <!-- SolidWorksTools.dll, [SwAddin] özniteliğini (AddinAttribute) taşır —
