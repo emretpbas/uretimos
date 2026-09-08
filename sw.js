@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v183'; // v183: Depo denetimi - manuel stok duzeltmesi bayat anlik goruntuyle fark hesaplamiyor, tekil kalite sorunu karantina durumuna dusuyor, MRP/AI Denetci iade_ambari stogunu artik "elde stok" saymiyor, gercek eksik teslimat bildirimi eklendi
+const CACHE_NAME = 'uretimos-v184'; // v184: ISG denetimi - ayrilmis personel secili kayitlarda kaybolmuyor (kkd/egitim/saglik/kaza), kazasiz gun ramak kalayi da sayan yanlis hesaptan duzeltildi, kaza tarihi gelecege girilemiyor, gercek kaza kok neden analizi olmadan KAPANDI'ya alinamiyor
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

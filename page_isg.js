@@ -18,9 +18,35 @@
 PageModules.isg = (() => {
   let activeTab = 'pano';
 
-  const bugun = () => new Date().toISOString().slice(0, 10);
+  // BULGU: new Date().toISOString().slice(0,10) UTC gününü döner — Türkiye
+  // (UTC+3) gibi UTC'nin ilerisindeki dilimlerde, yerel saatle 00:00-03:00
+  // arası HER GÜN "bugün" yanlışlıkla DÜNE döner (gece vardiyasında bildirilen
+  // bir kaza varsayılan tarihi bir gün eksik gösterir). gunEkle de aynı
+  // nedenle her KKD/eğitim/sağlık yenileme tarihini bir gün erken hesaplar.
+  // Düzeltme: tarihi UTC'ye hiç çevirmeden, YEREL yıl/ay/gün bileşenlerinden okur.
+  const tarihStr = (dt) => { const p = (n) => String(n).padStart(2, '0'); return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`; };
+  const bugun = () => tarihStr(new Date());
   const gunFark = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);
-  const gunEkle = (t, g) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() + g); return d.toISOString().slice(0, 10); };
+  const gunEkle = (t, g) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() + g); return tarihStr(d); };
+
+  // BULGU: Personel seçim kutuları yalnızca AKTİF personeli listeliyordu —
+  // bir personel işten ayrıldıktan sonra onun mevcut KKD/eğitim/sağlık
+  // kaydı DÜZENLENEMEZ hale geliyordu (kutuda seçili görünecek seçenek
+  // kalmıyordu); kullanıcı kaydı kapatmak için başka bir aktif personel
+  // seçmek zorunda kalırsa kayıt SESSİZCE BAŞKA BİR KİŞİYE mal ediliyordu.
+  // Düzeltme: seçili kaydın personeli ayrılmış olsa bile listeye eklenir,
+  // "(ayrılmış)" etiketiyle ayırt edilir.
+  function personelSecenekleri(personeller, seciliId, bosEtiket) {
+    const aktifler = personeller.filter(p => p.durum === 'aktif');
+    const secili = seciliId ? personeller.find(p => p.id === seciliId) : null;
+    const liste = (secili && secili.durum !== 'aktif') ? [secili, ...aktifler] : aktifler;
+    return `<option value="">${bosEtiket}</option>` +
+      liste.map(p => `<option value="${p.id}" ${seciliId === p.id ? 'selected' : ''}>${App.escapeHtml(p.adSoyad)}${p.durum !== 'aktif' ? ' (ayrılmış)' : ''}</option>`).join('');
+  }
+  const personelAktifMi = (personeller, personelId) => {
+    const p = personeller.find(x => x.id === personelId);
+    return !p || p.durum === 'aktif'; // personelId eşleşmiyorsa (eski/serbest kayıt) uyarı gizlenmez
+  };
 
   const KAZA_TIPI = {
     ramak_kala: ['Ramak Kala', 'pill-blue'],
@@ -94,7 +120,10 @@ PageModules.isg = (() => {
     const yilKazalari = d.kazalar.filter(k => (k.tarih || '').startsWith(String(yil)));
     const gercekKazalar = yilKazalari.filter(k => k.tip !== 'ramak_kala');
     const ramakKala = yilKazalari.filter(k => k.tip === 'ramak_kala');
-    const kayipGun = yilKazalari.reduce((a, k) => a + (k.kayipGun || 0), 0);
+    // BULGU: kayıp gün toplamı ramak_kala kayıtlarını da dahil ediyordu —
+    // ramak kala TANIM GEREĞİ kayıp gün üretmez (hiçbir şey olmadı); yanlışlıkla
+    // girilmiş bir değer varsa Kaza Ağırlık Oranı'nı gerçek dışı şişirirdi.
+    const kayipGun = gercekKazalar.reduce((a, k) => a + (k.kayipGun || 0), 0);
     const aktifPersonel = d.personeller.filter(p => p.durum === 'aktif').length || 1;
     // Yıllık çalışma saati ≈ personel × 2250 saat (45 sa/hafta × 50 hafta)
     const calismaSaati = aktifPersonel * 2250;
@@ -103,12 +132,23 @@ PageModules.isg = (() => {
 
     const acikRiskler = d.riskler.filter(r => r.durum !== 'kapandi');
     const yuksekRiskler = acikRiskler.filter(r => (r.skor || 0) >= 9);
-    const kkdYenileme = d.kkd.filter(k => k.yenilemeTarihi && k.yenilemeTarihi <= bugun());
-    const egitimSuresiDolan = d.egitimler.filter(e => e.gecerlilikTarihi && e.gecerlilikTarihi <= bugun());
-    const muayeneSuresiDolan = d.saglik.filter(s => s.sonrakiMuayene && s.sonrakiMuayene <= bugun());
-    const kazasizGun = d.kazalar.length
-      ? gunFark(bugun(), [...d.kazalar].filter(k => k.tip !== 'ramak_kala')
-          .map(k => k.tarih).filter(Boolean).sort().pop() || bugun())
+    // BULGU: bu üç uyum kontrolü personelin HALEN ÇALIŞIP ÇALIŞMADIĞINA
+    // bakmıyordu — işten ayrılan bir personelin süresi geçmiş KKD/eğitim/
+    // muayene kaydı sonsuza dek "aksiyon gerekli" sayılırdı (o kişi için artık
+    // yenileme yapılması gerekmiyor). Yalnızca hâlâ aktif personelin süresi
+    // geçmiş kayıtları uyum uyarısı/kritik bulgu sayılır.
+    const kkdYenileme = d.kkd.filter(k => k.yenilemeTarihi && k.yenilemeTarihi <= bugun() && personelAktifMi(d.personeller, k.personelId));
+    const egitimSuresiDolan = d.egitimler.filter(e => e.gecerlilikTarihi && e.gecerlilikTarihi <= bugun() && personelAktifMi(d.personeller, e.personelId));
+    const muayeneSuresiDolan = d.saglik.filter(s => s.sonrakiMuayene && s.sonrakiMuayene <= bugun() && personelAktifMi(d.personeller, s.personelId));
+    // BULGU: dış koşul d.kazalar.length (ramak_kala DAHİL toplam kayıt sayısı)
+    // kontrol ediyordu — yalnızca ramak kala bildirimleri varsa (gerçek kaza
+    // SIFIR) iç filtre boş dizi verir, .pop() undefined olur, "|| bugun()"
+    // ile bugünün tarihine düşer ve gunFark(bugun(),bugun())=0 olur; KPI
+    // KIRMIZI "Kazasız Gün: 0" gösterirdi — sanki bugün kaza olmuş gibi,
+    // oysa gerçek durum SIFIR KAZA (yeşil, "—" gösterilmesi gereken durum).
+    const tumGercekKazalar = d.kazalar.filter(k => k.tip !== 'ramak_kala' && k.tarih);
+    const kazasizGun = tumGercekKazalar.length
+      ? gunFark(bugun(), [...tumGercekKazalar].map(k => k.tarih).sort().pop())
       : null;
 
     let html = `<div class="grid grid-4" style="margin-bottom:14px">
@@ -230,7 +270,7 @@ PageModules.isg = (() => {
     body.innerHTML = `
       <div class="frow">
         <div class="fgroup" style="flex:1"><label class="flbl">Tarih <span style="color:var(--red-text)">*</span></label>
-          <input class="finput" id="kz-tarih" type="date" value="${k.tarih || bugun()}"></div>
+          <input class="finput" id="kz-tarih" type="date" value="${k.tarih || bugun()}" max="${bugun()}"></div>
         <div class="fgroup" style="flex:0.7"><label class="flbl">Saat</label>
           <input class="finput" id="kz-saat" type="time" value="${k.saat || ''}"></div>
         <div class="fgroup" style="flex:1.2"><label class="flbl">Olay Tipi <span style="color:var(--red-text)">*</span></label>
@@ -241,8 +281,7 @@ PageModules.isg = (() => {
       <div class="frow">
         <div class="fgroup" style="flex:1.2"><label class="flbl">Personel</label>
           <select class="fselect" id="kz-personel">
-            <option value="">— Seçilmedi —</option>
-            ${d.personeller.filter(p => p.durum === 'aktif').map(p => `<option value="${p.id}" ${k.personelId === p.id ? 'selected' : ''}>${App.escapeHtml(p.adSoyad)}</option>`).join('')}
+            ${personelSecenekleri(d.personeller, k.personelId, '— Seçilmedi —')}
           </select></div>
         <div class="fgroup" style="flex:1"><label class="flbl">Bölüm / Hat</label>
           <input class="finput" id="kz-bolum" value="${App.escapeHtml(k.bolum || '')}" placeholder="örn. CNC HATTI"></div>
@@ -275,18 +314,29 @@ PageModules.isg = (() => {
       const tarih = document.getElementById('kz-tarih').value;
       const olay = document.getElementById('kz-olay').value.trim();
       if (!tarih || !olay) { App.toast('Tarih ve olay tanımı zorunlu', 'err'); return; }
+      if (tarih > bugun()) { App.toast('Kaza/ramak kala tarihi gelecekte olamaz', 'err'); return; }
+      const tip = document.getElementById('kz-tip').value;
+      const kokNeden = document.getElementById('kz-koknedeni').value.trim();
+      const durum = document.getElementById('kz-durum').value;
+      // BULGU: kök neden analizi girilmeden bir kaza kaydı kapatılabiliyordu —
+      // durum='kapandi' olur olmaz AI Denetçi'nin "kök neden yapılmamış"
+      // uyarısı (ramak kala hariç) kalıcı olarak susardı, oysa analiz hâlâ
+      // yapılmamıştı. Ramak kala için kök neden zorunlu değildir.
+      if (tip !== 'ramak_kala' && durum === 'kapandi' && !kokNeden) {
+        App.toast('Kök neden analizi yapılmadan kaza kaydı KAPATILAMAZ', 'err'); return;
+      }
       const pid = document.getElementById('kz-personel').value;
       const p = d.personeller.find(x => x.id === pid);
       const kayitYeni = {
         id: k.id || App.uid('KAZ'), tarih, saat: document.getElementById('kz-saat').value,
-        tip: document.getElementById('kz-tip').value,
+        tip,
         personelId: pid || null, personelAdi: p ? p.adSoyad : '',
         bolum: document.getElementById('kz-bolum').value.trim(),
         kayipGun: parseInt(document.getElementById('kz-kayip').value) || 0,
-        olay, kokNeden: document.getElementById('kz-koknedeni').value.trim(),
+        olay, kokNeden,
         onlem: document.getElementById('kz-onlem').value.trim(),
         sgkBildirim: document.getElementById('kz-sgk').value,
-        durum: document.getElementById('kz-durum').value,
+        durum,
         kayitTarihi: k.kayitTarihi || bugun()
       };
       await App.persist(() => Store.isgKazalar.upsert(kayitYeni));
@@ -401,7 +451,8 @@ PageModules.isg = (() => {
 
   // ── KKD ZİMMET ──────────────────────────────────────────────────────────
   function kkdTab(c, d, render, main) {
-    const yenilemeGeldi = d.kkd.filter(k => k.yenilemeTarihi && k.yenilemeTarihi <= bugun());
+    // İşten ayrılan personelin süresi geçmiş KKD'si artık aksiyon gerektirmez (bkz. panoTab).
+    const yenilemeGeldi = d.kkd.filter(k => k.yenilemeTarihi && k.yenilemeTarihi <= bugun() && personelAktifMi(d.personeller, k.personelId));
     let html = '';
     if (yenilemeGeldi.length) {
       html += `<div class="card" style="border:1.5px solid var(--red);background:var(--red-bg);margin-bottom:12px">
@@ -446,8 +497,7 @@ PageModules.isg = (() => {
       <div class="frow">
         <div class="fgroup" style="flex:1.2"><label class="flbl">Personel <span style="color:var(--red-text)">*</span></label>
           <select class="fselect" id="kd-personel">
-            <option value="">— Seçiniz —</option>
-            ${d.personeller.filter(p => p.durum === 'aktif').map(p => `<option value="${p.id}" ${k.personelId === p.id ? 'selected' : ''}>${App.escapeHtml(p.adSoyad)}</option>`).join('')}
+            ${personelSecenekleri(d.personeller, k.personelId, '— Seçiniz —')}
           </select></div>
         <div class="fgroup" style="flex:1.2"><label class="flbl">KKD Türü <span style="color:var(--red-text)">*</span></label>
           <select class="fselect" id="kd-tur">
@@ -487,7 +537,8 @@ PageModules.isg = (() => {
 
   // ── EĞİTİM ──────────────────────────────────────────────────────────────
   function egitimTab(c, d, render, main) {
-    const suresiDolan = d.egitimler.filter(e => e.gecerlilikTarihi && e.gecerlilikTarihi <= bugun());
+    // İşten ayrılan personelin süresi dolmuş eğitimi artık aksiyon gerektirmez (bkz. panoTab).
+    const suresiDolan = d.egitimler.filter(e => e.gecerlilikTarihi && e.gecerlilikTarihi <= bugun() && personelAktifMi(d.personeller, e.personelId));
     let html = '';
     if (suresiDolan.length) {
       html += `<div class="card" style="border:1.5px solid var(--red);background:var(--red-bg);margin-bottom:12px">
@@ -532,8 +583,7 @@ PageModules.isg = (() => {
       <div class="frow">
         <div class="fgroup" style="flex:1"><label class="flbl">Personel <span style="color:var(--red-text)">*</span></label>
           <select class="fselect" id="eg-personel">
-            <option value="">— Seçiniz —</option>
-            ${d.personeller.filter(p => p.durum === 'aktif').map(p => `<option value="${p.id}" ${e.personelId === p.id ? 'selected' : ''}>${App.escapeHtml(p.adSoyad)}</option>`).join('')}
+            ${personelSecenekleri(d.personeller, e.personelId, '— Seçiniz —')}
           </select></div>
         <div class="fgroup" style="flex:1.3"><label class="flbl">Eğitim Türü</label>
           <select class="fselect" id="eg-tur">
@@ -577,7 +627,8 @@ PageModules.isg = (() => {
 
   // ── SAĞLIK MUAYENESİ ────────────────────────────────────────────────────
   function saglikTab(c, d, render, main) {
-    const gecikmis = d.saglik.filter(s => s.sonrakiMuayene && s.sonrakiMuayene <= bugun());
+    // İşten ayrılan personelin gecikmiş muayenesi artık aksiyon gerektirmez (bkz. panoTab).
+    const gecikmis = d.saglik.filter(s => s.sonrakiMuayene && s.sonrakiMuayene <= bugun() && personelAktifMi(d.personeller, s.personelId));
     let html = '';
     if (gecikmis.length) {
       html += `<div class="card" style="border:1.5px solid var(--red);background:var(--red-bg);margin-bottom:12px">
@@ -619,8 +670,7 @@ PageModules.isg = (() => {
       <div class="frow">
         <div class="fgroup" style="flex:1"><label class="flbl">Personel <span style="color:var(--red-text)">*</span></label>
           <select class="fselect" id="sg-personel">
-            <option value="">— Seçiniz —</option>
-            ${d.personeller.filter(p => p.durum === 'aktif').map(p => `<option value="${p.id}" ${s.personelId === p.id ? 'selected' : ''}>${App.escapeHtml(p.adSoyad)}</option>`).join('')}
+            ${personelSecenekleri(d.personeller, s.personelId, '— Seçiniz —')}
           </select></div>
         <div class="fgroup" style="flex:1"><label class="flbl">Muayene Tipi</label>
           <select class="fselect" id="sg-tip">
