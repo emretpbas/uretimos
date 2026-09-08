@@ -173,7 +173,7 @@ tuşlar, tablo sütunları ve form etiketleri Türkçe kalıyordu (bu metinler
 
 **Çözüm:** i18n.js'e bir **DOM çeviri katmanı** eklendi. Sayfa çizildikten
 sonra ekran taranır ve sözlükte **birebir eşleşen** metinler çevrilir.
-E�leşme tam olduğundan **kullanıcı verisi asla bozulmaz** — ürün adları,
+E�leşme tam olduğundan **kullanıcı verisi asla bozulmaz** — ürün adları,
 stok kodları, müşteri ünvanları olduğu gibi kalır.
 
 - Sözlüğe ~700 karşılık eklendi: sayfa başlıkları, alt açıklamalar, sekmeler,
@@ -613,3 +613,141 @@ ters kaydediliyordu — kenar bandı ve damar yönünü bozardı; (2) menteşe s
 eşiği. İkisi de düzeltildi.
 
 Testi çalıştırmak için: `node testler/dolap_hesap_test.js`
+
+## 26) YENİ — SWOOD İçe Aktarım (v30 civarı)
+
+SolidWorks/SWOOD'dan alınan kesim raporu ZIP'i doğrudan **İş Emri Formu**'na
+sürüklenip bırakılabilir. Yeni `swood_import.js` ayrıştırıcı ZIP içindeki
+Excel/CSV raporlarını (Saw Cut Export, Stoklar yedek kaynak olarak) okuyup
+panel listesine, kenar bandı tüketimine ve teknik resim (PDF) önizlemesine
+dönüştürür. Kenar bandı malzemeleri, adına göre var olan hammadde kartlarıyla
+otomatik eşleşir. Regresyon testi + tam paket bu turun sonunda çalıştırılıp
+yeşile alındı.
+
+## 27) KRİTİK DÜZELTMELER — Muhasebe, Fatura, Cari ve Yetki (T1 serisi)
+
+Bağımsız bir denetim, muhasebe/fatura/cari akışında **15 gerçek hata**
+buldu; hepsi düzeltildi. En önemlileri:
+
+- Müşteri **cari bakiyesi** fatura kesilince ARTMIYORDU; `fatura.odenecekBakiye`
+  her zaman 0 kalıyor, vade kontrolü hiç çalışmıyordu.
+- **Basit Usul Defter** geliri çift sayıyordu; **e-Fatura XML** genel
+  iskontoyu hiç uygulamıyordu.
+- "Fatura & İrsaliye Kes" formunda irsaliyeye **kalemler kaydedilmiyordu**.
+- Banka kredisi taksitlerinde anapara/faiz ayrımı yoktu — tüm taksit gider
+  yazılıyordu (yalnızca faiz gider olmalı).
+- **Vade farkı geliri** Gelir-Gider Özeti'ne hiç yansımıyordu; Manuel
+  Tahsilat ve sipariş onayı ekranları FARKLI vade farkı formülleri
+  kullanıyordu.
+- Fire/kayıp/sayım farkı/tedarikçi iade işlemleri muhasebeye hiç
+  yansımıyordu.
+- `hatSifreleri` ve `bankaKredileri` hassas veri koleksiyonu listesinde
+  DEĞİLDİ (yedekleme/gizlilik taraması onları atlıyordu); kendi kendine
+  kayıt formunda "Üst Yönetim" rolü seçilebiliyordu.
+- Malzeme Talep teslimatı gerçek stoğu düşürmüyordu; hammadde→üretim
+  ambarı yarı mamül transferi **hayalet stok** üretiyordu.
+- Sevk edilmiş bir sipariş "Geri Çek/Düzenle" ile tekrar onaya
+  sokulabiliyor, onay yeniden tetiklenince kesim/stok/ödeme **idempotent
+  değildi** (tekrar tekrar işleniyordu).
+
+## 28) KRİTİK DÜZELTMELER — Üretim, Stok, Kalite, Bakım (T2-T3 serisi)
+
+Aynı denetim üretim/depo/kalite akışında **19 gerçek hata** daha buldu:
+
+- `mrp_motor.js` taslak (henüz üretime alınmamış) iş emirlerini ve teslim
+  alınmış satınalma siparişlerini yanlış sayıyordu; tedarikçi bakiyesi onay
+  bekleyen/taslak siparişleri de borca ekliyordu.
+- İptal ekranı sevk edilmiş siparişleri hâlâ "açık" sayıyordu.
+- Hat Terminal'de kalite reddinde **"önceki operasyona iade"** seçeneği
+  yoktu; bitmiş ürün kalite reddi, yarı mamül reddinden tamamen kopuktu.
+- **Kısmi sevkiyat** desteklenmiyordu (tam sevkiyat zorunluydu).
+- Sevkiyata doğrudan eklenen 2. kalite kalemler rezervasyon kontrolünden
+  geçiyordu (stok fazladan düşülebiliyordu).
+- Arızalı bir makinaya iş atanmaya devam edilebiliyordu; arıza kayıtları
+  hiçbir zaman "Tamamlandı"ya geçmiyordu (sonsuza dek açık kalıyordu).
+- İade ambarı stok anahtarında (refId) tutarsızlık vardı.
+- **NCR** (uygunsuzluk kaydı), açık DÖF (Düzeltici/Önleyici Faaliyet)
+  varken serbestçe kapatılabiliyordu.
+- Kesim Optimizasyonuna Aktar, veriyi gerçekten taşımıyordu.
+- **OEE** yalnızca elle girilen duruş kayıtlarını sayıyordu, üretimi
+  durduran acil makina arızalarını hiç hesaba katmıyordu.
+- Çizelgeleyici, istasyondaki kısmi ilerlemeyi düşmüyordu.
+- KPI/OEE paneline **dönemsel filtre** (Bugün/Bu Hafta/Tüm Zamanlar) hiç
+  yoktu — tüm göstergeler ömür boyu kümülatifti.
+- Avans, muhasebe kaydı oluşturmuyordu; mahsup bordroya işlenmiyordu.
+- İzin bakiyesi negatife düşebiliyordu; geçmiş yıl kıdem hesabı, o yılın
+  sonu yerine BUGÜNE göre yapılıyor, kıdemi olduğundan fazla gösteriyordu.
+- Kıdem & İhbar Tazminatı, damga vergisi dahil NET tutarı gerçekten
+  hesaplamıyordu — artık gerçek hesaplama yapılıyor.
+
+Küçük iyileştirmeler (T4) ayrıca 7 maddede tek tek değerlendirilip
+düzeltildi; 2 madde gerekçesiyle bilinçli olarak atlandı.
+
+## 29) TEST KAPSAMI — Daha Önce Hiç Test Edilmeyen Motorlara Birim Testi
+
+Sistemde satırca büyük ama **sıfır test kapsamı** olan birkaç motor tespit
+edilip test edildi: `analitik_motor.js` (526 satır) dual-mode yapılıp ilk
+testi yazıldı; `masa_cizim.js`/`masa_tasarim.js` (795 satır) ve
+`qr_cozucu.js`/`qr_kod.js`/`rota_sablon.js`/`toplu_rota.js`/
+`kurulum_durumu.js` için ilk kez birim testleri eklendi. Ayrıca Kayıp/Kaçak
+ve Reçete Talep ekranlarında çift onay eşiği artık sabit kodlanmış değil,
+Ayarlar'dan geliyor; onaylayan/reddeden artık rol değil GERÇEK kullanıcı
+kimliğiyle kaydediliyor. Pazarlama ekranına fiyat listesine **Excel ile
+toplu kalem ekleme** özelliği eklendi.
+
+## 30) DENETİM TURU — Ekran Bazlı Sistematik Denetim (T50-T56)
+
+Sistemin geri kalan büyük ekranları, aynı T1-T4 tarzı yöntemle (bağımsız
+inceleme → gerçek kodda doğrulama → düzeltme → dedike test dosyası →
+tam regresyon) tek tek tarandı. Bulunan ve düzeltilen başlıca hatalar:
+
+**Depo (T50):** 4 gerçek bulgu düzeltildi (stok/ambar tutarsızlıkları).
+
+**İSG (T51):** ayrılmış personel istatistiklerden tamamen kayboluyordu;
+"kazasız gün" sayacı ramak kala olaylarını da kazasız sayıyordu; bir kaza
+kök neden analizi (5N1K) hiç girilmeden kapatılabiliyordu.
+
+**CRM (T52):** fırsat/aktivite/aşama kayıtlarında "kim yaptı" bilgisi rol
+etiketiydi — aynı role sahip FARKLI çalışanlar aynı kişi sayılıyordu (bu
+sınıf hata sonraki 4 denetimde de tekrar bulunup düzeltildi); kullanıcının
+elle yazdığı ama sistemde karşılığı olmayan müşteri adı sessizce
+`musteriId:null` ile kaydedilebiliyordu; CRM fırsatı kazanılıp teklif
+siparişe dönüşünce CRM tarafı senkron güncellenmiyordu; "6 Aylık Tahmin"
+ve benzer tarih hesaplarında UTC yuvarlama hatası vardı.
+
+**Pazarlama (T53):** `storage.js`'de `fiyatListeleri` koleksiyonu İKİ KEZ
+tanımlanmıştı — Pazarlama'nın kaydettiği fiyat listesi, Teklif ekranının
+kullandığı katalogla ÇAKIŞABİLİYORDU (canlı örnekle doğrulandı). Ayrı bir
+`pazarlamaFiyatListeleri` koleksiyonuna taşındı. Excel toplu fiyat
+girişinde sütun eşleştirme ve mükerrer ürün satırı (dedup) hataları
+düzeltildi.
+
+**Proje/Teklif (T54) — 2 KRİTİK:** siparişe dönüşmüş bir teklif, durum
+listesinde tanımlı olmadığından "Kaydet"e her basıldığında SESSİZCE
+"Taslak"a geri dönüyordu (mükerrer sipariş riski); Mahal Bazlı Proje
+Teklifi'nde "Siparişe Dönüştür" butonu teklifin durumuna bakmadan her
+zaman gösteriliyor, aynı teklif İKİNCİ KEZ siparişe dönüştürülebiliyordu.
+Ayrıca proje hakedişinde elle girilen tutar için üst sınır yoktu.
+
+**Servis/Garanti (T55):** kısmi sevkiyatlı siparişlerde garanti bitiş
+tarihi, şikayet konusu ürünün GERÇEK teslim tarihi yerine sipariş
+genelindeki başka bir kalemin tarihinden hesaplanabiliyordu; doğrudan açılan
+servis talebinde müşteri seçimi zorunlu değildi (kayıt izlenemez hale
+geliyordu); servis talepleri için "İptal" durumu yoktu.
+
+**KPI/Analitik/Kokpit (T56):** Personel Performansı, aynı partinin işlem
+onayı VE sevk kaydını birlikte toplayıp adet sayısını ÇİFTE SAYIYORDU;
+`kpi_motor.js` ve `analitik_motor.js`'de toplam 5 ayrı yerde UTC yuvarlama
+hatası (bakım alarmı, dönem filtresi, "bugün" hesapları); stok değeri ve
+stok yaşlandırma yalnızca hammaddeyi değerliyor, yarı mamul/ürün stoklarını
+hep 0 TL kabul ediyordu; Panel'deki "Açık İş Emri" sayacı iptal edilmiş iş
+emirlerini de sayıyordu; KPI panelindeki Mali & Ticari blok hem dönem
+filtresinden etkilenmiyordu (etiketlenmeden) hem de mali görünürlüğü
+olmayan rollere de gösteriliyordu.
+
+Her ekran için ayrı `testler/*_denetimi_testi.js` dosyası yazıldı, tam JS +
+PHP regresyon paketi (301/301) her turda yeşil kaldı. Bazı bulgular (kısmi
+sevkiyatta KDV dahil/hariç tutarsızlığı, hakediş/numune/garanti dışı
+ücretin muhasebeye tam entegrasyonu, mesai-dışı süre hesabı gibi geniş
+mimari değişiklik gerektirenler) bilinçli olarak bu turun kapsamı dışında
+bırakılıp kod içi yorumlarla belgelendi — sessizce atlanmadı.
