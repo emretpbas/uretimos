@@ -19,9 +19,15 @@ PageModules.servis = (() => {
   let activeTab = 'pano';
   const VARSAYILAN_GARANTI_AY = 24; // Tüketici mevzuatı asgari
 
-  const bugun = () => new Date().toISOString().slice(0, 10);
+  // BULGU (T55): bugun()/ayEkle() eskiden new Date().toISOString() ile UTC'ye
+  // çevirip geri okuyordu — Türkiye (UTC+3) gibi ileri dilimlerde bu HER
+  // hesaplamada 1 gün geriye kayardı (gece 00:00-03:00'da "bugün" bir önceki
+  // gün, HER garanti bitiş tarihi 1 gün erken). tarihStr yerel yıl/ay/gün
+  // bileşenlerinden üretir, hiçbir zaman UTC'ye çevrilmez.
+  const tarihStr = (dt) => { const p = (n) => String(n).padStart(2, '0'); return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`; };
+  const bugun = () => tarihStr(new Date());
   const gunFark = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);
-  const ayEkle = (t, ay) => { const d = new Date(t + 'T00:00:00'); d.setMonth(d.getMonth() + ay); return d.toISOString().slice(0, 10); };
+  const ayEkle = (t, ay) => { const d = new Date(t + 'T00:00:00'); d.setMonth(d.getMonth() + ay); return tarihStr(d); };
 
   const SIKAYET_TIPI = {
     hasar: ['Nakliye Hasarı', 'pill-amber'],
@@ -50,8 +56,15 @@ PageModules.servis = (() => {
 
   // ── GARANTİ SORGUSU ─────────────────────────────────────────────────────
   // Teslim tarihi (irsaliye) + garanti süresi. Fatura değil TESLİM esas alınır.
-  function garantiDurumu(siparisId, irsaliyeler, garantiAy) {
-    const irs = (irsaliyeler || []).filter(i => i.siparisId === siparisId)
+  // BULGU (T55): urunKod verilmeden (veya eşleşme bulunamazsa) sipariş
+  // bazında EN ERKEN irsaliye kullanılır — kısmi/parçalı sevkiyatta bu,
+  // şikayet konusu ürünün GERÇEK teslim tarihinden tamamen farklı (daha
+  // erken) bir tarih olabilir; garanti bitişi de buna göre yanlış hesaplanır.
+  // urunKod verilirse önce o ürünü GERÇEKTEN içeren irsaliyeler aranır.
+  function garantiDurumu(siparisId, irsaliyeler, garantiAy, urunKod) {
+    const tumIrs = (irsaliyeler || []).filter(i => i.siparisId === siparisId);
+    const urunIrs = urunKod ? tumIrs.filter(i => (i.kalemler || []).some(k => k.kod === urunKod)) : [];
+    const irs = (urunIrs.length ? urunIrs : tumIrs)
       .sort((a, b) => (a.tarih || '').localeCompare(b.tarih || ''));
     if (!irs.length) return { biliniyor: false, mesaj: 'Teslim (irsaliye) kaydı bulunamadı — garanti başlangıcı belirlenemiyor' };
     const teslim = irs[0].tarih;
@@ -108,8 +121,10 @@ PageModules.servis = (() => {
     // Çözüm süresi
     const sureler = cozulen.filter(s => s.cozumTarihi && s.tarih).map(s => gunFark(s.cozumTarihi, s.tarih));
     const ortCozum = sureler.length ? sureler.reduce((a, b) => a + b, 0) / sureler.length : null;
-    const servisMaliyet = d.servisler.reduce((a, s) => a + (s.toplamMaliyet || 0), 0);
-    const garantiDisiTahsil = d.servisler.filter(s => !s.garantiKapsaminda).reduce((a, s) => a + (s.toplamMaliyet || 0), 0);
+    // BULGU (T55): iptal edilmiş bir servis talebinde gerçek müdahale
+    // yapılmadığından maliyet toplamlarına dahil edilmemeli.
+    const servisMaliyet = d.servisler.filter(s => s.durum !== 'iptal').reduce((a, s) => a + (s.toplamMaliyet || 0), 0);
+    const garantiDisiTahsil = d.servisler.filter(s => !s.garantiKapsaminda && s.durum !== 'iptal').reduce((a, s) => a + (s.toplamMaliyet || 0), 0);
 
     // Şikayet tipi Pareto
     const tipGrup = new Map();
@@ -138,6 +153,13 @@ PageModules.servis = (() => {
       <div class="kpi"><div class="kpi-lbl">Ort. Çözüm Süresi</div>
         <div class="kpi-val ${ortCozum === null ? 'blue' : ortCozum <= 7 ? 'green' : ortCozum <= 15 ? 'amber' : 'red'}">${ortCozum !== null ? App.fmt(ortCozum, 1) + ' gün' : '—'}</div>
         <div class="muted" style="font-size:10.5px">${cozulen.length} çözülmüş şikayet</div></div>
+      <!-- BULGU (T55, belgelenmiş — henüz düzeltilmedi): "tahsil edilebilir"
+           yalnızca bu ekranda gösterilen bir sayıdır — hiçbir cari hesap
+           borcu, fatura taslağı veya tahsilat kaydı otomatik oluşmaz
+           (muhasebe/cari panel/e-fatura modüllerinin hiçbiri servisTalepleri
+           koleksiyonundan haberdar değil). Gerçek bir tahsilat/fatura
+           entegrasyonu, muhasebe akışına dokunan ayrı bir değişiklik
+           gerektirdiğinden bu turun kapsamı dışında bırakıldı. -->
       <div class="kpi"><div class="kpi-lbl">Servis Maliyeti</div>
         <div class="kpi-val amber">${App.fmtTL(servisMaliyet)}</div>
         <div class="muted" style="font-size:10.5px">${App.fmtTL(garantiDisiTahsil)} garanti dışı (tahsil edilebilir)</div></div>
@@ -283,15 +305,18 @@ PageModules.servis = (() => {
     App.openModal({ title: kayit ? '📣 Şikayet Detayı' : '📣 Yeni Müşteri Şikayeti', body, xwide: true,
       footer: `<button class="btn" id="sk-cancel">Vazgeç</button><button class="btn btn-red" id="sk-ok">Kaydet</button>` });
 
-    // Sipariş seçilince: garanti sorgusu + ürün listesi
+    // Sipariş/ürün seçilince: garanti sorgusu + ürün listesi
+    // BULGU (T55): urunSeciliyken garanti artık o ürünü GERÇEKTEN içeren
+    // irsaliyeden hesaplanır (bkz. garantiDurumu) — kısmi sevkiyatta yanlış
+    // (başka bir kalemin) teslim tarihi kullanılmaz.
     const sipSel = document.getElementById('sk-siparis');
-    const garantiGuncelle = () => {
+    const garantiGuncelle = (urunSecimindenMi) => {
       const sid = sipSel.value;
       const gAlan = document.getElementById('sk-garanti');
       const uSel = document.getElementById('sk-urun');
       if (!sid) { gAlan.innerHTML = ''; uSel.innerHTML = '<option value="">— Önce sipariş seçin —</option>'; return; }
       const sip = d.siparisler.find(x => x.id === sid);
-      const g = garantiDurumu(sid, d.irsaliyeler);
+      const g = garantiDurumu(sid, d.irsaliyeler, undefined, urunSecimindenMi ? uSel.value : undefined);
       gAlan.innerHTML = g.biliniyor
         ? `<div style="border:1px solid var(--${g.kapsamda ? 'green' : 'red'});background:var(--${g.kapsamda ? 'green' : 'red'}-bg);border-radius:8px;padding:8px 12px">
             <b style="font-size:12px;color:var(--${g.kapsamda ? 'green' : 'red'}-text)">🛡 ${g.kapsamda ? 'GARANTİ KAPSAMINDA' : 'GARANTİ DIŞI'}</b>
@@ -302,18 +327,27 @@ PageModules.servis = (() => {
       uSel.innerHTML = '<option value="">— Seçiniz —</option>' +
         (sip ? (sip.kalemler || []).map(k => `<option value="${App.escapeHtml(k.kod || '')}" data-ad="${App.escapeHtml(k.ad || '')}" ${s.urunKod === k.kod ? 'selected' : ''}>${App.escapeHtml(k.kod || '')} — ${App.escapeHtml((k.ad || '').slice(0, 30))}</option>`).join('') : '');
     };
-    sipSel.onchange = garantiGuncelle;
-    if (s.siparisId) garantiGuncelle();
+    sipSel.onchange = () => garantiGuncelle(false);
+    document.getElementById('sk-urun').onchange = () => garantiGuncelle(true);
+    if (s.siparisId) garantiGuncelle(!!s.urunKod);
 
     document.getElementById('sk-cancel').onclick = App.closeModal;
-    document.getElementById('sk-ok').onclick = async () => {
+    document.getElementById('sk-ok').onclick = async (ev) => {
+      // BULGU (T55): çift tıklamada mükerrer şikayet kaydı riski.
+      const btn = ev.currentTarget;
+      btn.disabled = true;
       const sid = sipSel.value;
       const aciklama = document.getElementById('sk-aciklama').value.trim();
-      if (!sid || !aciklama) { App.toast('Sipariş ve şikayet açıklaması zorunlu', 'err'); return; }
+      if (!sid || !aciklama) { App.toast('Sipariş ve şikayet açıklaması zorunlu', 'err'); btn.disabled = false; return; }
+      try {
       const sip = d.siparisler.find(x => x.id === sid);
-      const g = garantiDurumu(sid, d.irsaliyeler);
       const uSel = document.getElementById('sk-urun');
       const urunKod = uSel.value;
+      // BULGU (T55): garanti artık SEÇİLİ ürünü GERÇEKTEN içeren irsaliyeden
+      // hesaplanır — kaydedilen garantiKapsaminda/teslimTarihi eskiden
+      // sipariş bazında en erken irsaliyeyi kullanıyordu (kısmi sevkiyatta
+      // yanlış ürünün tarihi kullanılabiliyordu).
+      const g = garantiDurumu(sid, d.irsaliyeler, undefined, urunKod);
       const urunAd = uSel.selectedOptions[0] ? (uSel.selectedOptions[0].dataset.ad || '') : '';
       const tip = document.getElementById('sk-tip').value;
       const adet = parseInt(document.getElementById('sk-adet').value) || 1;
@@ -330,6 +364,9 @@ PageModules.servis = (() => {
         cozum: document.getElementById('sk-cozum').value || null,
         cozumTarihi: document.getElementById('sk-cozumtarih').value || null,
         kokNeden: document.getElementById('sk-koknedeni').value.trim(),
+        // BULGU (T55): şikayet kaydında kimin açtığına dair hiçbir iz
+        // tutulmuyordu.
+        olusturan: s.olusturan || (App.aktifKullaniciAdi ? App.aktifKullaniciAdi() : App.aktifRol()),
         ncrNo: s.ncrNo || null
       };
 
@@ -348,6 +385,7 @@ PageModules.servis = (() => {
       await App.persist(() => Store.sikayetler.upsert(yeni));
       App.toast(kayit ? 'Şikayet güncellendi' : 'Şikayet kaydedildi' + (yeni.ncrNo ? ' — ' + yeni.ncrNo + ' uygunsuzluk kaydı açıldı' : ''), 'ok');
       App.closeModal(); render(main);
+      } finally { btn.disabled = false; }
     };
   }
 
@@ -359,12 +397,13 @@ PageModules.servis = (() => {
         <div class="edesc">Şikayetler sekmesindeki "🔧 Servis" butonuyla veya buradan yeni servis talebi açın.</div></div></div>`;
       return;
     }
-    const acik = d.servisler.filter(s => s.durum !== 'tamamlandi');
+    // BULGU (T55): iptal edilmiş bir servis talebi hariç tutulmuyordu.
+    const acik = d.servisler.filter(s => s.durum !== 'tamamlandi' && s.durum !== 'iptal');
     c.innerHTML = `
       <div class="grid grid-3" style="margin-bottom:14px">
         <div class="kpi"><div class="kpi-lbl">Açık Servis</div><div class="kpi-val ${acik.length ? 'amber' : 'green'}">${acik.length}</div></div>
         <div class="kpi"><div class="kpi-lbl">Toplam Servis</div><div class="kpi-val blue">${d.servisler.length}</div></div>
-        <div class="kpi"><div class="kpi-lbl">Toplam Maliyet</div><div class="kpi-val amber">${App.fmtTL(d.servisler.reduce((a, s) => a + (s.toplamMaliyet || 0), 0))}</div></div>
+        <div class="kpi"><div class="kpi-lbl">Toplam Maliyet</div><div class="kpi-val amber">${App.fmtTL(d.servisler.filter(s => s.durum !== 'iptal').reduce((a, s) => a + (s.toplamMaliyet || 0), 0))}</div></div>
       </div>
       <div class="card">
         <table class="dtable" style="font-size:11.5px">
@@ -379,8 +418,8 @@ PageModules.servis = (() => {
             <td class="r">${s.toplamMaliyet ? App.fmtTL(s.toplamMaliyet) : '—'}</td>
             <td>${s.garantiKapsaminda ? '<span class="pill pill-green" style="font-size:9px">Ücretsiz</span>'
               : '<span class="pill pill-amber" style="font-size:9px">Ücretli</span>'}</td>
-            <td><span class="pill ${s.durum === 'tamamlandi' ? 'pill-green' : s.durum === 'yolda' ? 'pill-blue' : 'pill-amber'}" style="font-size:9px">
-              ${s.durum === 'tamamlandi' ? 'Tamamlandı' : s.durum === 'yolda' ? 'Yolda' : 'Planlandı'}</span></td>
+            <td><span class="pill ${s.durum === 'tamamlandi' ? 'pill-green' : s.durum === 'yolda' ? 'pill-blue' : s.durum === 'iptal' ? 'pill-gray' : 'pill-amber'}" style="font-size:9px">
+              ${s.durum === 'tamamlandi' ? 'Tamamlandı' : s.durum === 'yolda' ? 'Yolda' : s.durum === 'iptal' ? 'İptal' : 'Planlandı'}</span></td>
             <td><button class="btn btn-sm btn-ghost srv-s-duzenle" data-id="${s.id}">Detay</button></td>
           </tr>`).join('')}
         </table></div>`;
@@ -397,7 +436,10 @@ PageModules.servis = (() => {
       ${sk ? `<div class="fhint" style="margin-bottom:10px">
         Şikayet: <b>${App.escapeHtml(sk.siparisKod)}</b> · ${App.escapeHtml(sk.musteriAdi)} · ${App.escapeHtml((SIKAYET_TIPI[sk.tip] || [sk.tip])[0])}<br>
         ${sk.garantiKapsaminda ? '<span style="color:var(--green-text)">🛡 Garanti kapsamında — servis ücretsiz</span>'
-          : '<span style="color:var(--amber-text)">⚠ Garanti dışı — servis bedeli tahsil edilebilir</span>'}</div>` : ''}
+          : '<span style="color:var(--amber-text)">⚠ Garanti dışı — servis bedeli tahsil edilebilir</span>'}</div>`
+        : `<div class="fgroup"><label class="flbl">Müşteri <span style="color:var(--red-text)">*</span></label>
+        <input class="finput" id="sv-musteri" list="sv-mlist" value="${App.escapeHtml(s.musteriAdi || '')}" placeholder="Müşteri adı yazın veya seçin">
+        <datalist id="sv-mlist">${d.musteriler.slice(0, 500).map(m => `<option value="${App.escapeHtml(m.unvan || m.ad || '')}"></option>`).join('')}</datalist></div>`}
       <div class="frow">
         <div class="fgroup" style="flex:1"><label class="flbl">Planlanan Tarih</label>
           <input class="finput" id="sv-tarih" type="date" value="${s.planTarihi || bugun()}"></div>
@@ -408,16 +450,28 @@ PageModules.servis = (() => {
               `<option value="${p.id}" ${s.teknisyenId === p.id ? 'selected' : ''}>${App.escapeHtml(p.adSoyad)}</option>`).join('')}
           </select></div>
         <div class="fgroup" style="flex:1"><label class="flbl">Durum</label>
+          <!-- BULGU (T55): "İptal" durumu hiç yoktu — yanlışlıkla/mükerrer
+               açılmış bir servis talebi hiçbir zaman "tamamlandı" olmadığı
+               için sonsuza dek "açık" sayılıyordu. -->
           <select class="fselect" id="sv-durum">
-            <option value="planlandi" ${s.durum !== 'yolda' && s.durum !== 'tamamlandi' ? 'selected' : ''}>Planlandı</option>
+            <option value="planlandi" ${!['yolda', 'tamamlandi', 'iptal'].includes(s.durum) ? 'selected' : ''}>Planlandı</option>
             <option value="yolda" ${s.durum === 'yolda' ? 'selected' : ''}>Yolda</option>
             <option value="tamamlandi" ${s.durum === 'tamamlandi' ? 'selected' : ''}>Tamamlandı</option>
+            <option value="iptal" ${s.durum === 'iptal' ? 'selected' : ''}>İptal</option>
           </select></div>
       </div>
       <div class="fgroup"><label class="flbl">Servis Adresi</label>
         <input class="finput" id="sv-adres" value="${App.escapeHtml(s.adres || (mus && mus.adres) || '')}"></div>
       <div class="fgroup"><label class="flbl">Yapılan İş / Müdahale</label>
         <textarea class="ftextarea" id="sv-is">${App.escapeHtml(s.yapilanIs || '')}</textarea></div>
+      <!-- BULGU (T55, belgelenmiş — henüz düzeltilmedi): yedek parça serbest
+           metin olarak tutulur, gerçek hammadde/parça stokundan HİÇ
+           düşülmez (Store.stokRaf/stokHareketleri'ne hiçbir yazma yok) —
+           depo sayımı ile gerçek tüketim arasında sürekli fark oluşur.
+           Düzeltme, bu alanı hammadde/parça seçiciye çevirip kaydet anında
+           gerçek bir stok çıkış hareketi yazmayı gerektirir; stok
+           modülüne dokunan ayrı bir değişiklik olduğundan bu turun
+           kapsamı dışında bırakıldı. -->
       <div class="fgroup"><label class="flbl">Kullanılan Yedek Parça</label>
         <textarea class="ftextarea" id="sv-parca" placeholder="örn. 2× menteşe, 1× kapak">${App.escapeHtml(s.yedekParca || '')}</textarea></div>
       <div class="frow">
@@ -443,7 +497,28 @@ PageModules.servis = (() => {
     topGuncelle();
 
     document.getElementById('sv-cancel').onclick = App.closeModal;
-    document.getElementById('sv-ok').onclick = async () => {
+    document.getElementById('sv-ok').onclick = async (ev) => {
+      // BULGU (T55): çift tıklamada mükerrer servis kaydı riski.
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      // BULGU (T55): şikayet üzerinden değil doğrudan "+ Servis Talebi" ile
+      // açılan kayıtlarda müşteri seçimi için hiçbir alan yoktu — kayıt
+      // musteriId:null ile kalıcı olarak açılıp geriye dönük izlenemez
+      // hale geliyordu. Artık şikayetsiz akışta müşteri zorunlu ve eşleşen
+      // gerçek bir cari karta bağlanmalı.
+      let musteriId = (sk && sk.musteriId) || s.musteriId || null;
+      let musteriAdi = (sk && sk.musteriAdi) || s.musteriAdi || '';
+      if (!sk) {
+        const musSel = document.getElementById('sv-musteri');
+        const adi = musSel.value.trim();
+        const m = d.musteriler.find(x => (x.unvan || x.ad || '') === adi);
+        if (!adi || !m) {
+          App.toast('Müşteri seçilmeli — listeden gerçek bir cari kart seçin.', 'err');
+          btn.disabled = false; return;
+        }
+        musteriId = m.id; musteriAdi = m.unvan || m.ad || '';
+      }
+      try {
       const tid = document.getElementById('sv-teknisyen').value;
       const tek = d.personeller.find(p => p.id === tid);
       const iscilik = parseFloat(document.getElementById('sv-iscilik').value) || 0;
@@ -454,8 +529,7 @@ PageModules.servis = (() => {
       const yeni = {
         id: s.id || App.uid('SRV'),
         sikayetId: (sk && sk.id) || s.sikayetId || null,
-        musteriId: (sk && sk.musteriId) || s.musteriId || null,
-        musteriAdi: (sk && sk.musteriAdi) || s.musteriAdi || '',
+        musteriId, musteriAdi,
         siparisKod: (sk && sk.siparisKod) || s.siparisKod || '',
         garantiKapsaminda: sk ? sk.garantiKapsaminda : s.garantiKapsaminda,
         planTarihi: document.getElementById('sv-tarih').value || bugun(),
@@ -465,22 +539,36 @@ PageModules.servis = (() => {
         yedekParca: document.getElementById('sv-parca').value.trim(),
         iscilikMaliyet: iscilik, parcaMaliyet: parca, yolMaliyet: yol,
         toplamMaliyet: iscilik + parca + yol,
-        durum, tamamlanmaTarihi: durum === 'tamamlandi' ? bugun() : (s.tamamlanmaTarihi || null)
+        durum, tamamlanmaTarihi: durum === 'tamamlandi' ? bugun() : (s.tamamlanmaTarihi || null),
+        // BULGU (T55): servis kaydında kimin açtığına dair hiçbir iz
+        // tutulmuyordu.
+        olusturan: s.olusturan || (App.aktifKullaniciAdi ? App.aktifKullaniciAdi() : App.aktifRol())
       };
       await App.persist(() => Store.servisTalepleri.upsert(yeni));
 
       // Şikayet durumunu ilerlet
+      // BULGU (T55): eskiden yalnızca 'cozuldu' hariç tutuluyordu — bu
+      // yüzden garanti dışı bulunup 'reddedildi' (kapatılmış) yapılan bir
+      // şikayete bağlı servis kaydı sadece teknisyen/adres güncellemek için
+      // tekrar kaydedilse bile (durum tamamlandi DEĞİLKEN) şikayet sessizce
+      // 'servis_planlandi'ya döndürülüp yeniden AÇIK sayılıyordu.
+      let sikayetGuncellendi = false;
       if (sk) {
         const tumSik = await Store.sikayetler.all();
         const k = tumSik.find(x => x.id === sk.id);
-        if (k && k.durum !== 'cozuldu') {
+        if (k && k.durum !== 'cozuldu' && k.durum !== 'reddedildi') {
           k.durum = durum === 'tamamlandi' ? 'cozuldu' : 'servis_planlandi';
           if (durum === 'tamamlandi') { k.cozumTarihi = bugun(); if (!k.cozum) k.cozum = 'yerinde_onarim'; }
           await App.persist(() => Store.sikayetler.save(tumSik));
+          sikayetGuncellendi = true;
         }
       }
-      App.toast('Servis kaydı kaydedildi' + (durum === 'tamamlandi' ? ' — şikayet çözüldü olarak işaretlendi' : ''), 'ok');
+      // BULGU (T55): eskiden sk var olmasa bile (doğrudan servis talebi)
+      // durum==='tamamlandi' ise "şikayet çözüldü olarak işaretlendi"
+      // yazıyordu — işaretlenen hiçbir şikayet olmasa bile.
+      App.toast('Servis kaydı kaydedildi' + (durum === 'tamamlandi' && sikayetGuncellendi ? ' — şikayet çözüldü olarak işaretlendi' : ''), 'ok');
       App.closeModal(); render(main);
+      } finally { btn.disabled = false; }
     };
   }
 

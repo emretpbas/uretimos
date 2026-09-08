@@ -1214,6 +1214,15 @@ const App = (() => {
     return r ? r.label : '';
   }
 
+  // BULGU (T55): NCR/DÖF açılışında "olusturan" alanı currentRoleLabel()
+  // (rolün Türkçe etiketi) kullanıyordu — aynı role sahip FARKLI çalışanlar
+  // (ör. iki Kalite Sorumlusu) aynı kişi sanılırdı (crm_motor.js'te T52'de
+  // düzeltilen aynı sınıf hata). Bireysel hesapla giriş yapıldıysa gerçek
+  // kullanıcı adı, yoksa geriye dönük uyumla rol etiketine düşer.
+  function aktifKullaniciEtiketi() {
+    return (state.kullanici && state.kullanici.kullaniciAdi) || currentRoleLabel();
+  }
+
   // Sidebar grup başlıklarının açık/kapalı hali — bölümleri bulmayı
   // kolaylaştırmak için AKORDEON: her grup başlığına tıklayınca kendi
   // öğeleri açılıp kapanır. Tercih tarayıcıda kalıcıdır (localStorage).
@@ -5596,7 +5605,7 @@ const App = (() => {
       aciklama: veri.aciklama || '',
       fotograflar: veri.fotograflar || [],
       sorumluBirim: veri.sorumluBirim || (kaynak === 'hammadde_girisi' ? 'satinalma' : 'uretim_planlama'),
-      durum: 'acik', olusturmaTarihi: bugun, olusturan: currentRoleLabel(), dofId: null
+      durum: 'acik', olusturmaTarihi: bugun, olusturan: aktifKullaniciEtiketi(), dofId: null
     };
     uygunsuzluklar.push(ncr);
     await Store.uygunsuzlukKayitlari.save(uygunsuzluklar);
@@ -5617,7 +5626,7 @@ const App = (() => {
       konu: (ncr.ad || ncr.kod) + ' — kalite uygunsuzluğu', kaynak: ncr.kaynak,
       kokNeden: '', duzelticiFaaliyet: '', onleyiciFaaliyet: '',
       sorumluBirim: ncr.sorumluBirim, termin: '', durum: 'acik',
-      olusturmaTarihi: bugun, olusturan: currentRoleLabel()
+      olusturmaTarihi: bugun, olusturan: aktifKullaniciEtiketi()
     };
     dofler.push(dof);
     await Store.dofKayitlari.save(dofler);
