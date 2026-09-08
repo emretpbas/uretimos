@@ -831,6 +831,12 @@ PageModules.proje_teklif = (() => {
 
   // ── MÜŞTERİ TEKLİFİ (maliyet GÖRÜNMEZ) ───────────────────────────────────
   function ozetCiz(el, p, t, h) {
+    // BULGU (T54): standart tekliftekinin (page_teklif.js) aksine bu buton
+    // teklifin durumuna hiç bakmadan HER ZAMAN render ediliyordu — zaten
+    // siparişe dönüştürülmüş bir teklif tekrar dönüştürülüp aynı mahal/
+    // kalemlerden İKİNCİ, tamamen ayrı bir sipariş (mükerrer üretim/
+    // sevkiyat taahhüdü) oluşturulabiliyordu.
+    const donustu = t.durum === 'siparise_dondu';
     el.innerHTML = `<div class="card">
       <div class="card-hdr"><div class="card-title">Müşteri Teklifi — Yazdırılabilir Özet</div>
         <div style="display:flex;gap:6px">
@@ -838,7 +844,8 @@ PageModules.proje_teklif = (() => {
           <button class="btn btn-sm" id="pt-excel">⤓ Excel Teklif</button>
           <button class="btn btn-sm" id="pt-icmal">📑 Yönetim İcmali (Excel)</button>
           <button class="btn btn-sm" id="pt-logo">🖼 Logolar</button>
-          <button class="btn btn-sm btn-green" id="pt-siparis">→ Siparişe Dönüştür</button>
+          ${donustu ? '<span class="pill pill-green" style="align-self:center">✓ Siparişe dönüştürüldü</span>'
+            : '<button class="btn btn-sm btn-green" id="pt-siparis">→ Siparişe Dönüştür</button>'}
         </div></div>
       <div class="fhint" style="margin-bottom:10px">
         Bu görünümde <b>maliyet bilgisi yer almaz</b> — müşteriye giden belgede yalnızca
@@ -900,7 +907,8 @@ PageModules.proje_teklif = (() => {
       } catch (e) { App.toast('İndirilemedi: ' + (e && e.message ? e.message : e), 'err'); }
     };
     document.getElementById('pt-logo').onclick = () => logoFormu(main, p);
-    document.getElementById('pt-siparis').onclick = () => siparisFormu(p, t, h);
+    const siparisBtn = document.getElementById('pt-siparis');
+    if (siparisBtn) siparisBtn.onclick = () => siparisFormu(p, t, h);
   }
 
   // ── YÖNETİM MALİYET RAPORU ───────────────────────────────────────────────
@@ -954,6 +962,10 @@ PageModules.proje_teklif = (() => {
 
   // ── SİPARİŞE DÖNÜŞTÜR ────────────────────────────────────────────────────
   function siparisFormu(p, t, h) {
+    // BULGU (T54): buton artık gizleniyor ama savunma amaçlı burada da
+    // engellenir — aynı teklifin iki kez siparişe dönüştürülmesi (mükerrer
+    // üretim/sevkiyat taahhüdü) önlenir.
+    if (t.durum === 'siparise_dondu') { App.toast('Bu teklif zaten siparişe dönüştürülmüş.', 'err'); return; }
     const kalemler = ProjeTeklifMotor.siparisKalemleriUret(t);
     if (!kalemler.length) { App.toast('Teklifte kalem yok — önce mahal ve kalem ekleyin.', 'err'); return; }
     App.openModal({
@@ -1014,7 +1026,7 @@ PageModules.proje_teklif = (() => {
           durum: 'cari_onay_bekliyor',    // cari onay ekranına düşer
           uretimKuyrugunda: false,
           kaynak: 'proje_teklifi',
-          olusturan: App.aktifRol()
+          olusturan: App.aktifKullaniciAdi ? App.aktifKullaniciAdi() : App.aktifRol()
         };
         await App.persist(() => Store.topluEkle('siparisler', [siparis], 1));
         // Teklif ve proje ile bağla (çift yönlü iz)

@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v186'; // v186: Pazarlama denetimi - pazarlamaFiyatListeleri artik fiyatListeleri (katalog) ile AYNI koleksiyonu paylasmiyor (Pazarlama'dan yeni liste acmak Teklif/Siparis kataloglarini gorunmez kilabiliyordu), kampanya/segment "otomatik uygulanir" yaniltici iddiasi duzeltildi, Excel Fiyat sutunu tespiti tam eslesmeyi once deniyor, cift tiklama korumasi + mukerrer kod dedup + fiyat<=0 ve negatif kampanya degeri reddi eklendi
+const CACHE_NAME = 'uretimos-v187'; // v187: Proje/Teklif denetimi - KRITIK: siparise_donustu/silme_talebinde/siparis_reddedildi TeklifTakipMotor.DURUMLAR'da tanimli degildi, Teklif Degerlendirme'de dokunulmadan Kaydet basilirsa gercekten siparise donusmus/silme talebindeki teklif sessizce taslaga geri donuyordu; Mahal Bazli Proje Teklifi'nde ayni teklif tekrar tekrar siparise donusturulup mukerrer siparis uretilebiliyordu; hakediste elle tutar ust siniri yoktu; proje/teklif genelinde kimlik (rol degil kullanici adi) ve cift tiklama korumasi eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

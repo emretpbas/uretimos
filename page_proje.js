@@ -323,7 +323,7 @@ PageModules.proje = (() => {
             <datalist id="pj-mlist">${musteriler.slice(0, 500).map(m =>
               `<option value="${App.escapeHtml(m.unvan || m.ad || '')}"></option>`).join('')}</datalist></div>
           <div class="fgroup"><label class="flbl">Sorumlu</label>
-            <input class="finput" id="pj-sorumlu" value="${App.escapeHtml(App.aktifRol())}"></div>
+            <input class="finput" id="pj-sorumlu" value="${App.escapeHtml(App.aktifKullaniciAdi ? App.aktifKullaniciAdi() : App.aktifRol())}"></div>
         </div>
         <div class="frow">
           <div class="fgroup"><label class="flbl">Başlangıç</label><input class="finput" id="pj-bas" type="date"></div>
@@ -337,10 +337,22 @@ PageModules.proje = (() => {
       wide: true
     });
     document.getElementById('pj-vaz').onclick = App.closeModal;
-    document.getElementById('pj-kaydet').onclick = async () => {
+    document.getElementById('pj-kaydet').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;   // çift tıklamada mükerrer proje açılmasın
       try {
         const musteriAdi = document.getElementById('pj-musteri').value.trim();
         const m = musteriler.find(x => (x.unvan || x.ad || '') === musteriAdi);
+        // BULGU (T54): eşleşmeyen müşteri adı SESSİZCE musteriId:null ile
+        // kaydediliyordu — bu ekranda (page_teklif.js/page_crm.js'in aksine)
+        // sonradan düzeltecek bir "+ Yeni Müşteri Ekle" veya proje düzenleme
+        // yolu YOK, yani musteriId kalıcı olarak boş kalır. Bu projeden doğan
+        // sipariş de musteriId:null taşır ve cari açık risk hesabına HİÇ
+        // girmez (page_cari_panel.js filter(s.musteriId === musteri.id)).
+        if (musteriAdi && !m) {
+          App.toast('Müşteri sistemde bulunamadı — lütfen listeden seçin (yeni müşteriyse önce Cari Kartları\'ndan ekleyin).', 'err');
+          btn.disabled = false; return;
+        }
         const r = await ProjeMotor.projeOlustur({
           ad: document.getElementById('pj-ad').value,
           musteriId: m ? m.id : null, musteriAdi,
@@ -350,10 +362,10 @@ PageModules.proje = (() => {
           sorumlu: document.getElementById('pj-sorumlu').value.trim(),
           aciklama: document.getElementById('pj-aciklama').value
         });
-        if (!r.ok) { App.toast(r.hata, 'err'); return; }
+        if (!r.ok) { App.toast(r.hata, 'err'); btn.disabled = false; return; }
         App.closeModal(); App.toast('Proje oluşturuldu: ' + r.proje.kod, 'ok');
         seciliId = r.proje.id; render(main);
-      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); }
+      } catch (e) { App.toast('Oluşturulamadı: ' + (e && e.message ? e.message : e), 'err'); btn.disabled = false; }
     };
   }
 

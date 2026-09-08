@@ -193,7 +193,9 @@ const ProjeTeklifMotor = (() => {
       mahaller: [], ekGiderler: [],
       dipIskonto: 0, kdvOrani: +kdvOrani || 20,
       durum: 'taslak',
-      olusturan: App.aktifRol ? App.aktifRol() : '',
+      // BULGU (T54): App.aktifRol() aynı role sahip FARKLI çalışanları aynı
+      // kişi sayardı — crm_motor.js/proje_motor.js'teki aynı sınıf düzeltme.
+      olusturan: (App.aktifKullaniciAdi ? App.aktifKullaniciAdi() : (App.aktifRol ? App.aktifRol() : '')),
       olusturmaTarihi: new Date().toISOString()
     };
     p.teklifler = p.teklifler || [];

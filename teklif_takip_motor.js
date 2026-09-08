@@ -20,7 +20,20 @@ const TeklifTakipMotor = (() => {
     { id: 'revize', ad: 'Revize İsteniyor', renk: '#7b1fa2', acik: true },
     { id: 'kazanildi', ad: 'Kazanıldı', renk: '#2e7d32', acik: false },
     { id: 'kaybedildi', ad: 'Kaybedildi', renk: '#c62828', acik: false },
-    { id: 'iptal', ad: 'İptal / Vazgeçildi', renk: '#616161', acik: false }
+    { id: 'iptal', ad: 'İptal / Vazgeçildi', renk: '#616161', acik: false },
+    // BULGU (T54): bu 3 durum page_teklif.js akışından OTOMATİK yazılır
+    // (Siparişe Dönüştür / İptal Onayı / Silme Talebi) ama DURUMLAR
+    // listesinde HİÇ YOKTU. Sonuç: durumBul() bunları tanımayıp sessizce
+    // DURUMLAR[0] ('taslak')'a düşürüyordu — hem YANLIŞ pill gösteriliyordu
+    // (siparişe dönüşmüş bir teklif "Taslak" görünüyordu) hem de Teklif
+    // Değerlendirme'nin durum <select>'i hiçbir seçenek 'selected'
+    // bulamadığından tarayıcı görsel olarak İLK seçeneği (taslak) seçili
+    // gösteriyordu — kullanıcı farkında olmadan "Kaydet"e basarsa GERÇEKTEN
+    // siparişe dönüşmüş/silme talebindeki bir teklif veritabanında sessizce
+    // 'taslak'a GERİ DÖNÜYORDU (mükerrer sipariş ve silme-onay-atlatma riski).
+    { id: 'siparise_donustu', ad: 'Siparişe Dönüştü', renk: '#2e7d32', acik: false },
+    { id: 'siparis_reddedildi', ad: 'Siparişi Reddedildi', renk: '#c62828', acik: false },
+    { id: 'silme_talebinde', ad: 'Silme Talebinde', renk: '#f57c00', acik: false }
   ];
 
   // Kayıp sebepleri — serbest metin yerine sabit liste: ancak böyle SAYILABİLİR.
@@ -38,6 +51,9 @@ const TeklifTakipMotor = (() => {
 
   const durumBul = (id) => DURUMLAR.find(d => d.id === id) || DURUMLAR[0];
   const acikMi = (t) => durumBul(t.durum).acik;
+  // Siparişe dönüşmüş bir teklif fiilen KAZANILMIŞTIR — istatistiklerde
+  // (kazanma oranı, sorumlu performansı) 'kazanildi' ile birlikte sayılır.
+  const kazandiMi = (t) => t.durum === 'kazanildi' || t.durum === 'siparise_donustu';
 
   const gunFarki = (tarih) => {
     if (!tarih) return null;
@@ -62,7 +78,7 @@ const TeklifTakipMotor = (() => {
   function ozet(teklifler) {
     const l = teklifler || [];
     const acik = l.filter(acikMi);
-    const kazanan = l.filter(t => t.durum === 'kazanildi');
+    const kazanan = l.filter(kazandiMi);
     const kaybeden = l.filter(t => t.durum === 'kaybedildi');
     const kapanan = kazanan.length + kaybeden.length;
     const bekleyenler = acik.map(bekleyenGun).filter(g => g != null);
@@ -136,7 +152,7 @@ const TeklifTakipMotor = (() => {
       const k = m.get(s) || { sorumlu: s, toplam: 0, acik: 0, kazanan: 0, kaybeden: 0, tutar: 0, revizyon: 0 };
       k.toplam++;
       if (acikMi(t)) k.acik++;
-      if (t.durum === 'kazanildi') { k.kazanan++; k.tutar += (+t.tutar || 0); }
+      if (kazandiMi(t)) { k.kazanan++; k.tutar += (+t.tutar || 0); }
       if (t.durum === 'kaybedildi') k.kaybeden++;
       k.revizyon += (t.revizyonlar || []).length;
       m.set(s, k);
@@ -182,6 +198,14 @@ const TeklifTakipMotor = (() => {
   function durumDegistirGecerli(teklif, yeniDurum, ek) {
     if (!DURUMLAR.some(d => d.id === yeniDurum)) return { ok: false, hata: 'Geçersiz durum.' };
     if (teklif.durum === yeniDurum) return { ok: false, hata: 'Teklif zaten bu durumda.' };
+    // BULGU (T54): siparise_donustu/siparis_reddedildi/silme_talebinde
+    // yalnızca ilgili gerçek işlem akışından (page_teklif.js'in Siparişe
+    // Dönüştür/Silme Talebi, app.js'in sipariş reddi) sistem tarafından
+    // yazılır — buradan manuel seçilirse arkasında GERÇEK bir sipariş/talep
+    // olmadan sahte bir "kazanıldı/silindi" durumu üretilebilir.
+    if (['siparise_donustu', 'siparis_reddedildi', 'silme_talebinde'].includes(yeniDurum)) {
+      return { ok: false, hata: 'Bu durum yalnızca ilgili işlem akışından (sipariş/silme talebi) otomatik ayarlanır, buradan manuel seçilemez.' };
+    }
     if (yeniDurum === 'kaybedildi' && !(ek && ek.kayipSebebi)) {
       return { ok: false, hata: 'Kayıp sebebi zorunlu — bu bilgi olmadan kayıp analizi yapılamaz.' };
     }
@@ -196,7 +220,7 @@ const TeklifTakipMotor = (() => {
 
   return {
     DURUMLAR, KAYIP_SEBEPLERI, BEKLEME_SEBEPLERI,
-    durumBul, acikMi, bekleyenGun, gunFarki,
+    durumBul, acikMi, kazandiMi, bekleyenGun, gunFarki,
     ozet, yaslandirma, kayipAnalizi, beklemeAnalizi,
     sorumluPerformansi, uyarilar, durumDegistirGecerli
   };

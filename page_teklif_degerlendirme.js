@@ -223,7 +223,7 @@ PageModules.teklif_degerlendirme = (() => {
           }
           if (yeni === 'revize') {
             x.revizyonlar = x.revizyonlar || [];
-            x.revizyonlar.push({ tarih: new Date().toISOString(), kim: App.aktifRol(), oncekiDurum });
+            x.revizyonlar.push({ tarih: new Date().toISOString(), kim: App.aktifKullaniciAdi ? App.aktifKullaniciAdi() : App.aktifRol(), oncekiDurum });
           }
         };
 

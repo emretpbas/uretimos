@@ -28,10 +28,26 @@ const ProjeMotor = (() => {
     beklemede: 'Beklemede', tamamlandi: 'Tamamlandı', iptal: 'İptal'
   };
 
+  // BULGU (T54, belgelenmiş — henüz düzeltilmedi): bu durumlar arasında
+  // hazirlaniyor→onayda→onaylandi→faturalandi→tahsil geçişini yapan hiçbir
+  // fonksiyon/ekran yok — hakedisOlustur kaydı hep 'hazirlaniyor' ile açar
+  // ve orada kalır. Hiçbir muhasebe/fatura/tahsilat koleksiyonuna otomatik
+  // yazılmaz (T33'te avans için düzeltilen kopukluğun proje hakedişindeki
+  // eşdeğeri). Gerçek bir onay→fatura→tahsilat iş akışı ve muhasebe
+  // entegrasyonu ister — bu, mevcut fatura/tahsilat modüllerine dokunan
+  // ayrı ve dikkatli bir değişiklik gerektirir, bu denetim turunun kapsamı
+  // dışında bırakıldı.
   const HAKEDIS_DURUM = {
     hazirlaniyor: 'Hazırlanıyor', onayda: 'Onay Bekliyor',
     onaylandi: 'Onaylandı', faturalandi: 'Faturalandı', tahsil: 'Tahsil Edildi'
   };
+
+  // Gerçek kişi kimliği: aynı role sahip FARKLI çalışanlar App.aktifRol() ile
+  // AYNI kişi sanılırdı (crm_motor.js'te aynı sınıf sorun T52'de düzeltildi).
+  // Bireysel hesapla giriş yapıldıysa gerçek kullanıcı adı, yoksa geriye
+  // dönük uyumla role düşer.
+  const kimlik = () => (typeof App !== 'undefined' && App.aktifKullaniciAdi) ? App.aktifKullaniciAdi()
+    : ((typeof App !== 'undefined' && App.aktifRol) ? App.aktifRol() : '');
 
   // ── İLERLEME HESABI ──────────────────────────────────────────────────────
   // Fiziksel ilerleme = tamamlanan aşamaların ağırlıklı toplamı.
@@ -121,7 +137,7 @@ const ProjeMotor = (() => {
       revizyonFarki: 0, digerGiderler: 0,
       baslangic: baslangic || '', bitis: bitis || '',
       durum: 'planlaniyor',
-      sorumlu: sorumlu || (App.aktifRol ? App.aktifRol() : ''),
+      sorumlu: sorumlu || kimlik(),
       firsatId: firsatId || null,
       aciklama: (aciklama || '').trim(),
       // Varsayılan aşamalar — ağırlıklar sözleşmeye göre düzenlenebilir
@@ -169,16 +185,26 @@ const ProjeMotor = (() => {
     if (!tutar || tutar <= 0) {
       return { ok: false, hata: 'Hakediş tutarı sıfır veya negatif. Önceki hakedişler ilerlemeyi zaten kapsıyor.' };
     }
+    // BULGU (T54): elle girilen tutar için ÜST SINIR kontrolü yoktu — fiziksel
+    // ilerlemenin (h.tutar = izin verilen azami tutar) çok üzerinde bir tutar
+    // kaydedilebiliyordu; ayrıca kaydedilen kumulatifOran her zaman h.tutar'ın
+    // (teorik azami) oranıydı, GERÇEKTEN girilen tutarı yansıtmıyordu — proje
+    // fiilen sözleşmenin çok daha büyük bir kısmını "hakediş kesmiş" görünse
+    // bile kayıttaki oran bunu göstermezdi.
+    if (tutar > h.tutar + 0.01) {
+      return { ok: false, hata: `Hakediş tutarı fiziksel ilerlemeye göre izin verilen azami tutarı (${h.tutar.toFixed(2)}) aşamaz.` };
+    }
+    const gercekKumulatifOran = h.bedel ? ((h.oncekiToplam + tutar) / h.bedel * 100) : 0;
     const kayit = {
       id: App.uid('HKD'),
       no: (p.hakedisler || []).length + 1,
       tarih: new Date().toISOString().slice(0, 10),
       ilerlemeYuzde: il.yuzde,
-      kumulatifOran: Math.round(h.kumulatifOran * 10) / 10,
+      kumulatifOran: Math.round(gercekKumulatifOran * 10) / 10,
       tutar: Math.round(tutar * 100) / 100,
       durum: 'hazirlaniyor',
       aciklama: (aciklama || '').trim(),
-      olusturan: App.aktifRol ? App.aktifRol() : ''
+      olusturan: kimlik()
     };
     p.hakedisler = p.hakedisler || [];
     p.hakedisler.push(kayit);
@@ -199,7 +225,7 @@ const ProjeMotor = (() => {
       fiyatFarki: +fiyatFarki || 0,
       gerekce: gerekce.trim(),
       tarih: new Date().toISOString().slice(0, 10),
-      kim: App.aktifRol ? App.aktifRol() : ''
+      kim: kimlik()
     };
     p.revizyonlar = p.revizyonlar || [];
     p.revizyonlar.push(r);

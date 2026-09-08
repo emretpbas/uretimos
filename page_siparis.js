@@ -321,7 +321,13 @@ PageModules.siparis = (() => {
       }
     }
 
-    document.getElementById('sp-save-draft').onclick = async () => {
+    document.getElementById('sp-save-draft').onclick = async (ev) => {
+      // BULGU (T54): çift tıklamada mükerrer sipariş kaydı riski — buton
+      // işlem süresince devre dışı (başarılı kayıtta zaten render(main) ile
+      // DOM'dan kalkıyor, hatada finally ile tekrar aktif olur).
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      try {
       if (!d.kalemler.length) { App.toast('En az bir ürün eklemelisiniz', 'err'); return; }
       const musteri = musteriler.find(m => m.id === d.musteriId);
       const araToplam = d.kalemler.reduce((a, k) => a + k.netFiyat * k.miktar, 0);
@@ -395,6 +401,17 @@ PageModules.siparis = (() => {
         return;
       }
 
+      // BULGU (T54, belgelenmiş — henüz düzeltilmedi): buradaki 'toplam' KDV
+      // HARİÇ hesaplanır; page_teklif.js'ten dönüşen siparişte aynı alan KDV
+      // DAHİL (dipToplam) yazılır, proje teklifinden dönüşende de KDV HARİÇ
+      // (matrah) yazılır. page_cari_panel.js'in açık risk hesabı üç kaynağı
+      // da aynı 'toplam' alanı üzerinden topladığından, kaynağa göre risk
+      // sistematik olarak KDV oranı kadar (%18-20) yanlış hesaplanabilir.
+      // Düzeltme tüm sipariş oluşturma yollarında 'toplam'ın tanımını
+      // (KDV dahil/hariç) tek bir standarda sabitlemeyi ve/veya cari risk
+      // hesabının hangi alanı kullanacağını netleştirmeyi gerektirir — bu,
+      // gerçek fatura/tahsilat akışına dokunan ayrı ve dikkatli bir
+      // değişiklik ister, bu denetim turunun kapsamı dışında bırakıldı.
       const siparis = {
         id: App.uid('SIP'),
         kod: 'SIP-' + Date.now().toString(36).toUpperCase(),
@@ -412,6 +429,7 @@ PageModules.siparis = (() => {
       draft = null;
       detayId = siparis.id;
       render(main);
+      } finally { btn.disabled = false; }
     };
   }
 

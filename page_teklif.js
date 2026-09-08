@@ -533,7 +533,13 @@ PageModules.teklif = (() => {
       }
     }
 
-    document.getElementById('tk-save-draft').onclick = async () => {
+    document.getElementById('tk-save-draft').onclick = async (ev) => {
+      // BULGU (T54): çift tıklamada mükerrer teklif/revizyon kaydı riski —
+      // buton işlem süresince devre dışı (başarılı kayıtta zaten render(main)
+      // ile DOM'dan kalkıyor, hatada finally ile tekrar aktif olur).
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      try {
       if (!d.kalemler.length) { App.toast('En az bir kalem eklemelisiniz', 'err'); return; }
       const musteri = musteriler.find(m => m.id === d.musteriId);
       // BULGU (T52): d.musteriId boş/eşleşmez kalabiliyordu (CRM'den gelen
@@ -614,6 +620,7 @@ PageModules.teklif = (() => {
       draft = null;
       detayId = teklif.id;
       render(main);
+      } finally { btn.disabled = false; }
     };
   }
 
