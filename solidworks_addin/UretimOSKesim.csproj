@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    NOT: SolidWorks eklentileri .NET Framework gerektirir (SolidWorks'ün
+    kendisi COM tabanlıdır, .NET Framework'ün COM Interop desteğine dayanır).
+    .NET 8 SDK ile de bu "SDK-style" proje formatı derlenebilir, TargetFramework
+    aşağıdaki gibi net48 kalmalı.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>UretimOSKesim</AssemblyName>
+    <RootNamespace>UretimOSKesim</RootNamespace>
+    <!-- COM Interop için kayıt — derleme sonrası regasm otomatik çalışır.
+         Visual Studio'yu YÖNETİCİ olarak açmanız gerekir (HKLM'e yazıyor). -->
+    <RegisterForComInterop>true</RegisterForComInterop>
+    <EnableComHosting>true</EnableComHosting>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!--
+    SolidWorks Interop referansları — YOLLARI KENDİ KURULUMUNUZA GÖRE
+    DÜZELTİN. Genellikle şurada bulunurlar:
+      C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\
+    (SolidWorks SDK kurulu değilse: SolidWorks kurulum diskinde
+    "sdk\redist" veya "api\redist" klasörü.)
+    EmbedInteropTypes=false ÖNEMLİ: SolidWorks interop tipleri COM üzerinden
+    canlı nesnelerle çalışır, gömülü (embedded) tip kullanılırsa çökme olur.
+  -->
+  <ItemGroup>
+    <Reference Include="SolidWorks.Interop.sldworks">
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorks.Interop.sldworks.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swconst">
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorks.Interop.swconst.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swpublished">
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorksTools">
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorksTools.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <!-- SolidWorksTools.dll, [SwAddin] özniteliğini (AddinAttribute) taşır —
+         SwAddin.cs'in başındaki [SwAddin(...)] bu paketten gelir. -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>
