@@ -253,10 +253,14 @@ const IsEmriUretici = (() => {
 
       const aciklamaParcalari = [malzeme];
       if (r.CABINET_NAME) aciklamaParcalari.push('Dolap: ' + r.CABINET_NAME + (r.CABINET_POSITION ? ' (' + r.CABINET_POSITION + ')' : ''));
+      // YENİ: SWOOD dışı kaynaklar (örn. düz SolidWorks add-in — CABINET_NAME
+      // yerine PAKET_KODU/PAKET_ADI taşır) için aynı "hangi alt montaj/pakete
+      // ait" bilgisi paketNo hücresine ve açıklamaya aynı şekilde taşınır.
+      else if (r.PAKET_ADI || r.PAKET_KODU) aciklamaParcalari.push('Paket: ' + (r.PAKET_ADI || r.PAKET_KODU));
       if (r.GRAIN && r.GRAIN.trim()) aciklamaParcalari.push('Tahıl: ' + r.GRAIN.trim());
       if (bantliKenarlar.length) aciklamaParcalari.push('SWOOD kenar bantlı: ' + bantliKenarlar.join(',') + ' — PVC sütununu kontrol edin');
 
-      const rowAy = { ...ay, paketNo: r.CABINET_NAME || ay.paketNo, renk: renk || ay.renk };
+      const rowAy = { ...ay, paketNo: r.CABINET_NAME || r.PAKET_KODU || ay.paketNo, renk: renk || ay.renk };
       const satir = satirKur({
         parcaAdi: r.DESC || ('Parça ' + (i + 1)),
         parcaKodu: r.SAP_CODE || '',

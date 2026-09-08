@@ -97,6 +97,18 @@ console.log('\n-- is_emri_uretici.js: swoodDenUret CSV satırlarını İş Emri 
   t('ilk satırın paketNo\'su DOLAP-1', rCoklu.satirlar[0].paketNo === 'DOLAP-1');
   t('ikinci satırın paketNo\'su DOLAP-2 (bağımsız, karışmadı)', rCoklu.satirlar[1].paketNo === 'DOLAP-2');
 
+  console.log('\n  -- SWOOD dışı kaynak (SolidWorks add-in): PAKET_KODU/PAKET_ADI, CABINET_NAME yoksa kullanılır --');
+  const satirEklenti = [{ DESC: 'YAN PANEL', LENGHT: '600', WIDTH: '400', QTY: '2', MATERIAL: 'MDF 18MM', PAKET_KODU: 'PK-01', PAKET_ADI: 'Alt Dolap Gövdesi' }];
+  const rEklenti = IsEmriUretici.swoodDenUret(satirEklenti, {});
+  const sEklenti = rEklenti.satirlar[0];
+  t('CABINET_NAME yokken PAKET_KODU paketNo\'ya atandı', sEklenti.paketNo === 'PK-01');
+  t('PAKET_ADI açıklamaya eklendi', /Paket: Alt Dolap Gövdesi/.test(sEklenti.aciklamalar));
+
+  console.log('\n  -- CABINET_NAME VARSA öncelik ondadır (SWOOD raporu bozulmaz) --');
+  const satirIkisiBirden = [{ DESC: 'X', LENGHT: '100', WIDTH: '100', QTY: '1', MATERIAL: 'MDF 18MM', CABINET_NAME: 'SWOOD-DOLABI', PAKET_KODU: 'PK-99' }];
+  const rIkisi = IsEmriUretici.swoodDenUret(satirIkisiBirden, {});
+  t('CABINET_NAME varken paketNo hâlâ CABINET_NAME (SWOOD önceliği korunuyor)', rIkisi.satirlar[0].paketNo === 'SWOOD-DOLABI');
+
   console.log('\n  -- Boş CSV listesi (gerçek kullanıcı dosyasındaki durum) --');
   const rBos = IsEmriUretici.swoodDenUret([], {});
   t('boş liste -> 0 satır', rBos.satirlar.length === 0);

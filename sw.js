@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v189'; // v189: KPI/Analitik denetimi - kpi_motor.js ve analitik_motor.js'deki UTC tarih yuvarlama hatalari (bakim alarmi, donem filtresi, satis huniisi) yerel tarihe duzeltildi, Personel Performansi artik islemOnaylari+sevkleri CIFTE SAYMIYOR (yalnizca sevkler adet sayiyor), stok degeri ve stok yaslandirma artik yarimamul/urun stoklarini da degerliyor (yalniz hammadde degil), satis hunisi 'reddedilen' artik gercek durum degerlerini sayiyor, Panel'de iptal edilen is emri acik sayilmiyor, KPI panelindeki Mali & Ticari blok artik yalniz yetkili rollere gosteriliyor ve omur boyu kumulatif oldugu etiketleniyor, Analitik'te yanlis etiketlenmis kart duzeltildi
+const CACHE_NAME = 'uretimos-v190'; // v190: is_emri_uretici.js SWOOD disi (duz SolidWorks add-in) raporlardan gelen PAKET_KODU/PAKET_ADI sutunlarini artik paketNo/aciklamaya tasiyor (CABINET_NAME yoksa); api.php'ye kisitli 'cad_entegrasyon' rolu eklendi (SolidWorks add-in servis kimligi - yalniz hammaddeler/yarimamuller/paketler/urunler/receteler beyaz listesi, hammaddeler salt okunur, delete tamamen kapali)
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

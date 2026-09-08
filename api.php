@@ -558,6 +558,23 @@ const HAT_OP_OKUNABILIR = ['rotalar', 'istasyonIsleri', 'isemirleri', 'siparisle
 const HAT_OP_YAZILABILIR = ['istasyonIsleri', 'gerceklesenSureKayitlari', 'olcumKayitlari',
     'receteTalepleri'];   // operatör malzeme onayı / eksik malzeme / kart açma talebi gönderir
 
+// ── CAD ENTEGRASYON (SolidWorks add-in) ROLÜ ──────────────────────────────
+// hat_operator ile AYNI ilke: bu rol bir İNSAN PERSONEL değil, masaüstünde
+// (kullanıcının kendi bilgisayarında) çalışan bir CAD eklentisinin kullandığı
+// SERVİS kimliğidir — normal personel girişinden DAHA DAR bir beyaz liste ile
+// sınırlanır. 'hesapTalepiKarar' onayında yalnızca mevcut bir 'yonetim'
+// kullanıcısı BİLEREK bu role yükseltebilir (bkz. aşağıdaki rolOverride
+// kontrolü) — TALEP_EDILEBILIR_ROLLER'da BİLEREK yok, self-servis talep
+// edilemez ('yonetim' rolüyle aynı gerekçe).
+//
+// hammaddeler YALNIZCA OKUNABİLİR: eklenti plaka/hırdavat/kenar bandı
+// kartlarını SEÇER, bu MASTER veriyi değiştirmez/oluşturmaz — yanlışlıkla
+// (veya sızmış bir kimlik bilgisiyle) hammadde fiyatı/tanımı bozulamaz.
+// 'delete' ucu bu role TAMAMEN KAPALI (aşağıda ayrıca engellenir) — delete
+// bir koleksiyonun TAMAMINI siler, otomasyon kimliğine bu güç verilmez.
+const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'paketler', 'urunler', 'receteler'];
+const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler'];
+
 // ── ROL BAZLI ERİŞİM DENETİMİ ──────────────────────────────────────────────
 // GÜVENLİK DÜZELTMESİ (v39): Önceden get/set/patch/delete uçları yalnızca
 // GEÇERLİ OTURUM istiyordu; rol kontrolü yoktu. Sonuç: en düşük yetkili
@@ -1621,6 +1638,11 @@ try {
         if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array($key, HAT_OP_OKUNABILIR, true)) {
             respond(['error' => 'Operatör oturumu bu veriye erişemez'], 403);
         }
+        // GÜVENLİK: cad_entegrasyon (CAD add-in) token'ı yalnızca kendi beyaz
+        // listesindeki koleksiyonları okuyabilir.
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array($key, CAD_ENT_OKUNABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
+        }
         // ROL BAZLI ERİŞİM: hassas koleksiyonları yetkisiz rollere kapat
         koleksiyonYetkiKontrol($oturum, $key, 'oku');
         $stmt = $pdo->prepare('SELECT store_value, surum FROM kv_store WHERE store_key = :k');
@@ -1648,6 +1670,10 @@ try {
         // GÜVENLİK: hat_operator token'ı yalnızca onay/süre koleksiyonlarına yazar
         if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array($key, HAT_OP_YAZILABILIR, true)) {
             respond(['error' => 'Operatör oturumu bu veriye yazamaz'], 403);
+        }
+        // GÜVENLİK: cad_entegrasyon token'ı yalnızca kendi beyaz listesine yazar
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array($key, CAD_ENT_YAZILABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye yazamaz'], 403);
         }
         // ROL BAZLI ERİŞİM: hassas koleksiyonlara yetkisiz rol YAZAMAZ
         koleksiyonYetkiKontrol($oturum, $key, 'yaz');
@@ -1703,6 +1729,9 @@ try {
         if ($key === '') respond(['error' => 'key zorunlu'], 400);
         if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array($key, HAT_OP_YAZILABILIR, true)) {
             respond(['error' => 'Operatör oturumu bu veriye yazamaz'], 403);
+        }
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array($key, CAD_ENT_YAZILABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye yazamaz'], 403);
         }
         // ROL BAZLI ERİŞİM: hassas koleksiyonlara yetkisiz rol YAZAMAZ
         koleksiyonYetkiKontrol($oturum, $key, 'yaz');
@@ -1881,6 +1910,9 @@ try {
         if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array($key, HAT_OP_YAZILABILIR, true)) {
             respond(['error' => 'Operatör oturumu bu veriye yazamaz'], 403);
         }
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array($key, CAD_ENT_YAZILABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye yazamaz'], 403);
+        }
         // Atomik INSERT OR IGNORE — eşzamanlı ilk kurulumda sadece biri yazar
         $stmt = $pdo->prepare('INSERT OR IGNORE INTO kv_store (store_key, store_value, updated_at) VALUES (:k,:v,:t)');
         $stmt->execute([':k' => $key, ':v' => $value, ':t' => date('c')]);
@@ -1896,6 +1928,9 @@ try {
         if ($key === '') respond(['error' => 'key zorunlu'], 400);
         if ($key === 'kullaniciler') respond(['error' => 'İzin yok'], 403);
         if (($oturum['rol'] ?? '') === 'hat_operator') respond(['error' => 'Operatör oturumu silme yapamaz'], 403);
+        // cad_entegrasyon da silme yapamaz — delete bir koleksiyonun TAMAMINI
+        // kaldırır, bu güç bir otomasyon kimliğine verilmez (bkz. CAD_ENT_* yorumu).
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon') respond(['error' => 'CAD entegrasyon oturumu silme yapamaz'], 403);
         // ROL BAZLI ERİŞİM: hassas koleksiyonu yalnızca yazma yetkisi olan silebilir
         koleksiyonYetkiKontrol($oturum, $key, 'yaz');
         $oncekiStmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
@@ -2031,10 +2066,11 @@ try {
         $karar = (string)($body['karar'] ?? '');
         if (!in_array($karar, ['onayla', 'reddet'], true)) respond(['error' => 'Geçersiz karar'], 400);
         // Onaylayan yönetim, başvurunun rolünü İSTERSE yükseltebilir (örn.
-        // 'yonetim' — bu rol kamuya açık TALEP_EDILEBILIR_ROLLER'da BİLEREK
-        // yok; tek yol, MEVCUT bir yönetimin burada elle seçmesidir).
+        // 'yonetim' veya 'cad_entegrasyon' — ikisi de kamuya açık
+        // TALEP_EDILEBILIR_ROLLER'da BİLEREK yok; tek yol, MEVCUT bir
+        // yönetimin burada elle seçmesidir — bkz. CAD_ENT_* yorumu).
         $rolOverride = isset($body['rol']) ? (string)$body['rol'] : null;
-        if ($rolOverride !== null && !in_array($rolOverride, array_merge(TALEP_EDILEBILIR_ROLLER, ['yonetim']), true)) {
+        if ($rolOverride !== null && !in_array($rolOverride, array_merge(TALEP_EDILEBILIR_ROLLER, ['yonetim', 'cad_entegrasyon']), true)) {
             respond(['error' => 'Geçersiz rol'], 400);
         }
 

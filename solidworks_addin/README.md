@@ -63,27 +63,36 @@ almak, kesim listesi oluşturmak").
   sona bırakıldı. Faz 1-2 gerçek bir montajda denenip ölçü/malzeme akışı
   doğrulanmadan bu faza geçilmemeli.
 
-## ÜretimOS tarafında GEREKEN (küçük, opsiyonel) değişiklikler
+## ÜretimOS tarafında yapılan (küçük) değişiklikler — TAMAMLANDI
 
-Bunları **henüz yapmadım** — onayınızı bekliyorum, çünkü ikisi de kod
-tabanına dokunuyor:
+1. **`api.php`'ye kısıtlı `cad_entegrasyon` rolü eklendi.** `hat_operator`
+   ile AYNI ilke: yalnızca `hammaddeler` (SALT OKUNUR — bu kimlik plaka/
+   hırdavat/kenar bandı MASTER verisini değiştiremez), `yarimamuller`,
+   `paketler`, `urunler`, `receteler` (okunabilir+yazılabilir) beyaz
+   listesi; `delete` ucu TAMAMEN kapalı (bir koleksiyonun tamamını siler,
+   bu güç bir otomasyon kimliğine verilmez). Bu role yalnızca mevcut bir
+   `yonetim` kullanıcısı, bir hesap talebini onaylarken BİLİNÇLİ şekilde
+   verebilir (self-servis talep edilemez — `yonetim` rolüyle aynı koruma).
+   Test: `testler/11_cad_entegrasyon_test.php` (13 kontrol).
 
-1. **`api.php`'ye kısıtlı bir rol** (`cad_entegrasyon` gibi) — Faz 2'de
-   add-in'in ÜretimOS'a bağlanabilmesi için. Mevcut `hat_operator` rolüyle
-   AYNI ilke: yalnızca `hammaddeler`, `yarimamuller`, `paketler`, `urunler`,
-   `receteler` okunabilir/yazılabilir; cari/fiyat/İK/muhasebe TAMAMEN kapalı.
-   Faz 1 için GEREKMEZ (Faz 1 hiç ÜretimOS'a bağlanmaz, yalnızca ZIP üretir).
+2. **`is_emri_uretici.js:swoodDenUret` artık PAKET_KODU/PAKET_ADI
+   sütunlarını okuyor** — DÜZELTME: ilk taslakta buradaki iddia yanlıştı.
+   Bu içe aktarım İş Emri Formu'nun DÜZ kesim listesi tablosunu doldurur
+   (nesting/üretim için); ürün/yarımamül/paket/reçete gibi hiyerarşik
+   ÜretimOS kayıtları OLUŞTURMAZ — o, tamamen ayrı bir ekranın
+   (STEP İçe Aktar) işi. Yani PAKET_KODU/PAKET_ADI "gerçek alt kırılımlı
+   ürün ağacı" KURMUYOR; SWOOD'un kendi `CABINET_NAME` alanıyla AYNI
+   şekilde, kesim listesi tablosundaki mevcut `paketNo` hücresine ve
+   açıklama sütununa taşınıyor (CABINET_NAME varsa o önceliklidir — SWOOD
+   raporları etkilenmez). Gerçek fayda: add-in'den gelen bir ZIP'te de,
+   SWOOD'daki gibi, her kesim satırının hangi dolap/alt montaja ait
+   olduğu üretim ekranında görünür. `USTPAKET_KODU` şu an için bu ekranda
+   kullanılan bir alan DEĞİL (düz liste hiyerarşi göstermiyor) — add-in
+   yine de dışa aktarır (ileride bir tüketicisi olursa hazır), ama bugün
+   hiçbir şey onu okumuyor. Test: `testler/swood_ice_aktarim_testi.js`'e
+   eklenen 3 yeni kontrol.
 
-2. **`swood_okuyucu.js`/`is_emri_uretici.js`'de PAKET_KODU/PAKET_ADI/
-   USTPAKET_KODU sütunlarının okunması** — şu an bu 3 sütun ZIP'e yazılıyor
-   ama mevcut ayrıştırıcı onları YOK SAYIYOR (yalnızca düz parça listesi
-   kuruyor). Gerçek "alt kırılımlı" ürün ağacını (ürün→paket→parça) otomatik
-   kurmak için `is_emri_uretici.js:swoodDenUret`'in bu sütunlara göre
-   gruplama yapması gerekiyor. Geriye uyumlu, düşük riskli bir ek — isterseniz
-   şimdi yazayım.
-
-Söyleyin, ikisini de şimdi ekleyeyim mi, yoksa önce Faz 1'i gerçek bir
-montajda deneyip geri bildirimden sonra mı ilerleyelim?
+Tam regresyon: 329/329 PHP, tüm JS paketleri yeşil.
 
 ## Kurulum (özet)
 
