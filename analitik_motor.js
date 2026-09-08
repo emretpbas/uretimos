@@ -17,9 +17,17 @@
 //   9) İzlenebilirlik— lot → müşteri zinciri
 // ════════════════════════════════════════════════════════════════════════════
 const AnalitikMotor = (() => {
-  const bugun = () => new Date().toISOString().slice(0, 10);
+  // BULGU (T56, T45'te yalnızca test yazılmış, bug DÜZELTİLMEMİŞTİ): bugun()/
+  // gunEkle() new Date().toISOString() ile UTC'ye çevirip geri okuyordu —
+  // Türkiye (UTC+3) gibi ileri dilimlerde gece 00:00-03:00 arası "bugün" bir
+  // gün geriye kayardı. Bu, alacakYaslandirma/borcYaslandirma'daki vade
+  // gecikme günü hesabını ve stokYaslandirma'daki "son hareketten bu yana
+  // geçen gün" hesabını o pencerede 1 gün eksik gösteriyordu (tam vade/180
+  // gün sınırına denk gelen kayıtlar yanlış kovaya düşebiliyordu).
+  const tarihStr = (dt) => { const p = (n) => String(n).padStart(2, '0'); return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`; };
+  const bugun = () => tarihStr(new Date());
   const gunFark = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);
-  const gunEkle = (t, g) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() + g); return d.toISOString().slice(0, 10); };
+  const gunEkle = (t, g) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() + g); return tarihStr(d); };
 
   async function veriYukle() {
     const [siparisler, teklifler, faturalar, tahsilatlar, musteriler, tedarikciler,
@@ -276,11 +284,25 @@ const AnalitikMotor = (() => {
     const gunlukAlis = (v.satinalmaSiparisleri || [])
       .reduce((a, s) => a + (s.genelToplam || s.toplamTutar || 0), 0) / gunSayisi;
 
-    // Stok değeri (hammadde + yarı mamül)
+    // BULGU (T56): yorum "hammadde + yarı mamül" diyordu ama kod yalnızca
+    // 'hammadde' tipini sayıyordu — yarımamul/ürün tipi stok satırları HER
+    // ZAMAN 0 değerinde kabul ediliyordu (page_yonetim_raporlama.js'in aynı
+    // hesaplamayı doğru yaptığı referans alındı: ym/urun için referansFiyat).
+    // Bu, stok devir hızı/CCC gibi mali KPI'ları önemli miktarda yarımamul
+    // stoğu olan üreticilerde yapay olarak iyi (düşük stok, hızlı devir)
+    // gösteriyordu.
     const stokDegeri = (v.stokRaf || []).reduce((a, s) => {
       if (s.tip === 'hammadde') {
         const hm = v.hammaddeler.find(h => h.id === s.refId);
         return a + (s.miktar || 0) * ((hm && hm.birimFiyat) || 0);
+      }
+      if (s.tip === 'yarimamul') {
+        const ym = (v.yarimamuller || []).find(y => y.id === s.refId);
+        return a + (s.miktar || 0) * ((ym && ym.referansFiyat) || 0);
+      }
+      if (s.tip === 'urun') {
+        const u = (v.urunler || []).find(x => x.id === s.refId);
+        return a + (s.miktar || 0) * ((u && u.referansFiyat) || 0);
       }
       return a;
     }, 0);
@@ -384,10 +406,21 @@ const AnalitikMotor = (() => {
     const satirlar = (v.stokRaf || []).filter(s => (s.miktar || 0) > 0).map(s => {
       const son = sonHareket.get(s.refAd) || sonHareket.get(s.refKod) || null;
       const gun = son ? gunFark(bugun(), son) : null;
+      // BULGU (T56): yarımamul/ürün tipi kalemler hep deger:0 kabul
+      // ediliyordu — bkz. maliKpi()'deki aynı sınıf düzeltme. Bu, "Ölü Stok
+      // Değeri" kartının, aslında adet olarak listelenen ama değeri hiç
+      // yansımayan yarımamul/ürün stoklarını ciddi şekilde eksik göstermesine
+      // yol açıyordu.
       let deger = 0;
       if (s.tip === 'hammadde') {
         const hm = v.hammaddeler.find(h => h.id === s.refId);
         deger = (s.miktar || 0) * ((hm && hm.birimFiyat) || 0);
+      } else if (s.tip === 'yarimamul') {
+        const ym = (v.yarimamuller || []).find(y => y.id === s.refId);
+        deger = (s.miktar || 0) * ((ym && ym.referansFiyat) || 0);
+      } else if (s.tip === 'urun') {
+        const u = (v.urunler || []).find(x => x.id === s.refId);
+        deger = (s.miktar || 0) * ((u && u.referansFiyat) || 0);
       }
       return { kod: s.refKod, ad: s.refAd, tip: s.tip, ambar: s.ambar,
         miktar: s.miktar, birim: s.birim, deger, sonHareket: son, bekleyenGun: gun,
@@ -456,7 +489,12 @@ const AnalitikMotor = (() => {
     const teklifler = v.teklifler || [];
     const toplam = teklifler.length;
     const siparise = teklifler.filter(t => t.durum === 'siparise_donustu' || t.siparisId).length;
-    const reddedilen = teklifler.filter(t => t.durum === 'reddedildi' || t.durum === 'siparis_reddedildi').length;
+    // BULGU (T56): teklif durumu asla 'reddedildi' olmuyor (TeklifTakipMotor
+    // gerçek değerler: kazanildi/kaybedildi/iptal/siparise_donustu/
+    // siparis_reddedildi/silme_talebinde — bkz. teklif_takip_motor.js). Bu
+    // filtre 'kaybedildi'/'iptal' teklifleri hiç yakalamadığından onlar
+    // "bekleyen" (hâlâ açık fırsat) kovasına düşüyordu.
+    const reddedilen = teklifler.filter(t => ['kaybedildi', 'iptal', 'siparis_reddedildi'].includes(t.durum)).length;
     const bekleyen = toplam - siparise - reddedilen;
     const toplamTutar = teklifler.reduce((a, t) => a + (t.dipToplam || t.araToplam || 0), 0);
     const kazanilanTutar = teklifler.filter(t => t.durum === 'siparise_donustu' || t.siparisId)

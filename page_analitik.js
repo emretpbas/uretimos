@@ -184,7 +184,7 @@ PageModules.analitik = (() => {
       <div class="kpi"><div class="kpi-lbl">90+ Gün Riskli Alacak</div><div class="kpi-val ${a.riskli > 0 ? 'red' : 'green'}">${App.fmtTL(a.riskli)}</div>
         <div class="muted" style="font-size:10.5px">Tahsilat riski yüksek</div></div>
       <div class="kpi"><div class="kpi-lbl">Toplam Borç</div><div class="kpi-val amber">${App.fmtTL(b.toplam)}</div>
-        <div class="muted" style="font-size:10.5px">${b.satirlar.length} açık sipariş</div></div>
+        <div class="muted" style="font-size:10.5px">${b.satirlar.length} açık satınalma siparişi</div></div>
     </div>`;
 
     html += `<div class="card"><div class="card-hdr"><div class="card-title">📥 Alacak Yaşlandırma</div></div>

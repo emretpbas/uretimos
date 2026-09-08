@@ -9,7 +9,10 @@ PageModules.dashboard = (() => {
       Store.isemirleri.all(), Store.rotalar.all(), Store.fiyatListeleri.all()
     ]);
 
-    const acikIsEmri = isemirleri.filter(i => i.durum !== 'tamamlandi').length;
+    // BULGU (T56): iptal edilmiş bir iş emri (page_iptal_islemleri.js) hariç
+    // tutulmuyordu — sistemin kendi iptal ekranı zaten 'iptal'i "açık"
+    // saymıyor, burada da tutarlı olması gerekir.
+    const acikIsEmri = isemirleri.filter(i => i.durum !== 'tamamlandi' && i.durum !== 'iptal').length;
     const plakaSayisi = hammaddeler.filter(h => h.tip === 'plaka').length;
     const hirdavatSayisi = hammaddeler.filter(h => h.tip === 'hirdavat').length;
 

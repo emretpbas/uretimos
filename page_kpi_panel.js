@@ -101,11 +101,23 @@ PageModules.kpi_panel = (() => {
     </div>`;
 
     // ── MALİ & TESLİMAT KPI'LARI (analitik motordan) ──────────────────────
-    try {
+    // BULGU (T56): bu blok üstteki "Bugün/Bu Hafta/Tüm Zamanlar" dönem
+    // seçicisinden hiç etkilenmiyordu (AnalitikMotor.tumAnaliz hiçbir tarih
+    // parametresi almıyor) — kullanıcı "Bugün"ü seçtiğinde üretim KPI'ları
+    // güncellenirken bu blok sessizce ömür boyu kümülatif kalıyor, aynı
+    // ekranda hangi rakamın hangi döneme ait olduğu belirsizleşiyordu.
+    // Ayrıca sistemin kendi route tanımı (app.js) mali/ticari verileri
+    // yalnızca admin/yonetim/arge/cari/muhasebe'ye açıyordu (analitik
+    // sayfası) — ama bu ekrana erişimi olan satinalma/bakim/kalite/
+    // uretim_planlama rolleri de bu bloğu hiçbir ek kontrol olmadan
+    // görebiliyordu.
+    const maliGorunurRoller = ['admin', 'yonetim', 'arge', 'cari', 'muhasebe'];
+    if (maliGorunurRoller.includes(App.aktifRol())) try {
       const AN = await AnalitikMotor.tumAnaliz();
       const m = AN.mali, t = AN.teslimat, mz = AN.malzeme, hn = AN.huni;
       const y = (x, b) => x === null || x === undefined ? '—' : '%' + App.fmt(x * 100, b === undefined ? 1 : b);
-      html += `<div class="flbl" style="margin:18px 0 8px;font-size:13px">💰 MALİ & TİCARİ GÖSTERGELER</div>
+      html += `<div class="flbl" style="margin:18px 0 8px;font-size:13px">💰 MALİ & TİCARİ GÖSTERGELER
+        <span class="muted" style="font-weight:400;font-size:11px">(ömür boyu kümülatif — üstteki dönem seçiciden etkilenmez)</span></div>
         <div class="grid grid-3" style="margin-bottom:14px">
           ${kart('Brüt Kâr Marjı', y(m.brutMarj), App.fmtTL(m.brutKar) + ' brüt kâr',
             m.brutMarj >= 0.25 ? 'green' : m.brutMarj >= 0.15 ? 'amber' : 'red')}

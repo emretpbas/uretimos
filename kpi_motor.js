@@ -16,6 +16,14 @@
 const KpiMotor = (() => {
   const VARDIYA_DK = 480; // vardiya tanımlanmamışsa varsayılan: 8 saat
 
+  // BULGU (T56): bu dosyada "bugün"ü new Date().toISOString().slice(0,10)
+  // ile üreten 3 ayrı yer vardı — Türkiye (UTC+3) gibi ileri dilimlerde gece
+  // 00:00-03:00 arası bu HER ZAMAN bir önceki günü döndürür ("Bugün" dönem
+  // filtresi dünü gösterir, vadesi tam bugün dolan bir sipariş "geciken"
+  // sayılmaz, bakım alarmı bir gün geç tetiklenir). tarihStr yerel yıl/ay/
+  // gün bileşenlerinden üretir, hiçbir zaman UTC'ye çevrilmez.
+  const tarihStr = (dt) => { const p = (n) => String(n).padStart(2, '0'); return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`; };
+
   async function veriYukle() {
     const [istasyonIsleri, sureler, rotalar, duruslar, siparisler, makinalar, arizalar,
            talepler, satinalmaTalepleri, iadeler, uygunsuzluklar, yarimamuller, hammaddeler,
@@ -55,13 +63,13 @@ const KpiMotor = (() => {
   // bu yüzden "şu an hangi vardiyadayız" güvenilir hesaplanamaz.
   function donemAraligiHesapla(tip, referansTarihStr) {
     const ref = referansTarihStr ? new Date(referansTarihStr + 'T00:00:00') : new Date();
-    const bugunStr = ref.toISOString().slice(0, 10);
+    const bugunStr = tarihStr(ref);
     if (tip === 'gun') return { baslangic: bugunStr, bitis: bugunStr };
     if (tip === 'hafta') {
       const gunIndex = (ref.getDay() + 6) % 7; // Pazartesi=0 ... Pazar=6
       const pzt = new Date(ref);
       pzt.setDate(ref.getDate() - gunIndex);
-      return { baslangic: pzt.toISOString().slice(0, 10), bitis: bugunStr };
+      return { baslangic: tarihStr(pzt), bitis: bugunStr };
     }
     return null; // 'tumZamanlar' veya tanımsız tip -> filtresiz (ömür boyu)
   }
@@ -74,6 +82,17 @@ const KpiMotor = (() => {
     return tarihStr >= donemFiltre.baslangic && tarihStr <= donemFiltre.bitis;
   }
 
+  // BULGU (T56, belgelenmiş — henüz düzeltilmedi): çok günlü olaylar
+  // (dün başlayıp bugün biten iş kartı/arıza) yalnızca BAŞLANGIÇ
+  // tarihine (olusturmaTarihi/zaman) göre süzülüyor — dönem filtresi
+  // seçilen aralığı KESİŞEN değil, aralıkta BAŞLAYAN kayıtları alıyor.
+  // Örn. dün açılıp bugün tamamlanan bir kart "Bugün" filtresinde hiç
+  // görünmez ama süresi (sureler, tamamlanma tarihine göre ayrı filtrelenir)
+  // yine de bugüne dahil olabilir — Performans bileşeni farklı zaman
+  // dilimlerinden beslenip tutarsızlaşabilir. Düzeltme, "olayın aralığı
+  // seçilen dönemle kesişiyor mu" mantığına geçmeyi gerektirir; bu daha
+  // geniş bir veri modeli incelemesi istediğinden bu turun kapsamı dışında
+  // bırakıldı.
   function hesapla(v, donemFiltre) {
     if (donemFiltre) {
       v = Object.assign({}, v, {
@@ -84,7 +103,7 @@ const KpiMotor = (() => {
         iadeler: (v.iadeler || []).filter(i => tarihAralikta(i.olusturmaTarihi || i.satisTarihi, donemFiltre))
       });
     }
-    const bugun = new Date().toISOString().slice(0, 10);
+    const bugun = tarihStr(new Date());
     const kartlar = v.istasyonIsleri || [];
     const bitenler = kartlar.filter(k => k.durum === 'tamamlandi');
     const aktifler = kartlar.filter(k => k.durum === 'aktif');
@@ -92,6 +111,17 @@ const KpiMotor = (() => {
     // ── Ortak sayılar
     const toplamGelen = kartlar.reduce((a, k) => a + (k.gelenAdet || 0), 0);
     const toplamFire = kartlar.reduce((a, k) => a + (k.fireAdet || 0), 0);
+    // BULGU (T56, belgelenmiş — henüz düzeltilmedi): 'dk' (gerçekleşen süre)
+    // barkodZamani→bitisZamani arasındaki HAM takvim farkıdır — mesai dışı/
+    // gece/hafta sonu bekleme süresi dahildir. Bir kart Cuma akşamı barkod
+    // okutulup Pazartesi sabahı tamamlanırsa gerçek çalışma süresi birkaç
+    // saat olsa bile ~63 saat olarak sayılır; bu hem Personel Performansı
+    // (kişi olduğundan çok daha "yavaş" görünür) hem OEE Kullanılabilirlik/
+    // Performans bileşenlerini çarpıtır. Düzeltme, vardiya/mesai takvimine
+    // göre yalnızca ÇALIŞMA saatlerini sayan bir süre hesabı gerektirir —
+    // vardiyalar koleksiyonunda şu an saat bazlı başlangıç/bitiş bilgisi
+    // olmadığından (yalnızca günlük net dakika) bu, ayrı bir veri modeli
+    // değişikliği ister; bu turun kapsamı dışında bırakıldı.
     const gerceklesenDk = (v.sureler || []).reduce((a, s) => a + (s.dk || 0), 0);
     const standartToplamDk = bitenler.reduce((a, k) => a + standartDk(k, v.rotalar), 0);
     // BULGU (T3-30): OEE duruş süresi yalnızca elle girilen "Duruş/Aksaklık
@@ -168,29 +198,37 @@ const KpiMotor = (() => {
       if (!m.bakimAralikGun) return false;
       const son = m.sonBakimTarihi || m.alisTarihi;
       if (!son) return true;
-      return new Date(new Date(son).getTime() + m.bakimAralikGun * 86400000).toISOString().slice(0, 10) <= bugun;
+      return tarihStr(new Date(new Date(son).getTime() + m.bakimAralikGun * 86400000)) <= bugun;
     });
     const kullanilamayan = new Set([...arizaliIdler, ...bakimAlarmli.map(m => m.id)]);
     const calisabilir = aktifMakinalar.filter(m => !kullanilamayan.has(m.id));
     const makineDoluluk = aktifMakinalar.length > 0 ? calisabilir.length / aktifMakinalar.length : 0;
 
     // ── 8) Personel Performansı: kişi başı işlenen adet ve dk/adet
+    // BULGU (T56): adet eskiden islemOnaylari + sevkler BİRLİKTE toplanıyordu
+    // — ama bir sevk kaydı zaten AYNI partinin "işlem tamamlandı" onayından
+    // sonra oluşur (sevk üst sınırı islemTamamAdet-sevkEdilenAdet'tir, bkz.
+    // page_hat_takip.js), yani ikisi AYNI fiziksel adedi temsil eder. İkisini
+    // toplamak her partiyi 2 kat sayıp kişinin dk/adet performansını
+    // olduğundan çok daha iyi (yanlış) gösteriyordu. Artık yalnızca sevkler
+    // (bir partinin bu istasyondan GERÇEKTEN çıktığı, zorunlu son adım)
+    // adet olarak sayılıyor; dk/kart paylaşımı ise kartı fiilen elleyen
+    // herkese (islem onayı verenler dahil) adil şekilde bölünmeye devam eder.
     const personelHarita = new Map();
     kartlar.forEach(k => {
       const dk = k.barkodZamani && k.bitisZamani
         ? Math.max(0, (new Date(k.bitisZamani) - new Date(k.barkodZamani)) / 60000) : 0;
       const onaylar = [...(k.islemOnaylari || []), ...(k.sevkler || [])];
-      onaylar.forEach(o => {
-        if (!o.kisi) return;
-        if (!personelHarita.has(o.kisi)) personelHarita.set(o.kisi, { kisi: o.kisi, adet: 0, kart: 0, dk: 0 });
-        const p = personelHarita.get(o.kisi);
-        p.adet += o.adet || 0;
-      });
-      // Süreyi kartın işleyenlerine dağıt
       const kisiler = [...new Set(onaylar.map(o => o.kisi).filter(Boolean))];
       kisiler.forEach(ki => {
+        if (!personelHarita.has(ki)) personelHarita.set(ki, { kisi: ki, adet: 0, kart: 0, dk: 0 });
         const p = personelHarita.get(ki);
-        if (p) { p.kart++; p.dk += dk / kisiler.length; }
+        p.kart++; p.dk += dk / kisiler.length;
+      });
+      (k.sevkler || []).forEach(o => {
+        if (!o.kisi) return;
+        if (!personelHarita.has(o.kisi)) personelHarita.set(o.kisi, { kisi: o.kisi, adet: 0, kart: 0, dk: 0 });
+        personelHarita.get(o.kisi).adet += o.adet || 0;
       });
     });
     const personelListesi = [...personelHarita.values()].map(p => ({

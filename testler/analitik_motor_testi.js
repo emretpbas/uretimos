@@ -253,15 +253,22 @@ console.log('\n-- stokYaslandirma: 180+ gün hareketsiz kalem ÖLÜ STOK sayıl�
 
 console.log('\n-- satisHunisi: dönüşüm oranı ve tutar dönüşümü doğru --');
 {
+  // BULGU (T56): önceki fixture 'reddedildi' kullanıyordu — ama teklif
+  // durumu GERÇEKTE hiçbir zaman bu değeri almaz (bkz. teklif_takip_motor.js
+  // DURUMLAR: taslak/gonderildi/beklemede/revize/kazanildi/kaybedildi/iptal/
+  // siparise_donustu/siparis_reddedildi/silme_talebinde). Test, koddaki asıl
+  // hatayı (reddedilen filtresi 'kaybedildi'/'iptal'i hiç yakalamıyordu) o
+  // yanlış durum stringiyle birebir örtüştüğü için "yeşil" geçiyordu — gerçek
+  // veriyi temsil etmiyordu. Artık gerçek bir durum ('kaybedildi') kullanılır.
   const v = { teklifler: [
     { tarih: '2026-01-05', durum: 'siparise_donustu', dipToplam: 1000 },
-    { tarih: '2026-01-10', durum: 'reddedildi', dipToplam: 500 },
+    { tarih: '2026-01-10', durum: 'kaybedildi', dipToplam: 500 },
     { tarih: '2026-01-15', durum: 'beklemede', dipToplam: 300 }
   ] };
   const sonuc = AnalitikMotor.satisHunisi(v);
   t('toplam = 3', sonuc.toplam === 3);
   t('siparise = 1', sonuc.siparise === 1);
-  t('reddedilen = 1', sonuc.reddedilen === 1);
+  t('reddedilen (kaybedildi dahil) = 1', sonuc.reddedilen === 1);
   t('bekleyen = 1', sonuc.bekleyen === 1);
   t('donusumOrani = 1/3', yakin(sonuc.donusumOrani, 1 / 3));
   t('tutarDonusumOrani = 1000/1800', yakin(sonuc.tutarDonusumOrani, 1000 / 1800));

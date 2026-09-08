@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v188'; // v188: Servis/Garanti denetimi - garanti bitisi artik yerel tarihten (UTC yuvarlama duzeltildi) ve SECILI URUNU GERCEKTEN iceren irsaliyeden hesaplaniyor (kismi sevkiyatta yanlis kalemin tarihi kullanilmiyor), dogrudan servis talebinde musteri artik zorunlu ve gercek cari karta baglaniyor, reddedilmis sikayet servis kaydi duzenlenince sessizce yeniden acilmiyor, yanlis "sikayet cozuldu" toast'u duzeltildi, servis talepleri icin Iptal durumu + cift tiklama korumasi eklendi, NCR/DOF olusturan artik rol degil gercek kullanici kimligi
+const CACHE_NAME = 'uretimos-v189'; // v189: KPI/Analitik denetimi - kpi_motor.js ve analitik_motor.js'deki UTC tarih yuvarlama hatalari (bakim alarmi, donem filtresi, satis huniisi) yerel tarihe duzeltildi, Personel Performansi artik islemOnaylari+sevkleri CIFTE SAYMIYOR (yalnizca sevkler adet sayiyor), stok degeri ve stok yaslandirma artik yarimamul/urun stoklarini da degerliyor (yalniz hammadde degil), satis hunisi 'reddedilen' artik gercek durum degerlerini sayiyor, Panel'de iptal edilen is emri acik sayilmiyor, KPI panelindeki Mali & Ticari blok artik yalniz yetkili rollere gosteriliyor ve omur boyu kumulatif oldugu etiketleniyor, Analitik'te yanlis etiketlenmis kart duzeltildi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
