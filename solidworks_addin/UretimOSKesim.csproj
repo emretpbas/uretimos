@@ -28,6 +28,13 @@
          altına yazmasını garantiliyoruz. -->
     <PlatformTarget>x64</PlatformTarget>
     <Platforms>x64</Platforms>
+    <!-- KRİTİK: SDK-style .NET Framework projeleri bu değeri belirtilmezse
+         VARSAYILAN OLARAK false kabul eder — yani tüm derleme (SwAddin.cs
+         içindeki [ComVisible(true)] öznitelikleri dahil) COM'a KAPALI
+         sayılır ve regasm "Kaydedilen tür yok" der. Bunu true yapmak,
+         projeyi COM'a AÇAR; tip bazlı [ComVisible(true)]/[ComVisible(false)]
+         öznitelikleri yine ince ayar için geçerli kalır. -->
+    <ComVisible>true</ComVisible>
   </PropertyGroup>
 
   <ItemGroup>
