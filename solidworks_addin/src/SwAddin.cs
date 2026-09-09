@@ -262,7 +262,73 @@ namespace UretimOSKesim
 
             Tanilama.Kaydet("Activate cagriliyor");
             grup.Activate();
-            Tanilama.Kaydet("Activate tamamlandi - KomutlariKur bitti");
+            Tanilama.Kaydet("Activate tamamlandi");
+
+            // KULLANICI İSTEĞİ: "tabs ta yapalım" — SolidWorks'ün kendi
+            // Features/Sketch/Evaluate şeridine benzer, özel bir "ÜretimOS"
+            // SEKMESİ. CommandManager sekmeleri belge türüne göre kapsamlı
+            // olduğu için Parça/Montaj/Çizim'in HER BİRİ için ayrı kuruluyor
+            // (4 komutumuz da üçünde de görünür — hangi komutun hangi belge
+            // türünde anlamlı olduğunu her komutun kendi metodu zaten
+            // kontrol ediyor, bkz. PaketOlusturCalistir/
+            // TeknikResimOnaylaCalistir'deki "yanlış belge türü" uyarıları).
+            Tanilama.Kaydet("Sekme kuruluyor - Parca");
+            SekmeKur(grup, (int)swDocumentTypes_e.swDocPART);
+            Tanilama.Kaydet("Sekme kuruldu - Parca");
+
+            Tanilama.Kaydet("Sekme kuruluyor - Montaj");
+            SekmeKur(grup, (int)swDocumentTypes_e.swDocASSEMBLY);
+            Tanilama.Kaydet("Sekme kuruldu - Montaj");
+
+            Tanilama.Kaydet("Sekme kuruluyor - Cizim");
+            SekmeKur(grup, (int)swDocumentTypes_e.swDocDRAWING);
+            Tanilama.Kaydet("Sekme kuruldu - Cizim");
+
+            Tanilama.Kaydet("KomutlariKur bitti");
+        }
+
+        // Resmi SolidWorks API "Create CommandManager Tab and Tab Boxes"
+        // örneğindeki AYNI örüntü: cmdGroup.get_CommandID(index) ile HAM
+        // UserID (101/102/...) değil, CommandTabBox'ın beklediği BİRLEŞİK
+        // komut kimliği alınıyor (index, AddCommandItem2'ye eklenme SIRASINA
+        // göre — 0=Kesim, 1=Etiketle, 2=Teknik Resim Oluştur, 3=Onayla).
+        // Önceki denemeden kalan bozuk/eski bir sekme varsa (ör. komut
+        // sayısı değiştiyse) ÖNCE KALDIRILIP TEMİZ oluşturuluyor —
+        // CommandGroup'ta yaşadığımız kayıt defteri önbellek sorununun
+        // aynısını burada da önlemek için (bkz. yukarıdaki KESİN TANI #5).
+        private void SekmeKur(ICommandGroup grup, int belgeTuru)
+        {
+            Tanilama.Kaydet($"GetCommandTab cagriliyor (belgeTuru={belgeTuru})");
+            ICommandTab mevcutSekme = _cmdMgr.GetCommandTab(belgeTuru, "ÜretimOS");
+            Tanilama.Kaydet("GetCommandTab tamamlandi, mevcutSekme null mu=" + (mevcutSekme == null));
+            if (mevcutSekme != null)
+            {
+                Tanilama.Kaydet("RemoveCommandTab cagriliyor (eski sekme temizleniyor)");
+                _cmdMgr.RemoveCommandTab(mevcutSekme);
+                Tanilama.Kaydet("RemoveCommandTab tamamlandi");
+            }
+
+            Tanilama.Kaydet("AddCommandTab cagriliyor");
+            ICommandTab sekme = _cmdMgr.AddCommandTab(belgeTuru, "ÜretimOS");
+            Tanilama.Kaydet("AddCommandTab tamamlandi, sekme null mu=" + (sekme == null));
+            if (sekme == null) return;
+
+            Tanilama.Kaydet("AddCommandTabBox cagriliyor");
+            ICommandTabBox kutu = sekme.AddCommandTabBox();
+            Tanilama.Kaydet("AddCommandTabBox tamamlandi, kutu null mu=" + (kutu == null));
+            if (kutu == null) return;
+
+            int[] cmdIdleri = new int[4];
+            int[] metinTipi = new int[4];
+            for (int i = 0; i < 4; i++)
+            {
+                cmdIdleri[i] = grup.get_CommandID(i);
+                metinTipi[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
+            }
+
+            Tanilama.Kaydet("AddCommands cagriliyor");
+            bool eklendi = kutu.AddCommands(cmdIdleri, metinTipi);
+            Tanilama.Kaydet("AddCommands tamamlandi, eklendi=" + eklendi);
         }
 
         // Resmi SolidWorks Add-in şablonundaki CompareIDs karşılığı — kayıt
@@ -282,10 +348,15 @@ namespace UretimOSKesim
 
         // ── İKON ŞERİDİ ÜRETİMİ (SolidWorks'ün ICommandGroup.IconList'i
         // boş bırakılamıyor — bkz. yukarıdaki KESİN TANI #2 notu) ───────────
-        // 2 komutumuz olduğu için her boyutta yan yana 2 kareli tek bir şerit
-        // görüntü üretiliyor; ImageListIndex bu şeritteki kareyi (0 veya 1)
-        // seçiyor. Dosyalar bir kere üretilip diskte kalıcı tutuluyor
-        // (Kullanıcı\AppData\Local\UretimOSKesim\ikonlar).
+        // 4 komutumuz olduğu için her boyutta yan yana 4 kareli tek bir
+        // şerit görüntü üretiliyor; ImageListIndex bu şeritteki kareyi
+        // (0-3) seçiyor. Her komut için AYRI, ANLAMLI bir simge çiziliyor
+        // (düz renkli kare DEĞİL) — kesim/etiket/teknik resim/onay
+        // eylemlerini kabaca çağrıştıran basit piktogramlar. Dosya adı
+        // BİLİNÇLİ olarak "_v2" ile değişti: eski 2 kareli sürüm zaten
+        // diskte varsa (önceki denemelerden), "dosya zaten var" kontrolü
+        // onu YENİDEN KULLANIR ve yeni 4 kareli tasarımla İNDEKS
+        // UYUŞMAZLIĞINA yol açar — yeni dosya adı bunu önlüyor.
         private string[] IkonlariHazirla()
         {
             string klasor = Path.Combine(
@@ -293,9 +364,9 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            string yol20 = Path.Combine(klasor, "komutlar_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_40.png");
+            string yol20 = Path.Combine(klasor, "komutlar_v2_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v2_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v2_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -304,17 +375,96 @@ namespace UretimOSKesim
             return new string[] { yol20, yol32, yol40 };
         }
 
+        // Şerit sırası (ImageListIndex ile eşleşmeli — bkz. KomutlariKur'daki
+        // AddCommandItem2 çağrıları): 0=Kesim, 1=Etiketle, 2=Teknik Resim
+        // Oluştur, 3=Teknik Resmi Onayla.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 2;
+            int genislik = kareBoyutu * 4;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
-                g.FillRectangle(Brushes.SteelBlue, 0, 0, kareBoyutu, kareBoyutu);
-                g.FillRectangle(Brushes.SeaGreen, kareBoyutu, 0, kareBoyutu, kareBoyutu);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                KesimIkonuCiz(g, 0, kareBoyutu);
+                EtiketIkonuCiz(g, kareBoyutu, kareBoyutu);
+                TeknikResimIkonuCiz(g, kareBoyutu * 2, kareBoyutu);
+                OnayIkonuCiz(g, kareBoyutu * 3, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
+            }
+        }
+
+        // 0: Kesim Listesi — mavi zemin, kesik çizgili panel (bir plakanın
+        // ortadan kesilmesini çağrıştırır).
+        private void KesimIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.SteelBlue, x, 0, s, s);
+            float m = s * 0.2f;
+            using (var kalem = new Pen(Color.White, Math.Max(1f, s / 14f)))
+            {
+                g.DrawRectangle(kalem, x + m, m, s - 2 * m, s - 2 * m);
+            }
+            using (var kesikKalem = new Pen(Color.White, Math.Max(1f, s / 18f)))
+            {
+                kesikKalem.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                g.DrawLine(kesikKalem, x + s / 2f, m, x + s / 2f, s - m);
+            }
+        }
+
+        // 1: Paket/Parça Etiketle — yeşil zemin, delikli etiket (fiyat/ürün
+        // etiketi) şekli.
+        private void EtiketIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.SeaGreen, x, 0, s, s);
+            var ucgen = new PointF[]
+            {
+                new PointF(x + s * 0.2f, s * 0.25f),
+                new PointF(x + s * 0.6f, s * 0.25f),
+                new PointF(x + s * 0.85f, s * 0.5f),
+                new PointF(x + s * 0.6f, s * 0.75f),
+                new PointF(x + s * 0.2f, s * 0.75f),
+            };
+            g.FillPolygon(Brushes.White, ucgen);
+            float d = s * 0.1f;
+            g.FillEllipse(Brushes.SeaGreen, x + s * 0.3f - d / 2f, s * 0.5f - d / 2f, d, d);
+        }
+
+        // 2: Teknik Resim Oluştur — turuncu zemin, çizgili doküman (teknik
+        // resim sayfası) şekli.
+        private void TeknikResimIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.DarkOrange, x, 0, s, s);
+            float mx = s * 0.25f, my = s * 0.15f;
+            var kagit = new RectangleF(x + mx, my, s - 2 * mx, s - 2 * my);
+            g.FillRectangle(Brushes.White, kagit);
+            using (var kalem = new Pen(Color.DarkOrange, Math.Max(1f, s / 20f)))
+            {
+                float satirAraligi = kagit.Height / 4f;
+                for (int i = 1; i <= 3; i++)
+                {
+                    float y = kagit.Y + satirAraligi * i;
+                    g.DrawLine(kalem, kagit.X + kagit.Width * 0.15f, y, kagit.X + kagit.Width * 0.85f, y);
+                }
+            }
+        }
+
+        // 3: Teknik Resmi Onayla — mor zemin, onay (✓) işareti.
+        private void OnayIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.MediumPurple, x, 0, s, s);
+            using (var kalem = new Pen(Color.White, Math.Max(2f, s / 8f)))
+            {
+                kalem.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                kalem.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                kalem.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+                var noktalar = new PointF[]
+                {
+                    new PointF(x + s * 0.22f, s * 0.52f),
+                    new PointF(x + s * 0.42f, s * 0.72f),
+                    new PointF(x + s * 0.8f, s * 0.28f),
+                };
+                g.DrawLines(kalem, noktalar);
             }
         }
 
