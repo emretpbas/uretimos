@@ -11,10 +11,14 @@
     <OutputType>Library</OutputType>
     <AssemblyName>UretimOSKesim</AssemblyName>
     <RootNamespace>UretimOSKesim</RootNamespace>
-    <!-- COM Interop için kayıt — derleme sonrası regasm otomatik çalışır.
-         Visual Studio'yu YÖNETİCİ olarak açmanız gerekir (HKLM'e yazıyor). -->
-    <RegisterForComInterop>true</RegisterForComInterop>
-    <EnableComHosting>true</EnableComHosting>
+    <!-- COM kaydı BİLEREK OTOMATİK DEĞİL: Visual Studio'yu yönetici modunda
+         tutarlı şekilde açmak bazı Windows/kurumsal ayarlarında güvenilir
+         çalışmıyor. Kayıt, derlemeden SONRA elle (yönetici Komut İstemi'nden
+         regasm.exe /codebase ile) yapılıyor — bkz. README.md "Kurulum"
+         bölümü. Böylece normal (yönetici olmayan) Visual Studio'da sorunsuz
+         derlenir, kayıt adımı tek seferlik ve bağımsız kalır. -->
+    <RegisterForComInterop>false</RegisterForComInterop>
+    <EnableComHosting>false</EnableComHosting>
     <LangVersion>latest</LangVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <!-- KRİTİK: "Any CPU" ile derlenirse regasm'ın 32-bit sürümü çalışır ve
