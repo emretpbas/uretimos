@@ -81,6 +81,14 @@
          referans vermek gerekir — gerçek denemede CS0234/CS0246 hatası
          verdi. -->
     <Reference Include="System.Net.Http" />
+    <!-- ZipArchive/ZipArchiveMode (KesimListesiCikarici.cs'in ZIP paketleme
+         kısmı) için — gerçek denemede CS0012/CS0103 hatası verdi. -->
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <!-- 'dynamic' anahtar kelimesi (UretimOSApiClient.cs'te JSON çözümlemede
+         kullanıldı) derleyicinin runtime binder'ı için bu referansı ister —
+         gerçek denemede CS0656 hatası verdi. -->
+    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
 
 </Project>
