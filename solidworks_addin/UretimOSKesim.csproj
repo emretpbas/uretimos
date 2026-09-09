@@ -17,6 +17,13 @@
     <EnableComHosting>true</EnableComHosting>
     <LangVersion>latest</LangVersion>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- KRİTİK: "Any CPU" ile derlenirse regasm'ın 32-bit sürümü çalışır ve
+         kayıt HKLM\SOFTWARE\WOW6432Node altına yazılır — 64-bit SolidWorks
+         orayı HİÇ okumaz, eklenti "Add-Ins" listesinde görünmez. x64'e
+         sabitleyerek 64-bit regasm'ın gerçek (WOW6432Node'suz) HKLM\SOFTWARE
+         altına yazmasını garantiliyoruz. -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
