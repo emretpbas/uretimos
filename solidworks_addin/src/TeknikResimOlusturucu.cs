@@ -8,14 +8,30 @@ namespace UretimOSKesim
     // ════════════════════════════════════════════════════════════════════════
     // TEKNİK RESİM OLUŞTURUCU — İKİ ADIMLI akış (kullanıcı isteği: "önce
     // solidde yapsın ben düzenleyeyim, sonra onayla dwg ve pdf alsın"):
-    //   1) TeknikResimAcVeDuzenlemeyeBirak: çizimi oluşturur, 4 görünüş
-    //      ekler, SolidWorks'te AÇIK bırakır — kaydetmez, kapatmaz.
-    //      Kullanıcı görünüşleri/yerleşimi/ölçeği elle düzeltir (antete
-    //      otomatik taşma sorunu tam çözülemediği için bu ADIM BİLİNÇLİ
-    //      olarak insana bırakıldı).
-    //   2) AcikCizimiKaydet: kullanıcı düzenlemeyi bitirip "Onayla"ya
-    //      bastığında, O AN AÇIK olan çizimi hem .dwg hem .pdf olarak
-    //      kaydeder — çizim İÇERİĞİNE dokunmaz, sadece dışa aktarır.
+    //   1) TeknikResimAcVeDuzenlemeyeBirak: çizimi oluşturur, ŞABLONDAKİ
+    //      ÖNCEDEN TANIMLI (predefined) görünüş yerlerine modeli yerleştirir,
+    //      SolidWorks'te AÇIK bırakır — kaydetmez, kapatmaz.
+    //   2) AcikCizimiKaydet: kullanıcı düzenlemeyi (ölçülendirme dahil)
+    //      bitirip "Onayla"ya bastığında, O AN AÇIK olan çizimi hem .dwg
+    //      hem .pdf olarak kaydeder — çizim İÇERİĞİNE dokunmaz.
+    //
+    // HİZALAMA MİMARİSİ DEĞİŞTİ (kullanıcı geri bildirimi: görünüşler antete
+    // taşıyor, birbirine hizasız): önceki sürüm 4 görünüşü KODDAN, bağımsız
+    // X/Y koordinatlarıyla oluşturuyordu — bu hiçbir zaman gerçek hizalama
+    // (üst görünüş tam ön görünüşün üstünde, vb.) SAĞLAYAMAZ ve antetin
+    // gerçek boyutunu bilmediğimiz için taşma riski hep vardı. Bunun yerine
+    // resmi SolidWorks API'si InsertModelInPredefinedView kullanılıyor:
+    // hizalama/yerleşim artık KODDA DEĞİL, SİZİN .drwdot ŞABLONUNUZDA
+    // tanımlanır (SolidWorks'te BİR KEZ: Insert > Drawing View > Predefined
+    // ile Ön/Üst/Sağ/İzometrik için doğru hizalı, antetten uzak 4 boş
+    // görünüş yeri yerleştirip şablonu kaydedin). Bu API o boş yerlere
+    // modeli otomatik doldurur — SİZİN yerleştirdiğiniz konumda kalır.
+    // Ölçülendirme BİLİNÇLİ olarak koda eklenmedi: resmi InsertModelAnnotations3
+    // API'sinin bitmask parametreleri (swInsertAnnotation_e) belgelerde net
+    // değil, yanlış bir bitmask ÇÖKME değil ama SESSİZ YANLIŞ/eksik ölçü
+    // riski taşır. Madem zaten elle düzenleme adımı var, ölçülendirmeyi
+    // SolidWorks'ün kendi "Insert > Annotations > Model Items" menüsünden
+    // elle yapın — daha güvenilir, tam kontrol sizde.
     // ════════════════════════════════════════════════════════════════════════
     public class TeknikResimOlusturucu
     {
@@ -23,20 +39,14 @@ namespace UretimOSKesim
         private readonly List<string> _uyarilar = new List<string>();
         public IReadOnlyList<string> Uyarilar => _uyarilar;
 
-        // İlk yerleşim/ölçek — sadece BAŞLANGIÇ noktası, kullanıcı elle
-        // düzeltecek (bkz. sınıf açıklaması).
-        private const double VIEW_ON_X = 0.06, VIEW_ON_Y = 0.16;
-        private const double VIEW_UST_X = 0.06, VIEW_UST_Y = 0.24;
-        private const double VIEW_SAG_X = 0.20, VIEW_SAG_Y = 0.16;
-        private const double VIEW_ISO_X = 0.20, VIEW_ISO_Y = 0.24;
-        // NOT: IView.ScaleDecimal bir double[] DEĞİL, tek bir double (oran)
-        // bekliyor — gerçek derlemede tespit edildi ("double[] örtülü olarak
-        // double'a dönüştürülemez"). 1:10 ölçek = 1/10 = 0.1.
-        private const double OLCEK = 1.0 / 10.0;
-
         public TeknikResimOlusturucu(ISldWorks app) { _app = app; }
 
-        // ADIM 1 — çizimi oluşturur, AÇIK BIRAKIR (save/close YOK).
+        // ADIM 1 — çizimi oluşturur, ŞABLONDAKİ önceden tanımlı görünüş
+        // yerlerine modeli yerleştirir, AÇIK BIRAKIR (save/close YOK).
+        // sablonYolu'ndaki .drwdot dosyasında ÖNCEDEN (SolidWorks UI'ında,
+        // Insert > Drawing View > Predefined ile) tanımlanmış görünüş
+        // yerleri OLMALI — yoksa InsertModelInPredefinedView hiçbir görünüş
+        // eklemez (aşağıdaki uyarı bunu bildirir).
         public bool TeknikResimAcVeDuzenlemeyeBirak(string modelYolu, string sablonYolu)
         {
             Tanilama.Kaydet($"TeknikResimAcVeDuzenlemeyeBirak basladi: model={modelYolu}, sablon={sablonYolu}");
@@ -53,14 +63,16 @@ namespace UretimOSKesim
 
                 var cizim = (IDrawingDoc)cizimBelge;
 
-                IView v1 = OlceklenmisGorunumOlustur(cizim, modelYolu, "*Front", VIEW_ON_X, VIEW_ON_Y, "1");
-                IView v2 = OlceklenmisGorunumOlustur(cizim, modelYolu, "*Top", VIEW_UST_X, VIEW_UST_Y, "2");
-                IView v3 = OlceklenmisGorunumOlustur(cizim, modelYolu, "*Right", VIEW_SAG_X, VIEW_SAG_Y, "3");
-                IView v4 = OlceklenmisGorunumOlustur(cizim, modelYolu, "*Isometric", VIEW_ISO_X, VIEW_ISO_Y, "4");
+                Tanilama.Kaydet("InsertModelInPredefinedView cagriliyor");
+                bool eklendi = cizim.InsertModelInPredefinedView(modelYolu);
+                Tanilama.Kaydet("InsertModelInPredefinedView tamamlandi, eklendi=" + eklendi);
 
-                if (v1 == null && v2 == null && v3 == null && v4 == null)
+                if (!eklendi)
                 {
-                    _uyarilar.Add($"'{modelYolu}' için hiçbir görünüş oluşturulamadı — model açık mı, yol geçerli mi kontrol edin.");
+                    _uyarilar.Add(
+                        "Model, şablondaki önceden tanımlı görünüş yerlerine eklenemedi. " +
+                        "Şablonunuzda (.drwdot) Insert > Drawing View > Predefined ile " +
+                        "Ön/Üst/Sağ/İzometrik görünüş yerleri tanımlanmış mı kontrol edin.");
                     return false;
                 }
 
@@ -104,19 +116,6 @@ namespace UretimOSKesim
                 _uyarilar.Add("Çizim kaydedilirken hata: " + ex.Message);
                 return kaydedilenDwg != null || kaydedilenPdf != null;
             }
-        }
-
-        private IView OlceklenmisGorunumOlustur(IDrawingDoc cizim, string modelYolu, string gorunumAdi, double x, double y, string logNo)
-        {
-            Tanilama.Kaydet($"{logNo}. CreateDrawViewFromModelView3 ({gorunumAdi}) cagriliyor");
-            IView v = cizim.CreateDrawViewFromModelView3(modelYolu, gorunumAdi, x, y, 0);
-            Tanilama.Kaydet($"{logNo}. tamamlandi, null mu=" + (v == null));
-            if (v != null)
-            {
-                try { v.ScaleDecimal = OLCEK; }
-                catch { /* ölçek atanamazsa görünüm varsayılan ölçekte kalır — kullanıcı zaten elle düzeltecek */ }
-            }
-            return v;
         }
 
         private string FarkliKaydet(IModelDocExtension ext, string cikisKlasoru, string dosyaAdiOnEki, string uzanti, string modelYoluLog)
