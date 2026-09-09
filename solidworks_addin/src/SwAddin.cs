@@ -32,14 +32,14 @@ namespace UretimOSKesim
     // ════════════════════════════════════════════════════════════════════════
     // NOT: sınıf BİLEREK "UretimOSAddin" olarak adlandırıldı, "SwAddin" DEĞİL —
     // gerçek derlemede tam bu isim çakışması bir hataya yol açtı: aşağıdaki
-    // [SolidWorks.Interop.swpublished.SwAddin(...)] özniteliği, sınıf da
-    // "SwAddin" adında olsaydı KENDİ SINIFIMIZLA çakışıp "SwAddin bir
-    // öznitelik sınıfı değildir" (CS0616) hatası veriyordu (C#, aynı ad
-    // alanındaki kendi sınıfımızı SolidWorks'ün öznitelik sınıfından önce
-    // buluyordu). Farklı isim + tam nitelikli öznitelik adı bu çakışmayı
-    // kalıcı olarak ortadan kaldırır.
+    // [SolidWorks.Interop.swpublished.SwAddinAttribute(...)] özniteliği,
+    // sınıf da "SwAddin" adında olsaydı KENDİ SINIFIMIZLA çakışıp "SwAddin
+    // bir öznitelik sınıfı değildir" (CS0616) hatası veriyordu. Ayrıca o ad
+    // alanında "SwAddin" adında SOYUT (abstract) ayrı bir sınıf daha var —
+    // bu yüzden kısaltma ([SwAddin(...)]) veya yarım nitelikli isim yerine
+    // "Attribute" son ekiyle TAM adı yazmak gerekiyor.
     [Guid("11111111-2222-3333-4444-555555555555"), ComVisible(true)]
-    [SolidWorks.Interop.swpublished.SwAddin(
+    [SolidWorks.Interop.swpublished.SwAddinAttribute(
         Description = "ÜretimOS için kesim listesi ve teknik resim üretir; parça/paket kütüphanesini ÜretimOS ile senkronlar.",
         Title = "ÜretimOS Kesim & Teknik Resim",
         LoadAtStartup = true
