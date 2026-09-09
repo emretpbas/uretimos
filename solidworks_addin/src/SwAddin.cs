@@ -306,7 +306,7 @@ namespace UretimOSKesim
         // görebilirsiniz). Boş bırakılırsa veya dosya bulunamazsa teknik
         // resim adımı sessizce ATLANIR — kesim listesi/ZIP akışı BUNDAN
         // ETKİLENMEZ (zaten kanıtlanmış, ayrı bir mekanizma).
-        private const string TEST_SABLON_YOLU = "";
+        private const string TEST_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Drawing.drwdot";
 
         // ── KOMUT: KESİM PAKETİ OLUŞTUR ──────────────────────────────────────
         // CommandManager bu adı (case-sensitive) [ComVisible] genel metod
