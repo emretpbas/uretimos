@@ -10,6 +10,9 @@ using Microsoft.Win32;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
+// SolidWorks.Interop.sldworks'ün KENDİ "Environment" tipiyle System.Environment
+// çakışıyordu (CS0104) — gerçek denemede tespit edildi. Takma ad ile netleştirildi.
+using Environment = System.Environment;
 
 namespace UretimOSKesim
 {
