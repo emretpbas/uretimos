@@ -304,7 +304,10 @@ namespace UretimOSKesim
             if (mevcutSekme != null)
             {
                 Tanilama.Kaydet("RemoveCommandTab cagriliyor (eski sekme temizleniyor)");
-                _cmdMgr.RemoveCommandTab(mevcutSekme);
+                // NOT: RemoveCommandTab parametresi ICommandTab ARAYÜZÜNÜ değil,
+                // somut CommandTab SINIFINI bekliyor — gerçek derlemede tespit
+                // edildi ("ICommandTab'dan CommandTab'a dönüştürülemiyor").
+                _cmdMgr.RemoveCommandTab((CommandTab)mevcutSekme);
                 Tanilama.Kaydet("RemoveCommandTab tamamlandi");
             }
 
