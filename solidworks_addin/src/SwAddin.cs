@@ -51,14 +51,17 @@ namespace UretimOSKesim
         private ICommandManager _cmdMgr;
 
         // ── SolidWorks YAŞAM DÖNGÜSÜ ─────────────────────────────────────────
-        // TANI AMAÇLI GEÇİCİ DURUM: gerçek denemede SolidWorks'ün KENDİ
-        // native modülünde (sldappu) tam çökme oluştu — bu, KomutlariKur()
-        // içindeki CreateCommandGroup2/AddCommandItem2 çağrılarının YANLIŞ
-        // parametrelerle SolidWorks'ün belleğini bozduğunu gösteriyor (bu tür
-        // bir çökme managed try/catch ile YAKALANAMAZ). Araç çubuğu kodu
-        // BİLİNÇLİ olarak devre dışı bırakıldı — önce eklentinin ÇÖKMEDEN
-        // yüklendiği kanıtlanacak, sonra CommandManager API'si Nesne
-        // Gezgini/Go to Definition ile doğrulanıp GERİ eklenecek.
+        // GEÇMİŞ TANI: gerçek denemede SolidWorks'ün KENDİ native modülünde
+        // (sldappu) tam çökme oluştu. KomutlariKur() önce tamamen devre dışı
+        // bırakılıp eklentinin ÇÖKMEDEN yüklendiği kanıtlandı; ardından
+        // CreateCommandGroup2/AddCommandItem2'nin imzaları Nesne Gezgini +
+        // Go to Definition ile doğrulanıp koddaki parametrelerle TAM eşleştiği
+        // görüldü (parametre sayısı/tipi hatası DEĞİL). Kalan tek şüpheli
+        // nokta: hiç IconList atanmadan ImageListIndex=0/1 ile araç çubuğu
+        // (HasToolbar=true) açmaya çalışmaktı — bu yüzden KomutlariKur() artık
+        // ImageListIndex=-1 (ikon yok) ve HasToolbar=false (sadece menü) ile
+        // GERİ etkinleştirildi. Araç çubuğu/ikonlar, gerçek bir ikon listesi
+        // hazırlanınca ayrı bir adımda eklenecek.
         public bool ConnectToSW(object ThisSW, int Cookie)
         {
             try
@@ -67,7 +70,7 @@ namespace UretimOSKesim
                 _cookie = Cookie;
                 _cmdMgr = _app.GetCommandManager(_cookie);
 
-                // KomutlariKur();  // GEÇİCİ OLARAK KAPALI — bkz. yukarıdaki not.
+                KomutlariKur();
 
                 _app.SetAddinCallbackInfo2(0, this, _cookie);
                 return true;
@@ -97,6 +100,16 @@ namespace UretimOSKesim
         }
 
         // ── ARAÇ ÇUBUĞU / KOMUTLAR ───────────────────────────────────────────
+        // NOT: ImageListIndex parametreleri BİLİNÇLİ olarak -1 (ikon yok) —
+        // gerçek denemede tam SolidWorks çökmesi (Fault Module: sldappu)
+        // yaşandı; CreateCommandGroup2/AddCommandItem2'nin imzaları Nesne
+        // Gezgini/Go to Definition ile doğrulanıp doğru olduğu kanıtlandı,
+        // dolayısıyla en olası çökme sebebi hiç tanımlanmamış bir ikon
+        // listesine (IconList/MainIconList atanmadan) 0/1 indeksiyle
+        // referans vermekti. HasToolbar de aynı sebeple false bırakıldı —
+        // sadece MENÜ üzerinden erişilir. İkonlar + araç çubuğu, gerçek bir
+        // .bmp/.png ikon listesi hazırlanıp CommandGroup.IconList ile
+        // atandıktan SONRA, ayrı bir adımda güvenle eklenebilir.
         private void KomutlariKur()
         {
             int hataKodu = 0;
@@ -107,16 +120,16 @@ namespace UretimOSKesim
             int idKesim = grup.AddCommandItem2(
                 "Kesim Listesi + Teknik Resim Paketi Oluştur", -1,
                 "Etiketlenmiş parça/alt montajlardan ZIP paketi üretir (ÜretimOS SWOOD İçe Aktarım ekranına yüklenebilir)",
-                "Kesim Paketi Oluştur", 0, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
-                1, (int)swCommandItemType_e.swMenuItem + (int)swCommandItemType_e.swToolbarItem);
+                "Kesim Paketi Oluştur", -1, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
+                1, (int)swCommandItemType_e.swMenuItem);
 
             int idEtiket = grup.AddCommandItem2(
                 "Paket/Parça Etiketle (Kütüphane)", -1,
                 "Seçili bileşene ÜretimOS paket/parça/malzeme/kenar bandı etiketi atar — Faz 2",
-                "Etiketle", 1, "EtiketlePaneliAc", "PaketOlusturEtkinMi",
-                2, (int)swCommandItemType_e.swMenuItem + (int)swCommandItemType_e.swToolbarItem);
+                "Etiketle", -1, "EtiketlePaneliAc", "PaketOlusturEtkinMi",
+                2, (int)swCommandItemType_e.swMenuItem);
 
-            grup.HasToolbar = true;
+            grup.HasToolbar = false;
             grup.HasMenu = true;
             grup.Activate();
         }
