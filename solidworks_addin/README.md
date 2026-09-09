@@ -102,15 +102,30 @@ Tam regresyon: 329/329 PHP, tüm JS paketleri yeşil.
 3. `src/SwAddin.cs` başındaki GUID'i **Tools > Create GUID** ile kendi
    üretmiş olduğunuz bir değerle değiştirin (iki yerde de aynı olmalı — aslında
    tek yerde, `[Guid(...)]` özniteliğinde).
-4. Visual Studio'yu **Yönetici olarak** çalıştırıp derleyin (COM kaydı
-   `HKEY_LOCAL_MACHINE`'e yazar).
-5. SolidWorks'ü açın → **Tools > Add-Ins** → "ÜretimOS Kesim & Teknik Resim"
-   işaretleyin.
-6. Bir montaj açıp en az bir bileşene Özel Özellikler'den elle
+4. Normal (yönetici olmayan) Visual Studio'da **Ctrl+Shift+B** ile derleyin
+   (proje platformu **x64** olmalı — SolidWorks 64-bit'tir, "Any CPU" ile
+   derlenirse kayıt yanlış Windows kayıt defteri bölümüne yazılır ve eklenti
+   SolidWorks'te hiç görünmez).
+5. **COM kaydını elle yapın** (tek seferlik — kod her değiştiğinde tekrar
+   derlerken bunu YENİDEN yapmanız gerekir, ama SolidWorks kapalıyken):
+   - Başlat menüsünden **"Komut İstemi"** yazın, üzerine sağ tıklayıp
+     **"Yönetici olarak çalıştır"** deyin (bu, Visual Studio'yu yönetici
+     açmaktan daha güvenilir çalışır).
+   - Açılan siyah pencereye şunu yazıp Enter'a basın (dosya yolunu kendi
+     projenizin `bin\x64\Debug\net48\` klasörüne göre düzeltin):
+     ```
+     C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe /codebase "C:\Yol\solidworks_addin\bin\x64\Debug\net48\UretimOSKesim.dll"
+     ```
+   - **"Types registered successfully"** gibi bir mesaj görmelisiniz. Hata
+     çıkarsa (yine kayıt defteri erişim hatası), Komut İstemi penceresinin
+     başlığında gerçekten **"Yönetici: Komut İstemi"** yazdığından emin olun.
+6. SolidWorks'ü açın (kapalıysa) → **Tools > Add-Ins** → "ÜretimOS Kesim &
+   Teknik Resim" işaretleyin.
+7. Bir montaj açıp en az bir bileşene Özel Özellikler'den elle
    `URETIMOS_TIP = parca` yazın (bkz. `src/OzelAlanlar.cs`), sonra araç
    çubuğundaki **"Kesim Listesi + Teknik Resim Paketi Oluştur"** düğmesine
    basın.
-7. Çıkan ZIP'i ÜretimOS'ta **İş Emri Formu → SWOOD İçe Aktarım**'a yükleyin —
+8. Çıkan ZIP'i ÜretimOS'ta **İş Emri Formu → SWOOD İçe Aktarım**'a yükleyin —
    mevcut ekran değişmeden çalışmalı.
 
 ## DÜRÜSTLÜK NOTU — bu kod test edilmedi
