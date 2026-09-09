@@ -44,7 +44,20 @@ namespace UretimOSKesim
     // (Object Browser) doğrulandı: SolidWorksTools ad alanında,
     // System.Attribute'ten türeyen SwAddinAttribute — SolidWorks.Interop.
     // swpublished'daki "SwAddin" ise ayrı, ilgisiz bir ARAYÜZ (interface).
-    [Guid("11111111-2222-3333-4444-555555555555"), ComVisible(true)]
+    // KESİN TANI #5: SolidWorks hata raporundaki çökme ADRESİ (sldappu:
+    // 003bb971 / 45ABB971) her denemede BİREBİR AYNI kaldı — IconList,
+    // MainIconList, bayrak kombinasyonu değiştirilmesine RAĞMEN. Bu, artık
+    // KomutlariKur() içeriğinin sorun olmadığını, bunun yerine İLK (henüz
+    // hiçbir düzeltme yapılmamış) çökmüş denemeden bu GUID+komut grubu
+    // kimliğine ÖZEL kalan bozuk bir toolbar/UI önbellek kaydından
+    // kaynaklandığını gösteriyor — GetGroupDataFromRegistry bizim dar
+    // kapsamlı kontrolümüzdü, SolidWorks'ün asıl toolbar düzeni önbelleği
+    // ayrı bir yerde (HKCU\...\User Interface\Custom API Toolbars\...)
+    // tutuluyor ve hiç temizlemedik. En güvenli test: kayıt defterini elle
+    // silmek (riskli, IT gerektirebilir) yerine TAMAMEN YENİ bir GUID +
+    // yeni komut/grup ID'leri kullanmak — böylece eski bozuk kayıttan hiç
+    // etkilenmeyen, sıfırdan temiz bir kimlikle test ediliyor.
+    [Guid("A7F3C912-4B6E-4D81-9C2A-E5F108B3D7A6"), ComVisible(true)]
     [SolidWorksTools.SwAddinAttribute(
         Description = "ÜretimOS için kesim listesi ve teknik resim üretir; parça/paket kütüphanesini ÜretimOS ile senkronlar.",
         Title = "ÜretimOS Kesim & Teknik Resim",
@@ -99,8 +112,8 @@ namespace UretimOSKesim
         {
             if (_cmdMgr != null)
             {
-                // CommandGroup ID, KomutlariKur() içindeki ile AYNI olmalı.
-                _cmdMgr.RemoveCommandGroup(1);
+                // CommandGroup ID, KomutlariKur() içindeki GRUP_ID ile AYNI olmalı.
+                _cmdMgr.RemoveCommandGroup(100);
             }
             _cmdMgr = null;
             _app = null;
@@ -132,9 +145,9 @@ namespace UretimOSKesim
         private void KomutlariKur()
         {
             Kaydet("KomutlariKur basladi");
-            const int GRUP_ID = 1;
-            const int ID_KESIM = 1;
-            const int ID_ETIKET = 2;
+            const int GRUP_ID = 100;
+            const int ID_KESIM = 101;
+            const int ID_ETIKET = 102;
             int[] komutIdleri = new int[] { ID_KESIM, ID_ETIKET };
 
             bool eskisiniYokSay = false;
