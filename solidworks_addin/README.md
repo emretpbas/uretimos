@@ -32,10 +32,14 @@ almak, kesim listesi oluşturmak").
 ### Faz 1 — BU TASLAK: Kesim listesi + teknik resim çekirdeği
 - Montaj ağacını gezer, `URETIMOS_TIP` özel alanıyla etiketlenmiş bileşenleri
   (parça / alt_montaj) tanır.
-- Her "parça" için BOY/EN/KALINLIK'ı SolidWorks'ün kütle özellikleri (mass
-  properties) sınır kutusundan kendi hesaplar — sürüme/dile bağlı, garantisi
-  belirsiz otomatik "Cut-List" özellik adlarına GÜVENMEZ (bkz.
-  `KesimListesiCikarici.cs` içindeki gerekçe yorumu).
+- Her "parça" için BOY/EN/KALINLIK, `URETIMOS_BOY_MM`/`EN_MM`/`KALINLIK_MM`
+  özel alanlarından okunur — SolidWorks'ün kütle özellikleri (IMassProperty)
+  arayüzü gerçek denemede sınır kutusu (bounding box) için HİÇBİR üye
+  taşımadığı doğrulandığından, otomatik geometri okuma yerine BİLİNÇLİ olarak
+  elle giriş tercih edildi (bkz. `KesimListesiCikarici.cs`'teki gerekçe
+  yorumu). Bu alanlar sabit sayı OLMAK ZORUNDA DEĞİL — sketch ölçüsüne bağlı
+  bir formül de olabilir (örn. `="Length@Sketch1@..."`), gerçek denemede bu
+  şekilde de doğrulandı.
 - Malzeme/kenar bandı kodlarını (varsa) özel alanlardan okur.
 - Mevcut ÜretimOS SWOOD içe aktarımının okuduğu **AYNI CSV şemasını** (DESC,
   SAP_CODE, LENGHT, WIDTH, QTY, MATERIAL, EBF/EBB/EBL/EBR) üretir + 3 YENİ
@@ -98,7 +102,14 @@ Tam regresyon: 329/329 PHP, tüm JS paketleri yeşil.
 
 1. Visual Studio 2022, ".NET Desktop Development" iş yükü.
 2. `UretimOSKesim.csproj`'daki 4 `HintPath`'i kendi SolidWorks kurulumunuzdaki
-   `api\redist\` klasörüne göre düzeltin.
+   `api\redist\` klasörüne göre düzeltin. **DİKKAT:** makinede birden fazla
+   SolidWorks kurulumu olabilir (örn. `SOLIDWORKS` ve `SOLIDWORKS (2)`) —
+   gerçek denemede referanslar YANLIŞLIKLA eski/kullanılmayan kuruluma
+   işaret edince, gerçekten çalışan SolidWorks'ten FARKLI bir arayüz
+   tanımına göre derlenip garip, tutarsız native çökmelere yol açtı. Görev
+   Yöneticisi'nde SLDWORKS.exe çalışırken sağ tık > "Dosya konumunu aç" ile
+   GERÇEKTEN hangi klasörden çalıştığını doğrulayıp `HintPath`'leri ona göre
+   ayarlayın.
 3. `src/SwAddin.cs` başındaki GUID'i **Tools > Create GUID** ile kendi
    üretmiş olduğunuz bir değerle değiştirin (iki yerde de aynı olmalı — aslında
    tek yerde, `[Guid(...)]` özniteliğinde).
@@ -128,13 +139,30 @@ Tam regresyon: 329/329 PHP, tüm JS paketleri yeşil.
 8. Çıkan ZIP'i ÜretimOS'ta **İş Emri Formu → SWOOD İçe Aktarım**'a yükleyin —
    mevcut ekran değişmeden çalışmalı.
 
-## DÜRÜSTLÜK NOTU — bu kod test edilmedi
+## DÜRÜSTLÜK NOTU — Faz 1 çekirdeği gerçek SolidWorks'te test EDİLDİ
 
-Bu ortamda SolidWorks/Visual Studio bulunmadığından kodu derleyemedim.
-SolidWorks API çağrıları (CreateMassProperty2, CustomPropertyManager.Get5/
-Add3, CreateDrawViewFromModelView3, SaveAs3, ISwAddin/AddinAttribute kayıt
-deseni) belgelenmiş, kararlı API'ler ve doğru imzalarla yazıldı, ama gerçek
-bir SolidWorks oturumunda ilk denemede küçük düzeltmeler (özellikle görünüş
-yerleşim koordinatları ve şablon yolu) gerekebilir. İlk denemeyi birlikte
-yapıp hataları düzeltmemi isterseniz çıktısını (hata mesajı/ekran görüntüsü)
-paylaşmanız yeterli.
+Bu ortamda SolidWorks/Visual Studio bulunmadığı için kod önce tahminle
+yazıldı, ama kullanıcı gerçek bir SolidWorks 2025 SP3.0 kurulumunda (Visual
+Studio ile derleyip regasm ile kaydederek) uçtan uca test etti. Kesim
+listesi çekirdeği (menü/komut yükleme, montaj gezme, `URETIMOS_TIP`/`KOD`/
+`AD`/`BOY_MM`/`EN_MM`/`KALINLIK_MM` özel alanlarını okuma, CSV+ZIP üretimi,
+etiketlenmemiş bileşenler için uyarı) **çalışır durumda doğrulandı** — gerçek
+bir montajda 1 etiketli parça doğru satıra dönüştü, 60 etiketlenmemiş
+bileşen doğru şekilde uyarıya düştü.
+
+Bu noktaya gelene kadar düzeltilen gerçek (ilk tahminde yanlış çıkan) noktalar:
+- `SolidWorksTools.SwAddinAttribute`'ın gerçek konumu (ilk tahmin: yanlış ad alanı).
+- `IMassProperty`'nin sınır kutusu (bounding box) üyesi OLMADIĞI — bu yüzden
+  ölçü otomasyonu tamamen terk edilip elle özel alan girişine geçildi.
+- `ICommandGroup.Activate()` çökmesi — kök neden IconList/MainIconList
+  eksikliği DEĞİL, `SetAddinCallbackInfo2`'nin komut grubu kurulumundan
+  SONRA değil ÖNCE çağrılması gerekliliğiydi (bkz. `SwAddin.cs`'teki "KESİN
+  TANI" yorumları — bu çökmeyi çözmek çok sayıda yanlış teoriden geçti,
+  gerçek SWERR hata günlüğü ve adım adım tanı günlüğü ile kesinleştirildi).
+- Projenin yanlış SolidWorks kurulumuna (aynı makinedeki iki kurulumdan
+  eskisine) referans vermesi — interop DLL'leri gerçekten çalışan kurulumla
+  eşleşmeyince bazı çağrılar rastgele bellek adresine düşüyordu.
+
+Henüz test EDİLMEYEN kısım: `TeknikResimOlusturucu.cs`'nin teknik resim/PDF
+üretimi (görünüş yerleşimi/şablon yolu ilk denemede küçük düzeltme
+gerektirebilir) ve Faz 2/3 (kütüphane paneli, otomatik kenar bandı/delik).
