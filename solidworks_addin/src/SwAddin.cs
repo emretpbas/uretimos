@@ -334,7 +334,7 @@ namespace UretimOSKesim
                 ozet += $"\n\n{cikarici.Uyarilar.Count} uyarı:\n- " + string.Join("\n- ", cikarici.Uyarilar);
 
             // GEÇİCİ TEST: teknik resim üretim mekanizmasının ilk denemesi —
-            // sadece AKTİF montajın kendisi için TEK bir PDF üretir (her
+            // sadece AKTİF montajın kendisi için TEK bir .dwg üretir (her
             // etiketli parça için ayrı ayrı üretim, mekanizma kanıtlandıktan
             // SONRA KesimListesiCikarici'ye entegre edilecek). TEST_SABLON_YOLU
             // boşsa/geçersizse bu adım tamamen atlanır.
@@ -344,11 +344,11 @@ namespace UretimOSKesim
                 var resimUretici = new TeknikResimOlusturucu(_app);
                 string aktifYol = aktifBelge.GetPathName();
                 string cikisKlasoru = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                string pdfYolu = resimUretici.TeknikResimOlustur(aktifYol, TEST_SABLON_YOLU, cikisKlasoru, "uretimos_teknik_resim_test");
+                string dwgYolu = resimUretici.TeknikResimOlustur(aktifYol, TEST_SABLON_YOLU, cikisKlasoru, "uretimos_teknik_resim_test");
 
-                if (pdfYolu != null)
+                if (dwgYolu != null)
                 {
-                    ozet += $"\n\nTeknik resim testi: BAŞARILI → {pdfYolu}";
+                    ozet += $"\n\nTeknik resim testi: BAŞARILI → {dwgYolu}";
                 }
                 else
                 {

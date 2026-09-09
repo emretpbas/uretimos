@@ -9,7 +9,7 @@ namespace UretimOSKesim
     // TEKNİK RESİM OLUŞTURUCU — kullanıcının bu görüşmedeki asıl ilk isteği:
     // "her çizilen alt montajın teknik resimlerini almak". Her parça/alt montaj
     // için şablon üzerinden 4 görünüşlü (Ön/Üst/Sağ/İzometrik) bir çizim
-    // oluşturur ve PDF'e kaydeder.
+    // oluşturur ve .dwg olarak kaydeder.
     //
     // AÇIKÇA BELİRTİLMESİ GEREKEN SINIRLAR (v1 taslak):
     //  • Görünüş yerleşim koordinatları SABİT/yaklaşık — şablonunuzdaki kağıt
@@ -38,7 +38,7 @@ namespace UretimOSKesim
         // modelYolu: içe aktarılacak parça/montajın TAM dosya yolu (zaten
         // SolidWorks'te açık olması gerekir — CreateDrawViewFromModelView3
         // açık bir belgeye referans verir).
-        // Döndürdüğü değer: oluşturulan PDF'in tam yolu, hata varsa null.
+        // Döndürdüğü değer: oluşturulan .dwg dosyasının tam yolu, hata varsa null.
         // GÜVENLİK AĞI: bu sınıftaki NewDocument/CreateDrawViewFromModelView3/
         // SaveAs3 çağrıları henüz canlıda hiç denenmedi. SwAddin.cs'teki
         // Activate() çökmesinde öğrenilen ders: SolidWorks'ün native tarafında
@@ -91,8 +91,11 @@ namespace UretimOSKesim
                 cizimBelge.ViewZoomtofit2();
                 Tanilama.Kaydet("ViewZoomtofit2 tamamlandi");
 
+                // Çıktı formatı dosya adının UZANTISINDAN otomatik algılanır
+                // (SolidWorks'ün SaveAs3 davranışı) — .dwg, AutoCAD ile uyumlu
+                // 2D çizim formatı, PDF değil.
                 string dosyaAdi = System.IO.Path.Combine(cikisKlasoru,
-                    (dosyaAdiOnEki ?? "teknik_resim") + ".pdf");
+                    (dosyaAdiOnEki ?? "teknik_resim") + ".dwg");
 
                 Tanilama.Kaydet("SaveAs3 cagriliyor: " + dosyaAdi);
                 bool basarili = ((IModelDocExtension)cizimBelge.Extension).SaveAs3(
@@ -108,7 +111,7 @@ namespace UretimOSKesim
 
                 if (!basarili)
                 {
-                    _uyarilar.Add($"'{modelYolu}' → PDF kaydedilemedi (SaveAs3 hata kodu: {hata}).");
+                    _uyarilar.Add($"'{modelYolu}' → DWG kaydedilemedi (SaveAs3 hata kodu: {hata}).");
                     return null;
                 }
                 return dosyaAdi;
