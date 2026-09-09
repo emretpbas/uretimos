@@ -91,9 +91,23 @@ namespace UretimOSKesim
                 _cmdMgr = _app.GetCommandManager(_cookie);
                 Kaydet("GetCommandManager tamamlandi");
 
+                // KESİN TANI #7: doğru SolidWorks (2) interop DLL'lerine
+                // geçilmesine RAĞMEN çökme yine birebir aynı noktada
+                // (Activate()) devam etti — bu da sürüm uyuşmazlığı
+                // teorisini eledi. Kalan şüpheli nokta ÇAĞRI SIRASI:
+                // SetAddinCallbackInfo2 önceden Activate()'TEN SONRA
+                // çağrılıyordu. Resmi SolidWorks add-in şablonlarında bu
+                // çağrı CommandManager/komut grubu kurulumundan ÖNCE yapılır
+                // — mantık: Activate(), PaketOlusturCalistir gibi callback
+                // metotlarını eklentiye geri bağlamaya çalışır; eklenti
+                // SolidWorks'e "callback'lerim burada" diye kendini HENÜZ
+                // tanıtmamışken bu bağlamayı yapmaya çalışmak çökmeye yol
+                // açıyor olabilir. Sıra değiştirildi: şimdi ÖNCE.
+                _app.SetAddinCallbackInfo2(0, this, _cookie);
+                Kaydet("SetAddinCallbackInfo2 tamamlandi");
+
                 KomutlariKur();
 
-                _app.SetAddinCallbackInfo2(0, this, _cookie);
                 Kaydet("=== ConnectToSW basariyla bitti ===");
                 return true;
             }
