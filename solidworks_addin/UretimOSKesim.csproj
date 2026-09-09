@@ -50,24 +50,38 @@
     EmbedInteropTypes=false ÖNEMLİ: SolidWorks interop tipleri COM üzerinden
     canlı nesnelerle çalışır, gömülü (embedded) tip kullanılırsa çökme olur.
   -->
+  <!-- KESİN TANI #6 (gerçek çökme kanıtı): SWERR günlüğündeki <EXEDIR>
+       "C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS (2)" idi — makinede İKİ
+       ayrı SolidWorks kurulumu var ("SOLIDWORKS" eski/2023, "SOLIDWORKS (2)"
+       gerçekten çalışan 2025 SP3.0). Referanslar önceden ESKİ "SOLIDWORKS"
+       (2) OLMAYAN) klasöründen alınıyordu — yani kod, ÇALIŞAN SolidWorks'ten
+       FARKLI bir sürümün arayüz tanımına göre derleniyordu. Bu tür sürüm
+       uyuşmazlığı, temel çağrıların (CreateCommandGroup2, AddCommandItem2,
+       özellik atamaları) sessizce "çalışıp" ama Activate() gibi dahili COM
+       vtable düzenine daha duyarlı çağrıların rastgele bellek adresine
+       düşüp native çökmesine yol açar — kod içeriğini (ikon, bayrak, GUID,
+       ID) ne kadar değiştirirsek değiştirelim çökmenin HİÇ etkilenmemesinin
+       gerçek sebebi buydu. Kullanıcının kendi makinesinde doğrulanan doğru
+       yol: C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS (2)\api\redist\ -->
   <ItemGroup>
     <Reference Include="SolidWorks.Interop.sldworks">
-      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorks.Interop.sldworks.dll</HintPath>
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS (2)\api\redist\SolidWorks.Interop.sldworks.dll</HintPath>
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </Reference>
     <Reference Include="SolidWorks.Interop.swconst">
-      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorks.Interop.swconst.dll</HintPath>
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS (2)\api\redist\SolidWorks.Interop.swconst.dll</HintPath>
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </Reference>
     <Reference Include="SolidWorks.Interop.swpublished">
-      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS (2)\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </Reference>
     <Reference Include="SolidWorksTools">
       <!-- NOT: bu dosya bazı kurulumlarda api\redist yerine SOLIDWORKS ana
            klasöründe duruyor (küçük harfle "solidworkstools.dll") — yol
-           bulunamazsa Windows'ta arama yapıp gerçek konumu buraya yazın. -->
-      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\solidworkstools.dll</HintPath>
+           bulunamazsa Windows'ta arama yapıp gerçek konumu buraya yazın
+           (bu makinede "SOLIDWORKS (2)" kök klasörüne bakın). -->
+      <HintPath>C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS (2)\solidworkstools.dll</HintPath>
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </Reference>
     <!-- SolidWorksTools.dll, [SwAddin] özniteliğini (AddinAttribute) taşır —
