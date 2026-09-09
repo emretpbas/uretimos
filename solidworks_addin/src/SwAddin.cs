@@ -162,6 +162,21 @@ namespace UretimOSKesim
             grup.IconList = ikonlar;
             Kaydet("IconList atandi");
 
+            // KESİN TANI #3: log, çökmenin tam olarak Activate() içinde
+            // olduğunu kanıtladı (IconList atandıktan, AddCommandItem2'ler
+            // tamamlandıktan SONRA bile). GitHub'daki gerçek, çalışan bir
+            // SolidWorks eklenti framework'ü (Weingartner/
+            // SolidworksAddinFramework) incelendi: orada IconList/
+            // LargeIconList'in YANINDA HER ZAMAN bir "ana ikon" (MainIcon/
+            // MainIconList) de atanıyor. Resmi 2025 API dokümanı da
+            // "MainIconList ve IconList sırası eşleşmeli" diyerek ikisinin
+            // BİRLİKTE kullanılmasını ima ediyor. MainIconList hiç
+            // atanmamıştı — Activate() muhtemelen CommandTab/ana ikon
+            // temsilini oluştururken bunu okuyup null'a takılıyordu.
+            Kaydet("MainIconList atanıyor");
+            grup.MainIconList = ikonlar;
+            Kaydet("MainIconList atandi");
+
             Kaydet("1. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
                 "Kesim Listesi + Teknik Resim Paketi Oluştur", -1,
