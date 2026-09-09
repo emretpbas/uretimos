@@ -76,6 +76,11 @@
 
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
+    <!-- .NET Framework 4.8'de System.Net.Http (UretimOSApiClient.cs'in
+         HttpClient kullanımı için) VARSAYILAN olarak eklenmez, elle
+         referans vermek gerekir — gerçek denemede CS0234/CS0246 hatası
+         verdi. -->
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 
 </Project>

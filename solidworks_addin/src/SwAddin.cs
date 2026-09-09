@@ -30,13 +30,21 @@ namespace UretimOSKesim
     // kayıt defterinde eklentinizin kimliğidir, ASLA değiştirmeyin (değişirse
     // SolidWorks eklentiyi "yeni" sanır, ayarlar sıfırlanır).
     // ════════════════════════════════════════════════════════════════════════
+    // NOT: sınıf BİLEREK "UretimOSAddin" olarak adlandırıldı, "SwAddin" DEĞİL —
+    // gerçek derlemede tam bu isim çakışması bir hataya yol açtı: aşağıdaki
+    // [SolidWorks.Interop.swpublished.SwAddin(...)] özniteliği, sınıf da
+    // "SwAddin" adında olsaydı KENDİ SINIFIMIZLA çakışıp "SwAddin bir
+    // öznitelik sınıfı değildir" (CS0616) hatası veriyordu (C#, aynı ad
+    // alanındaki kendi sınıfımızı SolidWorks'ün öznitelik sınıfından önce
+    // buluyordu). Farklı isim + tam nitelikli öznitelik adı bu çakışmayı
+    // kalıcı olarak ortadan kaldırır.
     [Guid("11111111-2222-3333-4444-555555555555"), ComVisible(true)]
-    [SwAddin(
+    [SolidWorks.Interop.swpublished.SwAddin(
         Description = "ÜretimOS için kesim listesi ve teknik resim üretir; parça/paket kütüphanesini ÜretimOS ile senkronlar.",
         Title = "ÜretimOS Kesim & Teknik Resim",
         LoadAtStartup = true
     )]
-    public class SwAddin : ISwAddin
+    public class UretimOSAddin : ISwAddin
     {
         private ISldWorks _app;
         private int _cookie;
