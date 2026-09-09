@@ -76,6 +76,13 @@
 
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
+    <!-- İkon şeridi PROGRAMLA üretmek için (KomutlariKur/IkonlariHazirla) —
+         ICommandGroup.IconList boş bırakılamıyor, gerçek denemede bu tam
+         olarak "Access Violation ... virtual address 0" çökmesine sebep
+         oldu (bkz. SwAddin.cs "KESİN TANI #2" notu). UseWindowsForms=true
+         genelde System.Drawing'i de getirir ama emin olmak için elle
+         referans veriyoruz. -->
+    <Reference Include="System.Drawing" />
     <!-- .NET Framework 4.8'de System.Net.Http (UretimOSApiClient.cs'in
          HttpClient kullanımı için) VARSAYILAN olarak eklenmez, elle
          referans vermek gerekir — gerçek denemede CS0234/CS0246 hatası

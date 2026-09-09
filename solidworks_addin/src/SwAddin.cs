@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
@@ -65,19 +67,23 @@ namespace UretimOSKesim
         // hazırlanınca ayrı bir adımda eklenecek.
         public bool ConnectToSW(object ThisSW, int Cookie)
         {
+            Kaydet("=== ConnectToSW basladi ===");
             try
             {
                 _app = (ISldWorks)ThisSW;
                 _cookie = Cookie;
                 _cmdMgr = _app.GetCommandManager(_cookie);
+                Kaydet("GetCommandManager tamamlandi");
 
                 KomutlariKur();
 
                 _app.SetAddinCallbackInfo2(0, this, _cookie);
+                Kaydet("=== ConnectToSW basariyla bitti ===");
                 return true;
             }
             catch (Exception ex)
             {
+                Kaydet("=== ConnectToSW HATA (managed exception): " + ex + " ===");
                 MessageBox.Show(
                     "ÜretimOS eklentisi yüklenirken hata oluştu:\n\n" + ex,
                     "ÜretimOS Kesim & Teknik Resim — Yükleme Hatası",
@@ -101,22 +107,28 @@ namespace UretimOSKesim
         }
 
         // ── ARAÇ ÇUBUĞU / KOMUTLAR ───────────────────────────────────────────
-        // KESİN TANI (ImageListIndex=-1/HasToolbar=false denemesi de aynı
-        // sldappu çökmesini verince ikon teorisi ELENDİ): sorun, SolidWorks'ün
-        // CommandManager'ının komut grubu tanımını Windows kayıt defterinde
-        // (HKCU\...\Custom API Toolbars\...) ÖNBELLEKTE tutmasıydı. Geliştirme
-        // sırasında komut grubunun içeriği değiştiğinde (bizim durumumuzda:
-        // önceki çökmüş denemeden kalan eski/yarım kayıt) ve
-        // IgnorePreviousVersion=false ile eski kayıtla UYUŞMAYAN yeni bir
-        // tanım oluşturulmaya çalışılırsa SolidWorks native tarafta çöküyor.
-        // Bu, SolidWorks'ün KENDİ resmi Add-In şablonunun (Visual Studio
-        // SolidWorks Add-in Wizard) içindeki standart, belgelenmiş çözüm:
-        // GetGroupDataFromRegistry ile kayıtlı ID'leri oku, kendi ID'lerinle
-        // KARŞILAŞTIR, uyuşmuyorsa IgnorePreviousVersion=true geç (kayıtlı
-        // eski tanımı yok say, temiz oluştur). Kaynak: SolidWorks API
-        // "CommandManager and CommandGroups" resmi dokümanı.
+        // KESİN TANI #2 (kayıt defteri düzeltmesi de AYNI çökmeyi verdi):
+        // kullanıcının paylaştığı gerçek SolidWorks SWERR günlüğü şunu
+        // gösterdi: "Access Violation ... virtual address 0" (NULL POINTER
+        // okuma) ve çağrı izi (<AD5>) tam olarak Activate()'e kadar gidiyordu.
+        // Kök neden: ICommandGroup.IconList/MainIconList HİÇ ATANMAMIŞTI —
+        // SolidWorks 2020+ sürümlerinde (bizimki 2025 SP3.0) bu artık
+        // ZORUNLU; boş bırakılırsa Activate() null ikon dizisini okumaya
+        // çalışıp tam bu şekilde çöküyor (resmi SolidWorks API "IconList
+        // Property (ICommandGroup)" dokümanıyla doğrulandı — 20x20/32x32/
+        // 40x40 piksel şerit görüntüleri gerektiriyor, her komut için
+        // ImageListIndex o şeritteki kareyi seçiyor). Gerçek tasarlanmış
+        // ikon dosyamız olmadığından basit renkli kareler PROGRAMLA
+        // üretiliyor (bkz. IkonlariHazirla/SeritIkonUret) — estetik değil,
+        // sadece SolidWorks'ün beklediği dizi dolu olsun diye.
+        //
+        // GÜVENLİK AĞI: bu düzeltme de yetmezse bir daha "arama oyunu"na
+        // dönmemek için her adımdan önce/sonra diske log yazılıyor (Kaydet).
+        // Çökme olursa Masaüstü\uretimos_addin_log.txt dosyasının SON
+        // satırı, tam olarak hangi çağrının çökerttiğini gösterir.
         private void KomutlariKur()
         {
+            Kaydet("KomutlariKur basladi");
             const int GRUP_ID = 1;
             const int ID_KESIM = 1;
             const int ID_ETIKET = 2;
@@ -124,32 +136,53 @@ namespace UretimOSKesim
 
             bool eskisiniYokSay = false;
             object kayitliIdler;
+            Kaydet("GetGroupDataFromRegistry cagriliyor");
             bool kayitVarMi = _cmdMgr.GetGroupDataFromRegistry(GRUP_ID, out kayitliIdler);
+            Kaydet("GetGroupDataFromRegistry tamamlandi, kayitVarMi=" + kayitVarMi);
             if (kayitVarMi)
             {
                 eskisiniYokSay = !IdlerAyniMi((int[])kayitliIdler, komutIdleri);
             }
 
             int hataKodu = 0;
+            Kaydet("CreateCommandGroup2 cagriliyor, eskisiniYokSay=" + eskisiniYokSay);
             ICommandGroup grup = _cmdMgr.CreateCommandGroup2(
                 GRUP_ID, "ÜretimOS", "ÜretimOS kesim listesi ve teknik resim araçları",
                 "", -1, eskisiniYokSay, ref hataKodu);
+            Kaydet("CreateCommandGroup2 tamamlandi, hataKodu=" + hataKodu);
 
+            Kaydet("IkonlariHazirla cagriliyor");
+            string[] ikonlar = IkonlariHazirla();
+            Kaydet("IkonlariHazirla tamamlandi: " + string.Join(" | ", ikonlar));
+
+            Kaydet("IconList atanıyor");
+            grup.IconList = ikonlar;
+            Kaydet("IconList atandi");
+
+            Kaydet("1. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
                 "Kesim Listesi + Teknik Resim Paketi Oluştur", -1,
                 "Etiketlenmiş parça/alt montajlardan ZIP paketi üretir (ÜretimOS SWOOD İçe Aktarım ekranına yüklenebilir)",
-                "Kesim Paketi Oluştur", -1, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
+                "Kesim Paketi Oluştur", 0, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
                 ID_KESIM, (int)swCommandItemType_e.swMenuItem);
+            Kaydet("1. AddCommandItem2 tamamlandi");
 
+            Kaydet("2. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
                 "Paket/Parça Etiketle (Kütüphane)", -1,
                 "Seçili bileşene ÜretimOS paket/parça/malzeme/kenar bandı etiketi atar — Faz 2",
-                "Etiketle", -1, "EtiketlePaneliAc", "PaketOlusturEtkinMi",
+                "Etiketle", 1, "EtiketlePaneliAc", "PaketOlusturEtkinMi",
                 ID_ETIKET, (int)swCommandItemType_e.swMenuItem);
+            Kaydet("2. AddCommandItem2 tamamlandi");
 
+            Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = false;
             grup.HasMenu = true;
+            Kaydet("HasToolbar/HasMenu tamamlandi");
+
+            Kaydet("Activate cagriliyor");
             grup.Activate();
+            Kaydet("Activate tamamlandi - KomutlariKur bitti");
         }
 
         // Resmi SolidWorks Add-in şablonundaki CompareIDs karşılığı — kayıt
@@ -165,6 +198,60 @@ namespace UretimOSKesim
                 if (a[i] != b[i]) return false;
             }
             return true;
+        }
+
+        // ── İKON ŞERİDİ ÜRETİMİ (SolidWorks'ün ICommandGroup.IconList'i
+        // boş bırakılamıyor — bkz. yukarıdaki KESİN TANI #2 notu) ───────────
+        // 2 komutumuz olduğu için her boyutta yan yana 2 kareli tek bir şerit
+        // görüntü üretiliyor; ImageListIndex bu şeritteki kareyi (0 veya 1)
+        // seçiyor. Dosyalar bir kere üretilip diskte kalıcı tutuluyor
+        // (Kullanıcı\AppData\Local\UretimOSKesim\ikonlar).
+        private string[] IkonlariHazirla()
+        {
+            string klasor = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "UretimOSKesim", "ikonlar");
+            Directory.CreateDirectory(klasor);
+
+            string yol20 = Path.Combine(klasor, "komutlar_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_40.png");
+
+            SeritIkonUret(yol20, 20);
+            SeritIkonUret(yol32, 32);
+            SeritIkonUret(yol40, 40);
+
+            return new string[] { yol20, yol32, yol40 };
+        }
+
+        private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
+        {
+            if (File.Exists(dosyaYolu)) return;
+
+            int genislik = kareBoyutu * 2;
+            using (var bmp = new Bitmap(genislik, kareBoyutu))
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.FillRectangle(Brushes.SteelBlue, 0, 0, kareBoyutu, kareBoyutu);
+                g.FillRectangle(Brushes.SeaGreen, kareBoyutu, 0, kareBoyutu, kareBoyutu);
+                bmp.Save(dosyaYolu, ImageFormat.Png);
+            }
+        }
+
+        // ── TANI GÜNLÜĞÜ (native çökme managed try/catch ile yakalanamadığı
+        // için, çökmeden HEMEN ÖNCEKİ adımı diskte kalıcı kanıt olarak
+        // bırakır — her çağrı dosyayı açıp kapatır, bu yüzden çökme anında
+        // bile önceki satırlar diskte garanti kalır). ─────────────────────
+        private static readonly string LOG_DOSYASI = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "uretimos_addin_log.txt");
+
+        private static void Kaydet(string mesaj)
+        {
+            try
+            {
+                File.AppendAllText(LOG_DOSYASI, DateTime.Now.ToString("HH:mm:ss.fff") + " - " + mesaj + Environment.NewLine);
+            }
+            catch { /* günlük yazılamazsa sessizce geç — bu tanı amaçlı, işlevi etkilemesin */ }
         }
 
         // ── KOMUT: KESİM PAKETİ OLUŞTUR ──────────────────────────────────────
