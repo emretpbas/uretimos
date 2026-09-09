@@ -90,13 +90,20 @@ namespace UretimOSKesim
         }
 
         // ADIM 2 — ŞU AN AÇIK olan (kullanıcının elle düzenlediği) çizim
-        // belgesini hem .dwg hem .pdf olarak kaydeder. dwgYolu'nun klasörü
-        // ve dosya adı (uzantısız) esas alınır, .pdf AYNI ada farklı
-        // uzantıyla aynı klasöre yazılır. Çizim KAPATILMAZ.
-        public bool AcikCizimiKaydet(IModelDoc2 cizimBelge, string dwgYolu, out string kaydedilenDwg, out string kaydedilenPdf)
+        // belgesini hem .dwg hem .pdf HEM .jpg olarak kaydeder. dwgYolu'nun
+        // klasörü ve dosya adı (uzantısız) esas alınır, diğer 2 format AYNI
+        // ada farklı uzantıyla aynı klasöre yazılır. JPG, kullanıcının
+        // istediği çok sayfalı Excel/PDF RAPORUNA (bkz. RaporOlusturucu.cs)
+        // gömülecek görüntü — "bu jpegleri onayladığım teknik resimlerden
+        // oluştur" isteği burada karşılanıyor: JPG, tam olarak bu onay
+        // anındaki (kullanıcının elle düzenlediği) çizimden üretiliyor.
+        // Çizim KAPATILMAZ.
+        public bool AcikCizimiKaydet(IModelDoc2 cizimBelge, string dwgYolu,
+            out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg)
         {
             kaydedilenDwg = null;
             kaydedilenPdf = null;
+            kaydedilenJpg = null;
             Tanilama.Kaydet("AcikCizimiKaydet basladi: " + dwgYolu);
             try
             {
@@ -107,14 +114,15 @@ namespace UretimOSKesim
 
                 kaydedilenDwg = FarkliKaydet(ext, klasor, adOnEki, "dwg", baslikLog);
                 kaydedilenPdf = FarkliKaydet(ext, klasor, adOnEki, "pdf", baslikLog);
+                kaydedilenJpg = FarkliKaydet(ext, klasor, adOnEki, "jpg", baslikLog);
 
-                return kaydedilenDwg != null || kaydedilenPdf != null;
+                return kaydedilenDwg != null || kaydedilenPdf != null || kaydedilenJpg != null;
             }
             catch (Exception ex)
             {
                 Tanilama.Kaydet("AcikCizimiKaydet HATA (managed exception): " + ex);
                 _uyarilar.Add("Çizim kaydedilirken hata: " + ex.Message);
-                return kaydedilenDwg != null || kaydedilenPdf != null;
+                return kaydedilenDwg != null || kaydedilenPdf != null || kaydedilenJpg != null;
             }
         }
 

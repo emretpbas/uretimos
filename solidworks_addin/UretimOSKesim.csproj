@@ -39,6 +39,14 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- Çok sayfalı rapor (Excel/PDF) için — kullanıcı isteği: her parça
+         için ayrı sayfa/sekme + gömülü teknik resim JPG'i, tek CSV'nin
+         yerine. İkisi de Excel/Adobe kurulu OLMADAN, saf .NET ile dosya
+         üretir (COM otomasyonu DEĞİL — SolidWorks'ün kendi COM'uyla
+         zaten yeterince riskli deneyim yaşadık, ayrıca bir Excel/PDF COM
+         otomasyonu eklemek istemedik). -->
+    <PackageReference Include="ClosedXML" Version="0.102.3" />
+    <PackageReference Include="PdfSharp" Version="1.50.5147" />
   </ItemGroup>
 
   <!--

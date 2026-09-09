@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -68,6 +67,13 @@ namespace UretimOSKesim
         private ISldWorks _app;
         private int _cookie;
         private ICommandManager _cmdMgr;
+
+        // ADIM 1'de (TeknikResimOlusturCalistir) hangi modelin çizimi
+        // açıldıysa burada tutulur — ADIM 2 (TeknikResimOnaylaCalistir)
+        // kaydı Manifest'e bu model yoluyla yazabilsin diye (kullanıcı
+        // isteği: her parçanın onaylanan JPG'i, o parçanın kesim satırıyla
+        // eşleşsin — bkz. RaporOlusturucu.cs / KesimSatiri.ModelYolu).
+        private string _sonOlusturulanModelYolu;
 
         // ── SolidWorks YAŞAM DÖNGÜSÜ ─────────────────────────────────────────
         // GEÇMİŞ TANI: gerçek denemede SolidWorks'ün KENDİ native modülünde
@@ -220,9 +226,13 @@ namespace UretimOSKesim
 
             Tanilama.Kaydet("1. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
-                "Kesim Listesi + Teknik Resim Paketi Oluştur", -1,
-                "Etiketlenmiş parça/alt montajlardan ZIP paketi üretir (ÜretimOS SWOOD İçe Aktarım ekranına yüklenebilir)",
-                "Kesim Paketi Oluştur", 0, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
+                "Kesim Listesi + Teknik Resim Raporu Oluştur", -1,
+                "Etiketlenmiş parça/alt montajların kesim listesini ve o ana kadar onaylanmış " +
+                "teknik resimlerini (bkz. '2) Teknik Resmi Onayla') tek bir Excel (.xlsx) ve " +
+                "çok sayfalı PDF raporunda birleştirir — 'Genel' sayfası tüm parçaları ve montajın " +
+                "kendi teknik resmini, ayrı sayfalar/sekmeler ise her parçanın kesim satırını ve " +
+                "kendi teknik resmini içerir.",
+                "Rapor Oluştur", 0, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
                 ID_KESIM, itemTipi);
             Tanilama.Kaydet("1. AddCommandItem2 tamamlandi");
 
@@ -480,14 +490,17 @@ namespace UretimOSKesim
         // System Options > Default Templates'te görebilirsiniz).
         private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
 
-        // ── KOMUT: KESİM PAKETİ OLUŞTUR ──────────────────────────────────────
+        // ── KOMUT: KESİM LİSTESİ + TEKNİK RESİM RAPORU OLUŞTUR ───────────────
         // CommandManager bu adı (case-sensitive) [ComVisible] genel metod
-        // olarak public class üzerinde arar — imza değişmemeli. SADECE CSV/
-        // ZIP üretir — teknik resim akışından BİLİNÇLİ olarak ayrıldı (bkz.
-        // aşağıdaki TeknikResimOlusturCalistir/TeknikResimOnaylaCalistir):
-        // teknik resim artık iki adımlı, aralarında kullanıcının elle
-        // düzenleme yaptığı ayrı bir akış, tek tuşla otomatik ZIP'e
-        // gömülemez.
+        // olarak public class üzerinde arar — imza değişmemeli. Kullanıcı
+        // isteği üzerine eski ZIP/CSV çıktısının YERİNİ ALDI: şimdi Excel
+        // (.xlsx, "Genel" sekmesi + her parça için ayrı sekme) VE çok
+        // sayfalı PDF (genel özet sayfası + her parça için ayrı sayfa)
+        // birlikte üretiliyor (bkz. RaporOlusturucu.cs). Her parçanın
+        // teknik resmi, o parça için DAHA ÖNCE '2) Teknik Resmi Onayla'
+        // ile onaylanmış JPG'den gelir (bkz. Manifest.cs) — bu komut
+        // teknik resim ÜRETMEZ, sadece o ana kadar onaylanmış olanları
+        // toplar.
         public void PaketOlusturCalistir()
         {
             IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
@@ -500,18 +513,27 @@ namespace UretimOSKesim
             var cikarici = new KesimListesiCikarici();
             var satirlar = cikarici.MontajiGez(aktifBelge);
 
-            using (var kaydetDialog = new SaveFileDialog { Filter = "ZIP dosyası|*.zip", FileName = "uretimos_kesim_paketi.zip" })
+            string xlsxYolu;
+            using (var kaydetDialog = new SaveFileDialog { Filter = "Excel dosyası|*.xlsx", FileName = "uretimos_kesim_raporu.xlsx" })
             {
                 if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
-                cikarici.ZipOlustur(kaydetDialog.FileName, satirlar);
+                xlsxYolu = kaydetDialog.FileName;
             }
 
-            string ozet = $"{satirlar.Count} parça satırı dışa aktarıldı.";
-            if (cikarici.Uyarilar.Count > 0)
-                ozet += $"\n\n{cikarici.Uyarilar.Count} uyarı:\n- " + string.Join("\n- ", cikarici.Uyarilar);
+            var raporUretici = new RaporOlusturucu();
+            bool basarili = raporUretici.RaporUret(satirlar, aktifBelge.GetPathName(), xlsxYolu,
+                out string uretilenXlsx, out string uretilenPdf);
 
-            MessageBox.Show(ozet, "ÜretimOS Kesim Paketi", MessageBoxButtons.OK,
-                cikarici.Uyarilar.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+            string ozet = basarili
+                ? $"{satirlar.Count} parça satırı içeren rapor oluşturuldu:\n{uretilenXlsx ?? "(xlsx başarısız)"}\n{uretilenPdf ?? "(pdf başarısız)"}"
+                : "Rapor oluşturulamadı.";
+            var tumUyarilar = new List<string>(cikarici.Uyarilar);
+            tumUyarilar.AddRange(raporUretici.Uyarilar);
+            if (tumUyarilar.Count > 0)
+                ozet += $"\n\n{tumUyarilar.Count} uyarı:\n- " + string.Join("\n- ", tumUyarilar);
+
+            MessageBox.Show(ozet, "ÜretimOS Kesim Raporu", MessageBoxButtons.OK,
+                !basarili ? MessageBoxIcon.Error : tumUyarilar.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
 
         // ── KOMUT: TEKNİK RESİM OLUŞTUR (ADIM 1) ─────────────────────────────
@@ -540,6 +562,7 @@ namespace UretimOSKesim
             Tanilama.Kaydet("TeknikResimOlusturCalistir: " + aktifYol);
             var resimUretici = new TeknikResimOlusturucu(_app);
             bool basarili = resimUretici.TeknikResimAcVeDuzenlemeyeBirak(aktifYol, SABLON_YOLU);
+            if (basarili) _sonOlusturulanModelYolu = aktifYol;
 
             string ozet = basarili
                 ? "Çizim oluşturuldu ve SolidWorks'te açık — yerleşimi/ölçeği elle düzenleyin, " +
@@ -576,10 +599,17 @@ namespace UretimOSKesim
 
             Tanilama.Kaydet("TeknikResimOnaylaCalistir: " + dwgYolu);
             var resimUretici = new TeknikResimOlusturucu(_app);
-            bool basarili = resimUretici.AcikCizimiKaydet(aktifBelge, dwgYolu, out string kaydedilenDwg, out string kaydedilenPdf);
+            bool basarili = resimUretici.AcikCizimiKaydet(aktifBelge, dwgYolu,
+                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg);
+
+            if (basarili && !string.IsNullOrWhiteSpace(_sonOlusturulanModelYolu))
+            {
+                Manifest.Kaydet(_sonOlusturulanModelYolu, kaydedilenDwg, kaydedilenPdf, kaydedilenJpg);
+                Tanilama.Kaydet("Manifest.Kaydet tamamlandi: " + _sonOlusturulanModelYolu);
+            }
 
             string ozet = basarili
-                ? $"Kaydedildi:\n{kaydedilenDwg ?? "(dwg başarısız)"}\n{kaydedilenPdf ?? "(pdf başarısız)"}"
+                ? $"Kaydedildi:\n{kaydedilenDwg ?? "(dwg başarısız)"}\n{kaydedilenPdf ?? "(pdf başarısız)"}\n{kaydedilenJpg ?? "(jpg başarısız)"}"
                 : "Kaydetme başarısız.";
             if (resimUretici.Uyarilar.Count > 0)
                 ozet += "\n\n" + string.Join("\n", resimUretici.Uyarilar);

@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
-using System.Text;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -26,6 +24,12 @@ namespace UretimOSKesim
         public string Ebf, Ebb, Ebl, Ebr; // kenar bandı (Ön/Arka/Sol/Sağ) — kod veya boş
         public string PaketKodu, PaketAdi, UstPaketKodu; // YENİ: alt kırılım için
         public string OlcuKaynagi;     // tanılama: "bbox" | "elle" (dışa AKTARILMAZ, log'a yazılır)
+
+        // YENİ: bu satırın ait olduğu bileşenin TAM dosya yolu — RaporOlusturucu
+        // bunu, TeknikResimOnaylaCalistir'de kaydedilen manifest girdisiyle
+        // (o parçanın onaylanmış JPG'i) eşleştirmek için kullanır. Dışa CSV/
+        // Excel'e YAZILMAZ, sadece kod içi eşleştirme amaçlı.
+        public string ModelYolu;
     }
 
     public class KesimListesiCikarici
@@ -141,7 +145,8 @@ namespace UretimOSKesim
                 Ebl = OzelAlanOku(modelDoc, OzelAlanlar.KENAR_SOL) ?? "",
                 Ebr = OzelAlanOku(modelDoc, OzelAlanlar.KENAR_SAG) ?? "",
                 UstPaketKodu = ustPaketKodu ?? "",
-                OlcuKaynagi = kaynak
+                OlcuKaynagi = kaynak,
+                ModelYolu = modelDoc.GetPathName()
             };
             satirlar.Add(satir);
         }
@@ -207,54 +212,13 @@ namespace UretimOSKesim
                 (int)swCustomPropertyAddOption_e.swCustomPropertyReplaceValue);
         }
 
-        // ── CSV + ZIP PAKETLEME ──────────────────────────────────────────────
-        // Mevcut ÜretimOS içe aktarıcısının beklediği klasör yapısı BİREBİR
-        // korunuyor: "Saw Cut Export/*.csv" (bkz. swood_okuyucu.js zipDosyaBul
-        // deseni). teknikResimDosyalari VERİLDİYSE (TeknikResimOlusturucu'nun
-        // ürettiği .dwg/.pdf dosyalarının tam yolları), bunlar AYNI ZIP'e
-        // "Teknik Resimler/" klasörü altında eklenir — kullanıcı isteği:
-        // kesim listesi ve teknik resimler tek dosyada birlikte gitsin.
-        public void ZipOlustur(string cikisYolu, List<KesimSatiri> satirlar, IEnumerable<string> teknikResimDosyalari = null)
-        {
-            using (var zip = ZipFile.Open(cikisYolu, ZipArchiveMode.Create))
-            {
-                var csv = CsvUret(satirlar);
-                var girdi = zip.CreateEntry("Saw Cut Export/kesim_listesi.csv");
-                using (var yazici = new StreamWriter(girdi.Open(), new UTF8Encoding(true)))
-                {
-                    yazici.Write(csv);
-                }
-
-                if (teknikResimDosyalari != null)
-                {
-                    foreach (var dosyaYolu in teknikResimDosyalari)
-                    {
-                        if (string.IsNullOrWhiteSpace(dosyaYolu) || !File.Exists(dosyaYolu)) continue;
-                        zip.CreateEntryFromFile(dosyaYolu, "Teknik Resimler/" + Path.GetFileName(dosyaYolu));
-                    }
-                }
-            }
-        }
-
-        private string CsvUret(List<KesimSatiri> satirlar)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("DESC;SAP_CODE;LENGHT;WIDTH;QTY;MATERIAL;EBF;EBB;EBL;EBR;PAKET_KODU;PAKET_ADI;USTPAKET_KODU");
-            foreach (var s in satirlar)
-            {
-                sb.AppendLine(string.Join(";", new[]
-                {
-                    KacisEt(s.Desc), KacisEt(s.SapCode),
-                    s.Lenght.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    s.Width.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    s.Qty.ToString(), KacisEt(s.Material),
-                    KacisEt(s.Ebf), KacisEt(s.Ebb), KacisEt(s.Ebl), KacisEt(s.Ebr),
-                    KacisEt(s.PaketKodu), KacisEt(s.PaketAdi), KacisEt(s.UstPaketKodu)
-                }));
-            }
-            return sb.ToString();
-        }
-
-        private string KacisEt(string s) => (s ?? "").Replace(";", ",").Replace("\r", " ").Replace("\n", " ");
+        // NOT: eskiden burada CSV/ZIP paketleme vardı (ZipOlustur/CsvUret/
+        // KacisEt) — kullanıcı isteği üzerine bu dosya formatı tamamen
+        // RaporOlusturucu.cs'teki Excel (.xlsx) + çok sayfalı PDF üretimine
+        // devredildi (bkz. SwAddin.cs:PaketOlusturCalistir). ÜretimOS ana
+        // deposundaki SWOOD İçe Aktarım ekranı (swood_okuyucu.js/
+        // is_emri_uretici.js) hâlâ eski CSV formatını okuyor — bu YENİ
+        // formatı okuyacak şekilde güncellenmesi AYRI, henüz yapılmamış bir
+        // iştir.
     }
 }
