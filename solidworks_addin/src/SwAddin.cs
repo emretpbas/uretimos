@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -92,6 +93,16 @@ namespace UretimOSKesim
             Tanilama.Kaydet("=== ConnectToSW basladi ===");
             try
             {
+                // SolidWorks (SLDWORKS.exe) kendi .NET derleme arama yolunu
+                // kullanır — ClosedXML/PdfSharp'ın NuGet'ten gelen alt
+                // bağımlılıkları (ör. SixLabors.Fonts, DocumentFormat.OpenXml)
+                // eklentimizin KENDİ klasöründe dursa bile SolidWorks bunları
+                // otomatik bulamayabiliyor ("tür bulunamadı" hatası — gerçek
+                // denemede doğrulandı). Bu olay, bulunamayan her derlemeyi
+                // BİZİM klasörümüzden elle yüklemeyi dener.
+                AppDomain.CurrentDomain.AssemblyResolve += BagimliliklariCoz;
+                Tanilama.Kaydet("AssemblyResolve kaydedildi");
+
                 _app = (ISldWorks)ThisSW;
                 _cookie = Cookie;
                 _cmdMgr = _app.GetCommandManager(_cookie);
@@ -125,6 +136,32 @@ namespace UretimOSKesim
                     "ÜretimOS Kesim & Teknik Resim — Yükleme Hatası",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
+            }
+        }
+
+        // Eklentimizin (.dll) bulunduğu klasörde, istenen ada uyan bir DLL
+        // varsa onu yükler — SolidWorks'ün kendi arama yolunda bulamadığı
+        // NuGet alt bağımlılıklarımızı (ClosedXML/PdfSharp'ın getirdiği
+        // SixLabors.Fonts, DocumentFormat.OpenXml, ExcelNumberFormat, RBush,
+        // XLParser vb.) devreye sokan güvenlik ağı.
+        private static Assembly BagimliliklariCoz(object sender, ResolveEventArgs args)
+        {
+            try
+            {
+                string klasor = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                string istenenAd = new AssemblyName(args.Name).Name;
+                string dllYolu = Path.Combine(klasor, istenenAd + ".dll");
+                Tanilama.Kaydet($"AssemblyResolve: '{args.Name}' isteniyor, denenen yol: {dllYolu}");
+                if (File.Exists(dllYolu))
+                {
+                    return Assembly.LoadFrom(dllYolu);
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("BagimliliklariCoz HATA: " + ex);
+                return null;
             }
         }
 
