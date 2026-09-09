@@ -162,7 +162,9 @@ namespace UretimOSKesim
             const int GRUP_ID = 100;
             const int ID_KESIM = 101;
             const int ID_ETIKET = 102;
-            int[] komutIdleri = new int[] { ID_KESIM, ID_ETIKET };
+            const int ID_TEKNIK_OLUSTUR = 103;
+            const int ID_TEKNIK_ONAYLA = 104;
+            int[] komutIdleri = new int[] { ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA };
 
             bool eskisiniYokSay = false;
             object kayitliIdler;
@@ -232,6 +234,27 @@ namespace UretimOSKesim
                 ID_ETIKET, itemTipi);
             Tanilama.Kaydet("2. AddCommandItem2 tamamlandi");
 
+            // İKİ ADIMLI TEKNİK RESİM AKIŞI (kullanıcı isteği: "önce solidde
+            // yapsın ben düzenleyeyim, sonra onayla dwg ve pdf alsın") —
+            // otomatik yerleşim antete taşma sorununu tam çözemediği için
+            // araya bilinçli bir insan-düzenleme adımı eklendi.
+            Tanilama.Kaydet("3. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "1) Teknik Resim Oluştur (Düzenlemek İçin Aç)", -1,
+                "Aktif parça/montaj için 4 görünüşlü bir çizim oluşturur ve SolidWorks'te AÇIK bırakır — " +
+                "yerleşimi/ölçeği elle düzenleyin, sonra '2) Teknik Resmi Onayla'ya basın.",
+                "Teknik Resim Oluştur", 0, "TeknikResimOlusturCalistir", "PaketOlusturEtkinMi",
+                ID_TEKNIK_OLUSTUR, itemTipi);
+            Tanilama.Kaydet("3. AddCommandItem2 tamamlandi");
+
+            Tanilama.Kaydet("4. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "2) Teknik Resmi Onayla (DWG+PDF Kaydet)", -1,
+                "Şu an SolidWorks'te AÇIK olan (elle düzenlediğiniz) çizimi hem .dwg hem .pdf olarak kaydeder.",
+                "Onayla ve Kaydet", 1, "TeknikResimOnaylaCalistir", "PaketOlusturEtkinMi",
+                ID_TEKNIK_ONAYLA, itemTipi);
+            Tanilama.Kaydet("4. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -300,17 +323,18 @@ namespace UretimOSKesim
         // (bkz. Tanilama.cs'teki gerekçe yorumu). Bu dosyadaki tüm eski
         // Kaydet(...) çağrıları Tanilama.Kaydet(...) olarak güncellendi.
 
-        // GEÇİCİ TEST SABİTİ: TeknikResimOlusturucu'nun canlıda İLK KEZ
-        // denenmesi için — kendi .drwdot çizim şablonunuzun TAM YOLUNU buraya
-        // yazın (Tools > Options > System Options > Default Templates'te
-        // görebilirsiniz). Boş bırakılırsa veya dosya bulunamazsa teknik
-        // resim adımı sessizce ATLANIR — kesim listesi/ZIP akışı BUNDAN
-        // ETKİLENMEZ (zaten kanıtlanmış, ayrı bir mekanizma).
-        private const string TEST_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Drawing.drwdot";
+        // Kendi .drwdot çizim şablonunuzun TAM YOLU (Tools > Options >
+        // System Options > Default Templates'te görebilirsiniz).
+        private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Drawing.drwdot";
 
         // ── KOMUT: KESİM PAKETİ OLUŞTUR ──────────────────────────────────────
         // CommandManager bu adı (case-sensitive) [ComVisible] genel metod
-        // olarak public class üzerinde arar — imza değişmemeli.
+        // olarak public class üzerinde arar — imza değişmemeli. SADECE CSV/
+        // ZIP üretir — teknik resim akışından BİLİNÇLİ olarak ayrıldı (bkz.
+        // aşağıdaki TeknikResimOlusturCalistir/TeknikResimOnaylaCalistir):
+        // teknik resim artık iki adımlı, aralarında kullanıcının elle
+        // düzenleme yaptığı ayrı bir akış, tek tuşla otomatik ZIP'e
+        // gömülemez.
         public void PaketOlusturCalistir()
         {
             IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
@@ -323,60 +347,92 @@ namespace UretimOSKesim
             var cikarici = new KesimListesiCikarici();
             var satirlar = cikarici.MontajiGez(aktifBelge);
 
-            // ZIP yolu ÖNCE soruluyor — teknik resim dosyaları üretilince
-            // AYNI ZIP'e (CSV'nin yanına) eklenecek, ayrı bir dosya olarak
-            // Masaüstüne kaydedilmeyecek (kullanıcı isteği).
-            string zipYolu;
             using (var kaydetDialog = new SaveFileDialog { Filter = "ZIP dosyası|*.zip", FileName = "uretimos_kesim_paketi.zip" })
             {
                 if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
-                zipYolu = kaydetDialog.FileName;
-            }
-
-            // GEÇİCİ TEST: teknik resim üretim mekanizması — sadece AKTİF
-            // montajın kendisi için TEK bir DWG+PDF çifti üretir (her
-            // etiketli parça için ayrı ayrı üretim, mekanizma kanıtlandıktan
-            // SONRA KesimListesiCikarici'ye entegre edilecek). TEST_SABLON_YOLU
-            // boşsa/geçersizse bu adım tamamen atlanır, ZIP sadece CSV içerir.
-            // Üretilen dosyalar bir GEÇİCİ klasöre yazılır, ZIP'e eklendikten
-            // sonra silinir — kalıcı ayrı dosya OLARAK bırakılmaz.
-            var teknikResimDosyalari = new List<string>();
-            string teknikResimOzeti = "";
-            if (!string.IsNullOrWhiteSpace(TEST_SABLON_YOLU) && File.Exists(TEST_SABLON_YOLU))
-            {
-                Tanilama.Kaydet("Teknik resim TEST adımı basliyor");
-                var resimUretici = new TeknikResimOlusturucu(_app);
-                string aktifYol = aktifBelge.GetPathName();
-                string gecidiKlasor = Path.Combine(Path.GetTempPath(), "UretimOSTeknikResim");
-                Directory.CreateDirectory(gecidiKlasor);
-
-                bool basarili = resimUretici.TeknikResimOlustur(aktifYol, TEST_SABLON_YOLU, gecidiKlasor,
-                    "uretimos_teknik_resim_test", out string dwgYolu, out string pdfYolu);
-
-                if (dwgYolu != null) teknikResimDosyalari.Add(dwgYolu);
-                if (pdfYolu != null) teknikResimDosyalari.Add(pdfYolu);
-
-                teknikResimOzeti = basarili
-                    ? "\n\nTeknik resim testi: BAŞARILI (DWG+PDF ZIP'e eklendi)."
-                    : "\n\nTeknik resim testi: BAŞARISIZ.";
-                if (resimUretici.Uyarilar.Count > 0)
-                    teknikResimOzeti += "\n" + string.Join("\n", resimUretici.Uyarilar);
-            }
-
-            cikarici.ZipOlustur(zipYolu, satirlar, teknikResimDosyalari);
-
-            foreach (var gecidiDosya in teknikResimDosyalari)
-            {
-                try { File.Delete(gecidiDosya); } catch { /* gecici dosya, silinemezse onemli degil */ }
+                cikarici.ZipOlustur(kaydetDialog.FileName, satirlar);
             }
 
             string ozet = $"{satirlar.Count} parça satırı dışa aktarıldı.";
             if (cikarici.Uyarilar.Count > 0)
                 ozet += $"\n\n{cikarici.Uyarilar.Count} uyarı:\n- " + string.Join("\n- ", cikarici.Uyarilar);
-            ozet += teknikResimOzeti;
 
             MessageBox.Show(ozet, "ÜretimOS Kesim Paketi", MessageBoxButtons.OK,
                 cikarici.Uyarilar.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+
+        // ── KOMUT: TEKNİK RESİM OLUŞTUR (ADIM 1) ─────────────────────────────
+        // Çizimi oluşturur ve SolidWorks'te AÇIK BIRAKIR — kaydetmez,
+        // kapatmaz. Kullanıcı isteği: "önce solidde yapsın ben düzenleyeyim,
+        // sonra onayla dwg ve pdf alsın" — otomatik görünüş yerleşimi antete
+        // taşabildiği için (kullanıcı geri bildirimi) bu adım BİLİNÇLİ olarak
+        // insana bırakıldı.
+        public void TeknikResimOlusturCalistir()
+        {
+            if (string.IsNullOrWhiteSpace(SABLON_YOLU) || !File.Exists(SABLON_YOLU))
+            {
+                MessageBox.Show($"Çizim şablonu bulunamadı:\n{SABLON_YOLU}\n\nSwAddin.cs'teki SABLON_YOLU sabitini kontrol edin.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null)
+            {
+                MessageBox.Show("Önce bir parça veya montaj açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string aktifYol = aktifBelge.GetPathName();
+            Tanilama.Kaydet("TeknikResimOlusturCalistir: " + aktifYol);
+            var resimUretici = new TeknikResimOlusturucu(_app);
+            bool basarili = resimUretici.TeknikResimAcVeDuzenlemeyeBirak(aktifYol, SABLON_YOLU);
+
+            string ozet = basarili
+                ? "Çizim oluşturuldu ve SolidWorks'te açık — yerleşimi/ölçeği elle düzenleyin, " +
+                  "bitince '2) Teknik Resmi Onayla'ya basın."
+                : "Çizim oluşturulamadı.";
+            if (resimUretici.Uyarilar.Count > 0)
+                ozet += "\n\n" + string.Join("\n", resimUretici.Uyarilar);
+
+            MessageBox.Show(ozet, "ÜretimOS Teknik Resim", MessageBoxButtons.OK,
+                basarili ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        // ── KOMUT: TEKNİK RESMİ ONAYLA (ADIM 2) ──────────────────────────────
+        // Şu an SolidWorks'te AÇIK olan (kullanıcının elle düzenlediği)
+        // çizimi hem .dwg hem .pdf olarak kaydeder. Çizim İÇERİĞİNE dokunmaz.
+        public void TeknikResimOnaylaCalistir()
+        {
+            var aktifBelge = _app.ActiveDoc as IModelDoc2;
+            if (aktifBelge == null || aktifBelge.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
+            {
+                MessageBox.Show(
+                    "Onaylamak için önce bir ÇİZİM (.slddrw) belgesini aktif hale getirin\n" +
+                    "('1) Teknik Resim Oluştur' ile açtığınız çizim).",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string dwgYolu;
+            using (var kaydetDialog = new SaveFileDialog { Filter = "DWG dosyası|*.dwg", FileName = "teknik_resim.dwg" })
+            {
+                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                dwgYolu = kaydetDialog.FileName;
+            }
+
+            Tanilama.Kaydet("TeknikResimOnaylaCalistir: " + dwgYolu);
+            var resimUretici = new TeknikResimOlusturucu(_app);
+            bool basarili = resimUretici.AcikCizimiKaydet(aktifBelge, dwgYolu, out string kaydedilenDwg, out string kaydedilenPdf);
+
+            string ozet = basarili
+                ? $"Kaydedildi:\n{kaydedilenDwg ?? "(dwg başarısız)"}\n{kaydedilenPdf ?? "(pdf başarısız)"}"
+                : "Kaydetme başarısız.";
+            if (resimUretici.Uyarilar.Count > 0)
+                ozet += "\n\n" + string.Join("\n", resimUretici.Uyarilar);
+
+            MessageBox.Show(ozet, "ÜretimOS Teknik Resim", MessageBoxButtons.OK,
+                basarili ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
 
         // ── KOMUT: ETİKETLEME PANELİ (Faz 2 — şimdilik yer tutucu) ───────────
