@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
@@ -100,38 +101,70 @@ namespace UretimOSKesim
         }
 
         // ── ARAÇ ÇUBUĞU / KOMUTLAR ───────────────────────────────────────────
-        // NOT: ImageListIndex parametreleri BİLİNÇLİ olarak -1 (ikon yok) —
-        // gerçek denemede tam SolidWorks çökmesi (Fault Module: sldappu)
-        // yaşandı; CreateCommandGroup2/AddCommandItem2'nin imzaları Nesne
-        // Gezgini/Go to Definition ile doğrulanıp doğru olduğu kanıtlandı,
-        // dolayısıyla en olası çökme sebebi hiç tanımlanmamış bir ikon
-        // listesine (IconList/MainIconList atanmadan) 0/1 indeksiyle
-        // referans vermekti. HasToolbar de aynı sebeple false bırakıldı —
-        // sadece MENÜ üzerinden erişilir. İkonlar + araç çubuğu, gerçek bir
-        // .bmp/.png ikon listesi hazırlanıp CommandGroup.IconList ile
-        // atandıktan SONRA, ayrı bir adımda güvenle eklenebilir.
+        // KESİN TANI (ImageListIndex=-1/HasToolbar=false denemesi de aynı
+        // sldappu çökmesini verince ikon teorisi ELENDİ): sorun, SolidWorks'ün
+        // CommandManager'ının komut grubu tanımını Windows kayıt defterinde
+        // (HKCU\...\Custom API Toolbars\...) ÖNBELLEKTE tutmasıydı. Geliştirme
+        // sırasında komut grubunun içeriği değiştiğinde (bizim durumumuzda:
+        // önceki çökmüş denemeden kalan eski/yarım kayıt) ve
+        // IgnorePreviousVersion=false ile eski kayıtla UYUŞMAYAN yeni bir
+        // tanım oluşturulmaya çalışılırsa SolidWorks native tarafta çöküyor.
+        // Bu, SolidWorks'ün KENDİ resmi Add-In şablonunun (Visual Studio
+        // SolidWorks Add-in Wizard) içindeki standart, belgelenmiş çözüm:
+        // GetGroupDataFromRegistry ile kayıtlı ID'leri oku, kendi ID'lerinle
+        // KARŞILAŞTIR, uyuşmuyorsa IgnorePreviousVersion=true geç (kayıtlı
+        // eski tanımı yok say, temiz oluştur). Kaynak: SolidWorks API
+        // "CommandManager and CommandGroups" resmi dokümanı.
         private void KomutlariKur()
         {
+            const int GRUP_ID = 1;
+            const int ID_KESIM = 1;
+            const int ID_ETIKET = 2;
+            int[] komutIdleri = new int[] { ID_KESIM, ID_ETIKET };
+
+            bool eskisiniYokSay = false;
+            object kayitliIdler;
+            bool kayitVarMi = _cmdMgr.GetGroupDataFromRegistry(GRUP_ID, out kayitliIdler);
+            if (kayitVarMi)
+            {
+                eskisiniYokSay = !IdlerAyniMi((int[])kayitliIdler, komutIdleri);
+            }
+
             int hataKodu = 0;
             ICommandGroup grup = _cmdMgr.CreateCommandGroup2(
-                1, "ÜretimOS", "ÜretimOS kesim listesi ve teknik resim araçları",
-                "", -1, false, ref hataKodu);
+                GRUP_ID, "ÜretimOS", "ÜretimOS kesim listesi ve teknik resim araçları",
+                "", -1, eskisiniYokSay, ref hataKodu);
 
-            int idKesim = grup.AddCommandItem2(
+            grup.AddCommandItem2(
                 "Kesim Listesi + Teknik Resim Paketi Oluştur", -1,
                 "Etiketlenmiş parça/alt montajlardan ZIP paketi üretir (ÜretimOS SWOOD İçe Aktarım ekranına yüklenebilir)",
                 "Kesim Paketi Oluştur", -1, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
-                1, (int)swCommandItemType_e.swMenuItem);
+                ID_KESIM, (int)swCommandItemType_e.swMenuItem);
 
-            int idEtiket = grup.AddCommandItem2(
+            grup.AddCommandItem2(
                 "Paket/Parça Etiketle (Kütüphane)", -1,
                 "Seçili bileşene ÜretimOS paket/parça/malzeme/kenar bandı etiketi atar — Faz 2",
                 "Etiketle", -1, "EtiketlePaneliAc", "PaketOlusturEtkinMi",
-                2, (int)swCommandItemType_e.swMenuItem);
+                ID_ETIKET, (int)swCommandItemType_e.swMenuItem);
 
             grup.HasToolbar = false;
             grup.HasMenu = true;
             grup.Activate();
+        }
+
+        // Resmi SolidWorks Add-in şablonundaki CompareIDs karşılığı — kayıt
+        // defterindeki eski komut ID listesiyle bizim şu anki ID listemiz
+        // (sıradan bağımsız) birebir aynı mı diye bakar.
+        private static bool IdlerAyniMi(int[] kayitli, int[] guncel)
+        {
+            if (kayitli == null || kayitli.Length != guncel.Length) return false;
+            var a = new List<int>(kayitli); a.Sort();
+            var b = new List<int>(guncel); b.Sort();
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
 
         // ── KOMUT: KESİM PAKETİ OLUŞTUR ──────────────────────────────────────
