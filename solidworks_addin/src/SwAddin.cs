@@ -177,12 +177,24 @@ namespace UretimOSKesim
             grup.MainIconList = ikonlar;
             Kaydet("MainIconList atandi");
 
+            // KESİN TANI #4: log yine Activate()'te çöktüğünü gösterdi —
+            // IconList VE MainIconList atanmış olmasına rağmen. GitHub'daki
+            // aynı çalışan framework'ün AddCommandItem2 çağrıları incelendi:
+            // orada menuToolbarOption HER ZAMAN "swToolbarItem | swMenuItem"
+            // (İKİ bayrak BİRLİKTE) — HasToolbar ayarından BAĞIMSIZ. Bizim
+            // kodda sadece swMenuItem vardı; HasToolbar=false yaptığımızda
+            // ikinci bayrağı da kaldırmıştık — bu, "bu öğe hangi tipte"
+            // bayrağıyla "şu an görünür mü" ayarını (HasToolbar) karıştırmak
+            // olmuş. Aynı örnekte HasToolbar de hep true — o yüzden buraya
+            // da geri alındı.
+            int itemTipi = (int)swCommandItemType_e.swMenuItem | (int)swCommandItemType_e.swToolbarItem;
+
             Kaydet("1. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
                 "Kesim Listesi + Teknik Resim Paketi Oluştur", -1,
                 "Etiketlenmiş parça/alt montajlardan ZIP paketi üretir (ÜretimOS SWOOD İçe Aktarım ekranına yüklenebilir)",
                 "Kesim Paketi Oluştur", 0, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
-                ID_KESIM, (int)swCommandItemType_e.swMenuItem);
+                ID_KESIM, itemTipi);
             Kaydet("1. AddCommandItem2 tamamlandi");
 
             Kaydet("2. AddCommandItem2 cagriliyor");
@@ -190,11 +202,11 @@ namespace UretimOSKesim
                 "Paket/Parça Etiketle (Kütüphane)", -1,
                 "Seçili bileşene ÜretimOS paket/parça/malzeme/kenar bandı etiketi atar — Faz 2",
                 "Etiketle", 1, "EtiketlePaneliAc", "PaketOlusturEtkinMi",
-                ID_ETIKET, (int)swCommandItemType_e.swMenuItem);
+                ID_ETIKET, itemTipi);
             Kaydet("2. AddCommandItem2 tamamlandi");
 
             Kaydet("HasToolbar/HasMenu ayarlaniyor");
-            grup.HasToolbar = false;
+            grup.HasToolbar = true;
             grup.HasMenu = true;
             Kaydet("HasToolbar/HasMenu tamamlandi");
 
