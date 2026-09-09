@@ -323,42 +323,57 @@ namespace UretimOSKesim
             var cikarici = new KesimListesiCikarici();
             var satirlar = cikarici.MontajiGez(aktifBelge);
 
+            // ZIP yolu ÖNCE soruluyor — teknik resim dosyaları üretilince
+            // AYNI ZIP'e (CSV'nin yanına) eklenecek, ayrı bir dosya olarak
+            // Masaüstüne kaydedilmeyecek (kullanıcı isteği).
+            string zipYolu;
             using (var kaydetDialog = new SaveFileDialog { Filter = "ZIP dosyası|*.zip", FileName = "uretimos_kesim_paketi.zip" })
             {
                 if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
-                cikarici.ZipOlustur(kaydetDialog.FileName, satirlar);
+                zipYolu = kaydetDialog.FileName;
             }
 
-            string ozet = $"{satirlar.Count} parça satırı dışa aktarıldı.";
-            if (cikarici.Uyarilar.Count > 0)
-                ozet += $"\n\n{cikarici.Uyarilar.Count} uyarı:\n- " + string.Join("\n- ", cikarici.Uyarilar);
-
-            // GEÇİCİ TEST: teknik resim üretim mekanizmasının ilk denemesi —
-            // sadece AKTİF montajın kendisi için TEK bir .dwg üretir (her
+            // GEÇİCİ TEST: teknik resim üretim mekanizması — sadece AKTİF
+            // montajın kendisi için TEK bir DWG+PDF çifti üretir (her
             // etiketli parça için ayrı ayrı üretim, mekanizma kanıtlandıktan
             // SONRA KesimListesiCikarici'ye entegre edilecek). TEST_SABLON_YOLU
-            // boşsa/geçersizse bu adım tamamen atlanır.
+            // boşsa/geçersizse bu adım tamamen atlanır, ZIP sadece CSV içerir.
+            // Üretilen dosyalar bir GEÇİCİ klasöre yazılır, ZIP'e eklendikten
+            // sonra silinir — kalıcı ayrı dosya OLARAK bırakılmaz.
+            var teknikResimDosyalari = new List<string>();
+            string teknikResimOzeti = "";
             if (!string.IsNullOrWhiteSpace(TEST_SABLON_YOLU) && File.Exists(TEST_SABLON_YOLU))
             {
                 Tanilama.Kaydet("Teknik resim TEST adımı basliyor");
                 var resimUretici = new TeknikResimOlusturucu(_app);
                 string aktifYol = aktifBelge.GetPathName();
-                string cikisKlasoru = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                string dwgYolu = resimUretici.TeknikResimOlustur(aktifYol, TEST_SABLON_YOLU, cikisKlasoru, "uretimos_teknik_resim_test");
+                string gecidiKlasor = Path.Combine(Path.GetTempPath(), "UretimOSTeknikResim");
+                Directory.CreateDirectory(gecidiKlasor);
 
-                if (dwgYolu != null)
-                {
-                    ozet += $"\n\nTeknik resim testi: BAŞARILI → {dwgYolu}";
-                }
-                else
-                {
-                    ozet += "\n\nTeknik resim testi: BAŞARISIZ.";
-                }
+                bool basarili = resimUretici.TeknikResimOlustur(aktifYol, TEST_SABLON_YOLU, gecidiKlasor,
+                    "uretimos_teknik_resim_test", out string dwgYolu, out string pdfYolu);
+
+                if (dwgYolu != null) teknikResimDosyalari.Add(dwgYolu);
+                if (pdfYolu != null) teknikResimDosyalari.Add(pdfYolu);
+
+                teknikResimOzeti = basarili
+                    ? "\n\nTeknik resim testi: BAŞARILI (DWG+PDF ZIP'e eklendi)."
+                    : "\n\nTeknik resim testi: BAŞARISIZ.";
                 if (resimUretici.Uyarilar.Count > 0)
-                {
-                    ozet += "\n" + string.Join("\n", resimUretici.Uyarilar);
-                }
+                    teknikResimOzeti += "\n" + string.Join("\n", resimUretici.Uyarilar);
             }
+
+            cikarici.ZipOlustur(zipYolu, satirlar, teknikResimDosyalari);
+
+            foreach (var gecidiDosya in teknikResimDosyalari)
+            {
+                try { File.Delete(gecidiDosya); } catch { /* gecici dosya, silinemezse onemli degil */ }
+            }
+
+            string ozet = $"{satirlar.Count} parça satırı dışa aktarıldı.";
+            if (cikarici.Uyarilar.Count > 0)
+                ozet += $"\n\n{cikarici.Uyarilar.Count} uyarı:\n- " + string.Join("\n- ", cikarici.Uyarilar);
+            ozet += teknikResimOzeti;
 
             MessageBox.Show(ozet, "ÜretimOS Kesim Paketi", MessageBoxButtons.OK,
                 cikarici.Uyarilar.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);

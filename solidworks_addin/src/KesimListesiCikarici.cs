@@ -210,9 +210,11 @@ namespace UretimOSKesim
         // ── CSV + ZIP PAKETLEME ──────────────────────────────────────────────
         // Mevcut ÜretimOS içe aktarıcısının beklediği klasör yapısı BİREBİR
         // korunuyor: "Saw Cut Export/*.csv" (bkz. swood_okuyucu.js zipDosyaBul
-        // deseni). PDFS/ klasörü TeknikResimOlusturucu tarafından doldurulur
-        // (aynı ZIP'e sonradan eklenir).
-        public void ZipOlustur(string cikisYolu, List<KesimSatiri> satirlar)
+        // deseni). teknikResimDosyalari VERİLDİYSE (TeknikResimOlusturucu'nun
+        // ürettiği .dwg/.pdf dosyalarının tam yolları), bunlar AYNI ZIP'e
+        // "Teknik Resimler/" klasörü altında eklenir — kullanıcı isteği:
+        // kesim listesi ve teknik resimler tek dosyada birlikte gitsin.
+        public void ZipOlustur(string cikisYolu, List<KesimSatiri> satirlar, IEnumerable<string> teknikResimDosyalari = null)
         {
             using (var zip = ZipFile.Open(cikisYolu, ZipArchiveMode.Create))
             {
@@ -221,6 +223,15 @@ namespace UretimOSKesim
                 using (var yazici = new StreamWriter(girdi.Open(), new UTF8Encoding(true)))
                 {
                     yazici.Write(csv);
+                }
+
+                if (teknikResimDosyalari != null)
+                {
+                    foreach (var dosyaYolu in teknikResimDosyalari)
+                    {
+                        if (string.IsNullOrWhiteSpace(dosyaYolu) || !File.Exists(dosyaYolu)) continue;
+                        zip.CreateEntryFromFile(dosyaYolu, "Teknik Resimler/" + Path.GetFileName(dosyaYolu));
+                    }
                 }
             }
         }
