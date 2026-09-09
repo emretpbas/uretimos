@@ -29,7 +29,10 @@ namespace UretimOSKesim
         private const double VIEW_UST_X = 0.06, VIEW_UST_Y = 0.24;
         private const double VIEW_SAG_X = 0.20, VIEW_SAG_Y = 0.16;
         private const double VIEW_ISO_X = 0.20, VIEW_ISO_Y = 0.24;
-        private static readonly double[] OLCEK = new double[] { 1, 10 };
+        // NOT: IView.ScaleDecimal bir double[] DEĞİL, tek bir double (oran)
+        // bekliyor — gerçek derlemede tespit edildi ("double[] örtülü olarak
+        // double'a dönüştürülemez"). 1:10 ölçek = 1/10 = 0.1.
+        private const double OLCEK = 1.0 / 10.0;
 
         public TeknikResimOlusturucu(ISldWorks app) { _app = app; }
 
