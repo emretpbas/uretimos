@@ -478,7 +478,7 @@ namespace UretimOSKesim
 
         // Kendi .drwdot çizim şablonunuzun TAM YOLU (Tools > Options >
         // System Options > Default Templates'te görebilirsiniz).
-        private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Drawing.drwdot";
+        private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
 
         // ── KOMUT: KESİM PAKETİ OLUŞTUR ──────────────────────────────────────
         // CommandManager bu adı (case-sensitive) [ComVisible] genel metod
