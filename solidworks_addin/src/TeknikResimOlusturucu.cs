@@ -39,12 +39,22 @@ namespace UretimOSKesim
         // SolidWorks'te açık olması gerekir — CreateDrawViewFromModelView3
         // açık bir belgeye referans verir).
         // Döndürdüğü değer: oluşturulan PDF'in tam yolu, hata varsa null.
+        // GÜVENLİK AĞI: bu sınıftaki NewDocument/CreateDrawViewFromModelView3/
+        // SaveAs3 çağrıları henüz canlıda hiç denenmedi. SwAddin.cs'teki
+        // Activate() çökmesinde öğrenilen ders: SolidWorks'ün native tarafında
+        // oluşan bir çökme managed try/catch ile YAKALANAMAZ — bu yüzden her
+        // riskli çağrıdan önce/sonra Tanilama.Kaydet() ile diske yazılıyor;
+        // çökme olursa Masaüstü\uretimos_addin_log.txt'nin son satırı tam
+        // olarak hangi çağrının çökerttiğini gösterir (tahmin gerekmez).
         public string TeknikResimOlustur(string modelYolu, string sablonYolu, string cikisKlasoru, string dosyaAdiOnEki)
         {
+            Tanilama.Kaydet($"TeknikResimOlustur basladi: model={modelYolu}, sablon={sablonYolu}");
             try
             {
                 int hata = 0;
+                Tanilama.Kaydet("NewDocument cagriliyor");
                 IModelDoc2 cizimBelge = (IModelDoc2)_app.NewDocument(sablonYolu, (int)swDwgPaperSizes_e.swDwgPaperA3size, 0.42, 0.297);
+                Tanilama.Kaydet("NewDocument tamamlandi, cizimBelge null mu=" + (cizimBelge == null));
                 if (cizimBelge == null)
                 {
                     _uyarilar.Add($"'{sablonYolu}' şablonundan çizim oluşturulamadı — yol doğru mu?");
@@ -53,29 +63,48 @@ namespace UretimOSKesim
 
                 var cizim = (IDrawingDoc)cizimBelge;
 
+                Tanilama.Kaydet("1. CreateDrawViewFromModelView3 (*Front) cagriliyor");
                 IView v1 = cizim.CreateDrawViewFromModelView3(modelYolu, "*Front", VIEW_ON_X, VIEW_ON_Y, 0);
+                Tanilama.Kaydet("1. tamamlandi, v1 null mu=" + (v1 == null));
+
+                Tanilama.Kaydet("2. CreateDrawViewFromModelView3 (*Top) cagriliyor");
                 IView v2 = cizim.CreateDrawViewFromModelView3(modelYolu, "*Top", VIEW_UST_X, VIEW_UST_Y, 0);
+                Tanilama.Kaydet("2. tamamlandi, v2 null mu=" + (v2 == null));
+
+                Tanilama.Kaydet("3. CreateDrawViewFromModelView3 (*Right) cagriliyor");
                 IView v3 = cizim.CreateDrawViewFromModelView3(modelYolu, "*Right", VIEW_SAG_X, VIEW_SAG_Y, 0);
+                Tanilama.Kaydet("3. tamamlandi, v3 null mu=" + (v3 == null));
+
+                Tanilama.Kaydet("4. CreateDrawViewFromModelView3 (*Isometric) cagriliyor");
                 IView v4 = cizim.CreateDrawViewFromModelView3(modelYolu, "*Isometric", VIEW_ISO_X, VIEW_ISO_Y, 0);
+                Tanilama.Kaydet("4. tamamlandi, v4 null mu=" + (v4 == null));
 
                 if (v1 == null && v2 == null && v3 == null && v4 == null)
                 {
                     _uyarilar.Add($"'{modelYolu}' için hiçbir görünüş oluşturulamadı — model açık mı, yol geçerli mi kontrol edin.");
+                    Tanilama.Kaydet("Hicbir gorunus olusturulamadi, CloseDoc cagriliyor");
                     _app.CloseDoc(cizimBelge.GetTitle());
                     return null;
                 }
 
+                Tanilama.Kaydet("ViewZoomtofit2 cagriliyor");
                 cizimBelge.ViewZoomtofit2();
+                Tanilama.Kaydet("ViewZoomtofit2 tamamlandi");
 
                 string dosyaAdi = System.IO.Path.Combine(cikisKlasoru,
                     (dosyaAdiOnEki ?? "teknik_resim") + ".pdf");
+
+                Tanilama.Kaydet("SaveAs3 cagriliyor: " + dosyaAdi);
                 bool basarili = ((IModelDocExtension)cizimBelge.Extension).SaveAs3(
                     dosyaAdi,
                     (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
                     (int)swSaveAsOptions_e.swSaveAsOptions_Silent,
                     null, null, ref hata, ref hata);
+                Tanilama.Kaydet("SaveAs3 tamamlandi, basarili=" + basarili + ", hata=" + hata);
 
+                Tanilama.Kaydet("CloseDoc cagriliyor");
                 _app.CloseDoc(cizimBelge.GetTitle());
+                Tanilama.Kaydet("CloseDoc tamamlandi - TeknikResimOlustur bitti");
 
                 if (!basarili)
                 {
@@ -86,6 +115,7 @@ namespace UretimOSKesim
             }
             catch (Exception ex)
             {
+                Tanilama.Kaydet("TeknikResimOlustur HATA (managed exception): " + ex);
                 _uyarilar.Add($"'{modelYolu}' için teknik resim oluşturulurken hata: {ex.Message}");
                 return null;
             }

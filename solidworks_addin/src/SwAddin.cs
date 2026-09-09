@@ -83,13 +83,13 @@ namespace UretimOSKesim
         // hazırlanınca ayrı bir adımda eklenecek.
         public bool ConnectToSW(object ThisSW, int Cookie)
         {
-            Kaydet("=== ConnectToSW basladi ===");
+            Tanilama.Kaydet("=== ConnectToSW basladi ===");
             try
             {
                 _app = (ISldWorks)ThisSW;
                 _cookie = Cookie;
                 _cmdMgr = _app.GetCommandManager(_cookie);
-                Kaydet("GetCommandManager tamamlandi");
+                Tanilama.Kaydet("GetCommandManager tamamlandi");
 
                 // KESİN TANI #7: doğru SolidWorks (2) interop DLL'lerine
                 // geçilmesine RAĞMEN çökme yine birebir aynı noktada
@@ -104,16 +104,16 @@ namespace UretimOSKesim
                 // tanıtmamışken bu bağlamayı yapmaya çalışmak çökmeye yol
                 // açıyor olabilir. Sıra değiştirildi: şimdi ÖNCE.
                 _app.SetAddinCallbackInfo2(0, this, _cookie);
-                Kaydet("SetAddinCallbackInfo2 tamamlandi");
+                Tanilama.Kaydet("SetAddinCallbackInfo2 tamamlandi");
 
                 KomutlariKur();
 
-                Kaydet("=== ConnectToSW basariyla bitti ===");
+                Tanilama.Kaydet("=== ConnectToSW basariyla bitti ===");
                 return true;
             }
             catch (Exception ex)
             {
-                Kaydet("=== ConnectToSW HATA (managed exception): " + ex + " ===");
+                Tanilama.Kaydet("=== ConnectToSW HATA (managed exception): " + ex + " ===");
                 MessageBox.Show(
                     "ÜretimOS eklentisi yüklenirken hata oluştu:\n\n" + ex,
                     "ÜretimOS Kesim & Teknik Resim — Yükleme Hatası",
@@ -158,7 +158,7 @@ namespace UretimOSKesim
         // satırı, tam olarak hangi çağrının çökerttiğini gösterir.
         private void KomutlariKur()
         {
-            Kaydet("KomutlariKur basladi");
+            Tanilama.Kaydet("KomutlariKur basladi");
             const int GRUP_ID = 100;
             const int ID_KESIM = 101;
             const int ID_ETIKET = 102;
@@ -166,28 +166,28 @@ namespace UretimOSKesim
 
             bool eskisiniYokSay = false;
             object kayitliIdler;
-            Kaydet("GetGroupDataFromRegistry cagriliyor");
+            Tanilama.Kaydet("GetGroupDataFromRegistry cagriliyor");
             bool kayitVarMi = _cmdMgr.GetGroupDataFromRegistry(GRUP_ID, out kayitliIdler);
-            Kaydet("GetGroupDataFromRegistry tamamlandi, kayitVarMi=" + kayitVarMi);
+            Tanilama.Kaydet("GetGroupDataFromRegistry tamamlandi, kayitVarMi=" + kayitVarMi);
             if (kayitVarMi)
             {
                 eskisiniYokSay = !IdlerAyniMi((int[])kayitliIdler, komutIdleri);
             }
 
             int hataKodu = 0;
-            Kaydet("CreateCommandGroup2 cagriliyor, eskisiniYokSay=" + eskisiniYokSay);
+            Tanilama.Kaydet("CreateCommandGroup2 cagriliyor, eskisiniYokSay=" + eskisiniYokSay);
             ICommandGroup grup = _cmdMgr.CreateCommandGroup2(
                 GRUP_ID, "ÜretimOS", "ÜretimOS kesim listesi ve teknik resim araçları",
                 "", -1, eskisiniYokSay, ref hataKodu);
-            Kaydet("CreateCommandGroup2 tamamlandi, hataKodu=" + hataKodu);
+            Tanilama.Kaydet("CreateCommandGroup2 tamamlandi, hataKodu=" + hataKodu);
 
-            Kaydet("IkonlariHazirla cagriliyor");
+            Tanilama.Kaydet("IkonlariHazirla cagriliyor");
             string[] ikonlar = IkonlariHazirla();
-            Kaydet("IkonlariHazirla tamamlandi: " + string.Join(" | ", ikonlar));
+            Tanilama.Kaydet("IkonlariHazirla tamamlandi: " + string.Join(" | ", ikonlar));
 
-            Kaydet("IconList atanıyor");
+            Tanilama.Kaydet("IconList atanıyor");
             grup.IconList = ikonlar;
-            Kaydet("IconList atandi");
+            Tanilama.Kaydet("IconList atandi");
 
             // KESİN TANI #3: log, çökmenin tam olarak Activate() içinde
             // olduğunu kanıtladı (IconList atandıktan, AddCommandItem2'ler
@@ -200,9 +200,9 @@ namespace UretimOSKesim
             // BİRLİKTE kullanılmasını ima ediyor. MainIconList hiç
             // atanmamıştı — Activate() muhtemelen CommandTab/ana ikon
             // temsilini oluştururken bunu okuyup null'a takılıyordu.
-            Kaydet("MainIconList atanıyor");
+            Tanilama.Kaydet("MainIconList atanıyor");
             grup.MainIconList = ikonlar;
-            Kaydet("MainIconList atandi");
+            Tanilama.Kaydet("MainIconList atandi");
 
             // KESİN TANI #4: log yine Activate()'te çöktüğünü gösterdi —
             // IconList VE MainIconList atanmış olmasına rağmen. GitHub'daki
@@ -216,30 +216,30 @@ namespace UretimOSKesim
             // da geri alındı.
             int itemTipi = (int)swCommandItemType_e.swMenuItem | (int)swCommandItemType_e.swToolbarItem;
 
-            Kaydet("1. AddCommandItem2 cagriliyor");
+            Tanilama.Kaydet("1. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
                 "Kesim Listesi + Teknik Resim Paketi Oluştur", -1,
                 "Etiketlenmiş parça/alt montajlardan ZIP paketi üretir (ÜretimOS SWOOD İçe Aktarım ekranına yüklenebilir)",
                 "Kesim Paketi Oluştur", 0, "PaketOlusturCalistir", "PaketOlusturEtkinMi",
                 ID_KESIM, itemTipi);
-            Kaydet("1. AddCommandItem2 tamamlandi");
+            Tanilama.Kaydet("1. AddCommandItem2 tamamlandi");
 
-            Kaydet("2. AddCommandItem2 cagriliyor");
+            Tanilama.Kaydet("2. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
                 "Paket/Parça Etiketle (Kütüphane)", -1,
                 "Seçili bileşene ÜretimOS paket/parça/malzeme/kenar bandı etiketi atar — Faz 2",
                 "Etiketle", 1, "EtiketlePaneliAc", "PaketOlusturEtkinMi",
                 ID_ETIKET, itemTipi);
-            Kaydet("2. AddCommandItem2 tamamlandi");
+            Tanilama.Kaydet("2. AddCommandItem2 tamamlandi");
 
-            Kaydet("HasToolbar/HasMenu ayarlaniyor");
+            Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
-            Kaydet("HasToolbar/HasMenu tamamlandi");
+            Tanilama.Kaydet("HasToolbar/HasMenu tamamlandi");
 
-            Kaydet("Activate cagriliyor");
+            Tanilama.Kaydet("Activate cagriliyor");
             grup.Activate();
-            Kaydet("Activate tamamlandi - KomutlariKur bitti");
+            Tanilama.Kaydet("Activate tamamlandi - KomutlariKur bitti");
         }
 
         // Resmi SolidWorks Add-in şablonundaki CompareIDs karşılığı — kayıt
@@ -295,21 +295,18 @@ namespace UretimOSKesim
             }
         }
 
-        // ── TANI GÜNLÜĞÜ (native çökme managed try/catch ile yakalanamadığı
-        // için, çökmeden HEMEN ÖNCEKİ adımı diskte kalıcı kanıt olarak
-        // bırakır — her çağrı dosyayı açıp kapatır, bu yüzden çökme anında
-        // bile önceki satırlar diskte garanti kalır). ─────────────────────
-        private static readonly string LOG_DOSYASI = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "uretimos_addin_log.txt");
+        // TANI GÜNLÜĞÜ artık Tanilama.cs'te paylaşılan bir sınıfa taşındı —
+        // TeknikResimOlusturucu.cs de aynı güvenlik ağını kullanabilsin diye
+        // (bkz. Tanilama.cs'teki gerekçe yorumu). Bu dosyadaki tüm eski
+        // Kaydet(...) çağrıları Tanilama.Kaydet(...) olarak güncellendi.
 
-        private static void Kaydet(string mesaj)
-        {
-            try
-            {
-                File.AppendAllText(LOG_DOSYASI, DateTime.Now.ToString("HH:mm:ss.fff") + " - " + mesaj + Environment.NewLine);
-            }
-            catch { /* günlük yazılamazsa sessizce geç — bu tanı amaçlı, işlevi etkilemesin */ }
-        }
+        // GEÇİCİ TEST SABİTİ: TeknikResimOlusturucu'nun canlıda İLK KEZ
+        // denenmesi için — kendi .drwdot çizim şablonunuzun TAM YOLUNU buraya
+        // yazın (Tools > Options > System Options > Default Templates'te
+        // görebilirsiniz). Boş bırakılırsa veya dosya bulunamazsa teknik
+        // resim adımı sessizce ATLANIR — kesim listesi/ZIP akışı BUNDAN
+        // ETKİLENMEZ (zaten kanıtlanmış, ayrı bir mekanizma).
+        private const string TEST_SABLON_YOLU = "";
 
         // ── KOMUT: KESİM PAKETİ OLUŞTUR ──────────────────────────────────────
         // CommandManager bu adı (case-sensitive) [ComVisible] genel metod
@@ -335,6 +332,33 @@ namespace UretimOSKesim
             string ozet = $"{satirlar.Count} parça satırı dışa aktarıldı.";
             if (cikarici.Uyarilar.Count > 0)
                 ozet += $"\n\n{cikarici.Uyarilar.Count} uyarı:\n- " + string.Join("\n- ", cikarici.Uyarilar);
+
+            // GEÇİCİ TEST: teknik resim üretim mekanizmasının ilk denemesi —
+            // sadece AKTİF montajın kendisi için TEK bir PDF üretir (her
+            // etiketli parça için ayrı ayrı üretim, mekanizma kanıtlandıktan
+            // SONRA KesimListesiCikarici'ye entegre edilecek). TEST_SABLON_YOLU
+            // boşsa/geçersizse bu adım tamamen atlanır.
+            if (!string.IsNullOrWhiteSpace(TEST_SABLON_YOLU) && File.Exists(TEST_SABLON_YOLU))
+            {
+                Tanilama.Kaydet("Teknik resim TEST adımı basliyor");
+                var resimUretici = new TeknikResimOlusturucu(_app);
+                string aktifYol = aktifBelge.GetPathName();
+                string cikisKlasoru = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                string pdfYolu = resimUretici.TeknikResimOlustur(aktifYol, TEST_SABLON_YOLU, cikisKlasoru, "uretimos_teknik_resim_test");
+
+                if (pdfYolu != null)
+                {
+                    ozet += $"\n\nTeknik resim testi: BAŞARILI → {pdfYolu}";
+                }
+                else
+                {
+                    ozet += "\n\nTeknik resim testi: BAŞARISIZ.";
+                }
+                if (resimUretici.Uyarilar.Count > 0)
+                {
+                    ozet += "\n" + string.Join("\n", resimUretici.Uyarilar);
+                }
+            }
 
             MessageBox.Show(ozet, "ÜretimOS Kesim Paketi", MessageBoxButtons.OK,
                 cikarici.Uyarilar.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
