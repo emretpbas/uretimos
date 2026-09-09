@@ -51,16 +51,35 @@ namespace UretimOSKesim
         private ICommandManager _cmdMgr;
 
         // ── SolidWorks YAŞAM DÖNGÜSÜ ─────────────────────────────────────────
+        // TANI AMAÇLI GEÇİCİ DURUM: gerçek denemede SolidWorks'ün KENDİ
+        // native modülünde (sldappu) tam çökme oluştu — bu, KomutlariKur()
+        // içindeki CreateCommandGroup2/AddCommandItem2 çağrılarının YANLIŞ
+        // parametrelerle SolidWorks'ün belleğini bozduğunu gösteriyor (bu tür
+        // bir çökme managed try/catch ile YAKALANAMAZ). Araç çubuğu kodu
+        // BİLİNÇLİ olarak devre dışı bırakıldı — önce eklentinin ÇÖKMEDEN
+        // yüklendiği kanıtlanacak, sonra CommandManager API'si Nesne
+        // Gezgini/Go to Definition ile doğrulanıp GERİ eklenecek.
         public bool ConnectToSW(object ThisSW, int Cookie)
         {
-            _app = (ISldWorks)ThisSW;
-            _cookie = Cookie;
-            _cmdMgr = _app.GetCommandManager(_cookie);
+            try
+            {
+                _app = (ISldWorks)ThisSW;
+                _cookie = Cookie;
+                _cmdMgr = _app.GetCommandManager(_cookie);
 
-            KomutlariKur();
+                // KomutlariKur();  // GEÇİCİ OLARAK KAPALI — bkz. yukarıdaki not.
 
-            _app.SetAddinCallbackInfo2(0, this, _cookie);
-            return true;
+                _app.SetAddinCallbackInfo2(0, this, _cookie);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "ÜretimOS eklentisi yüklenirken hata oluştu:\n\n" + ex,
+                    "ÜretimOS Kesim & Teknik Resim — Yükleme Hatası",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
         }
 
         public bool DisconnectFromSW()
