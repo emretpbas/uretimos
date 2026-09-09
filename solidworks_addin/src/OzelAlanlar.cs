@@ -21,6 +21,14 @@ namespace UretimOSKesim
         public const string AD = "URETIMOS_AD";                   // görünen ad (boşsa SW dosya adı kullanılır)
         public const string UST_PAKET_KODU = "URETIMOS_UST_PAKET_KODU"; // bağlı olduğu bir üst alt_montaj/paket kodu
 
+        // ── Ölçü (v1: ELLE girilir — bkz. KesimListesiCikarici.OlcuHesapla
+        // içindeki gerekçe: SolidWorks'ün geometri API'sinden otomatik ölçü
+        // almak, resmi dokümantasyon olmadan güvenilir doğrulanamadı).
+        // Birim: milimetre (mm), ondalık ayracı nokta veya virgül olabilir.
+        public const string BOY_MM = "URETIMOS_BOY_MM";
+        public const string EN_MM = "URETIMOS_EN_MM";
+        public const string KALINLIK_MM = "URETIMOS_KALINLIK_MM";
+
         // ── Malzeme / kesim ──────────────────────────────────────────────────
         // Bu üçü ÜretimOS'taki hammaddeler koleksiyonundan (tip:'plaka') seçilen
         // kartın KODUdur — add-in, kütüphane panelinde bu listeyi ÜretimOS'tan

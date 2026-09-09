@@ -123,9 +123,9 @@ namespace UretimOSKesim
             }
 
             var (boy, en, kalinlik, kaynak) = OlcuHesapla(modelDoc);
-            if (boy <= 0 || en <= 0)
+            if (kaynak == "eksik")
             {
-                _uyarilar.Add($"'{bilesen.Name2}' için geçerli bir sınır kutusu hesaplanamadı — ölçü sütunları boş bırakıldı.");
+                _uyarilar.Add($"'{bilesen.Name2}' için BOY_MM/EN_MM özel alanları boş veya geçersiz — ölçü sütunları boş bırakıldı (bkz. OzelAlanlar.cs).");
             }
 
             var satir = new KesimSatiri
@@ -146,44 +146,41 @@ namespace UretimOSKesim
             satirlar.Add(satir);
         }
 
-        // ── ÖLÇÜ HESABI ──────────────────────────────────────────────────────
-        // Kullanıcının kendi tercihi: "sac mantığıyla başlayalım". SolidWorks'ün
-        // Kesim Listesi (Cut-List) otomatik Bounding-Box özelliği sürüme/dile
-        // göre FARKLI property adları kullanabildiğinden (ör. "Length"/"Width"
-        // veya "Bounding Box Length"...), bu isimlere GÜVENMEK yerine ölçüyü
-        // KENDİMİZ, parçanın kendi koordinat sisteminde kütle özelliklerinden
-        // (mass properties) hesaplıyoruz — sürümden bağımsız, tek bir doğru
-        // kaynak. VARSAYIM: panel BOY'u parçanın kendi dosyasında X, EN'i Y,
-        // KALINLIK'ı Z eksenine hizalı modellenmiştir (mobilya parçalarında
-        // standart pratik). Parça bu şekilde modellenmemişse sonuç yanlış
-        // görünür — bu durumda ölçü elle düzeltilmeli (bkz. OLCU_KAYNAGI="elle"
-        // ile üzerine yazma desteği, Faz 2).
+        // ── ÖLÇÜ OKUMA ───────────────────────────────────────────────────────
+        // v1 BİLİNÇLİ TASARIM: ölçü SolidWorks geometrisinden OTOMATİK
+        // hesaplanmıyor — malzeme/kenar bandı kodu gibi, kullanıcının Özel
+        // Özellikler'den ELLE girdiği 3 sayı (bkz. OzelAlanlar.BOY_MM/EN_MM/
+        // KALINLIK_MM) okunuyor. Gerekçe: SolidWorks'ün kütle özellikleri
+        // (IMassProperty) ARAYÜZÜ gerçek denemede doğrulandı — sınır kutusu
+        // (bounding box) için HİÇBİR üyesi yok; doğru API'yi (muhtemelen bir
+        // Body/Component düzeyinde ayrı bir metot) resmi SolidWorks API
+        // dokümantasyonu olmadan güvenilir tahmin etmek mümkün değildi.
+        // Yanlış bir geometri API'si çağrısı YANLIŞ ölçü üretebilir (gerçek
+        // plaka israfı); elle giriş daha yavaş ama HER ZAMAN doğrudur — bu
+        // repodaki yerleşik ilkeyle birebir aynı (bkz. step_okuyucu.js:
+        // "yanlış varsaymaktan boş bırakmak/elle girdirmek daha ucuzdur").
+        // Otomatik geometri okuma, gerçek API doğrulanınca Faz 2'de eklenebilir.
         private (double boy, double en, double kalinlik, string kaynak) OlcuHesapla(ModelDoc2 modelDoc)
         {
-            try
+            double boy = OzelAlanSayiOku(modelDoc, OzelAlanlar.BOY_MM);
+            double en = OzelAlanSayiOku(modelDoc, OzelAlanlar.EN_MM);
+            double kalinlik = OzelAlanSayiOku(modelDoc, OzelAlanlar.KALINLIK_MM);
+            if (boy <= 0 || en <= 0)
             {
-                IMassProperty kutle = modelDoc.Extension.CreateMassProperty2(1, true);
-                double[] kutu = (double[])kutle.GetBoundingBox(); // metre cinsinden [xmin,ymin,zmin,xmax,ymax,zmax]
-                if (kutu == null || kutu.Length < 6) return (0, 0, 0, "hata");
-
-                const double METRE_TO_MM = 1000.0;
-                double boy = Math.Abs(kutu[3] - kutu[0]) * METRE_TO_MM;
-                double en = Math.Abs(kutu[4] - kutu[1]) * METRE_TO_MM;
-                double kalinlik = Math.Abs(kutu[5] - kutu[2]) * METRE_TO_MM;
-
-                // En büyük iki boyut BOY/EN, en küçüğü KALINLIK kabul edilir
-                // (flat panel varsayımı) — SWOOD raporlarının kendi kuralıyla
-                // aynı (bkz. swood_okuyucu.js yorumu: "mobilya parçaları
-                // neredeyse tamamen prizmatiktir").
-                double[] siraliBoyutlar = { boy, en, kalinlik };
-                Array.Sort(siraliBoyutlar);
-                return (siraliBoyutlar[2], siraliBoyutlar[1], siraliBoyutlar[0], "bbox");
+                return (boy, en, kalinlik, "eksik");
             }
-            catch (Exception ex)
-            {
-                _uyarilar.Add($"Kütle özellikleri hesaplanamadı: {ex.Message}");
-                return (0, 0, 0, "hata");
-            }
+            return (boy, en, kalinlik, "elle");
+        }
+
+        // Bir özel alanı ondalıklı sayı olarak okur (virgül/nokta ayracı
+        // ikisi de kabul edilir); alan boşsa veya sayı değilse 0 döner.
+        private double OzelAlanSayiOku(ModelDoc2 modelDoc, string alanAdi)
+        {
+            string metin = OzelAlanOku(modelDoc, alanAdi);
+            if (string.IsNullOrWhiteSpace(metin)) return 0;
+            metin = metin.Trim().Replace(",", ".");
+            return double.TryParse(metin, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out double deger) ? deger : 0;
         }
 
         // ── ÖZEL ALAN OKUMA ──────────────────────────────────────────────────
