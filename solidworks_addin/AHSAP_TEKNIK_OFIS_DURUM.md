@@ -169,6 +169,36 @@ belgelenmiş bir API) ama %100 garanti veremem — yanlışsa Visual Studio
 derleme hatası (CS1061) verir, bu durumda hatayı paylaşın, doğru üye adını
 birlikte buluruz (bu oturumda defalarca kullandığımız, işe yarayan yöntem).
 
+### 8) Etiketleme Paneli (YENİ — gerçek bir arayüze dönüştü)
+
+Daha önce "Faz 2" olarak bırakılan, yalnızca "SolidWorks'ün Özel Özellikler'ine
+elle girin" diyen yer tutucu, gerçek bir form oldu (`EtiketlemePaneli.cs`).
+Artık 12'den fazla `URETIMOS_*` alanını (TIP, KOD, AD, ölçüler, PLAKA_KODU,
+4 kenar bandı, HIRDAVAT, ÜST_PAKET_KODU, BIRLESIM_TIPI, YABANCI_PARCA) tek
+tek SolidWorks'ün genel/gruplanmamış Özel Özellikler ekranında aramak yerine,
+ETİKETLİ, GRUPLANMIŞ, ÖN-DOLDURMALI tek bir formda düzenliyorsunuz.
+
+**Neden SolidWorks'ün kendi PropertyManagerPage'i DEĞİL, düz WinForms**:
+`IPropertyManagerPage2` COM arayüzü resmi dokümantasyona bu ortamda erişim
+olmadan güvenle doğrulanamayacak geniş bir yüzey. WinForms ise .NET'in
+kendi, SolidWorks'ten bağımsız, zaten bu eklentide (MessageBox,
+SaveFileDialog) kanıtlanmış teknolojisi — sıfır ek COM riski.
+
+**Opsiyonel ÜretimOS entegrasyonu**: "🌐 ÜretimOS'tan Listeleri Çek" butonu,
+`UretimOSApiClient.cs`'i (bu dosya daha önce oluşturulmuş ama HİÇBİR YERDE
+kullanılmıyordu — artık gerçek bir tüketicisi var) kullanarak plaka/kenar
+bandı kodlarını canlı sunucudan çekip açılır kutulara doldurur. **Kimlik
+bilgileri KOD İÇİNDE DEĞİL** — `%LocalAppData%\UretimOSKesim\baglanti.json`
+adlı, kullanıcının kendi bilgisayarında bir kez oluşturduğu, GİT'E ASLA
+EKLENMEYEN yerel bir dosyadan okunur (`BaglantiAyarlari.cs`). Bu dosya
+yoksa/sunucuya ulaşılamazsa panel SESSİZCE serbest-metin moduna düşer —
+özellik hiçbir zaman paneli kullanılamaz hale getirmez.
+
+**Doğrulanamayan risk**: `ISelectionMgr.GetSelectedObjectsComponent4`
+(montajda seçili bileşeni bulmak için) yaygın, iyi belgelenmiş bir SolidWorks
+API deseni — yüksek güvenim var ama garanti veremem; yanlışsa yine sadece
+derleme hatası (CS ###) verir, çökme değil.
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini
@@ -197,6 +227,17 @@ birlikte buluruz (bu oturumda defalarca kullandığımız, işe yarayan yöntem)
    doğrulayın.
 7. İsterseniz devam: resmi FR.29 basılı form şablonuna da Hırdavat sütunu
    eklemek isterseniz (ISO doküman kontrolü gerektirebilir) ayrıca belirtin.
+8. YENİ: Visual Studio'da projeye `EtiketlemePaneli.cs` ve `BaglantiAyarlari.cs`
+   dosyalarını ekleyin (Add Existing Item — diğer yeni dosyalarda olduğu
+   gibi). Bir parça açıp (veya montajda bir bileşen seçip) **"Paket/Parça
+   Etiketle"** komutunu çalıştırın — form açılmalı, mevcut değerleri
+   (varsa) önceden doldurmalı. Birkaç alan girip **Kaydet**'e basın, sonra
+   SolidWorks'ün kendi Özel Özellikler ekranından `URETIMOS_*` alanlarının
+   gerçekten yazıldığını doğrulayın.
+9. (Opsiyonel) ÜretimOS'tan canlı liste çekmeyi denemek isterseniz:
+   `%LocalAppData%\UretimOSKesim\baglanti.json` dosyasını (panel ilk
+   denemede otomatik örnek oluşturur) kendi sunucu adresiniz/kullanıcı
+   adınız/şifrenizle doldurup "🌐 ÜretimOS'tan Listeleri Çek"e basın.
 
 ## Değişen/eklenen dosyalar
 

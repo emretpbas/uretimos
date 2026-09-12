@@ -941,20 +941,67 @@ namespace UretimOSKesim
                 basarili ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
 
-        // ── KOMUT: ETİKETLEME PANELİ (Faz 2 — şimdilik yer tutucu) ───────────
-        // v1 taslağının kapsamı BİLİNÇLİ olarak kesim listesi + teknik resim
-        // çekirdeğiyle sınırlı tutuldu (kullanıcının bu mesajdaki BİRİNCİL
-        // isteği). Kütüphane senkronu + PropertyManagerPage tabanlı etiketleme
-        // UI'ı, ÜretimOS API'sinden gerçek hammadde/paket/kenar bandı listesi
-        // gerektirdiğinden ayrı bir adım olarak README.md Faz 2'de tarif edildi.
+        // ── KOMUT: ETİKETLEME PANELİ ──────────────────────────────────────────
+        // ARTIK GERÇEK BİR ARAYÜZ (EtiketlemePaneli.cs) — eskiden burada
+        // yalnızca "SolidWorks'ün kendi Özel Özellikler'inden elle girin"
+        // yönlendirmesi vardı. Aktif belge bir PARÇA ise doğrudan onu, bir
+        // MONTAJ ise montaj ağacında SEÇİLİ bileşeni hedef alır (bu yüzden
+        // montaj açıkken önce bir bileşen seçilmesi gerekir).
         public void EtiketlePaneliAc()
         {
-            MessageBox.Show(
-                "Etiketleme paneli Faz 2 kapsamında. Şimdilik özel alanları\n" +
-                "(URETIMOS_TIP, URETIMOS_KOD, URETIMOS_PLAKA_KODU, ...) SolidWorks'ün\n" +
-                "kendi 'Özel Özellikler' (Custom Properties) sekmesinden elle girebilirsiniz\n" +
-                "— bkz. OzelAlanlar.cs'teki tam alan listesi ve README.md.",
-                "ÜretimOS — Yakında", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null)
+            {
+                MessageBox.Show("Önce bir parça veya montaj açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            ModelDoc2 hedefModel;
+            if (aktifBelge.GetType() == (int)swDocumentTypes_e.swDocPART)
+            {
+                hedefModel = (ModelDoc2)aktifBelge;
+            }
+            else if (aktifBelge.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                var selMgr = (ISelectionMgr)aktifBelge.SelectionManager;
+                if (selMgr.GetSelectedObjectCount2(-1) == 0)
+                {
+                    MessageBox.Show(
+                        "Önce montaj ağacında (FeatureManager) etiketlemek istediğiniz bileşeni " +
+                        "(parça veya alt montaj) seçin, sonra tekrar deneyin.",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                var bilesen = selMgr.GetSelectedObjectsComponent4(1, "") as Component2;
+                if (bilesen == null)
+                {
+                    MessageBox.Show("Seçili öğe bir bileşen (parça/alt montaj) değil.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                hedefModel = (ModelDoc2)bilesen.GetModelDoc2();
+                if (hedefModel == null)
+                {
+                    MessageBox.Show("Seçili bileşenin belgesi yüklenemedi (baskılanmış/eksik referans olabilir).",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+            else
+            {
+                MessageBox.Show("Etiketleme yalnızca parça veya montaj belgelerinde kullanılabilir.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            Tanilama.Kaydet("EtiketlePaneliAc: " + hedefModel.GetPathName());
+            using (var panel = new EtiketlemePaneli(hedefModel))
+            {
+                if (panel.ShowDialog() == DialogResult.OK)
+                {
+                    MessageBox.Show("Etiket kaydedildi: " + hedefModel.GetPathName(),
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
         }
 
         public int PaketOlusturEtkinMi() => 1; // her zaman etkin; ileride "montaj açık mı" kontrolü eklenebilir

@@ -202,7 +202,10 @@ namespace UretimOSKesim
         }
 
         // ── ÖZEL ALAN OKUMA ──────────────────────────────────────────────────
-        private string OzelAlanOku(ModelDoc2 modelDoc, string alanAdi)
+        // public static yapıldı (durumsuz, sadece modelDoc parametresine
+        // bağlı) — EtiketlemePaneli.cs da (Faz 2 kütüphane etiketleme
+        // arayüzü) aynı okuma mantığını kullanır, kopyalamak yerine paylaşır.
+        public static string OzelAlanOku(ModelDoc2 modelDoc, string alanAdi)
         {
             try
             {
@@ -236,7 +239,8 @@ namespace UretimOSKesim
         }
 
         // Etiketleme paneli bu yazıcıyı kullanacak (Faz 2 UI'ı bu metodu çağırır).
-        public void OzelAlanYaz(ModelDoc2 modelDoc, string alanAdi, string deger)
+        // public static yapıldı (durumsuz) — bkz. OzelAlanOku'daki aynı gerekçe.
+        public static void OzelAlanYaz(ModelDoc2 modelDoc, string alanAdi, string deger)
         {
             ICustomPropertyManager cpm = modelDoc.Extension.CustomPropertyManager[""];
             cpm.Add3(alanAdi, (int)swCustomInfoType_e.swCustomInfoText, deger ?? "",
