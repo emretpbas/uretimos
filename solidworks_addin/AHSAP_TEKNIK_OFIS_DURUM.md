@@ -130,6 +130,45 @@ SOFT) AYNI görsel/etkileşim desende yeni bir **"Hırdavat"** sütunu eklendi:
 - **DWG/AutoCAD içe aktarımı, gerçek SolidWorks üzerinde uçtan uca test** —
   bu ortamda SolidWorks çalıştırılamıyor.
 
+### 7) Otomatik Montaj Şeması (YENİ)
+
+Kullanıcı isteği: "önce parça ve alt montajdaki tüm parçaları listeleyen ve
+sonra montaj aşamalarını benim yaptığım explode sırasına göre çizsin, yine
+ben onaylayıp düzenleyeyim ve dwg/pdf çıktı alalım."
+
+**Bilinçli teknik sınır**: SolidWorks'ün patlatılmış görünüm (exploded view)
+ADIMLARINI (hangi parça hangi sırada, ne kadar hareket ediyor) tek tek
+programatik olarak okuyup yeniden sahneleyen API (IExplodedView/IExplodeStep
+ailesi) resmi dokümantasyona bu ortamda erişimim olmadığı için KULLANILMADI —
+yanlış bir varsayım burada native çökme riski taşımaz (güçlü tipli COM
+interop, yanlış üye adı DERLEME hatası verir, çalışma zamanı çökmesi değil)
+ama SESSİZCE YANLIŞ bir sahne üretebilirdi.
+
+**Bunun yerine yapılan** (2 yeni komut, teknik resimle BİREBİR aynı iki
+adımlı mimari):
+- **"Montaj Şeması Oluştur"**: parça listesi zaten KesimListesiCikarici'den
+  geliyor (rapora zaten dahil); bu komut montajın KENDİ SolidWorks'te
+  oluşturduğunuz patlatılmış görünümünü — resmi, belgelenmiş `IView.
+  ShowExploded` özelliğiyle — çizime aktarıp AÇIK bırakır. Montajda kayıtlı
+  bir patlatılmış görünüm yoksa çizim normal/toplanmış açılır ve net bir
+  uyarı verir (tahmin etmez).
+- Siz SolidWorks'te aşamaları/balonları/görünüşleri elle düzenlersiniz
+  (tam olarak "yine ben onaylayıp düzenleyeyim" dediğiniz adım).
+- **"Montaj Şemasını Onayla"**: teknik resimdeki "Onayla" ile birebir aynı
+  mekanizma — DWG+PDF+JPG üretir, ayrı bir Manifest anahtarında saklanır
+  (aynı montajın hem normal teknik resmi hem montaj şeması bağımsız
+  onaylanabilsin diye).
+- Montaj şeması görseli, Kesim Raporu'nun (Excel + PDF) "Genel" sayfasına
+  parça listesinden HEMEN SONRA, montajın teknik resminden ÖNCE otomatik
+  eklenir — istenen sıralama ("önce liste, sonra montaj aşamaları").
+- SWOOD uyumlu pakete de (varsa) montaj şeması PDF'i dahil edilir.
+
+**Doğrulanamayan risk**: `IView.ShowExploded` özelliğinin SolidWorks 2025
+SP3.0'da tam bu isimle var olduğuna dair yüksek güvenim var (yaygın, iyi
+belgelenmiş bir API) ama %100 garanti veremem — yanlışsa Visual Studio
+derleme hatası (CS1061) verir, bu durumda hatayı paylaşın, doğru üye adını
+birlikte buluruz (bu oturumda defalarca kullandığımız, işe yarayan yöntem).
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini
@@ -146,7 +185,17 @@ SOFT) AYNI görsel/etkileşim desende yeni bir **"Hırdavat"** sütunu eklendi:
    önceden Hammaddeler ekranından (tip: hırdavat, aynı stok kodlarıyla)
    tanımlıysa kartla otomatik eşleşmiş (yeşil/normal) görünmeli, değilse
    amber "🔍 kart seç" ile işaretlenmiş olmalı.
-5. İsterseniz devam: resmi FR.29 basılı form şablonuna da Hırdavat sütunu
+5. YENİ: Bir montajı açıp önce SolidWorks'ün kendi "Insert > Exploded View"
+   aracıyla bir patlatılmış görünüm oluşturun, sonra **"Montaj Şeması
+   Oluştur"**a basın — çizim açılıp (varsa) patlatılmış görünümü yansıtmalı.
+   Aşamaları/görünüşleri düzenleyip **"Montaj Şemasını Onayla"**ya basın.
+   `IView.ShowExploded` derleme hatası verirse (CS1061 "does not contain a
+   definition for 'ShowExploded'"), Nesne Gezgini'nde (Object Browser) `IView`
+   arayüzünü açıp doğru üye adını bulup bana bildirin — tek satır düzeltiriz.
+6. Rapor Oluştur'u tekrar çalıştırıp Excel/PDF'in "Genel" sayfasında artık
+   parça listesi → montaj şeması → teknik resim sırasının doğru göründüğünü
+   doğrulayın.
+7. İsterseniz devam: resmi FR.29 basılı form şablonuna da Hırdavat sütunu
    eklemek isterseniz (ISO doküman kontrolü gerektirebilir) ayrıca belirtin.
 
 ## Değişen/eklenen dosyalar

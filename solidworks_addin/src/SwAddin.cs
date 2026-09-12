@@ -77,6 +77,12 @@ namespace UretimOSKesim
         // eşleşsin — bkz. RaporOlusturucu.cs / KesimSatiri.ModelYolu).
         private string _sonOlusturulanModelYolu;
 
+        // Montaj Şeması Oluştur/Onayla için AYRI bir "son model yolu" alanı —
+        // teknik resim ve montaj şeması akışları BAĞIMSIZ çalışabilsin diye
+        // (kullanıcı aynı oturumda önce montaj şeması sonra teknik resim
+        // üzerinde çalışabilir, biri diğerinin durumunu EZMESIN).
+        private string _sonMontajSemasiModelYolu;
+
         // ── SolidWorks YAŞAM DÖNGÜSÜ ─────────────────────────────────────────
         // GEÇMİŞ TANI: gerçek denemede SolidWorks'ün KENDİ native modülünde
         // (sldappu) tam çökme oluştu. KomutlariKur() önce tamamen devre dışı
@@ -209,7 +215,12 @@ namespace UretimOSKesim
             const int ID_TEKNIK_OLUSTUR = 103;
             const int ID_TEKNIK_ONAYLA = 104;
             const int ID_SWOOD_PAKET = 105;
-            int[] komutIdleri = new int[] { ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET };
+            const int ID_MONTAJ_SEMASI_OLUSTUR = 106;
+            const int ID_MONTAJ_SEMASI_ONAYLA = 107;
+            int[] komutIdleri = new int[] {
+                ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET,
+                ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA
+            };
 
             bool eskisiniYokSay = false;
             object kayitliIdler;
@@ -325,6 +336,36 @@ namespace UretimOSKesim
                 ID_SWOOD_PAKET, itemTipi);
             Tanilama.Kaydet("5. AddCommandItem2 tamamlandi");
 
+            // KOMUT 6-7 — MONTAJ ŞEMASI (kullanıcı isteği: "önce parça ve alt
+            // montajdaki tüm parçaları listeleyen, sonra montaj aşamalarını
+            // benim yaptığım explode sırasına göre çizsin, yine ben onaylayıp
+            // düzenleyeyim, dwg/pdf çıktı alalım"). Teknik resimle AYNI iki
+            // adımlı mimari (Oluştur → elle düzenle → Onayla) — ayrı
+            // komutlar olarak tutuldu ki her ikisi de (normal teknik resim +
+            // montaj şeması) AYNI montaj için BAĞIMSIZ onaylanabilsin
+            // (bkz. Manifest.cs KaydetMontajSemasi — ayrı anahtar).
+            Tanilama.Kaydet("6. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "Montaj Şeması Oluştur (Patlatılmış, Düzenlemek İçin Aç)", -1,
+                "Aktif montaj için parça listesini çıkarır ve montajın KENDİ patlatılmış " +
+                "(exploded) görünümünü çizime aktarıp SolidWorks'te AÇIK bırakır — aşamaları/" +
+                "balonları elle düzenleyin, sonra 'Montaj Şemasını Onayla'ya basın. Montajda " +
+                "kayıtlı bir patlatılmış görünüm yoksa çizim normal/toplanmış açılır, önce " +
+                "SolidWorks'te bir Exploded View oluşturun.",
+                "Montaj Şeması Oluştur", 5, "MontajSemasiOlusturCalistir", "PaketOlusturEtkinMi",
+                ID_MONTAJ_SEMASI_OLUSTUR, itemTipi);
+            Tanilama.Kaydet("6. AddCommandItem2 tamamlandi");
+
+            Tanilama.Kaydet("7. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "Montaj Şemasını Onayla (DWG+PDF Kaydet)", -1,
+                "Şu an SolidWorks'te AÇIK olan (elle düzenlediğiniz) montaj şeması çizimini " +
+                "hem .dwg hem .pdf olarak kaydeder — bu görsel, Kesim Raporu'nun 'Genel' " +
+                "sayfasına parça listesinden hemen sonra otomatik eklenir.",
+                "Montaj Şemasını Onayla", 6, "MontajSemasiOnaylaCalistir", "PaketOlusturEtkinMi",
+                ID_MONTAJ_SEMASI_ONAYLA, itemTipi);
+            Tanilama.Kaydet("7. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -391,9 +432,9 @@ namespace UretimOSKesim
             Tanilama.Kaydet("AddCommandTabBox tamamlandi, kutu null mu=" + (kutu == null));
             if (kutu == null) return;
 
-            int[] cmdIdleri = new int[5];
-            int[] metinTipi = new int[5];
-            for (int i = 0; i < 5; i++)
+            int[] cmdIdleri = new int[7];
+            int[] metinTipi = new int[7];
+            for (int i = 0; i < 7; i++)
             {
                 cmdIdleri[i] = grup.get_CommandID(i);
                 metinTipi[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
@@ -437,14 +478,14 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            // NOT: dosya adı "_v3" oldu (v2'den) — 4 kareli şeritten 5 kareli
-            // şeride geçildi (SWOOD Paketi komutu eklendi); "dosya zaten var"
-            // kontrolü eski 4 kareli dosyayı YENİDEN KULLANMASIN diye (aksi
-            // halde 5. komutun ikonu boş/yanlış kalır) — bkz. _v2 için verilen
-            // aynı gerekçe.
-            string yol20 = Path.Combine(klasor, "komutlar_v3_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v3_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v3_40.png");
+            // NOT: dosya adı "_v4" oldu (v3'ten) — 5 kareli şeritten 7 kareli
+            // şeride geçildi (Montaj Şeması Oluştur/Onayla eklendi); "dosya
+            // zaten var" kontrolü eski 5 kareli dosyayı YENİDEN KULLANMASIN
+            // diye (aksi halde 6-7. komutların ikonu boş/yanlış kalır) —
+            // bkz. _v2/_v3 için verilen aynı gerekçe.
+            string yol20 = Path.Combine(klasor, "komutlar_v4_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v4_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v4_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -455,12 +496,13 @@ namespace UretimOSKesim
 
         // Şerit sırası (ImageListIndex ile eşleşmeli — bkz. KomutlariKur'daki
         // AddCommandItem2 çağrıları): 0=Kesim, 1=Etiketle, 2=Teknik Resim
-        // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi.
+        // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi, 5=Montaj Şeması
+        // Oluştur, 6=Montaj Şemasını Onayla.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 5;
+            int genislik = kareBoyutu * 7;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -470,6 +512,8 @@ namespace UretimOSKesim
                 TeknikResimIkonuCiz(g, kareBoyutu * 2, kareBoyutu);
                 OnayIkonuCiz(g, kareBoyutu * 3, kareBoyutu);
                 SwoodPaketIkonuCiz(g, kareBoyutu * 4, kareBoyutu);
+                MontajSemasiIkonuCiz(g, kareBoyutu * 5, kareBoyutu);
+                MontajSemasiOnayIkonuCiz(g, kareBoyutu * 6, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
         }
@@ -578,6 +622,45 @@ namespace UretimOSKesim
             }
         }
 
+        // 5: Montaj Şeması Oluştur — indigo zemin, birbirinden AYRILMIŞ (patlatılmış)
+        // üç küçük kare — "exploded view" çağrışımı.
+        private void MontajSemasiIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.Indigo, x, 0, s, s);
+            float k = s * 0.22f;
+            using (var beyazFircasi = new SolidBrush(Color.White))
+            {
+                g.FillRectangle(beyazFircasi, x + s * 0.14f, s * 0.14f, k, k);
+                g.FillRectangle(beyazFircasi, x + s * 0.62f, s * 0.30f, k, k);
+                g.FillRectangle(beyazFircasi, x + s * 0.38f, s * 0.62f, k, k);
+            }
+            using (var kesikKalem = new Pen(Color.White, Math.Max(1f, s / 20f)))
+            {
+                kesikKalem.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
+                g.DrawLine(kesikKalem, x + s * 0.36f, s * 0.25f, x + s * 0.62f, s * 0.40f);
+                g.DrawLine(kesikKalem, x + s * 0.55f, s * 0.53f, x + s * 0.50f, s * 0.62f);
+            }
+        }
+
+        // 6: Montaj Şemasını Onayla — indigo zemin (5 ile eşleşsin diye), onay (✓).
+        private void MontajSemasiOnayIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.MediumSlateBlue, x, 0, s, s);
+            using (var kalem = new Pen(Color.White, Math.Max(2f, s / 8f)))
+            {
+                kalem.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                kalem.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                kalem.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+                var noktalar = new PointF[]
+                {
+                    new PointF(x + s * 0.22f, s * 0.52f),
+                    new PointF(x + s * 0.42f, s * 0.72f),
+                    new PointF(x + s * 0.8f, s * 0.28f),
+                };
+                g.DrawLines(kalem, noktalar);
+            }
+        }
+
         private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
 
         // ── KOMUT: KESİM LİSTESİ + TEKNİK RESİM RAPORU OLUŞTUR ───────────────
@@ -659,6 +742,8 @@ namespace UretimOSKesim
             var pdfYollari = new List<string>();
             var genelGirdi = Manifest.Bul(aktifBelge.GetPathName());
             if (genelGirdi?.PdfYolu != null) pdfYollari.Add(genelGirdi.PdfYolu);
+            var montajSemasiGirdi = Manifest.BulMontajSemasi(aktifBelge.GetPathName());
+            if (montajSemasiGirdi?.PdfYolu != null) pdfYollari.Add(montajSemasiGirdi.PdfYolu);
             var eklenenModelYollari = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var s in satirlar)
             {
@@ -691,6 +776,87 @@ namespace UretimOSKesim
 
             MessageBox.Show(ozet, "ÜretimOS SWOOD Paketi", MessageBoxButtons.OK,
                 tumUyarilar.Count > 0 || onaysizParcaSayisi > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+
+        // ── KOMUT: MONTAJ ŞEMASI OLUŞTUR (ADIM 1) ────────────────────────────
+        // Montajın kendi patlatılmış (exploded) görünümünü çizime aktarır ve
+        // SolidWorks'te AÇIK BIRAKIR — kaydetmez, kapatmaz (teknik resimle
+        // BİREBİR aynı iki adımlı mimari, bkz. TeknikResimOlusturucu.cs
+        // MontajSemasiAcVeDuzenlemeyeBirak).
+        public void MontajSemasiOlusturCalistir()
+        {
+            if (string.IsNullOrWhiteSpace(SABLON_YOLU) || !File.Exists(SABLON_YOLU))
+            {
+                MessageBox.Show($"Çizim şablonu bulunamadı:\n{SABLON_YOLU}\n\nSwAddin.cs'teki SABLON_YOLU sabitini kontrol edin.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null || aktifBelge.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                MessageBox.Show("Önce bir montaj (.sldasm) açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string aktifYol = aktifBelge.GetPathName();
+            Tanilama.Kaydet("MontajSemasiOlusturCalistir: " + aktifYol);
+            var resimUretici = new TeknikResimOlusturucu(_app);
+            bool basarili = resimUretici.MontajSemasiAcVeDuzenlemeyeBirak(aktifYol, SABLON_YOLU);
+            if (basarili) _sonMontajSemasiModelYolu = aktifYol;
+
+            string ozet = basarili
+                ? "Montaj şeması çizimi oluşturuldu ve SolidWorks'te açık — patlatılmış görünüm " +
+                  "(varsa) yansıtıldı, aşamaları/balonları elle düzenleyin, bitince " +
+                  "'Montaj Şemasını Onayla'ya basın."
+                : "Montaj şeması çizimi oluşturulamadı.";
+            if (resimUretici.Uyarilar.Count > 0)
+                ozet += "\n\n" + string.Join("\n", resimUretici.Uyarilar);
+
+            MessageBox.Show(ozet, "ÜretimOS Montaj Şeması", MessageBoxButtons.OK,
+                basarili ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        // ── KOMUT: MONTAJ ŞEMASINI ONAYLA (ADIM 2) ───────────────────────────
+        public void MontajSemasiOnaylaCalistir()
+        {
+            var aktifBelge = _app.ActiveDoc as IModelDoc2;
+            if (aktifBelge == null || aktifBelge.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
+            {
+                MessageBox.Show(
+                    "Onaylamak için önce bir ÇİZİM (.slddrw) belgesini aktif hale getirin\n" +
+                    "('Montaj Şeması Oluştur' ile açtığınız çizim).",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string dwgYolu;
+            using (var kaydetDialog = new SaveFileDialog { Filter = "DWG dosyası|*.dwg", FileName = "montaj_semasi.dwg" })
+            {
+                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                dwgYolu = kaydetDialog.FileName;
+            }
+
+            Tanilama.Kaydet("MontajSemasiOnaylaCalistir: " + dwgYolu);
+            var resimUretici = new TeknikResimOlusturucu(_app);
+            bool basarili = resimUretici.AcikCizimiKaydet(aktifBelge, dwgYolu,
+                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg);
+
+            if (basarili && !string.IsNullOrWhiteSpace(_sonMontajSemasiModelYolu))
+            {
+                Manifest.KaydetMontajSemasi(_sonMontajSemasiModelYolu, kaydedilenDwg, kaydedilenPdf, kaydedilenJpg);
+                Tanilama.Kaydet("Manifest.KaydetMontajSemasi tamamlandi: " + _sonMontajSemasiModelYolu);
+            }
+
+            string ozet = basarili
+                ? $"Kaydedildi:\n{kaydedilenDwg ?? "(dwg başarısız)"}\n{kaydedilenPdf ?? "(pdf başarısız)"}\n{kaydedilenJpg ?? "(jpg başarısız)"}\n\n" +
+                  "Bu görsel, Kesim Raporu'nun 'Genel' sayfasına otomatik eklenecek."
+                : "Kaydetme başarısız.";
+            if (resimUretici.Uyarilar.Count > 0)
+                ozet += "\n\n" + string.Join("\n", resimUretici.Uyarilar);
+
+            MessageBox.Show(ozet, "ÜretimOS Montaj Şeması", MessageBoxButtons.OK,
+                basarili ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
 
         // ── KOMUT: TEKNİK RESİM OLUŞTUR (ADIM 1) ─────────────────────────────

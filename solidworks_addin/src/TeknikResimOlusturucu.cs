@@ -126,6 +126,105 @@ namespace UretimOSKesim
             }
         }
 
+        // ── MONTAJ ŞEMASI (YENİ) — kullanıcı isteği: "önce parça ve alt
+        // montajdaki tüm parçaları listeleyen, sonra montaj aşamalarını
+        // BENİM YAPTIĞIM explode sırasına göre çizsin, yine ben onaylayıp
+        // düzenleyeyim". Parça listesi zaten KesimListesiCikarici'den geliyor
+        // (bkz. SwAddin.cs:MontajSemasiOlusturCalistir → RaporOlusturucu'nun
+        // "Genel" sayfası). BURADAKİ İŞ sadece görsel: montajın patlatılmış
+        // (exploded) durumunu çizime aktarmak.
+        //
+        // BİLİNÇLİ SINIR: SolidWorks'ün patlatılmış görünüm ADIMLARINI
+        // (hangi parça hangi sırada, ne kadar hareket ediyor) tek tek okuyup
+        // yeniden oynatan API (IExplodedView/IExplodeStep ailesi) resmi
+        // dokümantasyon bu ortamda doğrulanamadığından KULLANILMADI — yanlış
+        // bir varsayım burada ÇÖKME riski taşımasa da (güçlü tipli COM
+        // interop, yanlış üye adı derleme hatası verir, çalışma zamanı
+        // çökmesi değil) SESSİZCE YANLIŞ bir sahne üretebilirdi. Onun yerine
+        // yalnızca resmi, belgelenmiş IView.ShowExploded özelliği kullanılır:
+        // bu, SİZİN SolidWorks'te ZATEN oluşturduğunuz patlatılmış görünümü
+        // olduğu gibi çizime yansıtır — TAHMİN ETMEZ, sadece VARSA gösterir.
+        // Aşamaların ince ayarı (hangi görünüşte hangi patlatma adımı
+        // durdurulacak, balon/numara yerleşimi vb.) her zamanki gibi "elle
+        // düzenle" adımında SİZİN kontrolünüzde kalır.
+        public bool MontajSemasiAcVeDuzenlemeyeBirak(string modelYolu, string sablonYolu)
+        {
+            Tanilama.Kaydet($"MontajSemasiAcVeDuzenlemeyeBirak basladi: model={modelYolu}, sablon={sablonYolu}");
+            try
+            {
+                Tanilama.Kaydet("NewDocument cagriliyor");
+                var cizimBelge = (IModelDoc2)_app.NewDocument(sablonYolu, (int)swDwgPaperSizes_e.swDwgPaperA3size, 0.42, 0.297);
+                Tanilama.Kaydet("NewDocument tamamlandi, cizimBelge null mu=" + (cizimBelge == null));
+                if (cizimBelge == null)
+                {
+                    _uyarilar.Add($"'{sablonYolu}' şablonundan çizim oluşturulamadı — yol doğru mu?");
+                    return false;
+                }
+
+                var cizim = (IDrawingDoc)cizimBelge;
+
+                Tanilama.Kaydet("InsertModelInPredefinedView cagriliyor");
+                bool eklendi = cizim.InsertModelInPredefinedView(modelYolu);
+                Tanilama.Kaydet("InsertModelInPredefinedView tamamlandi, eklendi=" + eklendi);
+
+                if (!eklendi)
+                {
+                    _uyarilar.Add(
+                        "Model, şablondaki önceden tanımlı görünüş yerlerine eklenemedi. " +
+                        "Şablonunuzda (.drwdot) Insert > Drawing View > Predefined ile " +
+                        "Ön/Üst/Sağ/İzometrik görünüş yerleri tanımlanmış mı kontrol edin.");
+                    return false;
+                }
+
+                // Eklenen HER görünüşü, mümkünse, montajın kendi patlatılmış
+                // durumunda göstermeyi dener. GetFirstView() sayfanın KENDİSİNİ
+                // döndürür (resmi API deseni) — ilk gerçek model görünüşü
+                // GetNextView()'dan başlar. Bir görünüşte başarısız olmak
+                // (ör. o yöndeki görünüşte patlatma anlamsızsa) diğerlerini
+                // ETKİLEMEZ — her biri kendi try/catch'inde.
+                int patlatilanSayisi = 0, denenenSayisi = 0;
+                var sayfaGorunusu = cizim.GetFirstView() as IView;
+                var v = sayfaGorunusu?.GetNextView() as IView;
+                while (v != null)
+                {
+                    denenenSayisi++;
+                    try
+                    {
+                        v.ShowExploded = true;
+                        patlatilanSayisi++;
+                        Tanilama.Kaydet("Gorunus patlatildi: " + v.Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        Tanilama.Kaydet("Gorunus patlatilamadi (" + v.Name + "): " + ex.Message);
+                    }
+                    v = v.GetNextView() as IView;
+                }
+                Tanilama.Kaydet($"Patlatma denemesi bitti: {patlatilanSayisi}/{denenenSayisi} basarili");
+
+                if (patlatilanSayisi == 0)
+                {
+                    _uyarilar.Add(
+                        "Hiçbir görünüş patlatılmış duruma geçirilemedi — montajda kayıtlı bir " +
+                        "patlatılmış görünüm (exploded view) bulunamamış olabilir. Çizim normal/toplanmış " +
+                        "görünüşle açıldı; SolidWorks'te montajı önce patlatıp (Insert > Exploded View) " +
+                        "tekrar deneyin, ya da çizimdeki görünüşe sağ tıklayıp 'Show In Exploded State' ile " +
+                        "elle açın.");
+                }
+
+                Tanilama.Kaydet("ViewZoomtofit2 cagriliyor");
+                cizimBelge.ViewZoomtofit2();
+                Tanilama.Kaydet("ViewZoomtofit2 tamamlandi - cizim ACIK birakildi (kapatilmadi/kaydedilmedi)");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("MontajSemasiAcVeDuzenlemeyeBirak HATA (managed exception): " + ex);
+                _uyarilar.Add($"'{modelYolu}' için montaj şeması oluşturulurken hata: {ex.Message}");
+                return false;
+            }
+        }
+
         private string FarkliKaydet(IModelDocExtension ext, string cikisKlasoru, string dosyaAdiOnEki, string uzanti, string modelYoluLog)
         {
             string dosyaAdi = System.IO.Path.Combine(cikisKlasoru, (dosyaAdiOnEki ?? "teknik_resim") + "." + uzanti);

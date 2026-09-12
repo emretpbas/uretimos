@@ -52,16 +52,28 @@ namespace UretimOSKesim
                 {
                     _uyarilar.Add("Montajın kendi teknik resmi henüz onaylanmadı — Genel sayfada resim olmayacak.");
                 }
+                // YENİ: montaj şeması (patlatılmış görünüm) — ayrı bir onay
+                // akışından gelir (bkz. SwAddin.cs:MontajSemasiOnaylaCalistir),
+                // teknik resimle AYNI model yoluna ama Manifest'te AYRI bir
+                // anahtara kayıtlıdır. Kullanıcı isteği: "önce parça/alt montaj
+                // listesi, sonra montaj aşamaları" — bu yüzden "Genel"
+                // sayfasında parça tablosundan HEMEN SONRA, teknik resimden
+                // ÖNCE gösterilir.
+                var montajSemasiGirdi = Manifest.BulMontajSemasi(genelModelYolu);
+                if (montajSemasiGirdi?.JpgYolu == null)
+                {
+                    _uyarilar.Add("Montaj şeması henüz onaylanmadı — Genel sayfada montaj şeması görseli olmayacak.");
+                }
 
                 Tanilama.Kaydet("Excel uretiliyor");
-                uretilenXlsx = ExcelUret(satirlar, genelGirdi?.JpgYolu, xlsxYolu);
+                uretilenXlsx = ExcelUret(satirlar, genelGirdi?.JpgYolu, montajSemasiGirdi?.JpgYolu, xlsxYolu);
                 Tanilama.Kaydet("Excel uretildi: " + uretilenXlsx);
 
                 string pdfYolu = Path.Combine(
                     Path.GetDirectoryName(xlsxYolu) ?? "",
                     Path.GetFileNameWithoutExtension(xlsxYolu) + ".pdf");
                 Tanilama.Kaydet("PDF uretiliyor");
-                uretilenPdf = PdfUret(satirlar, genelGirdi?.JpgYolu, pdfYolu);
+                uretilenPdf = PdfUret(satirlar, genelGirdi?.JpgYolu, montajSemasiGirdi?.JpgYolu, pdfYolu);
                 Tanilama.Kaydet("PDF uretildi: " + uretilenPdf);
 
                 return uretilenXlsx != null || uretilenPdf != null;
@@ -74,7 +86,7 @@ namespace UretimOSKesim
             }
         }
 
-        private string ExcelUret(List<KesimSatiri> satirlar, string genelJpgYolu, string xlsxYolu)
+        private string ExcelUret(List<KesimSatiri> satirlar, string genelJpgYolu, string montajSemasiJpgYolu, string xlsxYolu)
         {
             using (var workbook = new XLWorkbook())
             {
@@ -86,7 +98,16 @@ namespace UretimOSKesim
                     SatirYazVeri(genelSayfa, satirNo, s);
                     satirNo++;
                 }
-                ResimEkle(genelSayfa, genelJpgYolu, satirNo + 2, "Montajın teknik resmi henüz onaylanmadı.");
+                // Kullanıcı isteği: "önce parça/alt montaj listesi, sonra
+                // montaj aşamaları" — bu yüzden montaj şeması, parça
+                // tablosundan hemen sonra, genel teknik resimden ÖNCE.
+                int montajSemasiSatiri = satirNo + 2;
+                genelSayfa.Cell(montajSemasiSatiri, 1).Value = "MONTAJ ŞEMASI (Patlatılmış Görünüm)";
+                ResimEkle(genelSayfa, montajSemasiJpgYolu, montajSemasiSatiri + 1, "Montaj şeması henüz onaylanmadı.");
+
+                int teknikResimSatiri = montajSemasiSatiri + 42;
+                genelSayfa.Cell(teknikResimSatiri, 1).Value = "MONTAJIN TEKNİK RESMİ";
+                ResimEkle(genelSayfa, genelJpgYolu, teknikResimSatiri + 1, "Montajın teknik resmi henüz onaylanmadı.");
 
                 var kullanilanAdlar = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Genel" };
                 foreach (var s in satirlar)
@@ -167,7 +188,7 @@ namespace UretimOSKesim
             return aday;
         }
 
-        private string PdfUret(List<KesimSatiri> satirlar, string genelJpgYolu, string pdfYolu)
+        private string PdfUret(List<KesimSatiri> satirlar, string genelJpgYolu, string montajSemasiJpgYolu, string pdfYolu)
         {
             using (var belge = new PdfDocument())
             {
@@ -198,9 +219,22 @@ namespace UretimOSKesim
                     y += 14;
                 }
 
-                y += 20;
-                y = ResimVeyaUyariCiz(belge, ref sayfa, ref gfx, genelJpgYolu,
-                    "Montajın teknik resmi henüz onaylanmadı.", y, uyariFontu);
+                // Kullanıcı isteği: "önce parça/alt montaj listesi, sonra
+                // montaj aşamaları" — montaj şeması AYRI bir sayfada, tablodan
+                // hemen sonra, genel teknik resimden ÖNCE gösterilir.
+                sayfa = belge.AddPage();
+                gfx = XGraphics.FromPdfPage(sayfa);
+                gfx.DrawString("Montaj Şeması (Patlatılmış Görünüm)", baslikFontu, XBrushes.Black,
+                    new XRect(0, 20, sayfa.Width, 30), XStringFormats.TopCenter);
+                ResimVeyaUyariCiz(belge, ref sayfa, ref gfx, montajSemasiJpgYolu,
+                    "Montaj şeması henüz onaylanmadı.", 60, uyariFontu);
+
+                sayfa = belge.AddPage();
+                gfx = XGraphics.FromPdfPage(sayfa);
+                gfx.DrawString("Montajın Teknik Resmi", baslikFontu, XBrushes.Black,
+                    new XRect(0, 20, sayfa.Width, 30), XStringFormats.TopCenter);
+                ResimVeyaUyariCiz(belge, ref sayfa, ref gfx, genelJpgYolu,
+                    "Montajın teknik resmi henüz onaylanmadı.", 60, uyariFontu);
 
                 foreach (var s in satirlar)
                 {
