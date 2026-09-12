@@ -80,6 +80,16 @@ namespace UretimOSKesim
         // ekibi onu bir plakadan kesmeye ÇALIŞMASIN.
         public const string YABANCI_PARCA = "URETIMOS_YABANCI_PARCA";
 
+        // TAHIL_YONU (desen/tahıl yönü — SWOOD'un GRAIN sütunuyla AYNI amaç):
+        // "boyuna" | "enine" | boş (yönsüz/önemsiz). Ahşap/kaplamalı
+        // plakalarda desen yönü kesim ve montaj açısından KRİTİKTİR — yanlış
+        // yönde kesilmiş bir parça geri dönüşü olmayan fire demektir, bu
+        // yüzden TAHMİN EDİLMEZ. is_emri_uretici.js:swoodDenUret bu alanı
+        // GRAIN sütunu üzerinden zaten okuyordu (SWOOD raporları için) —
+        // burada SADECE SolidWorks add-in'inin AYNI sütunu doldurması
+        // sağlanıyor, ÜretimOS tarafında hiçbir kod değişikliği gerekmedi.
+        public const string TAHIL_YONU = "URETIMOS_TAHIL_YONU";
+
         // ── Kesim listesi kaynak izleme (tanılama amaçlı, dışa aktarıma girmez) ─
         public const string OLCU_KAYNAGI = "URETIMOS_OLCU_KAYNAGI"; // "cutlist" | "bbox" | "elle"
     }

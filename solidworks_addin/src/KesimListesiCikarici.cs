@@ -40,6 +40,10 @@ namespace UretimOSKesim
         public string HirdavatListesi;
         public string BirlesimTipi;
         public bool YabanciParca;
+
+        // YENİ: desen/tahıl yönü (bkz. OzelAlanlar.TAHIL_YONU) — SWOOD'un
+        // GRAIN sütunuyla AYNI amaç, ÜretimOS tarafı zaten bu sütunu okuyordu.
+        public string TahilYonu;
     }
 
     public class KesimListesiCikarici
@@ -159,7 +163,8 @@ namespace UretimOSKesim
                 ModelYolu = modelDoc.GetPathName(),
                 HirdavatListesi = OzelAlanOku(modelDoc, OzelAlanlar.HIRDAVAT_LISTESI) ?? "",
                 BirlesimTipi = OzelAlanOku(modelDoc, OzelAlanlar.BIRLESIM_TIPI) ?? "",
-                YabanciParca = EvetHayirOku(OzelAlanOku(modelDoc, OzelAlanlar.YABANCI_PARCA))
+                YabanciParca = EvetHayirOku(OzelAlanOku(modelDoc, OzelAlanlar.YABANCI_PARCA)),
+                TahilYonu = OzelAlanOku(modelDoc, OzelAlanlar.TAHIL_YONU) ?? ""
             };
             satirlar.Add(satir);
         }

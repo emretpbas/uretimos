@@ -199,6 +199,26 @@ yoksa/sunucuya ulaşılamazsa panel SESSİZCE serbest-metin moduna düşer —
 API deseni — yüksek güvenim var ama garanti veremem; yanlışsa yine sadece
 derleme hatası (CS ###) verir, çökme değil.
 
+### 9) Tahıl/Desen Yönü (GRAIN) — YENİ
+
+Ahşap/kaplamalı plakalarda desen yönü kesim için kritiktir; yanlış yönde
+kesim geri dönüşü olmayan firedir. ÜretimOS'un SWOOD köprüsü (`is_emri_
+uretici.js:swoodDenUret`) bu bilgiyi `GRAIN` sütunundan **zaten okuyordu**
+(SWOOD raporları için) — ama SolidWorks add-in'i bu sütunu HİÇ doldurmuyordu.
+Şimdi `OzelAlanlar.TAHIL_YONU` (`URETIMOS_TAHIL_YONU`, Etiketleme Panelinde
+"boyuna/enine/boş" seçimi) → `KesimSatiri.TahilYonu` → `SwoodPaketOlusturucu`
+CSV'sindeki `GRAIN` sütunu yoluyla uçtan uca akıyor — **ÜretimOS tarafında
+hiçbir kod değişikliği gerekmedi**, sadece SolidWorks tarafı eksik veriyi
+tamamladı. Gerçek ayrıştırıcıdan geçirilerek doğrulandı.
+
+### 10) Etiketleme Panelinde Hırdavat Hızlı Ekle — YENİ
+
+"🌐 ÜretimOS'tan Listeleri Çek" artık `tip:'hirdavat'` kartlarını da çekiyor;
+bir açılır kutudan doğru kodu SEÇİP "+ Ekle" ile HIRDAVAT alanına
+`kod:1` biçiminde ekleyebiliyorsunuz — elle yazarken kod hatası (yazım
+hatası, virgül/iki nokta karışıklığı) riski ortadan kalkıyor. Serbest metin
+girişi hâlâ mümkün, bu sadece bir kolaylık katmanı.
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini

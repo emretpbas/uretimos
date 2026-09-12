@@ -43,10 +43,13 @@ namespace UretimOSKesim
         private ComboBox _plakaKutusu;
         private ComboBox _kenarOnKutusu, _kenarArkaKutusu, _kenarSolKutusu, _kenarSagKutusu;
         private TextBox _hirdavatKutusu;
+        private ComboBox _hirdavatHizliEkleKutusu;
         private TextBox _ustPaketKutusu;
         private ComboBox _birlesimKutusu;
+        private ComboBox _tahilYonuKutusu;
         private CheckBox _yabanciParcaKutusu;
         private Label _durumEtiketi;
+        private List<string> _sunucuHirdavatKodlari = new List<string>();
 
         public EtiketlemePaneli(ModelDoc2 hedefModel)
         {
@@ -105,6 +108,15 @@ namespace UretimOSKesim
             _kalinlikKutusu = new TextBox();
             Satir("URETIMOS_KALINLIK_MM", _kalinlikKutusu);
 
+            // Tahıl/desen yönü — ahşap/kaplamalı plakalarda kesim yönü
+            // KRİTİKTİR (yanlış yön = geri dönüşü olmayan fire). SWOOD'un
+            // GRAIN sütunuyla aynı anlam (bkz. OzelAlanlar.TAHIL_YONU) —
+            // is_emri_uretici.js bu sütunu zaten okuyordu, sadece SolidWorks
+            // tarafı hiç doldurmuyordu.
+            _tahilYonuKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+            _tahilYonuKutusu.Items.AddRange(new object[] { "", "boyuna", "enine" });
+            Satir("URETIMOS_TAHIL_YONU\n(desen yönü — yönsüzse boş bırakın)", _tahilYonuKutusu);
+
             _plakaKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown };
             Satir("URETIMOS_PLAKA_KODU", _plakaKutusu);
 
@@ -123,6 +135,25 @@ namespace UretimOSKesim
             // etikete yazıldı.
             _hirdavatKutusu = new TextBox();
             Satir("URETIMOS_HIRDAVAT\nörn. MINIFIX-15:2,RAFIX-5:4\n(kod:adet, VİRGÜLLE ayırın)", _hirdavatKutusu);
+
+            // Hızlı ekle: "ÜretimOS'tan Listeleri Çek" ile dolarsa, kullanıcı
+            // burada bir kod SEÇİP "Ekle" ile HIRDAVAT kutusuna elle
+            // yazmadan ":1," biçiminde ekleyebilir — kod HATASIZ girilmiş
+            // olur (yazım hatası riski sıfırlanır). Sunucu verisi yoksa bu
+            // kutu boş kalır, elle yazmaya hiç engel olmaz.
+            _hirdavatHizliEkleKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+            var hizliEkleSarmalayici = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0) };
+            var hizliEkleBtn = new Button { Text = "+ Ekle", AutoSize = true };
+            hizliEkleBtn.Click += (s, e) =>
+            {
+                if (_hirdavatHizliEkleKutusu.SelectedItem == null) return;
+                string kod = _hirdavatHizliEkleKutusu.SelectedItem.ToString();
+                string mevcut = _hirdavatKutusu.Text.Trim();
+                _hirdavatKutusu.Text = string.IsNullOrEmpty(mevcut) ? kod + ":1" : mevcut + "," + kod + ":1";
+            };
+            hizliEkleSarmalayici.Controls.Add(_hirdavatHizliEkleKutusu);
+            hizliEkleSarmalayici.Controls.Add(hizliEkleBtn);
+            Satir("(Sunucudan çekilen hırdavat kodundan hızlı ekle)", hizliEkleSarmalayici);
 
             _ustPaketKutusu = new TextBox();
             Satir("URETIMOS_UST_PAKET_KODU", _ustPaketKutusu);
@@ -169,6 +200,8 @@ namespace UretimOSKesim
             _boyKutusu.Text = Oku(OzelAlanlar.BOY_MM);
             _enKutusu.Text = Oku(OzelAlanlar.EN_MM);
             _kalinlikKutusu.Text = Oku(OzelAlanlar.KALINLIK_MM);
+            string tahilYonu = Oku(OzelAlanlar.TAHIL_YONU);
+            _tahilYonuKutusu.SelectedItem = _tahilYonuKutusu.Items.Contains(tahilYonu) ? tahilYonu : "";
             _plakaKutusu.Text = Oku(OzelAlanlar.PLAKA_KODU);
             _kenarOnKutusu.Text = Oku(OzelAlanlar.KENAR_ON);
             _kenarArkaKutusu.Text = Oku(OzelAlanlar.KENAR_ARKA);
@@ -197,6 +230,7 @@ namespace UretimOSKesim
             Yaz(OzelAlanlar.BOY_MM, _boyKutusu.Text.Trim());
             Yaz(OzelAlanlar.EN_MM, _enKutusu.Text.Trim());
             Yaz(OzelAlanlar.KALINLIK_MM, _kalinlikKutusu.Text.Trim());
+            Yaz(OzelAlanlar.TAHIL_YONU, _tahilYonuKutusu.SelectedItem?.ToString() ?? "");
             Yaz(OzelAlanlar.PLAKA_KODU, _plakaKutusu.Text.Trim());
             Yaz(OzelAlanlar.KENAR_ON, _kenarOnKutusu.Text.Trim());
             Yaz(OzelAlanlar.KENAR_ARKA, _kenarArkaKutusu.Text.Trim());
@@ -244,6 +278,7 @@ namespace UretimOSKesim
 
                 var plakalar = new List<string>();
                 var kenarlar = new List<string>();
+                var hirdavatlar = new List<string>();
                 foreach (var oge in dizi)
                 {
                     string tip = (string)oge["tip"];
@@ -251,6 +286,7 @@ namespace UretimOSKesim
                     if (string.IsNullOrWhiteSpace(kod)) continue;
                     if (tip == "plaka") plakalar.Add(kod);
                     else if (tip == "kenar_bandi") kenarlar.Add(kod);
+                    else if (tip == "hirdavat") hirdavatlar.Add(kod);
                 }
 
                 _plakaKutusu.Items.Clear();
@@ -261,8 +297,13 @@ namespace UretimOSKesim
                     kutu.Items.AddRange(kenarlar.Distinct().OrderBy(x => x).ToArray());
                 }
 
+                _sunucuHirdavatKodlari = hirdavatlar.Distinct().OrderBy(x => x).ToList();
+                _hirdavatHizliEkleKutusu.Items.Clear();
+                _hirdavatHizliEkleKutusu.Items.AddRange(_sunucuHirdavatKodlari.ToArray());
+
                 _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ {plakalar.Count} plaka, {kenarlar.Count} kenar bandı kodu yüklendi (aşağı ok ile seçebilirsiniz).";
+                _durumEtiketi.Text = $"✓ {plakalar.Count} plaka, {kenarlar.Count} kenar bandı, {hirdavatlar.Count} hırdavat kodu yüklendi " +
+                    "(aşağı ok ile seçebilir, hırdavat için '+ Ekle' ile HIRDAVAT alanına ekleyebilirsiniz).";
             }
             catch (Exception ex)
             {

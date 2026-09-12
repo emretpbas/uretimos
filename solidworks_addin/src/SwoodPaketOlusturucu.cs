@@ -28,9 +28,12 @@ namespace UretimOSKesim
     // SÜTUN ŞEMASI is_emri_uretici.js:swoodDenUret ile BİREBİR eşleşir:
     //   DESC, SAP_CODE, LENGHT, WIDTH, QTY, MATERIAL, EBF/EBB/EBL/EBR (kenar
     //   bandı — dolu=bantlı, SWOOD'daki gibi sadece varlık kontrolü edilir),
+    //   GRAIN (tahıl/desen yönü — GERÇEK SWOOD sütun adı, is_emri_uretici.js
+    //   bunu zaten SWOOD raporları için okuyordu; burada SolidWorks add-in'i
+    //   de AYNI sütunu doldurur),
     //   PAKET_KODU (üst alt-montaj kodu — CABINET_NAME yoksa bunu kullanır),
-    //   HIRDAVAT ("kod:adet;kod:adet" — hirdavatAdaylariniAyristir okur),
-    //   BIRLESIM_TIPI, YABANCI_PARCA — SWOOD'un KENDİSİ bu son üçünü hiç
+    //   HIRDAVAT ("kod:adet,kod:adet" — hirdavatAdaylariniAyristir okur),
+    //   BIRLESIM_TIPI, YABANCI_PARCA — SWOOD'un KENDİSİ bu son ikisini hiç
     //   üretmez, is_emri_uretici.js bunları SolidWorks add-in'e ÖZEL, güvenle
     //   yok sayılabilir ekstra sütunlar olarak okur.
     // ════════════════════════════════════════════════════════════════════════
@@ -39,7 +42,7 @@ namespace UretimOSKesim
         private static readonly string[] Basliklar =
         {
             "DESC", "SAP_CODE", "LENGHT", "WIDTH", "QTY", "MATERIAL",
-            "EBF", "EBB", "EBL", "EBR", "PAKET_KODU", "HIRDAVAT",
+            "EBF", "EBB", "EBL", "EBR", "GRAIN", "PAKET_KODU", "HIRDAVAT",
             "BIRLESIM_TIPI", "YABANCI_PARCA"
         };
 
@@ -91,6 +94,7 @@ namespace UretimOSKesim
                 s.Qty.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 Kacis(s.Material),
                 Kacis(s.Ebf), Kacis(s.Ebb), Kacis(s.Ebl), Kacis(s.Ebr),
+                Kacis(s.TahilYonu),
                 Kacis(s.UstPaketKodu),
                 Kacis(s.HirdavatListesi),
                 Kacis(s.BirlesimTipi),
