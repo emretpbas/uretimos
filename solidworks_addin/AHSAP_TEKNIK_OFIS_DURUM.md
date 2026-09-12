@@ -103,19 +103,30 @@ SolidWorks'te bizzat yazdığı KOD üzerinden **TAM** eşleşme aranır (daha
 güvenilir). Veri şeması (`satir.hirdavatlar[]`) artık STEP/PDF/SWOOD TÜM
 kaynaklarda tutarlı şekilde mevcut. 9 yeni test eklendi, hepsi geçiyor.
 
-**Henüz yapılmayan** (görsel, bu ortamda test edilemez): İş Emri Formu'nun
-tablo arayüzünde hırdavat kalemlerini gösteren bir SÜTUN/SATIR render'ı yok
-— veri doğru taşınıyor ve eşleşiyor, ama kullanıcı şu an bunu formda GÖRSEL
-olarak göremiyor (yalnızca içe aktarım sonrası "N hırdavat kalemi eşleştirildi"
-bildirimini görüyor). Bu, canlı DOM/CSS üzerinde görerek çalışılması gereken
-bir iş — bu ortamda (tarayıcı yok) güvenle yapılamaz, Pazartesi'ye kaldı.
+### 6) Hırdavat TABLO GÖRÜNÜMÜ (TAMAMLANDI)
+
+İş Emri Formu'nun ana tablosuna, kenar bandı sütunlarıyla (PVC2/PVC1/PVC0,40/
+SOFT) AYNI görsel/etkileşim desende yeni bir **"Hırdavat"** sütunu eklendi:
+- Her kalem `kod ×adet` olarak listelenir; eşleşen kart varsa adı yanında
+  görünür, yoksa amber renkte "🔍 kart seç" ile İŞARETLENİR (tahmin edilmez).
+- Adet doğrudan tabloda sayı kutusuyla değiştirilebilir.
+- ✕ ile kalem kaldırılır, "+ Ekle" ile SolidWorks dışından elle yeni bir
+  donanım kalemi eklenebilir (kalem_secici ile hammadde kartından seçilir).
+- Aynı sütun Excel ve jsPDF (autoTable) dışa aktarımlarına da eklendi.
+- **Bilerek dokunulmayan**: resmi, revizyon kontrollü FR.29 basılı form
+  (`pdfYazdir`/`window.print`) — bu şirketin ISO doküman kontrolü altındaki
+  FİZİKSEL form şablonu (Doküman No: FR.29, Rev.01), sütun eklemek ayrı bir
+  onay/revizyon süreci gerektirir, kod değişikliğiyle tek taraflı
+  değiştirilmemesi gereken bir belge.
+- 17 yeni yapısal test eklendi, hepsi geçiyor (toplam 156/156).
 
 ## BİLEREK YAPILMAYANLAR (ve neden)
 
 - **Yeni bir nesting/bin-packing motoru** — yukarıda açıklandı, gereksiz
   tekrar olurdu.
-- **İş Emri Formu'nda hırdavat kalemlerini gösteren tablo/UI** — yukarıda
-  açıklandı, görsel doğrulama gerektirir.
+- **Resmi FR.29 basılı form şablonuna Hırdavat sütunu eklemek** — ISO doküman
+  kontrolü altında, kod değişikliğiyle tek taraflı değiştirilecek bir belge
+  değil; isterseniz ayrı bir revizyon süreci olarak ele alınabilir.
 - **DWG/AutoCAD içe aktarımı, gerçek SolidWorks üzerinde uçtan uca test** —
   bu ortamda SolidWorks çalıştırılamıyor.
 
@@ -130,12 +141,13 @@ bir iş — bu ortamda (tarayıcı yok) güvenle yapılamaz, Pazartesi'ye kaldı
    `URETIMOS_BIRLESIM_TIPI`, `URETIMOS_YABANCI_PARCA` özel alanlarını elle
    girin, sonra **"ÜretimOS'a Aktar (SWOOD Uyumlu Paket)"** komutunu çalıştırın.
 4. Üretilen `.zip`'i ÜretimOS'ta İş Emri Formu > SWOOD İçe Aktar ile yükleyip
-   donanım/birleşim/yabancı parça notlarının açıklama sütununda doğru
-   göründüğünü doğrulayın; hırdavat kartları önceden Hammaddeler ekranından
-   (tip: hırdavat, aynı stok kodlarıyla) tanımlıysa "N hırdavat kalemi
-   eşleştirildi" bildirimini görmelisiniz.
-5. İsterseniz devam: İş Emri Formu tablosunda hırdavat kalemlerini gösteren
-   bir satır/sütun ekleyin (veri hazır, sadece render eksik).
+   donanım/birleşim/yabancı parça notlarının açıklama sütununda ve YENİ
+   "Hırdavat" sütununda doğru göründüğünü doğrulayın; hırdavat kartları
+   önceden Hammaddeler ekranından (tip: hırdavat, aynı stok kodlarıyla)
+   tanımlıysa kartla otomatik eşleşmiş (yeşil/normal) görünmeli, değilse
+   amber "🔍 kart seç" ile işaretlenmiş olmalı.
+5. İsterseniz devam: resmi FR.29 basılı form şablonuna da Hırdavat sütunu
+   eklemek isterseniz (ISO doküman kontrolü gerektirebilir) ayrıca belirtin.
 
 ## Değişen/eklenen dosyalar
 
