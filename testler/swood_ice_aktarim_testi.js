@@ -320,5 +320,27 @@ t('zaten kartId doluysa ÜZERİNE YAZILMIYOR', /\(s\.hirdavatlar \|\| \[\]\)\.fo
 t('.zip akışında hirdavatEslestir çağrılıyor', /const esleslenHirdavatSayisi = await hirdavatEslestir\(u\.satirlar\);/.test(pageSrc));
 t('eşleşen hırdavat sayısı kullanıcıya bildiriliyor', /hırdavat kalemi \(minifix\/rafix\/menteşe vb\.\) stok kartıyla otomatik eşleştirildi/.test(pageSrc));
 
+console.log('\n-- page_is_emri_formu.js: hırdavat TABLO GÖRÜNÜMÜ (interaktif düzenleme sütunu) --');
+t('tablo başlığında Hırdavat sütunu var', /<th rowspan="2" style="width:150px">Hırdavat<br>/.test(pageSrc));
+t('satır hücresi hirdavatHucresi() ile üretiliyor', /const hirdavatHucresi = \(\) => \{/.test(pageSrc));
+t('satır render\'ında hirdavatHucresi\(\) çağrılıyor', /\$\{bant\('pvc2'\)\}\$\{bant\('pvc1'\)\}\$\{bant\('pvc040'\)\}\$\{bant\('soft'\)\}\s*\$\{hirdavatHucresi\(\)\}/.test(pageSrc));
+t('eşleşmemiş kalem amber "🔍 kart seç" ile işaretleniyor (tahmin edilmiyor)', /🔍 kart seç/.test(pageSrc));
+t('+ Ekle butonu tanımlı (ie-hirdavat-ekle)', /class="btn btn-sm ie-hirdavat-ekle"/.test(pageSrc));
+t('adet inputu değişince satırın hirdavatlar\\[j\\]\\.adet güncelleniyor', /el\.querySelectorAll\('\.ie-hirdavat-adet'\)\.forEach\(inp => inp\.onchange = \(\) => \{/.test(pageSrc));
+t('✕ ile kalem kaldırma tanımlı', /el\.querySelectorAll\('\.ie-hirdavat-sil'\)\.forEach\(b => b\.onclick = \(\) => \{/.test(pageSrc));
+t('hirdavatKartSec fonksiyonu tanımlı (kart değiştir/eşle)', /async function hirdavatKartSec\(i, j\) \{/.test(pageSrc));
+t('hirdavatKartSec SADECE tip:hirdavat kartları listeliyor', /hammaddeler\.filter\(h => h\.tip === 'hirdavat' && h\.stokKodu\)\.map\(h => \(\{\s*grup: 'hirdavat'/.test(pageSrc));
+t('hirdavatEkle fonksiyonu tanımlı (elle yeni kalem)', /async function hirdavatEkle\(i\) \{/.test(pageSrc));
+t('hirdavatEkle tanımlı hırdavat hammaddesi yoksa uyarı veriyor', /Tanımlı hırdavat hammaddesi yok\. Önce Hammaddeler ekranından/.test(pageSrc));
+
+console.log('\n-- page_is_emri_formu.js: Excel/PDF dışa aktarımlarında Hırdavat sütunu (resmi FR.29 basılı forma BİLEREK dokunulmadı) --');
+t('Excel dışa aktarımı Hırdavat başlığı içeriyor', /'SOFT Boy', 'SOFT En', 'SOFT Kenar Bandı',\s*\n\s*'Hırdavat', 'AÇIKLAMALAR'/.test(pageSrc));
+t('Excel satırlarında hirdavatMetni\\(s\\) yazılıyor', /hirdavatMetni\(s\), s\.aciklamalar, s\.birimM2, s\.bantGrup/.test(pageSrc));
+t('Excel TOPLAM satırı yeni sütun sayısına göre güncellendi (Array(14))', /oz\.toplamParca,\s*\n\s*\.\.\.Array\(14\)\.fill\(''\), oz\.toplamM2\]\);/.test(pageSrc));
+t('jsPDF autoTable başlığı Hırdavat içeriyor', /'SOFT\\nBoy', 'SOFT\\nEn', 'SOFT Kenar Bandı',\s*\n\s*'Hırdavat', 'AÇIKLAMALAR'/.test(pageSrc));
+t('jsPDF autoTable gövdesinde hirdavatHucre\\(s\\) kullanılıyor', /hirdavatHucre\(s\), s\.aciklamalar \|\| ''/.test(pageSrc));
+t('RESMİ FR\\.29 basılı form (pdfYazdir/window\\.print) BİLEREK değiştirilmedi — Doküman No sabit kalmalı',
+  /Doküman No : FR\.29/.test(pageSrc));
+
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

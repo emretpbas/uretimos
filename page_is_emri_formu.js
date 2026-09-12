@@ -469,6 +469,69 @@ PageModules.is_emri_formu = (() => {
     });
   }
 
+  // ── HIRDAVAT (minifix/rafix/menteşe vb.) ─────────────────────────────────
+  // Sadece HIRDAVAT tipi hammaddeler arasından seçim — kenarBandiKartiBul'un
+  // aksine burada bulanık eşleştirme YOK, kullanıcı listeden GÖREREK seçer
+  // (hirdavatEslestir zaten TAM kod eşleşenleri otomatik bağlamıştı, bu
+  // seçici sadece eşleşmeyenler için VEYA kartı DEĞİŞTİRMEK için kullanılır).
+  async function hirdavatKartSec(i, j) {
+    let hammaddeler = [];
+    try { hammaddeler = await Store.hammaddeler.all(); }
+    catch (e) { App.toast('Hammaddeler yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    const secenekler = hammaddeler.filter(h => h.tip === 'hirdavat' && h.stokKodu).map(h => ({
+      grup: 'hirdavat', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
+      netFiyat: 0, maliyetYok: true, _id: h.id
+    }));
+
+    App.goTo('kalem_secici', {
+      baslik: 'Hırdavat Kartı Seç',
+      secenekler,
+      gruplar: { hirdavat: 'Hırdavat' },
+      geriDon: () => App.goTo('is_emri_formu'),
+      onSecildi: (secim) => {
+        const s = form.satirlar[i];
+        const h = s && s.hirdavatlar && s.hirdavatlar[j];
+        if (h) { h.kod = secim.kod; h.kartId = secim._id; h.kartAd = secim.ad; }
+        App.goTo('is_emri_formu');
+      }
+    });
+  }
+
+  // Elle yeni bir hırdavat kalemi ekler — SolidWorks'ten gelmeyen (ör.
+  // sahada sonradan eklenen) bir donanım kalemi için. Kart seçilir seçilmez
+  // satıra 1 adetlik yeni bir kalem eklenir; adet daha sonra tablo üzerinden
+  // (ie-hirdavat-adet) değiştirilebilir.
+  async function hirdavatEkle(i) {
+    let hammaddeler = [];
+    try { hammaddeler = await Store.hammaddeler.all(); }
+    catch (e) { App.toast('Hammaddeler yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    const secenekler = hammaddeler.filter(h => h.tip === 'hirdavat' && h.stokKodu).map(h => ({
+      grup: 'hirdavat', kod: h.stokKodu, ad: h.ad || '', birim: h.birim || '',
+      netFiyat: 0, maliyetYok: true, _id: h.id
+    }));
+    if (!secenekler.length) {
+      App.toast('Tanımlı hırdavat hammaddesi yok. Önce Hammaddeler ekranından bir hırdavat kartı tanımlayın.', 'err');
+      return;
+    }
+
+    App.goTo('kalem_secici', {
+      baslik: 'Hırdavat Ekle',
+      secenekler,
+      gruplar: { hirdavat: 'Hırdavat' },
+      geriDon: () => App.goTo('is_emri_formu'),
+      onSecildi: (secim) => {
+        const s = form.satirlar[i];
+        if (s) {
+          if (!s.hirdavatlar) s.hirdavatlar = [];
+          s.hirdavatlar.push({ kod: secim.kod, adet: 1, kartId: secim._id, kartAd: secim.ad });
+        }
+        App.goTo('is_emri_formu');
+      }
+    });
+  }
+
   // ── TABLO ────────────────────────────────────────────────────────────────
   function tabloCiz(main) {
     const el = document.getElementById('ie-tablo');
@@ -496,6 +559,7 @@ PageModules.is_emri_formu = (() => {
           <th rowspan="2" style="width:68px">Üretim<br>miktarı</th>
           ${['PVC 2mm', 'PVC 1mm', 'PVC 0,40', 'SOFT'].map(x =>
             `<th colspan="3" style="text-align:center;width:150px">${x}</th>`).join('')}
+          <th rowspan="2" style="width:150px">Hırdavat<br><span style="font-weight:400;font-size:9.5px">(minifix/rafix/menteşe…)</span></th>
           <th rowspan="2" style="width:100px">AÇIKLAMALAR</th>
           <th rowspan="2" style="width:68px">birim m²</th>
           <th rowspan="2" style="width:34px"></th>
@@ -509,7 +573,7 @@ PageModules.is_emri_formu = (() => {
         <tr style="background:var(--surface2);font-weight:600">
           <td colspan="13">TOPLAM</td>
           <td class="r">${ozet.toplamParca}</td>
-          <td colspan="13"></td>
+          <td colspan="14"></td>
           <td class="r">${ozet.toplamM2}</td><td></td>
         </tr>
       </table></div>
@@ -566,6 +630,18 @@ PageModules.is_emri_formu = (() => {
     el.querySelectorAll('.ie-kod-agac').forEach(b => b.onclick = () => parcaKoduAgactanSec(+b.dataset.i));
     el.querySelectorAll('.ie-plaka-sec').forEach(b => b.onclick = () => plakaSec(+b.dataset.i));
     el.querySelectorAll('.ie-bant-sec').forEach(b => b.onclick = () => bantSec(+b.dataset.i, b.dataset.grup));
+    el.querySelectorAll('.ie-hirdavat-esle').forEach(sp => sp.onclick = () => hirdavatKartSec(+sp.dataset.i, +sp.dataset.j));
+    el.querySelectorAll('.ie-hirdavat-adet').forEach(inp => inp.onchange = () => {
+      const s = form.satirlar[+inp.dataset.i];
+      const h = s && s.hirdavatlar && s.hirdavatlar[+inp.dataset.j];
+      if (h) h.adet = Math.max(1, parseInt(inp.value) || 1);
+    });
+    el.querySelectorAll('.ie-hirdavat-sil').forEach(b => b.onclick = () => {
+      const s = form.satirlar[+b.dataset.i];
+      if (s && s.hirdavatlar) s.hirdavatlar.splice(+b.dataset.j, 1);
+      tabloCiz(main);
+    });
+    el.querySelectorAll('.ie-hirdavat-ekle').forEach(b => b.onclick = () => hirdavatEkle(+b.dataset.i));
     el.querySelectorAll('.ie-sil').forEach(b => b.onclick = () => {
       form.satirlar.splice(+b.dataset.i, 1);
       form.satirlar.forEach((s, j) => s.sira = j + 1);
@@ -594,6 +670,32 @@ PageModules.is_emri_formu = (() => {
                 title="${s[ad].bandKartId ? 'Kenar bandını değiştir' : 'Kenar bandı seç'}">${bilgi}</td>`;
     };
     const kalinlikKilitli = !!s.plakaKartId;
+    // Hırdavat: SolidWorks add-in'inden gelen HIRDAVAT sütunundan (bkz.
+    // hirdavatEslestir) veya elle "+ Ekle" ile eklenen minifix/rafix/menteşe
+    // vb. donanım kalemleri. Kart bulunamayan (kartId null) kalemler amber
+    // renkte "🔍 kart seç" ile işaretlenir — TAHMİN EDİLMEZ, kullanıcı elle
+    // bağlar (bkz. kenar bandı/plaka ile AYNI "dürüstlük ilkesi").
+    const hirdavatHucresi = () => {
+      const satirlarHtml = (s.hirdavatlar || []).map((h, j) => `
+        <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px">
+          <span class="ie-hirdavat-esle" data-i="${i}" data-j="${j}" style="cursor:pointer;flex:1;min-width:0;line-height:1.2"
+            title="${h.kartId ? 'Hammadde kartını değiştir' : 'Hammadde kartı seç (stok/maliyet takibi için gerekli)'}">
+            <span class="mono" style="font-weight:700;font-size:10.5px">${App.escapeHtml(h.kod || '')}</span>
+            ${h.kartId
+              ? `<span class="muted" style="font-size:9.5px">${h.kartAd ? ' — ' + App.escapeHtml(h.kartAd) : ''}</span>`
+              : `<span style="color:var(--amber-text);font-size:9.5px"> 🔍 kart seç</span>`}
+          </span>
+          <input class="finput ie-hirdavat-adet" data-i="${i}" data-j="${j}" type="number" min="1"
+            value="${h.adet}" title="Adet"
+            style="width:36px;font-size:10.5px;padding:1px 2px;text-align:right;flex:0 0 auto">
+          <button class="ie-hirdavat-sil" data-i="${i}" data-j="${j}" title="Kaldır"
+            style="border:none;background:none;color:var(--red-text);cursor:pointer;font-size:11px;padding:0 2px;flex:0 0 auto">✕</button>
+        </div>`).join('');
+      return `<td style="white-space:normal;min-width:150px;vertical-align:top">
+        ${satirlarHtml}
+        <button class="btn btn-sm ie-hirdavat-ekle" data-i="${i}" style="font-size:10px;padding:1px 6px;margin-top:2px">+ Ekle</button>
+      </td>`;
+    };
     return `<tr>
       <td>${inp('paketNo', s.paketNo)}</td>
       <td>${inp('paketAdedi', s.paketAdedi, 'number')}</td>
@@ -618,6 +720,7 @@ PageModules.is_emri_formu = (() => {
       <td>${inp('kabaEn', s.kabaEn, 'number')}</td>
       <td>${inp('uretimMiktari', s.uretimMiktari, 'number')}</td>
       ${bant('pvc2')}${bant('pvc1')}${bant('pvc040')}${bant('soft')}
+      ${hirdavatHucresi()}
       <td>${inp('aciklamalar', s.aciklamalar)}</td>
       <td class="r">${s.birimM2}</td>
       <td><button class="btn btn-sm ie-sil" data-i="${i}" style="color:var(--red-text);padding:1px 5px">✕</button></td>
@@ -828,19 +931,25 @@ PageModules.is_emri_formu = (() => {
       'Net Adet', 'Net Boy', 'Net En', 'Kaba Adet', 'Kaba Boy', 'Kaba En', 'Üretim miktarı',
       'PVC2 Boy', 'PVC2 En', 'PVC2 Kenar Bandı', 'PVC1 Boy', 'PVC1 En', 'PVC1 Kenar Bandı',
       'PVC0,40 Boy', 'PVC0,40 En', 'PVC0,40 Kenar Bandı', 'SOFT Boy', 'SOFT En', 'SOFT Kenar Bandı',
-      'AÇIKLAMALAR', 'birim m²', 'Bant grubu']);
+      'Hırdavat', 'AÇIKLAMALAR', 'birim m²', 'Bant grubu']);
     const bantMetni = (grp) => grp.bandKartId ? (grp.bandKodu || '') + (grp.bandAd ? ' — ' + grp.bandAd : '') : '';
+    // "kod ×adet" — kartAd doluysa (kart bulunduysa) yanına eklenir; kalemler
+    // ';' ile ayrılır (tablo hücresinde satır satır göstermek yerine, Excel/
+    // PDF gibi statik dışa aktarımlarda tek hücreye sığdırmak için).
+    const hirdavatMetni = (s) => (s.hirdavatlar || [])
+      .map(h => (h.kod || '') + ' ×' + h.adet + (h.kartAd ? ' (' + h.kartAd + ')' : ''))
+      .join('; ');
     form.satirlar.forEach(s => S.push([
       s.paketNo, s.paketAdedi, s.parcaKodu, s.parcaAdi, s.plakaKodu, s.kalinlik, s.renk,
       s.netAdet, s.netBoy, s.netEn, s.kabaAdet, s.kabaBoy, s.kabaEn, s.uretimMiktari,
       s.pvc2.boy, s.pvc2.en, bantMetni(s.pvc2), s.pvc1.boy, s.pvc1.en, bantMetni(s.pvc1),
       s.pvc040.boy, s.pvc040.en, bantMetni(s.pvc040), s.soft.boy, s.soft.en, bantMetni(s.soft),
-      s.aciklamalar, s.birimM2, s.bantGrup
+      hirdavatMetni(s), s.aciklamalar, s.birimM2, s.bantGrup
     ]));
     const oz = IsEmriUretici.ozet(form.satirlar);
     S.push([]);
     S.push(['TOPLAM', '', '', '', '', '', '', '', '', '', '', '', '', oz.toplamParca,
-      ...Array(13).fill(''), oz.toplamM2]);
+      ...Array(14).fill(''), oz.toplamM2]);
     oz.gruplar.forEach(g => S.push([g.grup + (g.ad ? ' — ' + g.ad : ''), g.satir + ' satır', g.m2.toFixed(3) + ' m²']));
     const kb = IsEmriUretici.kenarBandiOzeti(form.satirlar);
     if (kb.length) {
@@ -1070,23 +1179,26 @@ PageModules.is_emri_formu = (() => {
     }
 
     const bantHucre = (grp) => grp.bandKartId ? (grp.bandKodu || '') + (grp.bandAd ? '\n' + grp.bandAd : '') : '';
+    const hirdavatHucre = (s) => (s.hirdavatlar || [])
+      .map(h => (h.kod || '') + ' ×' + h.adet + (h.kartAd ? '\n' + h.kartAd : ''))
+      .join('\n');
     doc.autoTable({
       head: [[
         'Paket\nNo', 'Paket\nAdedi', 'Parç.\nKodu', 'Parça Adı', 'Plaka\nHammadde', 'Kalın.', 'Renk',
         'Net\nAdet', 'Net\nBoy', 'Net\nEn', 'Kaba\nAdet', 'Kaba\nBoy', 'Kaba\nEn', 'Üretim\nMiktarı',
         'PVC2\nBoy', 'PVC2\nEn', 'PVC2 Kenar Bandı', 'PVC1\nBoy', 'PVC1\nEn', 'PVC1 Kenar Bandı',
         'PVC0,40\nBoy', 'PVC0,40\nEn', 'PVC0,40 Kenar Bandı', 'SOFT\nBoy', 'SOFT\nEn', 'SOFT Kenar Bandı',
-        'AÇIKLAMALAR', 'birim\nm²'
+        'Hırdavat', 'AÇIKLAMALAR', 'birim\nm²'
       ]],
       body: form.satirlar.map(s => [
         s.paketNo || '', s.paketAdedi || '', s.parcaKodu || '', s.parcaAdi || '', s.plakaKodu || '', s.kalinlik || '', s.renk || '',
         s.netAdet || '', s.netBoy || '', s.netEn || '', s.kabaAdet || '', s.kabaBoy || '', s.kabaEn || '', s.uretimMiktari || '',
         s.pvc2.boy, s.pvc2.en, bantHucre(s.pvc2), s.pvc1.boy, s.pvc1.en, bantHucre(s.pvc1),
         s.pvc040.boy, s.pvc040.en, bantHucre(s.pvc040), s.soft.boy, s.soft.en, bantHucre(s.soft),
-        s.aciklamalar || '', s.birimM2 || ''
+        hirdavatHucre(s), s.aciklamalar || '', s.birimM2 || ''
       ]),
       foot: [['TOPLAM', '', '', '', '', '', '', '', '', '', '', '', '', String(oz.toplamParca),
-        '', '', '', '', '', '', '', '', '', '', '', '', '', String(oz.toplamM2)]],
+        '', '', '', '', '', '', '', '', '', '', '', '', '', '', String(oz.toplamM2)]],
       startY: y, theme: 'grid',
       styles: { fontSize: 6, cellPadding: 1, valign: 'middle', overflow: 'linebreak' },
       headStyles: { fillColor: [217, 217, 217], textColor: 20, fontStyle: 'bold', halign: 'center', fontSize: 6 },
