@@ -93,16 +93,29 @@ Studio'da yapılmalı (bu ortamda derleme imkânı yok).
   bunu doğru işliyor. Bu yüzden reçete/rota kodlarına DOKUNMADIM — zaten
   T1-T4 denetimlerinde bu akışlar tek tek düzeltilip test edilmişti.
 
+### 5) Donanım kartı otomatik eşleştirme (SONRADAN EKLENDİ, TEST EDİLDİ)
+
+`page_is_emri_formu.js`'e `kenarBantlariEslestir` ile AYNI desende yeni bir
+`hirdavatEslestir()` fonksiyonu eklendi ve `.zip` içe aktarım akışına
+bağlandı. Kenar bandından FARKI: kenar bandında SWOOD'un serbest metinli
+açıklaması bulanık (fuzzy) eşleştirilir, hırdavatta ise kullanıcının
+SolidWorks'te bizzat yazdığı KOD üzerinden **TAM** eşleşme aranır (daha
+güvenilir). Veri şeması (`satir.hirdavatlar[]`) artık STEP/PDF/SWOOD TÜM
+kaynaklarda tutarlı şekilde mevcut. 9 yeni test eklendi, hepsi geçiyor.
+
+**Henüz yapılmayan** (görsel, bu ortamda test edilemez): İş Emri Formu'nun
+tablo arayüzünde hırdavat kalemlerini gösteren bir SÜTUN/SATIR render'ı yok
+— veri doğru taşınıyor ve eşleşiyor, ama kullanıcı şu an bunu formda GÖRSEL
+olarak göremiyor (yalnızca içe aktarım sonrası "N hırdavat kalemi eşleştirildi"
+bildirimini görüyor). Bu, canlı DOM/CSS üzerinde görerek çalışılması gereken
+bir iş — bu ortamda (tarayıcı yok) güvenle yapılamaz, Pazartesi'ye kaldı.
+
 ## BİLEREK YAPILMAYANLAR (ve neden)
 
 - **Yeni bir nesting/bin-packing motoru** — yukarıda açıklandı, gereksiz
   tekrar olurdu.
-- **Donanım kartı otomatik eşleştirme UI'ı** (`page_is_emri_formu.js`'e
-  `kenarBantlariEslestir` benzeri bir `hirdavatEslestir` fonksiyonu) —
-  alt yapı (`hirdavatAdaylari`) hazır, ama UI bağlama (yeni tablo satırı,
-  kart seçim modalı) zaman kısıtı nedeniyle Pazartesi'ye kaldı. Şu an
-  donanım bilgisi CSV'de doğru taşınıyor ama iş emri formunda henüz
-  görsel bir "hırdavat satırı" olarak render edilmiyor.
+- **İş Emri Formu'nda hırdavat kalemlerini gösteren tablo/UI** — yukarıda
+  açıklandı, görsel doğrulama gerektirir.
 - **DWG/AutoCAD içe aktarımı, gerçek SolidWorks üzerinde uçtan uca test** —
   bu ortamda SolidWorks çalıştırılamıyor.
 
@@ -118,8 +131,11 @@ Studio'da yapılmalı (bu ortamda derleme imkânı yok).
    girin, sonra **"ÜretimOS'a Aktar (SWOOD Uyumlu Paket)"** komutunu çalıştırın.
 4. Üretilen `.zip`'i ÜretimOS'ta İş Emri Formu > SWOOD İçe Aktar ile yükleyip
    donanım/birleşim/yabancı parça notlarının açıklama sütununda doğru
-   göründüğünü doğrulayın.
-5. İsterseniz devam: hırdavat kart eşleştirme UI'ı (page_is_emri_formu.js).
+   göründüğünü doğrulayın; hırdavat kartları önceden Hammaddeler ekranından
+   (tip: hırdavat, aynı stok kodlarıyla) tanımlıysa "N hırdavat kalemi
+   eşleştirildi" bildirimini görmelisiniz.
+5. İsterseniz devam: İş Emri Formu tablosunda hırdavat kalemlerini gösteren
+   bir satır/sütun ekleyin (veri hazır, sadece render eksik).
 
 ## Değişen/eklenen dosyalar
 
