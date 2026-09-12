@@ -570,10 +570,18 @@ const HAT_OP_YAZILABILIR = ['istasyonIsleri', 'gerceklesenSureKayitlari', 'olcum
 // hammaddeler YALNIZCA OKUNABİLİR: eklenti plaka/hırdavat/kenar bandı
 // kartlarını SEÇER, bu MASTER veriyi değiştirmez/oluşturmaz — yanlışlıkla
 // (veya sızmış bir kimlik bilgisiyle) hammadde fiyatı/tanımı bozulamaz.
+// altMontajlar da YALNIZCA OKUNABİLİR (aynı gerekçe: eklenti reçete ağacı
+// panelinde bir alt montaj kartını hedef/kalem olarak SEÇER, kartın kendisini
+// değiştirmez — kart düzenleme ÜretimOS'un kendi ekranında kalır).
+// rotalar OKUNABİLİR VE YAZILABİLİR: reçete ağacı panelindeki "Rota Seç /
+// Oluştur" özelliği bir yarı mamüle YENİ, BOŞ adımlı bir rota kaydı
+// oluşturabilir (istasyon/süre ADIMLARI kasıtlı olarak TAHMİN EDİLMEZ —
+// kullanıcı bunları ÜretimOS'un kendi Rota ekranından tamamlar); mevcut
+// rotaların silinmesi/adımlarının değiştirilmesi bu uçtan YAPILMAZ.
 // 'delete' ucu bu role TAMAMEN KAPALI (aşağıda ayrıca engellenir) — delete
 // bir koleksiyonun TAMAMINI siler, otomasyon kimliğine bu güç verilmez.
-const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'paketler', 'urunler', 'receteler'];
-const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler'];
+const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler', 'receteler', 'rotalar'];
+const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler', 'rotalar'];
 
 // ── ROL BAZLI ERİŞİM DENETİMİ ──────────────────────────────────────────────
 // GÜVENLİK DÜZELTMESİ (v39): Önceden get/set/patch/delete uçları yalnızca

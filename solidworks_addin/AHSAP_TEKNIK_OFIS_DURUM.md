@@ -219,6 +219,57 @@ bir açılır kutudan doğru kodu SEÇİP "+ Ekle" ile HIRDAVAT alanına
 hatası, virgül/iki nokta karışıklığı) riski ortadan kalkıyor. Serbest metin
 girişi hâlâ mümkün, bu sadece bir kolaylık katmanı.
 
+### 11) Reçete Ağacı Paneli + Rota Seç/Oluştur — YENİ
+
+Kullanıcı isteği: "üretimostaki ağaç görünümünde reçeteyi solidworkstede
+uygula alt kalem ekle sürükle bırak, paket, yarı mamül, alt montaj,
+hırdavat, plaka, kenar bandı vb." + "rota seç ve oluştur da var her
+yarımamülde onu da ekleyelim."
+
+**Ne yapıldı:** Yeni `ReceteAgaciPaneli.cs` — 8. komut ("Reçete Ağacı
+(ÜretimOS)"). Aktif parça/montaj bileşenine karşılık gelen ÜretimOS kartını
+(ürün/yarı mamül/alt montaj/paket — `URETIMOS_KOD` üzerinden otomatik
+eşleştirmeye çalışır, bulamazsa elle seçtirir) bulur, kartın reçetesini bir
+`TreeView`'de gösterir. Solda bir palet (tip seç: Paket/Yarı Mamül/Alt
+Montaj/Hırdavat/Plaka/Kenar Bandı + arama), sürükle-bırak ile ağaca alt
+kalem eklenebiliyor (miktar sorulur). Değişiklikler "✓ ÜretimOS'a Kaydet"
+ile `receteler` koleksiyonuna PATCH edilir.
+
+Yarı mamül kök kart seçiliyken (veya ağaçtaki bir yarı mamül kalemine
+sağ tıklanınca) **"Rota Seç / Oluştur…"** açılır: mevcut rotalardan biri
+atanabilir, ya da kod+ad girilip **boş adımlı YENİ bir rota** oluşturulup
+otomatik atanır. **BİLEREK YAPILMAYAN:** rota ADIMLARI (istasyon/süre)
+TAHMİN EDİLMEZ/otomatik doldurulmaz — `rota_sablon.js`'nin istasyon
+eşleştirme mantığı burada YENİDEN İNŞA EDİLMEDİ; kullanıcı adımları
+ÜretimOS'un kendi Rota ekranından tamamlar (panel bunu açık bir mesajla
+belirtir).
+
+**V1 kapsam sınırı (bilerek):** Ağaç yalnızca TEK SEVİYE gösterilir — bir
+alt kalemin KENDİ reçetesine inip çok katmanlı maliyet ağacı gezilmez
+(ÜretimOS'un `page_recete_agac.js`'i kadar derin değil). Bu, isteğin
+gerçek kapsamı olan "alt kalem ekle sürükle-bırak" işlevini karşılıyor;
+tam maliyet-ağacı editörü istenirse ayrı bir faz olarak ele alınmalı.
+
+**GÜVENLİK DÜZELTMESİ (bu oturumda yapıldı):** `api.php`'deki
+`cad_entegrasyon` rolünün beyaz listesi (`CAD_ENT_OKUNABILIR`/
+`CAD_ENT_YAZILABILIR`) yeni panel yazılmadan önce yalnızca
+`hammaddeler/yarimamuller/paketler/urunler/receteler` içeriyordu —
+panelin okuduğu `altMontajlar` ve okuyup/yazdığı `rotalar` YOKTU. Bu,
+düzgün kısıtlanmış bir `cad_entegrasyon` kimlik bilgisiyle çalışan
+kullanıcılara sessiz 403 hatası verirdi. Düzeltildi: `altMontajlar`
+OKUNABİLİR listesine (kart SEÇİLİR, değiştirilmez — hammaddeler ile aynı
+gerekçe), `rotalar` hem OKUNABİLİR hem YAZILABİLİR listesine eklendi
+(yalnızca YENİ rota oluşturma/atama için; mevcut rota silme/adım
+düzenleme bu uçtan hâlâ mümkün değil). `delete` ucu bu role hâlâ tamamen
+kapalı.
+
+**Test edilemeyen kısım:** WinForms `TreeView`/sürükle-bırak/Dock sırası
+görsel davranışı bu ortamda ÇALIŞTIRILAMADI (SolidWorks/Visual Studio
+yok) — yalnızca brace/paren dengesi ve manuel kod incelemesiyle
+doğrulandı. Pazartesi gerçek testte özellikle: (a) sürükle-bırak'ın
+gerçekten TreeView'e düştüğünü, (b) rota panelinin ustPanel'in ALTINDA
+(üstünde değil) göründüğünü doğrulayın.
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini
@@ -258,13 +309,45 @@ girişi hâlâ mümkün, bu sadece bir kolaylık katmanı.
    `%LocalAppData%\UretimOSKesim\baglanti.json` dosyasını (panel ilk
    denemede otomatik örnek oluşturur) kendi sunucu adresiniz/kullanıcı
    adınız/şifrenizle doldurup "🌐 ÜretimOS'tan Listeleri Çek"e basın.
+10. YENİ: Visual Studio'da projeye `ReceteAgaciPaneli.cs` dosyasını ekleyin
+    (Add Existing Item). `baglanti.json`'ı doldurun (9. adım), sonra bir
+    yarı mamül/paket/ürün karşılığı olan parça/montaj bileşeni seçip
+    **"Reçete Ağacı (ÜretimOS)"** komutunu çalıştırın: (a) kök kartın
+    otomatik bulunduğunu ya da elle seçtirdiğini doğrulayın, (b) soldaki
+    paletten bir hırdavat/plaka/yarı mamül öğesini sağdaki ağaca
+    sürükleyip bırakın, miktar girin, ağaçta göründüğünü doğrulayın,
+    (c) **"✓ ÜretimOS'a Kaydet"**e basıp ÜretimOS'un kendi Reçete Ağaç
+    Editörü ekranında (`page_recete_agac.js`) aynı kalemin göründüğünü
+    doğrulayın, (d) bir yarı mamül kalemine sağ tıklayıp **"Rota Seç /
+    Oluştur…"** ile hem mevcut bir rota atamayı hem de yeni bir rota
+    oluşturmayı deneyin, ÜretimOS'un Rota ekranında yeni kaydın (boş
+    adımlarla) göründüğünü doğrulayın. `cad_entegrasyon` rolüyle
+    bağlanıyorsanız sunucunun güncel `api.php`'yi (bu oturumda
+    `CAD_ENT_OKUNABILIR`/`CAD_ENT_YAZILABILIR` genişletildi — `altMontajlar`
+    ve `rotalar` eklendi) çalıştırdığından emin olun, yoksa 403 alırsınız.
 
 ## Değişen/eklenen dosyalar
 
 - `is_emri_uretici.js` — `hirdavatAdaylariniAyristir`, `swoodDenUret` genişletmesi
-- `testler/swood_ice_aktarim_testi.js` — 17 yeni test (hepsi geçiyor)
-- `solidworks_addin/src/OzelAlanlar.cs` — `BIRLESIM_TIPI`, `YABANCI_PARCA`
-- `solidworks_addin/src/KesimListesiCikarici.cs` — yeni alanlar okunuyor
+- `page_is_emri_formu.js` — Hırdavat tablo sütunu + eşleştirme (görsel gösterim)
+- `testler/swood_ice_aktarim_testi.js` — yeni testler (hepsi geçiyor)
+- `api.php` — `CAD_ENT_OKUNABILIR`/`CAD_ENT_YAZILABILIR` genişletildi
+  (`altMontajlar` okunabilir, `rotalar` okunabilir+yazılabilir eklendi —
+  Reçete Ağacı Paneli'nin ihtiyaç duyduğu ama beyaz listede olmayan iki
+  koleksiyon)
+- `solidworks_addin/src/OzelAlanlar.cs` — `BIRLESIM_TIPI`, `YABANCI_PARCA`, `TAHIL_YONU`
+- `solidworks_addin/src/KesimListesiCikarici.cs` — yeni alanlar okunuyor,
+  `OzelAlanOku`/`OzelAlanYaz` `public static`'e çevrildi (paylaşılan kullanım için)
 - `solidworks_addin/src/SwoodPaketOlusturucu.cs` — YENİ dosya
-- `solidworks_addin/src/SwAddin.cs` — 5. komut + AssemblyResolve düzeltmesi
-  (önceki oturumdan: ClosedXML/PdfSharp'ın SolidWorks içinde yüklenememe sorunu)
+- `solidworks_addin/src/Manifest.cs` — montaj şeması için ayrı anahtar
+- `solidworks_addin/src/TeknikResimOlusturucu.cs` — montaj şeması oluşturma
+- `solidworks_addin/src/RaporOlusturucu.cs` — rapora montaj şeması eklendi
+- `solidworks_addin/src/EtiketlemePaneli.cs` — YENİ dosya
+- `solidworks_addin/src/BaglantiAyarlari.cs` — YENİ dosya (yerel, git'e
+  girmeyen sunucu bağlantı ayarları)
+- `solidworks_addin/src/ReceteAgaciPaneli.cs` — YENİ dosya (Reçete Ağacı +
+  Rota Seç/Oluştur)
+- `solidworks_addin/src/SwAddin.cs` — 6., 7., 8. komutlar (Montaj Şeması
+  Oluştur/Onayla, Reçete Ağacı) + `HedefModelBul` paylaşılan yardımcı +
+  AssemblyResolve düzeltmesi (önceki oturumdan: ClosedXML/PdfSharp'ın
+  SolidWorks içinde yüklenememe sorunu)

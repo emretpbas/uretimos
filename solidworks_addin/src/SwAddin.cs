@@ -217,9 +217,10 @@ namespace UretimOSKesim
             const int ID_SWOOD_PAKET = 105;
             const int ID_MONTAJ_SEMASI_OLUSTUR = 106;
             const int ID_MONTAJ_SEMASI_ONAYLA = 107;
+            const int ID_RECETE_AGACI = 108;
             int[] komutIdleri = new int[] {
                 ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET,
-                ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA
+                ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI
             };
 
             bool eskisiniYokSay = false;
@@ -366,6 +367,20 @@ namespace UretimOSKesim
                 ID_MONTAJ_SEMASI_ONAYLA, itemTipi);
             Tanilama.Kaydet("7. AddCommandItem2 tamamlandi");
 
+            // KOMUT 8 — REÇETE AĞACI (kullanıcı isteği: ÜretimOS'un reçete
+            // ağaç görünümünü SolidWorks'e taşı, paket/yarımamul/altmontaj/
+            // hırdavat/plaka/kenar bandı alt kalem ekle, rota seç/oluştur).
+            Tanilama.Kaydet("8. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "Reçete Ağacı (ÜretimOS)", -1,
+                "Aktif parça/montaj bileşenine karşılık gelen ÜretimOS kartının reçetesini açar — " +
+                "paket/yarı mamül/alt montaj/hırdavat/plaka/kenar bandı sürükle-bırak ile alt kalem " +
+                "olarak eklenebilir, yarı mamüllere rota seçilebilir/oluşturulabilir. ÜretimOS " +
+                "sunucu bağlantısı gerektirir (bkz. BaglantiAyarlari.cs).",
+                "Reçete Ağacı", 7, "ReceteAgaciAcCalistir", "PaketOlusturEtkinMi",
+                ID_RECETE_AGACI, itemTipi);
+            Tanilama.Kaydet("8. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -432,9 +447,9 @@ namespace UretimOSKesim
             Tanilama.Kaydet("AddCommandTabBox tamamlandi, kutu null mu=" + (kutu == null));
             if (kutu == null) return;
 
-            int[] cmdIdleri = new int[7];
-            int[] metinTipi = new int[7];
-            for (int i = 0; i < 7; i++)
+            int[] cmdIdleri = new int[8];
+            int[] metinTipi = new int[8];
+            for (int i = 0; i < 8; i++)
             {
                 cmdIdleri[i] = grup.get_CommandID(i);
                 metinTipi[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
@@ -478,14 +493,14 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            // NOT: dosya adı "_v4" oldu (v3'ten) — 5 kareli şeritten 7 kareli
-            // şeride geçildi (Montaj Şeması Oluştur/Onayla eklendi); "dosya
-            // zaten var" kontrolü eski 5 kareli dosyayı YENİDEN KULLANMASIN
-            // diye (aksi halde 6-7. komutların ikonu boş/yanlış kalır) —
-            // bkz. _v2/_v3 için verilen aynı gerekçe.
-            string yol20 = Path.Combine(klasor, "komutlar_v4_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v4_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v4_40.png");
+            // NOT: dosya adı "_v5" oldu (v4'ten) — 7 kareli şeritten 8 kareli
+            // şeride geçildi (Reçete Ağacı eklendi); "dosya zaten var"
+            // kontrolü eski 7 kareli dosyayı YENİDEN KULLANMASIN diye (aksi
+            // halde 8. komutun ikonu boş/yanlış kalır) — bkz. önceki
+            // sürümler için verilen aynı gerekçe.
+            string yol20 = Path.Combine(klasor, "komutlar_v5_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v5_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v5_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -497,12 +512,12 @@ namespace UretimOSKesim
         // Şerit sırası (ImageListIndex ile eşleşmeli — bkz. KomutlariKur'daki
         // AddCommandItem2 çağrıları): 0=Kesim, 1=Etiketle, 2=Teknik Resim
         // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi, 5=Montaj Şeması
-        // Oluştur, 6=Montaj Şemasını Onayla.
+        // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 7;
+            int genislik = kareBoyutu * 8;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -514,6 +529,7 @@ namespace UretimOSKesim
                 SwoodPaketIkonuCiz(g, kareBoyutu * 4, kareBoyutu);
                 MontajSemasiIkonuCiz(g, kareBoyutu * 5, kareBoyutu);
                 MontajSemasiOnayIkonuCiz(g, kareBoyutu * 6, kareBoyutu);
+                ReceteAgaciIkonuCiz(g, kareBoyutu * 7, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
         }
@@ -658,6 +674,32 @@ namespace UretimOSKesim
                     new PointF(x + s * 0.8f, s * 0.28f),
                 };
                 g.DrawLines(kalem, noktalar);
+            }
+        }
+
+        // 7: Reçete Ağacı — koyu yeşil zemin, dallanan ağaç (birkaç düğüm +
+        // bağlayıcı çizgiler) çağrışımı.
+        private void ReceteAgaciIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.DarkOliveGreen, x, 0, s, s);
+            using (var kalem = new Pen(Color.White, Math.Max(1f, s / 16f)))
+            {
+                float koyX = x + s * 0.5f, koyY = s * 0.18f;
+                g.DrawLine(kalem, koyX, koyY, x + s * 0.25f, s * 0.55f);
+                g.DrawLine(kalem, koyX, koyY, x + s * 0.75f, s * 0.55f);
+                g.DrawLine(kalem, x + s * 0.25f, s * 0.55f, x + s * 0.15f, s * 0.85f);
+                g.DrawLine(kalem, x + s * 0.25f, s * 0.55f, x + s * 0.35f, s * 0.85f);
+                g.DrawLine(kalem, x + s * 0.75f, s * 0.55f, x + s * 0.85f, s * 0.85f);
+            }
+            using (var beyazFircasi = new SolidBrush(Color.White))
+            {
+                float r = s * 0.09f;
+                g.FillEllipse(beyazFircasi, x + s * 0.5f - r, s * 0.18f - r, r * 2, r * 2);
+                g.FillEllipse(beyazFircasi, x + s * 0.25f - r, s * 0.55f - r, r * 2, r * 2);
+                g.FillEllipse(beyazFircasi, x + s * 0.75f - r, s * 0.55f - r, r * 2, r * 2);
+                g.FillEllipse(beyazFircasi, x + s * 0.15f - r * 0.7f, s * 0.85f - r * 0.7f, r * 1.4f, r * 1.4f);
+                g.FillEllipse(beyazFircasi, x + s * 0.35f - r * 0.7f, s * 0.85f - r * 0.7f, r * 1.4f, r * 1.4f);
+                g.FillEllipse(beyazFircasi, x + s * 0.85f - r * 0.7f, s * 0.85f - r * 0.7f, r * 1.4f, r * 1.4f);
             }
         }
 
@@ -949,49 +991,8 @@ namespace UretimOSKesim
         // montaj açıkken önce bir bileşen seçilmesi gerekir).
         public void EtiketlePaneliAc()
         {
-            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
-            if (aktifBelge == null)
-            {
-                MessageBox.Show("Önce bir parça veya montaj açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            ModelDoc2 hedefModel;
-            if (aktifBelge.GetType() == (int)swDocumentTypes_e.swDocPART)
-            {
-                hedefModel = (ModelDoc2)aktifBelge;
-            }
-            else if (aktifBelge.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
-            {
-                var selMgr = (ISelectionMgr)aktifBelge.SelectionManager;
-                if (selMgr.GetSelectedObjectCount2(-1) == 0)
-                {
-                    MessageBox.Show(
-                        "Önce montaj ağacında (FeatureManager) etiketlemek istediğiniz bileşeni " +
-                        "(parça veya alt montaj) seçin, sonra tekrar deneyin.",
-                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                var bilesen = selMgr.GetSelectedObjectsComponent4(1, "") as Component2;
-                if (bilesen == null)
-                {
-                    MessageBox.Show("Seçili öğe bir bileşen (parça/alt montaj) değil.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                hedefModel = (ModelDoc2)bilesen.GetModelDoc2();
-                if (hedefModel == null)
-                {
-                    MessageBox.Show("Seçili bileşenin belgesi yüklenemedi (baskılanmış/eksik referans olabilir).",
-                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-            }
-            else
-            {
-                MessageBox.Show("Etiketleme yalnızca parça veya montaj belgelerinde kullanılabilir.",
-                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+            ModelDoc2 hedefModel = HedefModelBul("Etiketleme");
+            if (hedefModel == null) return;
 
             Tanilama.Kaydet("EtiketlePaneliAc: " + hedefModel.GetPathName());
             using (var panel = new EtiketlemePaneli(hedefModel))
@@ -1002,6 +1003,75 @@ namespace UretimOSKesim
                         "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
+        }
+
+        // ── KOMUT: REÇETE AĞACI (ÜretimOS) ───────────────────────────────────
+        // Kullanıcı isteği: "üretimostaki ağaç görünümünde reçeteyi
+        // solidworkstede uygula, alt kalem ekle sürükle bırak, paket, yarı
+        // mamül, alt montaj, hırdavat, plaka, kenar bandı, rota seç/oluştur".
+        // ÜretimOS'un Reçete Ağaç Editörü'nün (page_recete_agac.js) temel
+        // "alt kalem ekle" işlevini SolidWorks'e taşır — bkz. ReceteAgaciPaneli.cs
+        // başındaki kapsam notu (V1: tek seviye, çok katmanlı maliyet ağacı
+        // YENİDEN İNŞA EDİLMEDİ).
+        public void ReceteAgaciAcCalistir()
+        {
+            ModelDoc2 hedefModel = HedefModelBul("Reçete ağacı");
+            if (hedefModel == null) return;
+
+            Tanilama.Kaydet("ReceteAgaciAcCalistir: " + hedefModel.GetPathName());
+            using (var panel = new ReceteAgaciPaneli(hedefModel))
+            {
+                panel.ShowDialog();
+            }
+        }
+
+        // Aktif belge bir PARÇA ise doğrudan onu, bir MONTAJ ise ağaçta SEÇİLİ
+        // bileşeni hedef alır — EtiketlePaneliAc ve ReceteAgaciAcCalistir
+        // AYNI "hangi bileşen üzerinde çalışılıyor" mantığını paylaşır.
+        // islemAdi yalnızca hata mesajlarında kullanılır (hangi komutun
+        // uyardığını netleştirmek için).
+        private ModelDoc2 HedefModelBul(string islemAdi)
+        {
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null)
+            {
+                MessageBox.Show("Önce bir parça veya montaj açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return null;
+            }
+
+            if (aktifBelge.GetType() == (int)swDocumentTypes_e.swDocPART)
+            {
+                return (ModelDoc2)aktifBelge;
+            }
+            if (aktifBelge.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                var selMgr = (ISelectionMgr)aktifBelge.SelectionManager;
+                if (selMgr.GetSelectedObjectCount2(-1) == 0)
+                {
+                    MessageBox.Show(
+                        $"Önce montaj ağacında (FeatureManager) {islemAdi.ToLowerInvariant()} işlemi yapmak " +
+                        "istediğiniz bileşeni (parça veya alt montaj) seçin, sonra tekrar deneyin.",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return null;
+                }
+                var bilesen = selMgr.GetSelectedObjectsComponent4(1, "") as Component2;
+                if (bilesen == null)
+                {
+                    MessageBox.Show("Seçili öğe bir bileşen (parça/alt montaj) değil.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return null;
+                }
+                var hedefModel = (ModelDoc2)bilesen.GetModelDoc2();
+                if (hedefModel == null)
+                {
+                    MessageBox.Show("Seçili bileşenin belgesi yüklenemedi (baskılanmış/eksik referans olabilir).",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                return hedefModel;
+            }
+
+            MessageBox.Show($"{islemAdi} yalnızca parça veya montaj belgelerinde kullanılabilir.",
+                "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return null;
         }
 
         public int PaketOlusturEtkinMi() => 1; // her zaman etkin; ileride "montaj açık mı" kontrolü eklenebilir
