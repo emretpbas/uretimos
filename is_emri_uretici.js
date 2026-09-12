@@ -241,15 +241,47 @@ const IsEmriUretici = (() => {
   const MALZEME_RENK_KALIBI = /\b(ME[ŞS]E|CEV[İI]Z|BEYAZ|ANTRAS[İI]T|SİYAH|GRİ|Bİ[Nn]OM|LAM[İI]NANT)[\wçğıöşüÇĞİÖŞÜ ]{0,18}/i;
   const SWOOD_KENAR_ALANLARI = [['EBF', 'Ön'], ['EBB', 'Arka'], ['EBL', 'Sol'], ['EBR', 'Sağ']];
 
+  // ── HIRDAVAT (HIRDAVAT sütunu) AYRIŞTIRMA ────────────────────────────────
+  // ÜretimOS SolidWorks eklentisi (URETIMOS_HIRDAVAT özel alanı — bkz.
+  // solidworks_addin/src/OzelAlanlar.cs) donanımı "kod:adet,kod:adet" biçiminde
+  // taşır (örn. "MINIFIX-15:2,RAFIX-5:4,MENTESE-35CUP:2"). KRİTİK: iç ayırıcı
+  // BİLEREK VİRGÜL (',') — CSV'nin KENDİ sütun ayırıcısı noktalı virgül (';')
+  // olduğu için, eğer bu alan de ';' kullansaydı SolidWorks add-in'inin
+  // ürettiği CSV'de bu HÜCRENİN İÇİNDEKİ ';' karakterleri satırı YANLIŞ
+  // sütunlara kaydırırdı (csvSatirlariniAyristir basit split(';') yapıyor,
+  // tırnaklama desteklemiyor) — gerçek denemede bu tam olarak keşfedildi.
+  // SWOOD'un kendisi bu sütunu üretmez (donanım SWOOD raporunda yok) —
+  // yalnızca bizim add-in'den gelen CSV'lerde bulunur. bantAdaylari ile AYNI
+  // mimari: burada sadece {kod, adet} ADAYLARI çıkarılır, gerçek hammadde
+  // kartına (tip:'hirdavat') eşleme page_is_emri_formu.js katmanında
+  // (kullanıcı onayı/kod eşleşmesiyle) yapılır — yanlış karta otomatik
+  // bağlamak, boş bırakmaktan daha pahalıdır.
+  function hirdavatAdaylariniAyristir(hirdavatMetni) {
+    if (!hirdavatMetni || !String(hirdavatMetni).trim()) return [];
+    return String(hirdavatMetni).split(',').map(s => s.trim()).filter(Boolean).map(parca => {
+      const i = parca.lastIndexOf(':');
+      if (i === -1) return { kod: parca, adet: 1 };
+      const kod = parca.slice(0, i).trim();
+      const adet = say(parca.slice(i + 1)) || 1;
+      return { kod, adet };
+    }).filter(a => a.kod);
+  }
+
   function swoodDenUret(csvSatirlari, secenek) {
     const ay = secenek || {};
     const pay = ay.kabaPay != null ? +ay.kabaPay : VARSAYILAN_PAY.kaplamali;
     const satirlar = [];
+    const hirdavatAdaylari = [];
     (csvSatirlari || []).forEach((r, i) => {
       const malzeme = r.MATERIAL || '';
       const kalinlik = (malzeme.match(MALZEME_KALINLIK_KALIBI) || [])[1];
       const renk = (malzeme.match(MALZEME_RENK_KALIBI) || [])[0] || '';
       const bantliKenarlar = SWOOD_KENAR_ALANLARI.filter(([alan]) => (r[alan] || '').trim()).map(([, ad]) => ad);
+      // YABANCI_PARCA/BIRLESIM_TIPI: yalnızca SolidWorks add-in'inden gelir
+      // (bkz. OzelAlanlar.cs YABANCI_PARCA/BIRLESIM_TIPI) — SWOOD raporlarında
+      // bu sütunlar hiç bulunmaz, boş string olarak gelir ve etkisiz kalır.
+      const yabanciParca = /^(evet|true|1|yes)$/i.test((r.YABANCI_PARCA || '').trim());
+      const birlesimTipi = (r.BIRLESIM_TIPI || '').trim();
 
       const aciklamaParcalari = [malzeme];
       if (r.CABINET_NAME) aciklamaParcalari.push('Dolap: ' + r.CABINET_NAME + (r.CABINET_POSITION ? ' (' + r.CABINET_POSITION + ')' : ''));
@@ -259,6 +291,15 @@ const IsEmriUretici = (() => {
       else if (r.PAKET_ADI || r.PAKET_KODU) aciklamaParcalari.push('Paket: ' + (r.PAKET_ADI || r.PAKET_KODU));
       if (r.GRAIN && r.GRAIN.trim()) aciklamaParcalari.push('Tahıl: ' + r.GRAIN.trim());
       if (bantliKenarlar.length) aciklamaParcalari.push('SWOOD kenar bantlı: ' + bantliKenarlar.join(',') + ' — PVC sütununu kontrol edin');
+      // 45° gönye vb. birleşim tipi bilgisi (üretim ekibi kesim/montaj
+      // yöntemini bilsin — tahmin edilemeyecek bir üretim detayı, dürüstlük
+      // ilkesiyle olduğu gibi aktarılır, otomatik yorumlanmaz).
+      if (birlesimTipi) aciklamaParcalari.push('Birleşim: ' + birlesimTipi);
+      // Yabancı parça (satın alınan, plakadan KESİLMEYEN — cam, ayna, hazır
+      // profil vb.): kesim listesinden gizlenmiyor (hâlâ bir iş emri satırı,
+      // sipariş edilmesi gerekiyor) ama AÇIKÇA işaretleniyor ki üretim/satın
+      // alma ekibi onu bir plakadan kesmeye ÇALIŞMASIN.
+      if (yabanciParca) aciklamaParcalari.push('⚠ Yabancı parça — plakadan kesilmez, satın alınır/temin edilir');
 
       const rowAy = { ...ay, paketNo: r.CABINET_NAME || r.PAKET_KODU || ay.paketNo, renk: renk || ay.renk };
       const satir = satirKur({
@@ -269,10 +310,16 @@ const IsEmriUretici = (() => {
         adet: say(r.QTY) || 1,
         aciklama: aciklamaParcalari.filter(Boolean).join(' · ')
       }, i + 1, pay, rowAy);
+      // Kesim/nesting akışına dahil edilmemesi gereken parçaları page katmanı
+      // ayırt edebilsin diye satırın kendisine de düz bir bayrak eklenir
+      // (satirKur'un paylaşılan şemasını bozmadan — STEP/PDF yolları bu
+      // alanı hiç göndermez, varsayılan olarak satır her zaman false gelir).
+      satir.yabanciParca = yabanciParca;
       satirlar.push(satir);
+      hirdavatAdaylari.push(hirdavatAdaylariniAyristir(r.HIRDAVAT));
     });
     return {
-      satirlar,
+      satirlar, hirdavatAdaylari,
       uyari: satirlar.length
         ? 'SWOOD\'dan ' + satirlar.length + ' parça satırı aktarıldı — kenar bandı (PVC/SOFT) yönleri ' +
           'SWOOD raporunda güvenilir biçimde ayırt edilemediği için OTOMATİK doldurulmadı, açıklama ' +
@@ -407,7 +454,7 @@ const IsEmriUretici = (() => {
   return {
     VARSAYILAN_PAY, BANT_TABLOSU, bantGrubu,
     malzemeCikar, urunlerCikar, stepDenUret, pdfDenUret, swoodDenUret, swoodStoklarDenUret,
-    kenarBandiGrubuBul, kenarBandiKartiBul,
+    kenarBandiGrubuBul, kenarBandiKartiBul, hirdavatAdaylariniAyristir,
     satirKur, bantHesapla, kenarBandiOzeti, ozet, isEmriKodu
   };
 })();

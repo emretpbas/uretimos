@@ -47,9 +47,38 @@ namespace UretimOSKesim
         public const string KENAR_SAG = "URETIMOS_KENAR_SAG";     // EBR
 
         // ── Hırdavat (parça/alt_montaj üzerine iğnelenen donanım) ────────────
-        // Basit v1 şeması: "kod:adet;kod:adet" — örn. "MENTESE-35CUP:2;KULP-96MM:1"
+        // Basit v1 şeması: "kod:adet,kod:adet" — örn. "MENTESE-35CUP:2,KULP-96MM:1"
         // Kod, ÜretimOS hammaddeler (tip:'hirdavat') koleksiyonundan gelir.
+        // Minifix/Rafix/menteşe/raf desteği/kulp gibi TÜM bağlantı elemanları
+        // bu TEK alanda toplanır. KRİTİK: iç ayırıcı BİLEREK VİRGÜL (','),
+        // NOKTALI VİRGÜL (';') DEĞİL — bu değer SwoodPaketOlusturucu.cs'te
+        // ';' ile ayrılmış bir CSV hücresine yazılır; iç ayırıcı de ';'
+        // olsaydı hücrenin içeriği CSV'nin KENDİ sütun sınırlarını bozardı
+        // (basit split(';') tabanlı ayrıştırıcı tırnaklama desteklemiyor).
+        // ÜretimOS tarafında is_emri_uretici.js:hirdavatAdaylariniAyristir
+        // aynı virgül ayırıcılı biçimi okur (bkz. HIRDAVAT sütunu, swoodDenUret).
         public const string HIRDAVAT_LISTESI = "URETIMOS_HIRDAVAT";
+
+        // ── Birleşim / özel parça sınıflandırması ────────────────────────────
+        // Bu ikisi de SWOOD raporlarında YOKTUR — yalnızca bizim add-in'imizin
+        // ürettiği CSV'de bulunur; ÜretimOS tarafı (is_emri_uretici.js:
+        // swoodDenUret) bunları SWOOD dışı ekstra, YOK SAYILABİLİR sütunlar
+        // olarak okur (SWOOD raporlarında boş gelirler, davranış değişmez).
+        //
+        // BIRLESIM_TIPI: parçanın komşu panellerle nasıl birleştiği (ör.
+        // "45_derece" gönye birleşim, "duz" düz/90° birleşim). TAHMİN
+        // EDİLMEZ — kullanıcı SolidWorks'te Özel Özellikler'den elle girer,
+        // olduğu gibi iş emrine NOT olarak taşınır (bkz. README "dürüstlük
+        // ilkesi": yanlış üretim yöntemi varsaymak, boş bırakmaktan pahalıdır).
+        public const string BIRLESIM_TIPI = "URETIMOS_BIRLESIM_TIPI";
+
+        // YABANCI_PARCA: bu bileşen bir PLAKADAN KESİLMEZ — satın alınan/hazır
+        // bir parçadır (cam, ayna, metal profil, hazır cephe vb.). "evet"/
+        // "true"/"1"/"yes" (büyük/küçük harf duyarsız) true sayılır, aksi
+        // halde false. Kesim listesinden GİZLENMEZ (hâlâ bir BOM/iş emri
+        // satırıdır, sipariş edilmesi gerekir) — sadece işaretlenir ki üretim
+        // ekibi onu bir plakadan kesmeye ÇALIŞMASIN.
+        public const string YABANCI_PARCA = "URETIMOS_YABANCI_PARCA";
 
         // ── Kesim listesi kaynak izleme (tanılama amaçlı, dışa aktarıma girmez) ─
         public const string OLCU_KAYNAGI = "URETIMOS_OLCU_KAYNAGI"; // "cutlist" | "bbox" | "elle"

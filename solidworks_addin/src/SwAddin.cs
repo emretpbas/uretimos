@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -207,7 +208,8 @@ namespace UretimOSKesim
             const int ID_ETIKET = 102;
             const int ID_TEKNIK_OLUSTUR = 103;
             const int ID_TEKNIK_ONAYLA = 104;
-            int[] komutIdleri = new int[] { ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA };
+            const int ID_SWOOD_PAKET = 105;
+            int[] komutIdleri = new int[] { ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET };
 
             bool eskisiniYokSay = false;
             object kayitliIdler;
@@ -302,6 +304,27 @@ namespace UretimOSKesim
                 ID_TEKNIK_ONAYLA, itemTipi);
             Tanilama.Kaydet("4. AddCommandItem2 tamamlandi");
 
+            // KOMUT 5 — kullanıcı isteği: "üretimostaki reçete ve rota
+            // sistemine uyacak şekilde ve iş emri formatına uygun olacak
+            // şekilde". ÜretimOS'un ZATEN ÇALIŞAN, test edilmiş bir SWOOD ZIP
+            // içe aktarım köprüsü var (bkz. swood_okuyucu.js/is_emri_uretici.js
+            // içindeki geniş test paketi) — bu komut kesim listesini o
+            // köprünün beklediği ZIP yapısına (Saw Cut Export/*.csv + PDFS/)
+            // dönüştürür, ÜretimOS tarafında hiçbir değişiklik gerekmeden
+            // "İş Emri Formu > SWOOD İçe Aktar" ekranından doğrudan
+            // yüklenebilir (bkz. SwoodPaketOlusturucu.cs).
+            Tanilama.Kaydet("5. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "ÜretimOS'a Aktar (SWOOD Uyumlu Paket)", -1,
+                "Kesim listesini ve o ana kadar onaylanmış teknik resimleri, ÜretimOS'un " +
+                "'İş Emri Formu > SWOOD İçe Aktar' ekranının doğrudan okuyabileceği bir " +
+                ".zip paketine (Saw Cut Export/*.csv + PDFS/) dönüştürür — hırdavat " +
+                "(minifix/rafix/menteşe vb.), birleşim tipi (45° gönye) ve yabancı parça " +
+                "(satın alınan, plakadan kesilmeyen) bilgileri de dahil edilir.",
+                "SWOOD Paketi", 2, "SwoodPaketOlusturCalistir", "PaketOlusturEtkinMi",
+                ID_SWOOD_PAKET, itemTipi);
+            Tanilama.Kaydet("5. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -368,9 +391,9 @@ namespace UretimOSKesim
             Tanilama.Kaydet("AddCommandTabBox tamamlandi, kutu null mu=" + (kutu == null));
             if (kutu == null) return;
 
-            int[] cmdIdleri = new int[4];
-            int[] metinTipi = new int[4];
-            for (int i = 0; i < 4; i++)
+            int[] cmdIdleri = new int[5];
+            int[] metinTipi = new int[5];
+            for (int i = 0; i < 5; i++)
             {
                 cmdIdleri[i] = grup.get_CommandID(i);
                 metinTipi[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
@@ -414,9 +437,14 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            string yol20 = Path.Combine(klasor, "komutlar_v2_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v2_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v2_40.png");
+            // NOT: dosya adı "_v3" oldu (v2'den) — 4 kareli şeritten 5 kareli
+            // şeride geçildi (SWOOD Paketi komutu eklendi); "dosya zaten var"
+            // kontrolü eski 4 kareli dosyayı YENİDEN KULLANMASIN diye (aksi
+            // halde 5. komutun ikonu boş/yanlış kalır) — bkz. _v2 için verilen
+            // aynı gerekçe.
+            string yol20 = Path.Combine(klasor, "komutlar_v3_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v3_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v3_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -427,12 +455,12 @@ namespace UretimOSKesim
 
         // Şerit sırası (ImageListIndex ile eşleşmeli — bkz. KomutlariKur'daki
         // AddCommandItem2 çağrıları): 0=Kesim, 1=Etiketle, 2=Teknik Resim
-        // Oluştur, 3=Teknik Resmi Onayla.
+        // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 4;
+            int genislik = kareBoyutu * 5;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -441,6 +469,7 @@ namespace UretimOSKesim
                 EtiketIkonuCiz(g, kareBoyutu, kareBoyutu);
                 TeknikResimIkonuCiz(g, kareBoyutu * 2, kareBoyutu);
                 OnayIkonuCiz(g, kareBoyutu * 3, kareBoyutu);
+                SwoodPaketIkonuCiz(g, kareBoyutu * 4, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
         }
@@ -525,6 +554,30 @@ namespace UretimOSKesim
 
         // Kendi .drwdot çizim şablonunuzun TAM YOLU (Tools > Options >
         // System Options > Default Templates'te görebilirsiniz).
+        // 4: ÜretimOS'a Aktar (SWOOD Uyumlu Paket) — teal zemin, dışa ok +
+        // kutu (paketleme/gönderme) şekli.
+        private void SwoodPaketIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.Teal, x, 0, s, s);
+            float kutuY = s * 0.55f, kutuYuk = s * 0.3f;
+            using (var kalem = new Pen(Color.White, Math.Max(1f, s / 16f)))
+            {
+                g.DrawRectangle(kalem, x + s * 0.2f, kutuY, s * 0.6f, kutuYuk);
+                var okNoktalari = new PointF[]
+                {
+                    new PointF(x + s * 0.5f, s * 0.12f),
+                    new PointF(x + s * 0.5f, s * 0.48f),
+                };
+                g.DrawLines(kalem, okNoktalari);
+                g.DrawLines(kalem, new PointF[]
+                {
+                    new PointF(x + s * 0.35f, s * 0.34f),
+                    new PointF(x + s * 0.5f, s * 0.48f),
+                    new PointF(x + s * 0.65f, s * 0.34f),
+                });
+            }
+        }
+
         private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
 
         // ── KOMUT: KESİM LİSTESİ + TEKNİK RESİM RAPORU OLUŞTUR ───────────────
@@ -571,6 +624,73 @@ namespace UretimOSKesim
 
             MessageBox.Show(ozet, "ÜretimOS Kesim Raporu", MessageBoxButtons.OK,
                 !basarili ? MessageBoxIcon.Error : tumUyarilar.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+
+        // ── KOMUT: ÜRETİMOS'A AKTAR (SWOOD UYUMLU PAKET) ─────────────────────
+        // Kesim listesini, ÜretimOS'un ZATEN çalışan/test edilmiş SWOOD ZIP
+        // içe aktarım köprüsünün (swood_okuyucu.js + is_emri_uretici.js:
+        // swoodDenUret) beklediği ZIP yapısına dönüştürür — bkz.
+        // SwoodPaketOlusturucu.cs. Excel/PDF raporunun (PaketOlusturCalistir)
+        // YERİNE değil, YANINDA kullanılır: o insan onayı için, bu ise
+        // ÜretimOS'a doğrudan makine-okunabilir içe aktarım için.
+        public void SwoodPaketOlusturCalistir()
+        {
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null)
+            {
+                MessageBox.Show("Önce bir montaj (.sldasm) açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var cikarici = new KesimListesiCikarici();
+            var satirlar = cikarici.MontajiGez(aktifBelge);
+
+            string zipYolu;
+            using (var kaydetDialog = new SaveFileDialog { Filter = "ZIP dosyası|*.zip", FileName = "uretimos_swood_paketi.zip" })
+            {
+                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                zipYolu = kaydetDialog.FileName;
+            }
+
+            // PDF'ler: montajın kendi onaylanmış PDF'i + her benzersiz parçanın
+            // (ModelYolu'na göre) onaylanmış PDF'i — Manifest'te kaydı yoksa
+            // (henüz "2) Teknik Resmi Onayla" yapılmadıysa) o parça için PDF
+            // eklenmez, TAHMİN EDİLMEZ.
+            var pdfYollari = new List<string>();
+            var genelGirdi = Manifest.Bul(aktifBelge.GetPathName());
+            if (genelGirdi?.PdfYolu != null) pdfYollari.Add(genelGirdi.PdfYolu);
+            var eklenenModelYollari = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var s in satirlar)
+            {
+                if (string.IsNullOrWhiteSpace(s.ModelYolu) || !eklenenModelYollari.Add(s.ModelYolu)) continue;
+                var girdi = Manifest.Bul(s.ModelYolu);
+                if (girdi?.PdfYolu != null) pdfYollari.Add(girdi.PdfYolu);
+            }
+
+            string uretilenZip;
+            try
+            {
+                uretilenZip = SwoodPaketOlusturucu.Uret(satirlar, pdfYollari, zipYolu);
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("SwoodPaketOlusturCalistir HATA: " + ex);
+                MessageBox.Show("Paket oluşturulurken hata: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            int onaysizParcaSayisi = satirlar.Count(s => Manifest.Bul(s.ModelYolu)?.PdfYolu == null);
+            string ozet = $"{satirlar.Count} parça satırı içeren SWOOD uyumlu paket oluşturuldu:\n{uretilenZip}\n\n" +
+                $"({pdfYollari.Count} teknik resim dahil edildi.)\n\n" +
+                "ÜretimOS'ta 'İş Emri Formu' ekranından 'SWOOD İçe Aktar' ile bu .zip dosyasını yükleyin.";
+            if (onaysizParcaSayisi > 0)
+                ozet += $"\n\n⚠ {onaysizParcaSayisi} parçanın teknik resmi henüz onaylanmamış (bkz. '2) Teknik Resmi Onayla').";
+            var tumUyarilar = new List<string>(cikarici.Uyarilar);
+            if (tumUyarilar.Count > 0)
+                ozet += $"\n\n{tumUyarilar.Count} uyarı:\n- " + string.Join("\n- ", tumUyarilar);
+
+            MessageBox.Show(ozet, "ÜretimOS SWOOD Paketi", MessageBoxButtons.OK,
+                tumUyarilar.Count > 0 || onaysizParcaSayisi > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
 
         // ── KOMUT: TEKNİK RESİM OLUŞTUR (ADIM 1) ─────────────────────────────

@@ -115,6 +115,55 @@ console.log('\n-- is_emri_uretici.js: swoodDenUret CSV satırlarını İş Emri 
   t('boş liste için uygun uyarı', /kesim listesi.*bulunamadı/.test(rBos.uyari));
 }
 
+console.log('\n-- is_emri_uretici.js: hirdavatAdaylariniAyristir — "kod:adet,kod:adet" biçimini ayrıştırır --');
+{
+  t('boş metin -> boş dizi', IsEmriUretici.hirdavatAdaylariniAyristir('').length === 0);
+  t('null -> boş dizi', IsEmriUretici.hirdavatAdaylariniAyristir(null).length === 0);
+  const tek = IsEmriUretici.hirdavatAdaylariniAyristir('MINIFIX-15:2');
+  t('tek girdi doğru ayrıştırıldı', tek.length === 1 && tek[0].kod === 'MINIFIX-15' && tek[0].adet === 2);
+  const coklu = IsEmriUretici.hirdavatAdaylariniAyristir('MINIFIX-15:2,RAFIX-5:4,MENTESE-35CUP:2');
+  t('çoklu girdi (3 kalem) doğru ayrıştırıldı', coklu.length === 3);
+  t('ikinci kalem (RAFIX-5:4) doğru', coklu[1].kod === 'RAFIX-5' && coklu[1].adet === 4);
+  t('adet belirtilmezse (kod tek başına) varsayılan 1 kabul edilir',
+    IsEmriUretici.hirdavatAdaylariniAyristir('KULP-96MM')[0].adet === 1);
+  t('baştaki/sondaki boşluklar temizlenir',
+    IsEmriUretici.hirdavatAdaylariniAyristir(' MINIFIX-15 : 2 , RAFIX-5:4 ')[0].kod === 'MINIFIX-15');
+  t('KRİTİK: iç ayırıcı VİRGÜL, noktalı virgül DEĞİL (CSV sütun ayırıcısıyla çakışmasın diye)',
+    IsEmriUretici.hirdavatAdaylariniAyristir('MINIFIX-15:2;RAFIX-5:4').length === 1);
+}
+
+console.log('\n-- is_emri_uretici.js: swoodDenUret — HIRDAVAT/BIRLESIM_TIPI/YABANCI_PARCA (SolidWorks add-in özel sütunları) --');
+{
+  const satirHirdavatli = [{
+    DESC: 'YAN PANEL', LENGHT: '600', WIDTH: '400', QTY: '2', MATERIAL: 'MDF 18MM',
+    HIRDAVAT: 'MINIFIX-15:2,RAFIX-5:4'
+  }];
+  const rH = IsEmriUretici.swoodDenUret(satirHirdavatli, {});
+  t('hirdavatAdaylari satır sayısıyla eşleşiyor', rH.hirdavatAdaylari.length === rH.satirlar.length);
+  t('1. satırın 2 hırdavat adayı var', rH.hirdavatAdaylari[0].length === 2);
+  t('hırdavat adayı kod/adet doğru taşındı', rH.hirdavatAdaylari[0][0].kod === 'MINIFIX-15' && rH.hirdavatAdaylari[0][0].adet === 2);
+  t('HIRDAVAT sütunu yoksa boş dizi döner (satır kaymıyor)',
+    IsEmriUretici.swoodDenUret([{ DESC: 'X', LENGHT: '1', WIDTH: '1', QTY: '1', MATERIAL: 'MDF' }], {}).hirdavatAdaylari[0].length === 0);
+
+  console.log('\n  -- BIRLESIM_TIPI açıklamaya not düşülüyor (tahmin edilmez, olduğu gibi aktarılır) --');
+  const satirBirlesim = [{ DESC: 'YAN PANEL', LENGHT: '600', WIDTH: '400', QTY: '1', MATERIAL: 'MDF 18MM', BIRLESIM_TIPI: '45_derece' }];
+  const rB = IsEmriUretici.swoodDenUret(satirBirlesim, {});
+  t('birleşim tipi açıklamaya eklendi', /Birleşim: 45_derece/.test(rB.satirlar[0].aciklamalar));
+  t('BIRLESIM_TIPI boşsa açıklamaya "Birleşim:" eklenmiyor',
+    !/Birleşim:/.test(IsEmriUretici.swoodDenUret([{ DESC: 'X', LENGHT: '1', WIDTH: '1', QTY: '1', MATERIAL: 'MDF' }], {}).satirlar[0].aciklamalar));
+
+  console.log('\n  -- YABANCI_PARCA açıkça işaretleniyor, satır GİZLENMİYOR (dürüstlük ilkesi) --');
+  const satirYabanci = [{ DESC: 'AYNA', LENGHT: '500', WIDTH: '300', QTY: '1', MATERIAL: 'CAM 4MM', YABANCI_PARCA: 'evet' }];
+  const rY = IsEmriUretici.swoodDenUret(satirYabanci, {});
+  t('yabancı parça satırı listeden ÇIKARILMADI (hâlâ 1 satır)', rY.satirlar.length === 1);
+  t('yabanciParca bayrağı true', rY.satirlar[0].yabanciParca === true);
+  t('açıklamada açıkça uyarılıyor', /Yabancı parça.*plakadan kesilmez/.test(rY.satirlar[0].aciklamalar));
+  const satirNormal = IsEmriUretici.swoodDenUret([{ DESC: 'X', LENGHT: '1', WIDTH: '1', QTY: '1', MATERIAL: 'MDF' }], {}).satirlar[0];
+  t('YABANCI_PARCA belirtilmemiş normal satırda bayrak false', satirNormal.yabanciParca === false);
+  t('"hayir"/boş değerler yanlış pozitif üretmiyor',
+    IsEmriUretici.swoodDenUret([{ DESC: 'X', LENGHT: '1', WIDTH: '1', QTY: '1', MATERIAL: 'MDF', YABANCI_PARCA: 'hayir' }], {}).satirlar[0].yabanciParca === false);
+}
+
 // Gerçek bir SWOOD kullanıcı raporu incelendiğinde "Saw Cut Export" CSV'sinin
 // bazı kurulumlarda HİÇ dolmadığı görüldü (yalnızca başlık) — ama aynı raporun
 // "Docs/*_ReportStocks.html" dosyası her panel için LENGTH/WIDTH/THICKNESS/

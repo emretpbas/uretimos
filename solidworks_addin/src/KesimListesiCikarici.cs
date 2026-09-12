@@ -30,6 +30,16 @@ namespace UretimOSKesim
         // (o parçanın onaylanmış JPG'i) eşleştirmek için kullanır. Dışa CSV/
         // Excel'e YAZILMAZ, sadece kod içi eşleştirme amaçlı.
         public string ModelYolu;
+
+        // YENİ: ÜretimOS'un SWOOD içe aktarım köprüsüyle (is_emri_uretici.js:
+        // swoodDenUret) hizalanmak için — bkz. OzelAlanlar.cs HIRDAVAT_LISTESI/
+        // BIRLESIM_TIPI/YABANCI_PARCA. Ham "kod:adet;kod:adet" string olarak
+        // taşınır; ayrıştırma ÜretimOS tarafında (hirdavatAdaylariniAyristir)
+        // yapılır — burada TEKRAR ayrıştırmıyoruz ki iki tarafta AYNI mantık
+        // tek yerde (JS) kalsın.
+        public string HirdavatListesi;
+        public string BirlesimTipi;
+        public bool YabanciParca;
     }
 
     public class KesimListesiCikarici
@@ -146,7 +156,10 @@ namespace UretimOSKesim
                 Ebr = OzelAlanOku(modelDoc, OzelAlanlar.KENAR_SAG) ?? "",
                 UstPaketKodu = ustPaketKodu ?? "",
                 OlcuKaynagi = kaynak,
-                ModelYolu = modelDoc.GetPathName()
+                ModelYolu = modelDoc.GetPathName(),
+                HirdavatListesi = OzelAlanOku(modelDoc, OzelAlanlar.HIRDAVAT_LISTESI) ?? "",
+                BirlesimTipi = OzelAlanOku(modelDoc, OzelAlanlar.BIRLESIM_TIPI) ?? "",
+                YabanciParca = EvetHayirOku(OzelAlanOku(modelDoc, OzelAlanlar.YABANCI_PARCA))
             };
             satirlar.Add(satir);
         }
@@ -201,6 +214,24 @@ namespace UretimOSKesim
             catch
             {
                 return null;
+            }
+        }
+
+        // ÜretimOS tarafındaki is_emri_uretici.js:swoodDenUret ile AYNI kabul
+        // kümesi ("evet"/"true"/"1"/"yes", büyük/küçük harf duyarsız) — iki
+        // taraf da farklı kelimeyi "hayır" (false) sayarsa tutarsızlık olur.
+        private static bool EvetHayirOku(string deger)
+        {
+            if (string.IsNullOrWhiteSpace(deger)) return false;
+            switch (deger.Trim().ToLowerInvariant())
+            {
+                case "evet":
+                case "true":
+                case "1":
+                case "yes":
+                    return true;
+                default:
+                    return false;
             }
         }
 
