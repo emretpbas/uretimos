@@ -195,6 +195,31 @@ PageModules.is_emri_formu = (() => {
     return eslesen;
   }
 
+  // ── HIRDAVAT (SolidWorks add-in — HIRDAVAT sütunu) ↔ HAMMADDE KARTI ──────
+  // Kenar bandı eşleştirmesinden FARKLI olarak burada fuzzy/isim benzerliği
+  // ARANMAZ — HIRDAVAT sütunu SWOOD'un serbest metinli açıklamaları değil,
+  // kullanıcının SolidWorks'te bizzat yazdığı KOD'dur (bkz. OzelAlanlar.cs
+  // HIRDAVAT_LISTESI). Bu yüzden TAM (case-insensitive) stokKodu eşleşmesi
+  // yeterli ve daha güvenlidir — bulanık eşleştirme burada gereksiz risktir.
+  async function hirdavatEslestir(satirlar) {
+    if (!satirlar || !satirlar.length) return 0;
+    let kartlar = [];
+    try {
+      const hammaddeler = await Store.hammaddeler.all();
+      kartlar = hammaddeler.filter(h => h.tip === 'hirdavat' && h.stokKodu);
+    } catch (e) { return 0; }
+    if (!kartlar.length) return 0;
+    let eslesen = 0;
+    satirlar.forEach(s => {
+      (s.hirdavatlar || []).forEach(h => {
+        if (h.kartId) return;
+        const kart = kartlar.find(k => k.stokKodu.toLocaleLowerCase('tr') === (h.kod || '').toLocaleLowerCase('tr'));
+        if (kart) { h.kartId = kart.id; h.kartAd = kart.ad || ''; eslesen++; }
+      });
+    });
+    return eslesen;
+  }
+
   // Manuel seçim: SADECE yarı mamül kartları arasından — "kalem_secici"
   // ekranı üzerinden seçtirir, satıra bağlar. (Hammadde/hırdavat/plaka/kenar
   // bandı için ayrı sütunlar var: Plaka Hammadde, PVC/SOFT bant seçicileri.)
@@ -672,8 +697,10 @@ PageModules.is_emri_formu = (() => {
         ekBilgi = null;
         swoodResimler = sonuc.teknikResimler;
         const esleslenKartSayisi = await kenarBantlariEslestir(u.satirlar, u.bantAdaylari);
+        const esleslenHirdavatSayisi = await hirdavatEslestir(u.satirlar);
         const tumUyarilar = [u.uyari, ...sonuc.uyarilar].filter(Boolean);
         if (esleslenKartSayisi) tumUyarilar.push(esleslenKartSayisi + ' kenar bandı stok kartıyla otomatik eşleştirildi — yalnızca hangi kenarda (boy/en) olduğunu seçmeniz yeterli.');
+        if (esleslenHirdavatSayisi) tumUyarilar.push(esleslenHirdavatSayisi + ' hırdavat kalemi (minifix/rafix/menteşe vb.) stok kartıyla otomatik eşleştirildi.');
         durum.innerHTML = u.satirlar.length
           ? `<span style="color:var(--green-text)">✓ ${u.satirlar.length} parça satırı SWOOD raporundan aktarıldı</span>` +
             (tumUyarilar.length ? `<div style="margin-top:4px;color:var(--amber-text)">⚠ ${tumUyarilar.map(x => App.escapeHtml(x)).join('<br>⚠ ')}</div>` : '')

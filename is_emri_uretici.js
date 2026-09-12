@@ -146,6 +146,11 @@ const IsEmriUretici = (() => {
       pvc1: { boy: 0, en: 0, bandKartId: null, bandKodu: '', bandAd: '' },
       pvc040: { boy: 0, en: 0, bandKartId: null, bandKodu: '', bandAd: '' },
       soft: { boy: 0, en: 0, bandKartId: null, bandKodu: '', bandAd: '' },
+      // Donanım (minifix/rafix/menteşe vb.) — yalnızca swoodDenUret (SolidWorks
+      // add-in kaynaklı CSV) doldurur; STEP/PDF/SWOOD kaynaklarında hep boş
+      // dizi kalır (satır şeması TÜM kaynaklarda AYNI kalsın diye burada,
+      // satirKur'da, varsayılan olarak tanımlanır — bkz. hirdavatEslestir).
+      hirdavatlar: [],
       aciklamalar: v.aciklama || '',
       // Sağ blok hesapları
       birimM2: Math.round(netM2 * 1000) / 1000,
@@ -315,8 +320,10 @@ const IsEmriUretici = (() => {
       // (satirKur'un paylaşılan şemasını bozmadan — STEP/PDF yolları bu
       // alanı hiç göndermez, varsayılan olarak satır her zaman false gelir).
       satir.yabanciParca = yabanciParca;
+      const buSatirinHirdavati = hirdavatAdaylariniAyristir(r.HIRDAVAT);
+      satir.hirdavatlar = buSatirinHirdavati.map(a => ({ kod: a.kod, adet: a.adet, kartId: null, kartAd: '' }));
       satirlar.push(satir);
-      hirdavatAdaylari.push(hirdavatAdaylariniAyristir(r.HIRDAVAT));
+      hirdavatAdaylari.push(buSatirinHirdavati);
     });
     return {
       satirlar, hirdavatAdaylari,

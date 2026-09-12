@@ -144,6 +144,10 @@ console.log('\n-- is_emri_uretici.js: swoodDenUret — HIRDAVAT/BIRLESIM_TIPI/YA
   t('hırdavat adayı kod/adet doğru taşındı', rH.hirdavatAdaylari[0][0].kod === 'MINIFIX-15' && rH.hirdavatAdaylari[0][0].adet === 2);
   t('HIRDAVAT sütunu yoksa boş dizi döner (satır kaymıyor)',
     IsEmriUretici.swoodDenUret([{ DESC: 'X', LENGHT: '1', WIDTH: '1', QTY: '1', MATERIAL: 'MDF' }], {}).hirdavatAdaylari[0].length === 0);
+  t('satır.hirdavatlar da AYNI bilgiyi taşır (kartId henüz null — page katmanında eşleşir)',
+    rH.satirlar[0].hirdavatlar.length === 2 && rH.satirlar[0].hirdavatlar[0].kod === 'MINIFIX-15' && rH.satirlar[0].hirdavatlar[0].kartId === null);
+  t('STEP/PDF yoluyla üretilen satırlarda da hirdavatlar alanı var ama boş (şema tutarlılığı)',
+    IsEmriUretici.stepDenUret(null, { parcalar: [{ ad: 'X', olcu: [100, 50, 18] }] }, {})[0].hirdavatlar.length === 0);
 
   console.log('\n  -- BIRLESIM_TIPI açıklamaya not düşülüyor (tahmin edilmez, olduğu gibi aktarılır) --');
   const satirBirlesim = [{ DESC: 'YAN PANEL', LENGHT: '600', WIDTH: '400', QTY: '1', MATERIAL: 'MDF 18MM', BIRLESIM_TIPI: '45_derece' }];
@@ -306,6 +310,15 @@ t('"Yeni Form" ile swoodResimler de temizleniyor', /form = bosForm\(\); ekBilgi 
 t('teknikResimlerCiz fonksiyonu tanımlı', /function teknikResimlerCiz\(\) \{/.test(pageSrc));
 t('render() teknik resimleri gösteriyor', /if \(swoodResimler\.length\) teknikResimlerCiz\(\);/.test(pageSrc));
 t('şablon SWOOD teknik resim alanı içeriyor (id="ie-swood-resim")', /id="ie-swood-resim"/.test(pageSrc));
+
+console.log('\n-- page_is_emri_formu.js: hırdavat (minifix/rafix/menteşe) eşleştirme .zip akışına bağlandı --');
+t('hirdavatEslestir fonksiyonu tanımlı', /async function hirdavatEslestir\(satirlar\) \{/.test(pageSrc));
+t('hırdavat eşleştirme Store.hammaddeler\'den tip:hirdavat filtreliyor', /h\.tip === 'hirdavat' && h\.stokKodu/.test(pageSrc));
+t('TAM kod eşleşmesi aranıyor (fuzzy DEĞİL — HIRDAVAT kullanıcının kendi kodu)',
+  /k\.stokKodu\.toLocaleLowerCase\('tr'\) === \(h\.kod \|\| ''\)\.toLocaleLowerCase\('tr'\)/.test(pageSrc));
+t('zaten kartId doluysa ÜZERİNE YAZILMIYOR', /\(s\.hirdavatlar \|\| \[\]\)\.forEach\(h => \{\s*if \(h\.kartId\) return;/.test(pageSrc));
+t('.zip akışında hirdavatEslestir çağrılıyor', /const esleslenHirdavatSayisi = await hirdavatEslestir\(u\.satirlar\);/.test(pageSrc));
+t('eşleşen hırdavat sayısı kullanıcıya bildiriliyor', /hırdavat kalemi \(minifix\/rafix\/menteşe vb\.\) stok kartıyla otomatik eşleştirildi/.test(pageSrc));
 
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);
