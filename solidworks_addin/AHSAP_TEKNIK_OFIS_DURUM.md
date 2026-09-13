@@ -674,19 +674,37 @@ hatalarını derleme sırasında satır numarasıyla AÇIKÇA gösterir (sessiz
 derleme başarısızlığı riski düşük), ama gerçek ilk derleme + kurulum +
 kaldırma akışı Pazartesi'ye kadar test EDİLMEDİ.
 
-## YENİ: SolidWorks 2017 test makinesi mevcut
+## YENİ: SolidWorks 2017 test makinesi + ÇOK SÜRÜMLÜ TEK install isteği
 
-Kullanıcı bir SolidWorks **2017** test makinesi olduğunu bildirdi ve TÜM
+Kullanıcı bir SolidWorks **2017** test makinesi olduğunu bildirdi, TÜM
 projeyi (14 özelliğin hepsi, kısıtlama YOK) doğrudan orada derleyip
-denemeyi tercih etti. Bu, projenin bu oturum boyunca ilk kez GERÇEK bir
-SolidWorks'te (üstelik kodun yazıldığı 2025'ten sekiz yıl eski bir
-sürümde) test edilme fırsatıdır — ama bu yüzden birkaç şey KESİNLİKLE
-farklı olacak (README.md'ye "SolidWorks 2017'de test ederken dikkat
-edilecekler" başlığıyla ayrıntılı bir bölüm eklendi, özet):
-- `UretimOSKesim.csproj`'daki 4 HintPath ve `SwAddin.cs`'teki 3 şablon
-  yolu (`SABLON_YOLU`/`PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU`) şu an
-  2025'e göre YAZILMIŞ — 2017 makinesinde MUTLAKA güncellenmeli (yorum
-  satırları bunu artık açıkça hatırlatıyor).
+denemeyi tercih etti, sonra isteği netleştirdi: **"2017 ve sonrası TÜM
+SolidWorks sürümlerine uyumlu, basit ve hızlı, TEK bir install dosyası."**
+Bu, projenin bu oturum boyunca ilk kez GERÇEK bir SolidWorks'te (üstelik
+kodun yazıldığı 2025'ten sekiz yıl eski bir sürümde) test edilme
+fırsatıdır — README.md'ye "TEK bir kurulumla SolidWorks 2017 ve SONRASI
+TÜM sürümler" başlığıyla ayrıntılı bir bölüm eklendi, özet:
+
+- **Şablon yolları artık OTOMATİK, sürümden BAĞIMSIZ (bu oturumda
+  DÜZELTİLDİ):** `SwAddin.cs`'e yeni `SablonYoluBul` metodu eklendi —
+  sabit bir "SOLIDWORKS 2025\templates" yolu YAZMAK yerine SolidWorks'ün
+  KENDİ "Dosya Konumları > Belge Şablonları" ayarını
+  (`GetUserPreferenceStringListValue`+`swFileLocationsDocumentTemplates`)
+  okuyor. TEK bir derleme artık 2017'de de 2025'te de doğru şablon
+  klasörünü KENDİLİĞİNDEN buluyor — eski sabit yollar (`SABLON_YOLU`/
+  `PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU`) yalnızca YEDEK olarak kaldı
+  (dinamik arama başarısız olursa düşülür, hiçbir işlevsellik
+  KAYBEDİLMEDİ). **Doğrulanamayan risk:** `swFileLocationsDocumentTemplates`
+  üye adı bu ortamda test edilemedi — yanlışsa GÜVENLİ bir derleme hatası
+  (CS0117) verir, çökme OLMAZ.
+- **`UretimOSKesim.csproj`'a ÇOK SÜRÜMLÜ UYUMLULUK stratejisi eklendi:**
+  HintPath'lerin (interop DLL referansları) EN ESKİ desteklenecek sürüme
+  (2017) göre ayarlanıp O SÜRÜME KARŞI derlenmesi ÖNERİLİYOR — SolidWorks
+  kendi COM arayüzlerini geriye dönük KIRMADAN büyüttüğü için, 2017'ye
+  göre derlenmiş TEK bir eklenti genellikle 2018-2025+'ta da DEĞİŞİKLİK
+  YAPMADAN çalışır (üçüncü parti SolidWorks eklentilerinin yaygın/
+  kanıtlanmış stratejisi — kod tabanını geç-bağlama/reflection'a çevirmek
+  gibi çok daha büyük bir yeniden yazım YAPILMADI, gerek de yok).
 - `.NET Framework 4.8` sürümünün o makinede kurulu olduğu DOĞRULANMADI
   (2017 daha eski bir .NET Framework ile piyasaya sürülmüştü) —
   `kurulum/UretimOSKesim.iss`'teki hata mesajları bunu artık "SolidWorks
@@ -1045,3 +1063,33 @@ maddesi) — YENİ:**
   dikkat edilecekler" bölümü (HintPath/şablon yolu/.NET Framework/GUID/
   en riskli alan/versiyona duyarlı API üyeleri için somut kontrol
   listesi).
+
+**"2017 ve sonrası TÜM sürümlere uyumlu TEK install" isteği — SONRADAN
+GENİŞLETİLDİ:**
+- `solidworks_addin/src/SwAddin.cs` — YENİ `SablonYoluBul(app, dosyaAdi,
+  eskiSabitYolYedek)` metodu: `SABLON_YOLU`/`PART_SABLON_YOLU`/
+  `ASSEMBLY_SABLON_YOLU`'nun sabit "2025" yollarını ARTIK BİRİNCİL OLARAK
+  KULLANMIYOR — önce SolidWorks'ün kendi `GetUserPreferenceStringListValue`
+  + `swFileLocationsDocumentTemplates` ayarından dinamik arama yapıyor,
+  yalnızca bulunamazsa eski sabit yola (artık YEDEK) düşüyor.
+  `MontajSemasiOlusturCalistir`/`TeknikResimOlusturCalistir` bu yeni
+  metodu kullanacak şekilde güncellendi.
+- `solidworks_addin/src/AltiYuzKutuPaneli.cs` — `OlusturBtn_Click` aynı
+  şekilde `SwAddin.SablonYoluBul` üzerinden Part.prtdot/Assembly.asmdot
+  arıyor (sabit yollar yerine).
+- `solidworks_addin/UretimOSKesim.csproj` — HintPath yorumlarına "ÇOK
+  SÜRÜMLÜ UYUMLULUK" stratejisi eklendi: en eski desteklenecek sürüme
+  (2017) göre derlemenin, SolidWorks'ün geriye dönük uyumlu COM API
+  büyümesi sayesinde genellikle 2018-2025+'ta da değişiklik yapmadan
+  çalışacağı açıklandı (geç-bağlama/reflection'a geçiş gibi çok daha
+  büyük bir yeniden yazım YAPILMADI/gerek görülmedi).
+- `solidworks_addin/README.md` — "SolidWorks 2017'de test ederken dikkat
+  edilecekler" bölümü "TEK bir kurulumla SolidWorks 2017 ve SONRASI TÜM
+  sürümler" olarak genişletildi; şablon yolu maddesi artık "otomatik"
+  olduğunu, HintPath maddesi "en eski sürüme göre derleyin" tavsiyesini
+  yansıtıyor.
+- Derleyici/SolidWorks bu ortamda YOK — `SablonYoluBul`'daki
+  `swFileLocationsDocumentTemplates` üye adı DOĞRULANAMADI (yaygın
+  bilinen bir API ama TAHMİN riski taşır); yanlışsa GÜVENLİ bir derleme
+  hatası (CS0117) verir, çökme OLMAZ, eski sabit yol yedeği zaten
+  devrede kalır.

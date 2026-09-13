@@ -162,26 +162,40 @@ tutuluyor — installer da zaten arka planda AYNI regasm çağrısını yapıyor
 8. Çıkan ZIP'i ÜretimOS'ta **İş Emri Formu → SWOOD İçe Aktarım**'a yükleyin —
    mevcut ekran değişmeden çalışmalı.
 
-### SolidWorks 2017'de test ederken dikkat edilecekler
+### TEK bir kurulumla SolidWorks 2017 ve SONRASI TÜM sürümler
 
-Bu kod **SolidWorks 2025 SP3.0**'ın API yüzeyine göre yazıldı/akıl
-yürütüldü — 2017 sekiz yıl eski bir sürüm. Farklı bir makinede (2017)
-test etmeden önce/sırasında:
+Kullanıcı isteği: "bu 2017 ve sonrası tüm SolidWorks versiyonlarına uyumlu,
+basit ve hızlı, tüm fonksiyonlarıyla birlikte kurulacak bir install dosyası
+haline getirelim." Bu kod **SolidWorks 2025 SP3.0**'ın API yüzeyine göre
+yazıldı/akıl yürütüldü — 2017 sekiz yıl eski bir sürüm; TEK bir derlemenin
+İKİSİNDE de (ve arasındaki tüm sürümlerde) çalışması için:
 
-1. **HintPath'ler** (`UretimOSKesim.csproj`'daki 4 `SolidWorks.Interop.*`/
-   `SolidWorksTools` referansı) o makinenin KENDİ `api\redist\` klasörüne
-   göre değiştirilmeli — 2025 makinesindeki yol burada işe yaramaz
-   (yukarıdaki 2. adıma bakın, aynı kural geçerli).
-2. **Şablon yolları** — `src/SwAddin.cs`'teki `SABLON_YOLU`/
-   `PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU` sabitleri şu an
-   `C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\...` — 2017
-   makinesinde muhtemelen `SOLIDWORKS 2017` klasörü olacak (TAHMİN
-   ETMEYİN, Dosya Gezgini'nde kontrol edin). Yanlış bırakılırsa çökme
-   OLMAZ — "Teknik Resim Oluştur"/"6 Yüz Kutu Oluştur" komutları "şablon
-   bulunamadı: <yol>" diye AÇIK bir mesaj gösterir.
+1. **Şablon yolları artık OTOMATİK, sürümden BAĞIMSIZ** (bu oturumda
+   düzeltildi) — `SwAddin.cs`'teki `SablonYoluBul` artık sabit bir
+   `"SOLIDWORKS 2025\templates"` yolu YAZMAK yerine SolidWorks'ün KENDİ
+   "Sistem Seçenekleri > Dosya Konumları > Belge Şablonları" ayarını okur
+   (`GetUserPreferenceStringListValue` + `swFileLocationsDocumentTemplates`)
+   — bu ayar HER sürümde/kurulumda vardır, TEK derleme 2017'de de 2025'te
+   de doğru klasörü kendiliğinden bulur. Eski sabit yollar (`SABLON_YOLU`/
+   `PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU`) yalnızca YEDEK olarak
+   kaldı. **Tek elle yapmanız gereken**: ÜretimOS'un özel `uretimos.drwdot`
+   çizim şablonunu, o makinenin SolidWorks Belge Şablonları klasörlerinden
+   BİRİNE bir kez kopyalayın (Part.prtdot/Assembly.asmdot zaten SolidWorks'ün
+   kendi stok şablonu olduğu için oradadır, ekstra işlem gerekmez).
+2. **HintPath'leri EN ESKİ desteklenecek sürüme (2017) göre ayarlayıp
+   O SÜRÜME KARŞI DERLEYİN** (bkz. `UretimOSKesim.csproj`'daki ayrıntılı
+   yorum) — SolidWorks kendi COM arayüzlerini geriye dönük KIRMADAN
+   büyütür, bu yüzden 2017'nin interop DLL'lerine göre derlenmiş TEK bir
+   eklenti genellikle 2018-2025+ SolidWorks'te de DEĞİŞİKLİK YAPMADAN
+   çalışır — bu, çok-sürüm desteği isteyen üçüncü parti SolidWorks
+   eklentilerinin YAYGIN/kanıtlanmış stratejisidir (kod tabanını
+   geç-bağlama/reflection'a çevirmek gibi çok daha büyük bir yeniden
+   yazım GEREKMEZ). 2025 makinesindeki yol burada işe yaramaz.
 3. **GUID'i DEĞİŞTİRMENİZE gerek YOK** — `[Guid(...)]` eklentinin kendi
    kimliğidir, farklı bir makine/SolidWorks sürümü GEREKTİRMEZ, aynı
-   kalabilir.
+   kalabilir. Kurulum betiği (`kurulum/UretimOSKesim.iss`) de SolidWorks
+   sürümünden bağımsız çalışır (SolidWorks açık mı kontrolü hep
+   `SLDWORKS.exe` process adını arar, bu TÜM sürümlerde aynıdır).
 4. **.NET Framework sürümü** — proje `net48`'i hedefliyor; 2017'nin
    kendisi daha eski bir .NET Framework (ör. 4.6.1/4.7) ile piyasaya
    sürülmüştü, test makinesinde 4.8'in GERÇEKTEN kurulu olduğu
@@ -189,7 +203,8 @@ test etmeden önce/sırasında:
    `(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full').Release`
    — 528040 veya üzeriyse 4.8 kuruludur; değilse Microsoft'un .NET
    Framework 4.8 Developer Pack'ini (derlemek için) ve/veya Runtime'ını
-   (çalıştırmak için) kurun.
+   (çalıştırmak için) kurun (kurulum betiği bunu kendisi de kontrol edip
+   eksikse açık bir mesaj gösterir).
 5. **En riskli/çökme geçmişi olan alan**: `SwAddin.cs:KomutlariKur()`
    (araç çubuğu/ikon/komut kaydı) — bu oturumda SolidWorks 2025'te BİRDEN
    FAZLA çökmeye sebep olmuştu (bkz. dosyadaki "KESİN TANI #1-5" notları).
@@ -205,7 +220,9 @@ test etmeden önce/sırasında:
    yapılıyor). Derleme hatası (CS1061 "does not contain a definition
    for...") verirlerse bu GÜVENLİDİR (derleme zamanında yakalanır, çalışma
    zamanı çökmesi değil) — Nesne Gezgini'nde (Object Browser) doğru üye
-   adını/sürümünü bulup bildirin, tek satırda düzeltiriz.
+   adını/sürümünü bulup bildirin, tek satırda düzeltiriz. Derlenirse,
+   2017'de o özelliği ÇALIŞTIRIP doğrulamak yine de gerekir (derlenmek
+   var olduğunu kanıtlar, DOĞRU ÇALIŞTIĞINI değil).
 7. **x64 varsayımı** doğrulanmadı ama SolidWorks'ün 32-bit sürümleri
    yıllardır (2017'den çok önce) piyasadan kalktığı için düşük risklidir.
 

@@ -57,6 +57,28 @@
     "sdk\redist" veya "api\redist" klasörü.)
     EmbedInteropTypes=false ÖNEMLİ: SolidWorks interop tipleri COM üzerinden
     canlı nesnelerle çalışır, gömülü (embedded) tip kullanılırsa çökme olur.
+
+    ÇOK SÜRÜMLÜ UYUMLULUK (kullanıcı isteği: "2017 ve sonrası TÜM SolidWorks
+    sürümlerine uyumlu, tek install"): bu 4 DLL, hangi SolidWorks KURULUMUNUN
+    api\redist klasöründen alınırsa, derlenen eklenti O SÜRÜMÜN API
+    YÜZEYİNE göre derlenmiş olur — TEK bir derleme, aynı anda "2017'nin
+    DLL'lerine göre" VE "2025'in DLL'lerine göre" olamaz. Pratik/kanıtlanmış
+    çözüm: **HintPath'leri EN ESKİ desteklemek istediğiniz sürümün (2017)
+    api\redist klasörüne göre ayarlayıp O SÜRÜME KARŞI DERLEYİN.** SolidWorks
+    kendi COM arayüzlerini GERİYE DÖNÜK KIRMADAN büyütür (yeni üye eklerken
+    ESKİ üye adları/imzaları KALDIRILMAZ, yalnızca yüksek numaralı yeni
+    sürümler eklenir — ör. FeatureExtrusion, sonra FeatureExtrusion2,
+    FeatureExtrusion3... hepsi bir arada durur) — bu yüzden 2017'nin
+    interop DLL'lerine göre derlenmiş bir eklenti, GENELLİKLE 2018-2025+
+    SolidWorks'te de DEĞİŞİKLİK YAPMADAN çalışır (üçüncü parti SolidWorks
+    eklentilerinin YAYGIN, kanıtlanmış dağıtım stratejisi budur). Kod
+    içindeki bazı çağrılar (`FeatureExtrusion3`, `FeatureCut4`,
+    `AddComponent5`, `IPackAndGo`, `IView.ShowExploded` vb.) 2017'de HENÜZ
+    YOKSA, 2017'ye göre derlerken bunlar GÜVENLİ bir derleme hatası
+    (CS1061) verir — TAHMİN ETMEYİN, o özel çağrıyı bulup ya eski/uyumlu
+    bir alternatifle değiştirin ya da çalışma zamanında sürüm kontrolü
+    (`ISldWorks.RevisionNumber`) ile o TEK özelliği eski sürümlerde
+    gizleyin; geri kalan HERHANGİ bir şeyi 2025'e göre derlemeye GEREK YOK.
   -->
   <!-- KESİN TANI #6 (gerçek çökme kanıtı): SWERR günlüğündeki <EXEDIR>
        "C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS (2)" idi — makinede İKİ

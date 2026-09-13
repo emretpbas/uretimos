@@ -824,23 +824,65 @@ namespace UretimOSKesim
             }
         }
 
-        // DİKKAT — "2025" bu makinenin SolidWorks SÜRÜMÜNE göre SABİTLENMİŞTİR,
-        // her farklı makinede (ör. test için kullanılan SolidWorks 2017
-        // kurulumunda) klasör adı FARKLI olacaktır ("SOLIDWORKS 2017" gibi) —
-        // TAHMİN ETMEYİN, o makinede gerçekten hangi klasörün var olduğunu
-        // (Dosya Gezgini'nde C:\ProgramData\SolidWorks\ altına bakarak)
-        // kontrol edip buradaki 3 satırı ona göre güncelleyin. Yanlış/eksik
-        // bırakılırsa çökme OLMAZ — TeknikResimOlusturucu/AltiYuzKutuPaneli
-        // zaten `File.Exists` ile kontrol edip "şablon bulunamadı: <yol>"
-        // diye AÇIK bir mesaj gösterir (aşağıdaki kullanım yerlerine bakın).
+        // ESKİ SABİT YOLLAR — artık yalnızca YEDEK (aşağıdaki SablonYoluBul
+        // dinamik aramayı bulamazsa/hata verirse buraya düşülür). "2025" bu
+        // yazının yazıldığı makinenin SolidWorks SÜRÜMÜNE göre SABİTLENMİŞTİR
+        // — farklı bir sürüm/kurulumda (ör. 2017) klasör adı FARKLI olur.
         private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
-
-        // 6 Yüz Kutu (Frame/Box) oluşturucu için parça/montaj şablonları —
-        // varsayılan SolidWorks kurulum yolları; farklıysa AŞAĞIDAKİ İKİ
-        // SATIRI güncelleyin (SABLON_YOLU ile AYNI "dosya bulunamadı" güvence
-        // deseni AltiYuzKutuPaneli.cs'te uygulanıyor).
         public const string PART_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Part.prtdot";
         public const string ASSEMBLY_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Assembly.asmdot";
+
+        // ── ŞABLON YOLU BULMA — SÜRÜM/KURULUMDAN BAĞIMSIZ ────────────────────
+        // Kullanıcı isteği: "2017 ve sonrası tüm SolidWorks sürümlerine
+        // uyumlu, basit ve hızlı, tüm fonksiyonlarıyla" — sabit bir
+        // "SOLIDWORKS <yıl>" klasör yolu YAZMAK yerine, SolidWorks'ün KENDİ
+        // "Sistem Seçenekleri > Dosya Konumları > Belge Şablonları" ayarı
+        // okunuyor: bu ayar HER SolidWorks sürümünde/kurulumunda vardır ve
+        // SolidWorks zaten hangi klasör(ler)de şablon aradığını BİLİR —
+        // TAHMİN ETMEK yerine SolidWorks'e SORULUYOR. Tek bir derleme
+        // böylece 2017'den 2025'e (ve muhtemelen sonrasına) kadar AYNI
+        // şekilde çalışabilir; ÜretimOS'un özel `uretimos.drwdot` şablonu
+        // bu klasörlerden BİRİNE elle kopyalanmalı (bkz. README "Kurulum"),
+        // Part.prtdot/Assembly.asmdot zaten SolidWorks'ün kendi stok
+        // şablonları olduğu için aynı klasör(ler)de hazır bulunur.
+        //
+        // BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu): `swFileLocationsDocumentTemplates`
+        // üye adı ve `GetUserPreferenceStringListValue`'nun `int` parametre
+        // aldığı varsayımı bu ortamda (SolidWorks/Visual Studio yok)
+        // DOĞRULANAMADI — yaygın bilinen/belgelenmiş bir SolidWorks API
+        // kullanımıdır ama TAHMİN riski taşır. Yanlışsa GÜVENLİ bir derleme
+        // hatası (CS0117/CS1503) verir, ÇÖKME OLMAZ — Nesne Gezgini'nde
+        // doğru üye adını/imzayı bulup bildirin, tek satırda düzeltiriz. Bu
+        // yüzden eski sabit yollar (yukarıda) YEDEK olarak KORUNUYOR:
+        // dinamik arama başarısız olursa hiçbir işlevsellik KAYBEDİLMEZ.
+        public static string SablonYoluBul(ISldWorks app, string dosyaAdi, string eskiSabitYolYedek)
+        {
+            if (app != null)
+            {
+                try
+                {
+                    object deger = app.GetUserPreferenceStringListValue((int)swUserPreferenceStringListValue_e.swFileLocationsDocumentTemplates);
+                    if (deger is string[] klasorler)
+                    {
+                        foreach (var klasor in klasorler)
+                        {
+                            if (string.IsNullOrWhiteSpace(klasor)) continue;
+                            string aday = Path.Combine(klasor, dosyaAdi);
+                            if (File.Exists(aday))
+                            {
+                                Tanilama.Kaydet($"SablonYoluBul: '{dosyaAdi}' SolidWorks'ün kendi şablon klasöründe bulundu: {aday}");
+                                return aday;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet($"SablonYoluBul HATA ({dosyaAdi}): {ex.Message} — sabit yedek yola düşülüyor.");
+                }
+            }
+            return eskiSabitYolYedek;
+        }
 
         // ── KOMUT: KESİM LİSTESİ + TEKNİK RESİM RAPORU OLUŞTUR ───────────────
         // CommandManager bu adı (case-sensitive) [ComVisible] genel metod
@@ -964,10 +1006,12 @@ namespace UretimOSKesim
         // MontajSemasiAcVeDuzenlemeyeBirak).
         public void MontajSemasiOlusturCalistir()
         {
-            if (string.IsNullOrWhiteSpace(SABLON_YOLU) || !File.Exists(SABLON_YOLU))
+            string sablonYolu = SablonYoluBul(_app, "uretimos.drwdot", SABLON_YOLU);
+            if (string.IsNullOrWhiteSpace(sablonYolu) || !File.Exists(sablonYolu))
             {
-                MessageBox.Show($"Çizim şablonu bulunamadı:\n{SABLON_YOLU}\n\nSwAddin.cs'teki SABLON_YOLU sabitini kontrol edin.",
-                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show($"Çizim şablonu bulunamadı:\n{sablonYolu}\n\nSolidWorks'ün Sistem Seçenekleri > Dosya Konumları > " +
+                    "Belge Şablonları klasörlerinden birine 'uretimos.drwdot' kopyalayın, ya da SwAddin.cs'teki SABLON_YOLU " +
+                    "sabitini (yedek yol) kontrol edin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -981,7 +1025,7 @@ namespace UretimOSKesim
             string aktifYol = aktifBelge.GetPathName();
             Tanilama.Kaydet("MontajSemasiOlusturCalistir: " + aktifYol);
             var resimUretici = new TeknikResimOlusturucu(_app);
-            bool basarili = resimUretici.MontajSemasiAcVeDuzenlemeyeBirak(aktifYol, SABLON_YOLU);
+            bool basarili = resimUretici.MontajSemasiAcVeDuzenlemeyeBirak(aktifYol, sablonYolu);
             if (basarili) _sonMontajSemasiModelYolu = aktifYol;
 
             string ozet = basarili
@@ -1046,10 +1090,12 @@ namespace UretimOSKesim
         // insana bırakıldı.
         public void TeknikResimOlusturCalistir()
         {
-            if (string.IsNullOrWhiteSpace(SABLON_YOLU) || !File.Exists(SABLON_YOLU))
+            string sablonYolu = SablonYoluBul(_app, "uretimos.drwdot", SABLON_YOLU);
+            if (string.IsNullOrWhiteSpace(sablonYolu) || !File.Exists(sablonYolu))
             {
-                MessageBox.Show($"Çizim şablonu bulunamadı:\n{SABLON_YOLU}\n\nSwAddin.cs'teki SABLON_YOLU sabitini kontrol edin.",
-                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show($"Çizim şablonu bulunamadı:\n{sablonYolu}\n\nSolidWorks'ün Sistem Seçenekleri > Dosya Konumları > " +
+                    "Belge Şablonları klasörlerinden birine 'uretimos.drwdot' kopyalayın, ya da SwAddin.cs'teki SABLON_YOLU " +
+                    "sabitini (yedek yol) kontrol edin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1063,7 +1109,7 @@ namespace UretimOSKesim
             string aktifYol = aktifBelge.GetPathName();
             Tanilama.Kaydet("TeknikResimOlusturCalistir: " + aktifYol);
             var resimUretici = new TeknikResimOlusturucu(_app);
-            bool basarili = resimUretici.TeknikResimAcVeDuzenlemeyeBirak(aktifYol, SABLON_YOLU);
+            bool basarili = resimUretici.TeknikResimAcVeDuzenlemeyeBirak(aktifYol, sablonYolu);
             if (basarili) _sonOlusturulanModelYolu = aktifYol;
 
             string ozet = basarili

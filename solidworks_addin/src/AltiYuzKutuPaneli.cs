@@ -124,10 +124,18 @@ namespace UretimOSKesim
             if (_arkaKutusu.Checked) p.DahilYuzler.Add("arka");
             if (p.DahilYuzler.Count == 0) { MessageBox.Show("En az bir yüz seçili olmalı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
 
-            string partSablon = SwAddin.PART_SABLON_YOLU, montajSablon = SwAddin.ASSEMBLY_SABLON_YOLU;
+            // Sürüm/kurulumdan BAĞIMSIZ arama (2017-2025+ aynı derleme) —
+            // bkz. SwAddin.SablonYoluBul: SolidWorks'ün KENDİ "Dosya
+            // Konumları > Belge Şablonları" ayarı okunur, bulunamazsa
+            // SwAddin.cs'teki sabit yola (yedek) düşülür.
+            string partSablon = SwAddin.SablonYoluBul(_app, "Part.prtdot", SwAddin.PART_SABLON_YOLU);
+            string montajSablon = SwAddin.SablonYoluBul(_app, "Assembly.asmdot", SwAddin.ASSEMBLY_SABLON_YOLU);
             if (!File.Exists(partSablon) || !File.Exists(montajSablon))
             {
-                MessageBox.Show($"Parça/Montaj şablonu bulunamadı:\n{partSablon}\n{montajSablon}\n\nSwAddin.cs'teki PART_SABLON_YOLU/ASSEMBLY_SABLON_YOLU sabitlerini kontrol edin.",
+                MessageBox.Show($"Parça/Montaj şablonu bulunamadı:\n{partSablon}\n{montajSablon}\n\n" +
+                    "Bunlar SolidWorks'ün kendi stok şablonlarıdır — normalde 'Sistem Seçenekleri > Dosya " +
+                    "Konumları > Belge Şablonları' klasöründe hazır bulunur. Bulunamıyorsa SwAddin.cs'teki " +
+                    "PART_SABLON_YOLU/ASSEMBLY_SABLON_YOLU sabitlerini (yedek yol) kontrol edin.",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
