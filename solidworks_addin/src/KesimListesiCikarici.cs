@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -52,6 +53,12 @@ namespace UretimOSKesim
         public List<DelikBilgisi> Delikler = new List<DelikBilgisi>();
         public List<FormBilgisi> Formlar = new List<FormBilgisi>();
         public bool DeliklerOnaylandi;
+
+        // YENİ: operasyon bazlı takım/parametre atamaları (bkz. CncOperasyonu.cs,
+        // CncYerlesimPaneli.cs "Operasyonlar" sekmesi). Yalnızca DeliklerOnaylandi
+        // true ise dışa aktarıma dahil edilir (aynı onay kapısı, delikler
+        // onaylanmadan hangi takımın hangi deliğe atandığı da güvenilmez).
+        public List<CncOperasyonKaydi> Operasyonlar = new List<CncOperasyonKaydi>();
 
         // YENİ: CNC yerleşimi (bkz. OzelAlanlar.CNC_*) — Biesse bSolid 5 eksen
         // düz tabla + fincan (vakum pod) makinesi için parça bazlı kurulum
@@ -203,6 +210,15 @@ namespace UretimOSKesim
             {
                 _uyarilar.Add($"'{bilesen.Name2}' için {delikler.Count} delik OTOMATİK tespit edildi ama " +
                     "HENÜZ ONAYLANMADI (bkz. Etiketleme Paneli) — bu delikler dışa aktarıma DAHİL EDİLMEDİ.");
+            }
+            if (satir.DeliklerOnaylandi)
+            {
+                string opJson = OzelAlanOku(modelDoc, OzelAlanlar.CNC_OPERASYONLAR);
+                if (!string.IsNullOrWhiteSpace(opJson))
+                {
+                    try { satir.Operasyonlar = JsonConvert.DeserializeObject<List<CncOperasyonKaydi>>(opJson) ?? new List<CncOperasyonKaydi>(); }
+                    catch (Exception ex) { _uyarilar.Add($"'{bilesen.Name2}' için CNC operasyon verisi okunamadı: {ex.Message}"); }
+                }
             }
 
             satirlar.Add(satir);

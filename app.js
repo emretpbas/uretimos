@@ -110,6 +110,7 @@ const App = (() => {
       { id: 'tiger_aktarim', label: 'Logo Tiger Aktarımı', icon: '🔄', roller: ['admin','arge','teknik_ofis','satinalma','yonetim'] },
       { id: 'ag_entegrasyon', label: 'ERP Entegrasyon Merkezi', icon: '🔗', roller: ['admin','yonetim','teklif_siparis','satis','cari','uretim_planlama'] },
       { id: 'rota', label: 'Hat & Rota', icon: '→', roller: ['admin','arge','teknik_ofis','yonetim'] },
+      { id: 'cnc_takimlari', label: 'CNC Takım Kütüphanesi', icon: '🔧', roller: ['admin','arge','teknik_ofis','uretim_planlama','yonetim','uretim'] },
       { id: 'qr_etiket', label: 'QR Etiket Merkezi', icon: '🔲', roller: ['admin','arge','teknik_ofis','yonetim','depo','uretim_planlama','sevkiyat'] }
     ]},
     { group: 'SATINALMA', items: [
@@ -1422,7 +1423,7 @@ const App = (() => {
   function setBreadcrumb(pageId) {
     const labels = {
       dashboard: 'Panel', hammadde: 'Hammaddeler', yarimamul: 'Yarı Mamüller',
-      rota: 'Hat & Rota Yönetimi', isemri: 'İş Emirleri', nesting: 'Kesim Optimizasyonu',
+      rota: 'Hat & Rota Yönetimi', cnc_takimlari: 'CNC Takım Kütüphanesi', isemri: 'İş Emirleri', nesting: 'Kesim Optimizasyonu',
       kartlar: 'Ürün Kartları & Reçete', fiyat: 'Maliyet & Liste Fiyatı',
       satinalma_panel: 'Satınalma Paneli', acik_satinalma_siparisleri: 'Açık Satınalma Siparişleri', tedarikci_teklif: 'Teklif Karşılaştırma',
       uretim_panel: 'Üretim Planlama Paneli', depo_panel: 'Depo Stok & Düşüm',

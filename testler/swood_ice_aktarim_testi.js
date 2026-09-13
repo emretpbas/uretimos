@@ -349,6 +349,8 @@ console.log('\n-- delik/form/CNC/cam: SolidWorks eklentisi kullanıcı isteği (
     /delikler: \[\], formlar: \[\], deliklerOnaylandi: false,/.test(satirKurSrc));
   t('satirKur varsayılan olarak cncFincan/cncSifirlamaKose taşıyor',
     /cncFincan: '', cncSifirlamaKose: '',/.test(satirKurSrc));
+  t('satirKur varsayılan olarak cncOperasyonlar taşıyor (şema tutarlılığı)',
+    /cncOperasyonlar: \[\],/.test(satirKurSrc));
 
   // sidecar YOK -> delikler/formlar boş, deliklerOnaylandi false (SWOOD'un
   // kendi raporları hiçbir zaman Delikler/*.json üretmez)
@@ -368,6 +370,18 @@ console.log('\n-- delik/form/CNC/cam: SolidWorks eklentisi kullanıcı isteği (
   t('sidecar SAP_CODE eşleşince delikler dolduruluyor', r2.satirlar[0].delikler.length === 1);
   t('sidecar eşleşince deliklerOnaylandi true oluyor (sidecar varlığı = SolidWorks tarafında onaylanmış)', r2.satirlar[0].deliklerOnaylandi === true);
   t('CNC_FINCAN/CNC_SIFIRLAMA_KOSE satıra taşınıyor', r2.satirlar[0].cncFincan === 'F3' && r2.satirlar[0].cncSifirlamaKose === 'sol_alt');
+
+  // Operasyon bazlı takım/parametre ataması (CncOperasyonu.cs) sidecar üzerinden taşınıyor mu?
+  const r2b = IsEmriUretici.swoodDenUret([
+    { DESC: 'PANEL', SAP_CODE: 'P1', LENGHT: '800', WIDTH: '400', QTY: '1', MATERIAL: '18mm' }
+  ], {}, [
+    { sapCode: 'P1', delikler: [{ x: 37, y: 37, cap: 8 }], formlar: [], operasyonlar: [
+      { id: 'OP-DELME-8.0', takimId: 'CNCT-1', takimKodu: 'FR-DUZ-8', fincanYuksekligiMm: 5, devirRpm: 18000, ilerlemeMmDak: 4000 }
+    ] }
+  ]);
+  t('sidecar operasyonlar[] satir.cncOperasyonlar\'a taşınıyor', r2b.satirlar[0].cncOperasyonlar.length === 1);
+  t('operasyon takım kodu/devir/ilerleme doğru taşınıyor',
+    r2b.satirlar[0].cncOperasyonlar[0].takimKodu === 'FR-DUZ-8' && r2b.satirlar[0].cncOperasyonlar[0].devirRpm === 18000);
 
   // sidecar var ama SAP_CODE eşleşmiyor -> etkilenmemeli (yanlış parçaya delik yapıştırılmamalı)
   const r3 = IsEmriUretici.swoodDenUret([
@@ -401,6 +415,29 @@ console.log('\n-- delik/form/CNC/cam: SolidWorks eklentisi kullanıcı isteği (
   t('Hammaddeler filtre çubuğunda "Cam" butonu var', /data-tip="cam">Cam</.test(hammaddeSrc));
   t('Liste satırındaki tip seçicide "cam" seçeneği var', /<option value="cam" \$\{h\.tip === 'cam' \? 'selected' : ''\}>Cam<\/option>/.test(hammaddeSrc));
   t('Ekle/Düzenle formunda "cam" seçeneği var', /<option value="cam" \$\{d\.tip === 'cam'/.test(hammaddeSrc));
+}
+
+console.log('\n-- CNC Takım Kütüphanesi (CAM modülü) altyapısı: koleksiyon + menü + api.php erişimi --');
+{
+  const storageSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'storage.js'), 'utf8');
+  t('storage.js\'te cncTakimlari koleksiyonu tanımlı', /cncTakimlari: coll\('cncTakimlari'\)/.test(storageSrc));
+
+  const appSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'app.js'), 'utf8');
+  t('app.js menüsünde "CNC Takım Kütüphanesi" var', /id: 'cnc_takimlari', label: 'CNC Takım Kütüphanesi'/.test(appSrc));
+  t('setBreadcrumb etiketinde cnc_takimlari var', /cnc_takimlari: 'CNC Takım Kütüphanesi'/.test(appSrc));
+
+  const indexSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
+  t('index.html page_cnc_takimlari.js\'i yüklüyor', /<script src="page_cnc_takimlari\.js\?v=\d+"><\/script>/.test(indexSrc));
+
+  const apiSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'api.php'), 'utf8');
+  t('CAD_ENT_OKUNABILIR cncTakimlari içeriyor (salt okunur — takım kütüphanesi eklentiden değiştirilemez)',
+    /CAD_ENT_OKUNABILIR = \[[^\]]*'cncTakimlari'/.test(apiSrc));
+  t('CAD_ENT_YAZILABILIR cncTakimlari İÇERMİYOR (kasıtlı — takım tanımı yalnızca ÜretimOS ekranından)',
+    !/CAD_ENT_YAZILABILIR = \[[^\]]*'cncTakimlari'/.test(apiSrc));
+
+  const pageSrc2 = require('fs').readFileSync(require('path').join(__dirname, '..', 'page_cnc_takimlari.js'), 'utf8');
+  t('page_cnc_takimlari.js PageModules.cnc_takimlari olarak tanımlı', /PageModules\.cnc_takimlari = \(\(\) => \{/.test(pageSrc2));
+  t('5 profil tipi tanımlı (duz/bull/ball/v/ozel)', /duz:.*bull:.*ball:.*\bv:.*ozel:/s.test(pageSrc2));
 }
 
 console.log('\n-- page_is_emri_formu.js: "Kesime Aktar (Nesting)" köprüsü (T3-29 ile aynı desen, delik/form dahil) --');

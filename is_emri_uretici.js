@@ -156,6 +156,12 @@ const IsEmriUretici = (() => {
       // tarafından SolidWorks'te ONAYLANMIŞ) doldurur; diğer kaynaklarda
       // şema tutarlılığı için boş/varsayılan kalır (bkz. hirdavatlar notu).
       delikler: [], formlar: [], deliklerOnaylandi: false,
+      // CNC operasyonları (takım/fincan yüksekliği/giriş-çıkış/paso/devir-
+      // ilerleme, bkz. solidworks_addin/src/CncOperasyonu.cs) — yalnızca
+      // SolidWorks add-in kaynaklı, delikleri onaylanmış satırlarda dolu.
+      // ÜretimOS tarafında HENÜZ TÜKETİLMİYOR (postprocessor gelene kadar
+      // yalnızca taşınır) — bkz. AHSAP_TEKNIK_OFIS_DURUM.md.
+      cncOperasyonlar: [],
       // Tahıl/desen yönü (bkz. OzelAlanlar.TAHIL_YONU) — yalnızca SolidWorks
       // add-in kaynaklı CSV'de dolu (GRAIN sütunu boş DEĞİLSE true). Nesting
       // köprüsü (page_is_emri_formu.js:kesimeAktar) bunu grainKilitli olarak
@@ -366,6 +372,7 @@ const IsEmriUretici = (() => {
         satir.delikler = delikSidecar.delikler || [];
         satir.formlar = delikSidecar.formlar || [];
         satir.deliklerOnaylandi = true;
+        satir.cncOperasyonlar = delikSidecar.operasyonlar || [];
       }
       satirlar.push(satir);
       hirdavatAdaylari.push(buSatirinHirdavati);

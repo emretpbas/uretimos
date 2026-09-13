@@ -763,6 +763,7 @@ const Store = (() => {
     satinalmaSiparisleri: coll('satinalmaSiparisleri'), // Satınalma'nın tedarikçiye açtığı resmi sipariş (fiyat güncellenmiş, yönetim onayından geçer)
     kritikStokSeviyeleri: coll('kritikStokSeviyeleri'), // hammaddeId -> manuel kritik stok miktarı (Depo tanımlar)
     ciroHedefleri: coll('ciroHedefleri'),               // ay bazlı (YYYY-MM) manuel ciro hedefi (Yönetim Raporlama)
+    cncTakimlari: coll('cncTakimlari'),                 // CNC/CAM takım kütüphanesi (freze bıçağı: profil tipi, çap, boy, vb.) — SolidWorks eklentisinin CNC Operasyon Paneli'nin okuduğu paylaşılan kart listesi
 
     // ── BAKIM ─────────────────────────────────────────────────────────────
     makinaTechizat: coll('makinaTechizat'),             // makina/teçhizat envanteri (amortisman, zimmet)

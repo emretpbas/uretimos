@@ -308,7 +308,14 @@ taşıyabiliyor. Kaynaklar:
   `kesimIhtiyaclari` satırına aktarır; plaka seçilmemiş satırlar TAHMİN
   EDİLMEZ, sayısı bildirilip atlanır.
 
-**b) Cam Modülü — BİLEREK YALNIZCA BAŞLANGIÇ**
+**b) Cam (Glass) — küçük, yan bir ekleme — DİKKAT: "CAM" TERİMİ İLE KARIŞTIRILMASIN**
+
+Bu madde "cam" malzemeyi (pencere/mobilya camı) ifade eder — kullanıcının
+BİR SONRAKİ mesajında kastettiği "CAM" (Computer-Aided Manufacturing,
+SWOOD CAM/TopSolid CAM tarzı takım yolu/işleme programı) TAMAMEN FARKLI
+bir şeydir ve aşağıda **13) CNC/CAM Modülü** altında ayrıca ele alınmıştır.
+İlk yorumlama bir isim çakışmasıydı, düzeltildi — bu madde (cam malzeme)
+küçük ve yan bir ekleme olarak KALDI, iptal edilmedi.
 
 Hammaddeler ekranına yeni `'cam'` tipi eklendi (filtre + liste + form
 dropdown'ı — mevcut `'sarf'` tipiyle AYNI, kanıtlanmış desen). SolidWorks
@@ -346,6 +353,99 @@ C# tarafı (DelikFormCikarici, CncYerlesimPaneli, SwAddin 9. komut) yalnızca
 brace/paren dengesi ve manuel inceleme ile doğrulandı — **gerçek delik
 konumlarının ve CylinderParams okumasının SolidWorks'te MUTLAKA elle
 doğrulanması gerekiyor**, bu oturumda hiçbir şekilde canlı test edilemedi.
+
+### 13) CNC/CAM Modülü — Takım Kütüphanesi + Operasyon Bazlı Parametre Atama — YENİ
+
+Kullanıcının bir sonraki isteği önceki maddedeki "cam" (glass) yorumunu
+düzeltti: kastedilen **CAM (Computer-Aided Manufacturing)** — "swoodcam ya
+da topsolid cam gibi freze bıçaklarını takım yollarından seçebildiğim,
+bıçak yükseklik kalınlık ve bull/ball/düz/V uçlu, özel profilli bıçak
+ayarlarını, fincan yüksekliği ve 5 eksen freze ayarlarını, giriş/çıkış
+ayarlarını, pasoları, dönüş ve ilerleme hızı ayarlarını yapabildiğim bir
+program". Kullanıcıya üç mimari soru soruldu ve şu kararlar alındı:
+**(1)** takım kütüphanesi ÜretimOS sunucusunda paylaşılan bir koleksiyon
+olsun, **(2)** görsel takım yolu önizlemesi de olsun, **(3)** takım/
+parametre ataması OPERASYON bazında (her delik grubu/kontur kendi
+takımıyla) yapılsın.
+
+**Dürüst kapsam sınırı (baştan belirtildi, üç kararın hiçbiri bunu
+değiştirmedi):** tam bir CAM motoru (gerçek takım yolu hesaplama, 5 eksen
+yüzey-normali bazlı takım ekseni, G-kodu/postprocessor üretimi) SWOOD/
+TopSolid'in yıllarca süren mühendisliğidir — bu oturumda "haftalar
+sürecek" ölçekte gerçek bir CAM motoru YAZILMADI. Bunun yerine, kullanıcının
+üç kararına sadık kalarak GERÇEKTEN ÇALIŞAN ama dürüstçe sınırlı bir
+temel kuruldu:
+
+**a) ÜretimOS: CNC Takım Kütüphanesi (YENİ sayfa `page_cnc_takimlari.js`)**
+
+Menü: TANIMLAR (ARGE/Teknik Ofis) > "CNC Takım Kütüphanesi". Her takım
+kartı: kod, ad, **profil tipi** (Düz Uç / Bull Nose + köşe yarıçapı /
+Ball Nose / V Uç + açı / Özel Profil + serbest metin açıklama), çap,
+kesme boyu, sap çapı, maks. devir (rpm), maks. ilerleme (mm/dk). Yeni
+`cncTakimlari` koleksiyonu (`storage.js`) — hammaddeler gibi paylaşılan
+master veri, fiyat/stok takibi YOK (bu bir tedarik kartı değil, bir
+makine ayarı kartı). `api.php`'nin `CAD_ENT_OKUNABILIR` listesine
+eklendi (SolidWorks eklentisi SALT OKUNUR çeker — takım tanımı yalnızca
+bu ekrandan yapılır, `CAD_ENT_YAZILABILIR`'a BİLEREK eklenmedi).
+
+**b) SolidWorks: Operasyon Gruplama (YENİ `CncOperasyonu.cs`)**
+
+Kullanıcının "operasyon bazında" kararına uyarak: aynı çaptaki delikler
+(±0,05mm) TEK bir "Delme" operasyonunda toplanır, her form/kontur KENDİ
+operasyonu olur (`CncOperasyonlariOlustur.Olustur`). Operasyon kimliği
+(`Id`) geometriden türer (örn. `OP-DELME-8.0`) — parça yeniden taranınca
+AYNI geometri için aynı Id üretilir, böylece kullanıcının önceden atadığı
+takım/parametreler (`CncOperasyonKaydi`, `URETIMOS_CNC_OPERASYONLAR` özel
+alanında JSON dizisi olarak saklanır) kaybolmadan yeniden eşlenir.
+**v1 sınırlaması (dürüstçe belirtilmiş):** form tipi ayrımı (dış kontur mu
+iç cep mi) YAPILMAZ — DelikFormCikarici.cs bunu ayırt edecek kadar
+geometri analizi yapmıyor.
+
+**c) SolidWorks: CncYerlesimPaneli.cs — "Operasyonlar" sekmesi (YENİ)**
+
+9. komut artık İKİ sekmeli: "Genel" (öncekiyle aynı: fincan/sıfırlama +
+delik onay kapısı) ve **"Operasyonlar"**. Operasyonlar sekmesinde: sol
+tarafta operasyon listesi, sağda seçili operasyon için: **Takım** (🌐
+butonuyla ÜretimOS'tan çekilen Takım Kütüphanesi'nden seçilir), Fincan
+Yüksekliği (mm), **5 Eksen Eğim Açısı** (yalnızca SAYI saklanır — bkz.
+aşağıdaki dürüstlük notu), Giriş Stratejisi (dikey/rampa/önceden delik),
+Çıkış Stratejisi (dikey/rampa), Paso Derinliği + Paso Sayısı (0=otomatik),
+Devir (rpm), Kesme İlerlemesi + Dalma İlerlemesi (mm/dk, AYRI alanlar —
+gerçek CAM pratiğiyle tutarlı). Sağ altta **basit bir 2D önizleme**
+(WinForms `Graphics` ile özel çizim): delme operasyonunda her delik,
+seçili takımın çapıyla bir daire olarak; kontur operasyonunda formun
+kendi dış hattı + kaba bir "yaklaşık takım yolu" (merkez etrafında
+ölçekleme) çizilir.
+
+**ÇOK ÖNEMLİ DÜRÜSTLÜK NOTU (panelde de görünür bir uyarı olarak var):**
+1. Bu "5 eksen eğim açısı" yalnızca bir SAYIdır — yüzey normaline göre
+   gerçek takım ekseni hesabı (asıl 5 eksen CAM'in temel işi) YAPILMAZ.
+2. Kontur önizlemesindeki "takım yolu" GERÇEK bir poligon-ofset
+   algoritması DEĞİLDİR (zigzag/spiral cep temizleme, ramp/plunge giriş
+   hareketleri gibi gerçek CAM motoru işlevleri YOKTUR) — yalnızca kaba
+   bir görsel fikir verir, ÜRETİM İÇİN KULLANILAMAZ.
+3. G-kodu/XNC/postprocessor üretimi HÂLÂ YOK — kullanıcının göndereceği
+   Biesse bSolid postprocessor + örnek makine koduna göre AYRI bir fazda
+   ele alınacak. Şimdiye kadar toplanan TÜM parametreler (takım, fincan
+   yüksekliği, giriş/çıkış, paso, devir/ilerleme) o faz için HAZIR
+   bekliyor — postprocessor geldiğinde yeniden toplanmaları GEREKMEZ.
+
+**d) Veri akışı:** Operasyon kayıtları `SwoodPaketOlusturucu.cs`'nin
+`Delikler/*.json` sidecar'ına `operasyonlar[]` olarak eklendi (yalnızca
+`DELIKLER_ONAYLANDI=evet` ise — aynı onay kapısı). `is_emri_uretici.js`
+bunu `satir.cncOperasyonlar` olarak taşır ama **HENÜZ TÜKETMEZ** (gösterim/
+kullanım ayrı bir faz — bu oturumda yalnızca veri kaybolmadan uçtan uca
+akıyor olması sağlandı).
+
+**Test durumu:** JS tarafı (`cncTakimlari` koleksiyonu/menü/api.php
+erişimi, `page_cnc_takimlari.js` profil tipleri, `cncOperasyonlar`
+sidecar akışı) 192 testle doğrulandı — hepsi geçiyor. C# tarafı
+(`CncOperasyonu.cs`, `CncYerlesimPaneli.cs`'in "Operasyonlar" sekmesi,
+2D önizleme çizimi) yalnızca brace/paren dengesi + manuel inceleme ile
+doğrulandı — **WinForms TabControl/SplitContainer/özel çizim (Graphics.
+Paint) davranışı bu ortamda ÇALIŞTIRILAMADI**, Pazartesi gerçek testte
+özellikle önizlemenin panel boyutuna göre doğru ölçeklendiğini ve takım
+seçiminin operasyon değiştirince kaybolmadığını kontrol edin.
 
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
@@ -425,6 +525,22 @@ doğrulanması gerekiyor**, bu oturumda hiçbir şekilde canlı test edilemedi.
     "Temperli" + kenar işlemesiyle etiketleyip dışa aktarın, açıklama
     sütununda "Cam: ... · Temperli · Kenar: ..." notunun doğru göründüğünü
     doğrulayın.
+14. YENİ (CNC/CAM modülü — 13. madde): ÜretimOS'ta "CNC Takım Kütüphanesi"
+    ekranından en az bir düz uç ve bir bull-nose takım tanımlayın. Visual
+    Studio'da projeye `CncOperasyonu.cs` dosyasını ekleyin (CncYerlesimPaneli.cs
+    zaten güncellendi). Delik içeren bir parçada "CNC Yerleşimi" komutunu
+    çalıştırıp **"Operasyonlar"** sekmesine geçin: (a) "🌐 Takım Kütüphanesini
+    Çek"e basıp tanımladığınız takımların listede göründüğünü doğrulayın,
+    (b) sol listede delik çapına göre gruplanmış "Delme — ØX" operasyonunun
+    doğru sayıda delik içerdiğini kontrol edin, (c) bir takım seçip fincan
+    yüksekliği/giriş-çıkış/paso/devir-ilerleme girin, sağdaki önizlemede
+    delik dairelerinin takım çapıyla göründüğünü doğrulayın, (d) Kaydet'e
+    basıp SolidWorks Özel Özellikler'de `URETIMOS_CNC_OPERASYONLAR` alanının
+    bir JSON dizisi olarak yazıldığını kontrol edin, (e) paneli KAPATIP
+    TEKRAR AÇIN — girdiğiniz takım/parametrelerin KAYBOLMADAN geri geldiğini
+    doğrulayın (Id-bazlı eşleme çalışıyor mu). Son olarak dışa aktarıp
+    ZIP'teki `Delikler/*.json` dosyasında `operasyonlar[]` alanının
+    dolduğunu kontrol edin.
 
 ## Değişen/eklenen dosyalar
 
@@ -470,3 +586,25 @@ doğrulanması gerekiyor**, bu oturumda hiçbir şekilde canlı test edilemedi.
 - `page_hammadde.js` — yeni `'cam'` hammadde tipi (filtre + dropdown'lar)
 - `testler/swood_ice_aktarim_testi.js`, `testler/nesting_testi.js` — yeni
   testler (hepsi geçiyor, toplam paket 0 kaldı)
+
+**CNC/CAM modülü (bkz. 13. madde) — sonradan eklendi:**
+- `page_cnc_takimlari.js` — YENİ dosya (CNC Takım Kütüphanesi ekranı)
+- `storage.js` — `cncTakimlari` koleksiyonu
+- `app.js` — menüye "CNC Takım Kütüphanesi" eklendi + breadcrumb etiketi
+- `index.html` — yeni script etiketi + bu oturumda değiştirilen TÜM JS
+  dosyalarının `?v=` sürümleri artırıldı (daha önce unutulmuştu — bkz.
+  `testler/surum_tutarlilik_testi.js`)
+- `sw.js` — `CACHE_NAME` v190→v191
+- `api.php` — `CAD_ENT_OKUNABILIR`'a `cncTakimlari` eklendi (salt okunur)
+- `solidworks_addin/src/CncOperasyonu.cs` — YENİ dosya (operasyon gruplama:
+  `CncOperasyonlariOlustur`, kalıcı kayıt: `CncOperasyonKaydi`)
+- `solidworks_addin/src/CncYerlesimPaneli.cs` — TabControl'e çevrildi:
+  "Genel" (öncekiyle aynı) + YENİ "Operasyonlar" sekmesi (takım seçimi,
+  fincan yüksekliği, 5 eksen eğim açısı, giriş/çıkış, paso, devir/ilerleme,
+  basit 2D önizleme)
+- `solidworks_addin/src/OzelAlanlar.cs` — `CNC_OPERASYONLAR` (JSON dizisi)
+- `solidworks_addin/src/KesimListesiCikarici.cs` — `KesimSatiri.Operasyonlar`
+- `solidworks_addin/src/SwoodPaketOlusturucu.cs` — sidecar'a `operasyonlar[]`
+- `is_emri_uretici.js` — `satir.cncOperasyonlar` (taşınır, henüz tüketilmez)
+- `testler/swood_ice_aktarim_testi.js` — CNC takım kütüphanesi + operasyon
+  akışı testleri eklendi (toplam 192 test, hepsi geçiyor)

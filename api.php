@@ -578,9 +578,12 @@ const HAT_OP_YAZILABILIR = ['istasyonIsleri', 'gerceklesenSureKayitlari', 'olcum
 // oluşturabilir (istasyon/süre ADIMLARI kasıtlı olarak TAHMİN EDİLMEZ —
 // kullanıcı bunları ÜretimOS'un kendi Rota ekranından tamamlar); mevcut
 // rotaların silinmesi/adımlarının değiştirilmesi bu uçtan YAPILMAZ.
+// cncTakimlari YALNIZCA OKUNABİLİR (hammaddeler ile AYNI gerekçe): CNC
+// Operasyon Paneli bir freze takımını operasyona SEÇER, takım kütüphanesini
+// değiştirmez/oluşturmaz — takım tanımı ÜretimOS'un kendi ekranından yapılır.
 // 'delete' ucu bu role TAMAMEN KAPALI (aşağıda ayrıca engellenir) — delete
 // bir koleksiyonun TAMAMINI siler, otomasyon kimliğine bu güç verilmez.
-const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler', 'receteler', 'rotalar'];
+const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler', 'receteler', 'rotalar', 'cncTakimlari'];
 const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler', 'rotalar'];
 
 // ── ROL BAZLI ERİŞİM DENETİMİ ──────────────────────────────────────────────

@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v190'; // v190: is_emri_uretici.js SWOOD disi (duz SolidWorks add-in) raporlardan gelen PAKET_KODU/PAKET_ADI sutunlarini artik paketNo/aciklamaya tasiyor (CABINET_NAME yoksa); api.php'ye kisitli 'cad_entegrasyon' rolu eklendi (SolidWorks add-in servis kimligi - yalniz hammaddeler/yarimamuller/paketler/urunler/receteler beyaz listesi, hammaddeler salt okunur, delete tamamen kapali)
+const CACHE_NAME = 'uretimos-v191'; // v191: nesting'e delik/form destegi (page_nesting.js DELIK/FORM DXF katmanlari, manuel delik girisi), Is Emri Formu'na "Kesime Aktar (Nesting)" koprusu, SolidWorks eklentisi tarafinda delik/form/CNC/cam alanlari (is_emri_uretici.js/swood_okuyucu.js), page_hammadde.js'e 'cam' hammadde tipi, YENI page_cnc_takimlari.js (CNC/CAM takim kutuphanesi) + cncTakimlari koleksiyonu, api.php CAD_ENT_OKUNABILIR'a altMontajlar/rotalar/cncTakimlari eklendi
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 

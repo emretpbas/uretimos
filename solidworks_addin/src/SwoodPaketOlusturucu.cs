@@ -112,6 +112,19 @@ namespace UretimOSKesim
                         ["formlar"] = new JArray((s.Formlar ?? new List<FormBilgisi>()).Select(f => new JObject
                         {
                             ["noktalar"] = new JArray(f.NoktalarXY.Select(p => new JArray(p[0], p[1])))
+                        })),
+                        // YENİ: operasyon bazlı takım/parametre atamaları (bkz.
+                        // CncOperasyonu.cs) — postprocessor geldiğinde G-koda
+                        // çevrilecek ham veri. Gerçek toolpath/G-kodu BURADA YOK.
+                        ["operasyonlar"] = new JArray((s.Operasyonlar ?? new List<CncOperasyonKaydi>()).Select(o => new JObject
+                        {
+                            ["id"] = o.Id, ["takimId"] = o.TakimId, ["takimKodu"] = o.TakimKodu,
+                            ["fincanYuksekligiMm"] = o.FincanYuksekligiMm,
+                            ["besEksenEgimAcisiDerece"] = o.BesEksenEgimAcisiDerece,
+                            ["girisStratejisi"] = o.GirisStratejisi, ["cikisStratejisi"] = o.CikisStratejisi,
+                            ["pasoDerinligiMm"] = o.PasoDerinligiMm, ["pasoSayisi"] = o.PasoSayisi,
+                            ["devirRpm"] = o.DevirRpm, ["ilerlemeMmDak"] = o.IlerlemeMmDak,
+                            ["dalmaIlerlemeMmDak"] = o.DalmaIlerlemeMmDak
                         }))
                     };
 

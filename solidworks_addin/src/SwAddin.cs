@@ -392,9 +392,11 @@ namespace UretimOSKesim
             grup.AddCommandItem2(
                 "CNC Yerleşimi (ÜretimOS)", -1,
                 "Aktif parça/montaj bileşenine CNC fincan (vakum pod) ve sıfırlama köşesi/ofseti " +
-                "atar (Biesse bSolid 5 eksen düz tabla + fincan makinesi için) ve geometriden " +
-                "otomatik tespit edilen delikleri onaya sunar. Gerçek postprocessor/G-kodu eşlemesi " +
-                "HENÜZ üretilmez — yalnızca kurulum bilgisi saklanır.",
+                "atar (Biesse bSolid 5 eksen düz tabla + fincan makinesi için), geometriden " +
+                "otomatik tespit edilen delikleri onaya sunar VE her delik grubu/kontur için ayrı " +
+                "ÜretimOS Takım Kütüphanesi takımı + fincan yüksekliği + giriş/çıkış + paso + " +
+                "devir/ilerleme atar (basit 2D önizleme ile). Gerçek postprocessor/G-kodu eşlemesi " +
+                "HENÜZ üretilmez — yalnızca kurulum/operasyon bilgisi saklanır.",
                 "CNC Yerleşimi", 8, "CncYerlesimAcCalistir", "PaketOlusturEtkinMi",
                 ID_CNC_YERLESIM, itemTipi);
             Tanilama.Kaydet("9. AddCommandItem2 tamamlandi");

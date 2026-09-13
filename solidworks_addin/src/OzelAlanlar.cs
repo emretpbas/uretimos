@@ -116,6 +116,16 @@ namespace UretimOSKesim
         public const string CNC_SIFIRLAMA_OFSET_Y = "URETIMOS_CNC_SIFIRLAMA_OFSET_Y";
         public const string CNC_SIFIRLAMA_OFSET_Z = "URETIMOS_CNC_SIFIRLAMA_OFSET_Z";
 
+        // Operasyon bazlı takım/parametre atamaları (bkz. CncOperasyonu.cs,
+        // CncOperasyonPaneli.cs) — TEK bir JSON dizisi olarak saklanır (her
+        // operasyon birden çok alan taşıdığı için ayrı düz özel alanlar
+        // pratik değil). Kullanıcı isteği: "takım yollarından seçebildiğim
+        // bıçak ... fincan yüksekliği ve 5 eksen freze ayarlarını, giriş ve
+        // çıkış ayarlarını, pasoları, dönüş ve ilerleme hızı ayarlarını
+        // yapabildiğim" — her JSON öğesi bir CncOperasyonu'nun atanmış
+        // parametrelerini taşır (Id ile geometriden türeyen operasyona eşlenir).
+        public const string CNC_OPERASYONLAR = "URETIMOS_CNC_OPERASYONLAR";
+
         // ── Cam Modülü (BAŞLANGIÇ) ────────────────────────────────────────────
         // Cam parçalar YABANCI_PARCA=evet ile zaten "plakadan kesilmez" olarak
         // işaretlenebiliyordu (bkz. yukarısı) — bu üçü, cam'e ÖZGÜ ek işleme
