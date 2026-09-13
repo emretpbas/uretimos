@@ -60,6 +60,7 @@ PageModules.is_emri_formu = (() => {
           <button class="btn btn-green" id="ie-pdf">🖨 Antetli PDF</button>
           <button class="btn" id="ie-logo">🖼 Logo</button>
           <button class="btn" id="ie-karta-ekle">📎 Karta Ekle / Takip Et</button>
+          <button class="btn" id="ie-kesime-aktar" title="Bu formdaki satırları (plaka seçilmiş olanları) Kesim Optimizasyonu (nesting) modülüne, delik/hırdavat verisiyle birlikte aktarır">▦ Kesime Aktar (Nesting)</button>
         </div>
       </div>
 
@@ -134,6 +135,7 @@ PageModules.is_emri_formu = (() => {
     document.getElementById('ie-excel').onclick = () => excelIndir();
     document.getElementById('ie-pdf').onclick = () => pdfYazdir();
     document.getElementById('ie-karta-ekle').onclick = () => karttaEkleTakipAc();
+    document.getElementById('ie-kesime-aktar').onclick = () => kesimeAktar(form);
     document.getElementById('ie-logo').onclick = () => logoSecFormu();
     main.querySelectorAll('.ie-b').forEach(el =>
       el.onchange = () => { form[el.dataset.k] = el.value; });
@@ -218,6 +220,69 @@ PageModules.is_emri_formu = (() => {
       });
     });
     return eslesen;
+  }
+
+  // ── KESİME AKTAR (NESTING KÖPRÜSÜ) — kullanıcı isteği: "nestinge ...
+  // delikleri ve formları da ekle" — bu köprü olmadan SolidWorks'ten gelen
+  // delik/form/hırdavat verisi İş Emri Formu'nda görünür ama nesting'e HİÇ
+  // ULAŞAMIYORDU (page_nesting.js'in mevcut kesimIhtiyaclari.parcalar[]
+  // akışı yalnızca reçete/BOM'dan türetilen aggregate boy/en verisi alıyordu,
+  // bkz. app.js:siparisOnaylaninceKesimIhtiyaciOlustur). Yalnızca PLAKA
+  // HAMMADDE KARTI SEÇİLMİŞ satırlar aktarılabilir (nesting bir plaka
+  // hammaddesi ÜZERİNDE çalışır) — seçilmemiş satırlar SESSİZCE atlanmaz,
+  // sayısı kullanıcıya bildirilir.
+  async function kesimeAktar(form) {
+    const satirlar = (form.satirlar || []).filter(s => (s.parcaAdi || '').trim());
+    if (!satirlar.length) { App.toast('Aktarılacak satır yok', 'err'); return; }
+
+    const secilmemis = satirlar.filter(s => !s.plakaKartId);
+    const aktarilabilir = satirlar.filter(s => s.plakaKartId && (+s.netBoy || 0) > 0 && (+s.netEn || 0) > 0);
+    if (!aktarilabilir.length) {
+      App.toast('Hiçbir satırda Plaka Hammadde seçilmemiş — önce "🔍 Seç" ile plaka atayın', 'err');
+      return;
+    }
+
+    let kesimIhtiyaclari;
+    try { kesimIhtiyaclari = await Store.kesimIhtiyaclari.all(); }
+    catch (e) { App.toast('Kesim ihtiyaçları yüklenemedi: ' + ((e && e.message) || e), 'err'); return; }
+
+    let olusturulan = 0, guncellenen = 0, eklenenParca = 0;
+    const gruplar = new Map(); // hammaddeId -> kesimIhtiyaclari satırı
+    aktarilabilir.forEach(s => {
+      let hedefSatir = gruplar.get(s.plakaKartId);
+      if (!hedefSatir) {
+        hedefSatir = kesimIhtiyaclari.find(k => k.hammaddeId === s.plakaKartId && k.durum === 'acik');
+        if (!hedefSatir) {
+          hedefSatir = { id: 'KSI' + Date.now() + Math.random().toString(36).slice(2, 6), hammaddeId: s.plakaKartId, durum: 'acik', parcalar: [], kaynakSiparisler: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
+          kesimIhtiyaclari.push(hedefSatir);
+          olusturulan++;
+        } else {
+          guncellenen++;
+        }
+        gruplar.set(s.plakaKartId, hedefSatir);
+      }
+      if (!hedefSatir.parcalar) hedefSatir.parcalar = [];
+      hedefSatir.parcalar.push({
+        ad: s.parcaAdi, boy: +s.netBoy, en: +s.netEn,
+        adet: Math.max(1, Math.round(+s.uretimMiktari || +s.netAdet || 1)),
+        // TAHIL_YONU (bkz. OzelAlanlar.TAHIL_YONU / IsEmriUretici.swoodDenUret)
+        // yalnızca SolidWorks add-in kaynaklı satırlarda YAPISAL bir alan
+        // olarak taşınır (s.tahilKilitli) — diğer kaynaklarda (STEP/PDF) bu
+        // alan yok, varsayılan false (döndürülebilir) kalır; TAHMİN EDİLMEZ.
+        grainKilitli: !!s.tahilKilitli,
+        delikler: s.delikler || [], formlar: s.formlar || [],
+        kaynakIsEmriFormu: form.isEmriIsmi || form.kaynak || ''
+      });
+      eklenenParca++;
+    });
+
+    await App.persist(() => Store.kesimIhtiyaclari.save(kesimIhtiyaclari));
+
+    let mesaj = eklenenParca + ' parça satırı Kesim Optimizasyonu\'na aktarıldı (' +
+      olusturulan + ' yeni plaka satırı, ' + guncellenen + ' mevcut plaka satırına eklendi).';
+    if (secilmemis.length) mesaj += ' ' + secilmemis.length + ' satır Plaka Hammadde seçilmediği için ATLANDI.';
+    App.toast(mesaj, 'ok');
+    App.goTo('nesting');
   }
 
   // Manuel seçim: SADECE yarı mamül kartları arasından — "kalem_secici"
@@ -792,7 +857,7 @@ PageModules.is_emri_formu = (() => {
       if (/\.zip$/.test(ad)) {
         const sonuc = await SwoodOkuyucu.oku(f);
         const u = sonuc.csvSatirlari.length
-          ? IsEmriUretici.swoodDenUret(sonuc.csvSatirlari, {})
+          ? IsEmriUretici.swoodDenUret(sonuc.csvSatirlari, {}, sonuc.delikSidecarlari)
           : IsEmriUretici.swoodStoklarDenUret(sonuc.stokPanelleri, {});
         form.satirlar = u.satirlar;
         form.kaynak = 'SWOOD: ' + f.name;

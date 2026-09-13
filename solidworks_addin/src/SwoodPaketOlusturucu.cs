@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace UretimOSKesim
 {
@@ -43,7 +46,13 @@ namespace UretimOSKesim
         {
             "DESC", "SAP_CODE", "LENGHT", "WIDTH", "QTY", "MATERIAL",
             "EBF", "EBB", "EBL", "EBR", "GRAIN", "PAKET_KODU", "HIRDAVAT",
-            "BIRLESIM_TIPI", "YABANCI_PARCA"
+            "BIRLESIM_TIPI", "YABANCI_PARCA",
+            // YENİ: CNC yerleşimi (bkz. OzelAlanlar.CNC_*) — SWOOD bunları
+            // ÜRETMEZ, is_emri_uretici.js güvenle yok sayılabilir ekstra
+            // sütunlar olarak okur (BIRLESIM_TIPI/YABANCI_PARCA ile aynı desen).
+            "CNC_FINCAN", "CNC_SIFIRLAMA_KOSE",
+            // YENİ (Cam Modülü — başlangıç): bkz. OzelAlanlar.CAM_*.
+            "CAM_KODU", "CAM_TEMPERLI", "CAM_KENAR_ISLEME"
         };
 
         // zipYolu: kullanıcının seçtiği .zip yolu. pdfYollari: Manifest'te
@@ -77,7 +86,45 @@ namespace UretimOSKesim
                     string girdiAdi = "PDFS/" + pdfSayaci + "_" + Path.GetFileName(pdfYolu);
                     zip.CreateEntryFromFile(pdfYolu, girdiAdi, CompressionLevel.Optimal);
                 }
-                Tanilama.Kaydet($"SwoodPaketOlusturucu.Uret tamamlandi: {satirlar.Count} satir, {pdfSayaci} pdf");
+
+                // YENİ: Delik/Form sidecar — CSV şeması SWOOD ile birebir
+                // uyumlu kalmalı (bu yüzden delik/form buraya SÜTUN olarak
+                // EKLENMEDİ), ama ÜretimOS'un nesting modülüne taşınabilmesi
+                // için ayrı bir JSON dosyası olarak paketlenir. YALNIZCA
+                // kullanıcının SolidWorks'te DELIKLER_ONAYLANDI="evet" dediği
+                // parçalar için yazılır (bkz. DelikFormCikarici.cs güvenilirlik
+                // notu) — onaylanmamış delikler CNC'ye asla sessizce gitmez.
+                int delikDosyaSayaci = 0;
+                foreach (var s in satirlar)
+                {
+                    if (!s.DeliklerOnaylandi) continue;
+                    if ((s.Delikler == null || s.Delikler.Count == 0) && (s.Formlar == null || s.Formlar.Count == 0)) continue;
+
+                    var sidecar = new JObject
+                    {
+                        ["sapCode"] = s.SapCode,
+                        ["paketKodu"] = s.UstPaketKodu,
+                        ["delikler"] = new JArray((s.Delikler ?? new List<DelikBilgisi>()).Select(d => new JObject
+                        {
+                            ["x"] = d.XMm, ["y"] = d.YMm, ["cap"] = d.CapMm,
+                            ["derinlik"] = d.DerinlikMm, ["tumBoyu"] = d.TumBoyu
+                        })),
+                        ["formlar"] = new JArray((s.Formlar ?? new List<FormBilgisi>()).Select(f => new JObject
+                        {
+                            ["noktalar"] = new JArray(f.NoktalarXY.Select(p => new JArray(p[0], p[1])))
+                        }))
+                    };
+
+                    delikDosyaSayaci++;
+                    string dosyaAdi = "Delikler/" + Guvenli(s.SapCode, delikDosyaSayaci) + ".json";
+                    var delikGirdisi = zip.CreateEntry(dosyaAdi, CompressionLevel.Optimal);
+                    using (var yazici = new StreamWriter(delikGirdisi.Open(), new UTF8Encoding(true)))
+                    {
+                        yazici.Write(sidecar.ToString(Formatting.None));
+                    }
+                }
+
+                Tanilama.Kaydet($"SwoodPaketOlusturucu.Uret tamamlandi: {satirlar.Count} satir, {pdfSayaci} pdf, {delikDosyaSayaci} delik/form dosyasi");
             }
 
             return zipYolu;
@@ -98,9 +145,23 @@ namespace UretimOSKesim
                 Kacis(s.UstPaketKodu),
                 Kacis(s.HirdavatListesi),
                 Kacis(s.BirlesimTipi),
-                s.YabanciParca ? "evet" : ""
+                s.YabanciParca ? "evet" : "",
+                Kacis(s.CncFincan),
+                Kacis(s.CncSifirlamaKose),
+                Kacis(s.CamKodu),
+                s.CamTemperli ? "evet" : "",
+                Kacis(s.CamKenarIsleme)
             };
             return string.Join(";", hucreler);
+        }
+
+        // Delik/form sidecar dosya adı için SAP_CODE'u dosya sistemi açısından
+        // güvenli hale getirir; boşsa/karakter kalmazsa sıra numarasına düşer.
+        private static string Guvenli(string sapCode, int sira)
+        {
+            if (string.IsNullOrWhiteSpace(sapCode)) return "parca_" + sira;
+            var temiz = new string(sapCode.Select(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' ? ch : '_').ToArray());
+            return string.IsNullOrEmpty(temiz) ? "parca_" + sira : temiz;
         }
 
         // CSV ayırıcısı ';' olduğu için HERHANGİ bir alanda (kullanıcının

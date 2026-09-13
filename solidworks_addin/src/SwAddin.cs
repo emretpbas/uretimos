@@ -218,9 +218,10 @@ namespace UretimOSKesim
             const int ID_MONTAJ_SEMASI_OLUSTUR = 106;
             const int ID_MONTAJ_SEMASI_ONAYLA = 107;
             const int ID_RECETE_AGACI = 108;
+            const int ID_CNC_YERLESIM = 109;
             int[] komutIdleri = new int[] {
                 ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET,
-                ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI
+                ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI, ID_CNC_YERLESIM
             };
 
             bool eskisiniYokSay = false;
@@ -381,6 +382,23 @@ namespace UretimOSKesim
                 ID_RECETE_AGACI, itemTipi);
             Tanilama.Kaydet("8. AddCommandItem2 tamamlandi");
 
+            // KOMUT 9 — CNC YERLEŞİMİ (kullanıcı isteği: "parçaya sağ tıklayıp
+            // bir CNC fincan ya da sıfırlama bölümüne yerleştir. Biesse
+            // bSolid 5 eksen düz tablalı ve fincanlı bir makina ile işleme
+            // yapacağız"). Gerçek G-kodu/postprocessor burada ÜRETİLMEZ —
+            // yalnızca parça bazlı fincan/sıfırlama bilgisi + delik onayı
+            // (bkz. CncYerlesimPaneli.cs).
+            Tanilama.Kaydet("9. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "CNC Yerleşimi (ÜretimOS)", -1,
+                "Aktif parça/montaj bileşenine CNC fincan (vakum pod) ve sıfırlama köşesi/ofseti " +
+                "atar (Biesse bSolid 5 eksen düz tabla + fincan makinesi için) ve geometriden " +
+                "otomatik tespit edilen delikleri onaya sunar. Gerçek postprocessor/G-kodu eşlemesi " +
+                "HENÜZ üretilmez — yalnızca kurulum bilgisi saklanır.",
+                "CNC Yerleşimi", 8, "CncYerlesimAcCalistir", "PaketOlusturEtkinMi",
+                ID_CNC_YERLESIM, itemTipi);
+            Tanilama.Kaydet("9. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -447,9 +465,9 @@ namespace UretimOSKesim
             Tanilama.Kaydet("AddCommandTabBox tamamlandi, kutu null mu=" + (kutu == null));
             if (kutu == null) return;
 
-            int[] cmdIdleri = new int[8];
-            int[] metinTipi = new int[8];
-            for (int i = 0; i < 8; i++)
+            int[] cmdIdleri = new int[9];
+            int[] metinTipi = new int[9];
+            for (int i = 0; i < 9; i++)
             {
                 cmdIdleri[i] = grup.get_CommandID(i);
                 metinTipi[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
@@ -493,14 +511,14 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            // NOT: dosya adı "_v5" oldu (v4'ten) — 7 kareli şeritten 8 kareli
-            // şeride geçildi (Reçete Ağacı eklendi); "dosya zaten var"
-            // kontrolü eski 7 kareli dosyayı YENİDEN KULLANMASIN diye (aksi
-            // halde 8. komutun ikonu boş/yanlış kalır) — bkz. önceki
+            // NOT: dosya adı "_v6" oldu (v5'ten) — 8 kareli şeritten 9 kareli
+            // şeride geçildi (CNC Yerleşimi eklendi); "dosya zaten var"
+            // kontrolü eski 8 kareli dosyayı YENİDEN KULLANMASIN diye (aksi
+            // halde 9. komutun ikonu boş/yanlış kalır) — bkz. önceki
             // sürümler için verilen aynı gerekçe.
-            string yol20 = Path.Combine(klasor, "komutlar_v5_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v5_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v5_40.png");
+            string yol20 = Path.Combine(klasor, "komutlar_v6_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v6_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v6_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -512,12 +530,12 @@ namespace UretimOSKesim
         // Şerit sırası (ImageListIndex ile eşleşmeli — bkz. KomutlariKur'daki
         // AddCommandItem2 çağrıları): 0=Kesim, 1=Etiketle, 2=Teknik Resim
         // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi, 5=Montaj Şeması
-        // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı.
+        // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı, 8=CNC Yerleşimi.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 8;
+            int genislik = kareBoyutu * 9;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -530,6 +548,7 @@ namespace UretimOSKesim
                 MontajSemasiIkonuCiz(g, kareBoyutu * 5, kareBoyutu);
                 MontajSemasiOnayIkonuCiz(g, kareBoyutu * 6, kareBoyutu);
                 ReceteAgaciIkonuCiz(g, kareBoyutu * 7, kareBoyutu);
+                CncYerlesimIkonuCiz(g, kareBoyutu * 8, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
         }
@@ -700,6 +719,29 @@ namespace UretimOSKesim
                 g.FillEllipse(beyazFircasi, x + s * 0.15f - r * 0.7f, s * 0.85f - r * 0.7f, r * 1.4f, r * 1.4f);
                 g.FillEllipse(beyazFircasi, x + s * 0.35f - r * 0.7f, s * 0.85f - r * 0.7f, r * 1.4f, r * 1.4f);
                 g.FillEllipse(beyazFircasi, x + s * 0.85f - r * 0.7f, s * 0.85f - r * 0.7f, r * 1.4f, r * 1.4f);
+            }
+        }
+
+        // 8: CNC Yerleşimi — koyu gri zemin (makine tablası çağrışımı),
+        // ortada bir "fincan/pod" dairesi + delik işaretleri, köşede bir
+        // sıfırlama okunu (X/Y ekseni) çağrıştıran basit çizim.
+        private void CncYerlesimIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.DimGray, x, 0, s, s);
+            using (var beyazKalem = new Pen(Color.White, Math.Max(1f, s / 16f)))
+            {
+                // Fincan (pod) — orta büyük daire
+                float r = s * 0.22f;
+                g.DrawEllipse(beyazKalem, x + s * 0.5f - r, s * 0.5f - r, r * 2, r * 2);
+                // Sıfırlama ekseni — sol-alt köşeden çıkan X/Y okları
+                g.DrawLine(beyazKalem, x + s * 0.12f, s * 0.88f, x + s * 0.4f, s * 0.88f);
+                g.DrawLine(beyazKalem, x + s * 0.12f, s * 0.88f, x + s * 0.12f, s * 0.6f);
+            }
+            using (var beyazFircasi = new SolidBrush(Color.White))
+            {
+                float kr = s * 0.05f;
+                g.FillEllipse(beyazFircasi, x + s * 0.5f - kr, s * 0.5f - kr, kr * 2, kr * 2); // fincan merkezi
+                g.FillEllipse(beyazFircasi, x + s * 0.12f - kr * 0.8f, s * 0.88f - kr * 0.8f, kr * 1.6f, kr * 1.6f); // sıfır noktası
             }
         }
 
@@ -1025,9 +1067,27 @@ namespace UretimOSKesim
             }
         }
 
+        // ── KOMUT: CNC YERLEŞİMİ (Biesse bSolid) ────────────────────────────
+        // Kullanıcı isteği: "parçaya sağ tıklayıp bir CNC fincan ya da
+        // sıfırlama bölümüne yerleştir" — bkz. CncYerlesimPaneli.cs başındaki
+        // kapsam notu (gerçek sağ-tık menüsü DEĞİL, kanıtlanmış komut şeridi
+        // paterni; gerçek G-kodu/postprocessor HENÜZ üretilmez).
+        public void CncYerlesimAcCalistir()
+        {
+            ModelDoc2 hedefModel = HedefModelBul("CNC yerleşimi");
+            if (hedefModel == null) return;
+
+            Tanilama.Kaydet("CncYerlesimAcCalistir: " + hedefModel.GetPathName());
+            using (var panel = new CncYerlesimPaneli(hedefModel))
+            {
+                panel.ShowDialog();
+            }
+        }
+
         // Aktif belge bir PARÇA ise doğrudan onu, bir MONTAJ ise ağaçta SEÇİLİ
-        // bileşeni hedef alır — EtiketlePaneliAc ve ReceteAgaciAcCalistir
-        // AYNI "hangi bileşen üzerinde çalışılıyor" mantığını paylaşır.
+        // bileşeni hedef alır — EtiketlePaneliAc/ReceteAgaciAcCalistir/
+        // CncYerlesimAcCalistir AYNI "hangi bileşen üzerinde çalışılıyor"
+        // mantığını paylaşır.
         // islemAdi yalnızca hata mesajlarında kullanılır (hangi komutun
         // uyardığını netleştirmek için).
         private ModelDoc2 HedefModelBul(string islemAdi)

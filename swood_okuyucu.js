@@ -170,7 +170,24 @@ const SwoodOkuyucu = (() => {
       if (!teknikResimler.length) uyarilar.push('Raporda teknik resim (PDF veya görsel) bulunamadı.');
     }
 
-    return { dosyaAdi: file.name, csvSatirlari, stokPanelleri, teknikResimler, uyarilar };
+    // ── DELİK/FORM SIDECAR (Delikler/*.json) ────────────────────────────────
+    // SWOOD'un KENDİSİ bu klasörü üretmez — yalnızca bizim SolidWorks
+    // eklentimiz (SwoodPaketOlusturucu.cs, bkz. DelikFormCikarici.cs) üretir,
+    // ve YALNIZCA kullanıcının SolidWorks'te "delikler onaylandı" dediği
+    // parçalar için. Gerçek bir SWOOD raporu içe aktarılıyorsa bu klasör hiç
+    // yoktur — sessizce boş liste döner, çökme YOK.
+    const delikSidecarlari = [];
+    const delikDosyalari = zipTumDosyalar(zip, /^Delikler\/.*\.json$/i);
+    for (const d of delikDosyalari) {
+      try {
+        const veri = JSON.parse(await d.async('string'));
+        if (veri && veri.sapCode) delikSidecarlari.push(veri);
+      } catch (e) {
+        uyarilar.push('Delik/form dosyası okunamadı (' + d.name + '): ' + e.message);
+      }
+    }
+
+    return { dosyaAdi: file.name, csvSatirlari, stokPanelleri, teknikResimler, delikSidecarlari, uyarilar };
   }
 
   return { csvSatirlariniAyristir, stoklarHtmlAyristir, oku };

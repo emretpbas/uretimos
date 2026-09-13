@@ -33,6 +33,7 @@ PageModules.hammadde = (() => {
             <button class="btn btn-sm tip-filter ${filterTip === 'plaka' ? 'btn-blue' : ''}" data-tip="plaka">Plaka</button>
             <button class="btn btn-sm tip-filter ${filterTip === 'hirdavat' ? 'btn-blue' : ''}" data-tip="hirdavat">Hırdavat</button>
             <button class="btn btn-sm tip-filter ${filterTip === 'kenar_bandi' ? 'btn-blue' : ''}" data-tip="kenar_bandi">Kenar Bandı</button>
+            <button class="btn btn-sm tip-filter ${filterTip === 'cam' ? 'btn-blue' : ''}" data-tip="cam">Cam</button>
             <button class="btn btn-sm tip-filter ${filterTip === 'sarf' ? 'btn-blue' : ''}" data-tip="sarf">Sarf</button>
           </div>
         </div>
@@ -152,6 +153,7 @@ PageModules.hammadde = (() => {
               style="font-size:11px;padding:3px 4px;width:100%;min-width:104px">
               <option value="plaka" ${h.tip === 'plaka' ? 'selected' : ''}>Plaka</option>
               <option value="kenar_bandi" ${h.tip === 'kenar_bandi' ? 'selected' : ''}>Kenar Bandı</option>
+              <option value="cam" ${h.tip === 'cam' ? 'selected' : ''}>Cam</option>
               <option value="sarf" ${h.tip === 'sarf' ? 'selected' : ''}>Sarf</option>
               <option value="hirdavat" ${h.tip === 'hirdavat' || !h.tip ? 'selected' : ''}>Hırdavat</option>
             </select>
@@ -337,6 +339,7 @@ PageModules.hammadde = (() => {
             <option value="plaka" ${d.tip === 'plaka' ? 'selected' : ''}>Plaka (levha malzeme — sunta/MDF)</option>
             <option value="kenar_bandi" ${d.tip === 'kenar_bandi' ? 'selected' : ''}>Kenar Bandı (metre bazlı)</option>
             <option value="hirdavat" ${d.tip === 'hirdavat' ? 'selected' : ''}>Hırdavat (parça/aksesuar)</option>
+            <option value="cam" ${d.tip === 'cam' ? 'selected' : ''}>Cam (temperli/lamine panel — m² bazlı, BAŞLANGIÇ/v1)</option>
             <option value="sarf" ${d.tip === 'sarf' ? 'selected' : ''}>Sarf Malzeme (boya, tutkal, kimyasal — gram/kg)</option>
           </select>
         </div>

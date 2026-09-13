@@ -396,6 +396,25 @@ PageModules.nesting = (() => {
     }
   }
 
+  // Manuel delik girişi (v1, hızlı format): "x,y,çap;x,y,çap" mm, örn.
+  // "50,50,8;50,700,8". Kullanıcı isteği: "nestinge ... delikleri ... ekle" —
+  // SolidWorks köprüsü (DelikFormCikarici.cs) olmadan da elle delik
+  // tanımlanabilsin diye. Geçersiz bir parça bulunursa TÜM girişi reddeder
+  // (sessizce yarısını atmak, yanlış/eksik veri üretebilir — dürüstlük ilkesi).
+  function delikMetniniAyristir(metin) {
+    if (!metin || !String(metin).trim()) return [];
+    return String(metin).split(';').map(s => s.trim()).filter(Boolean).map(parca => {
+      const alanlar = parca.split(',').map(s => s.trim());
+      if (alanlar.length < 3) throw new Error('"' + parca + '" — "x,y,çap" biçiminde olmalı');
+      const [xs, ys, caps] = alanlar;
+      const x = parseFloat(xs), y = parseFloat(ys), cap = parseFloat(caps);
+      if (!isFinite(x) || !isFinite(y) || !isFinite(cap) || cap <= 0) {
+        throw new Error('"' + parca + '" — x/y/çap sayısal ve çap>0 olmalı');
+      }
+      return { x, y, cap, derinlik: 0, tumBoyu: true };
+    });
+  }
+
   function openParcaForm(satir, onSaved) {
     const body = document.createElement('div');
     body.innerHTML = `
@@ -406,6 +425,8 @@ PageModules.nesting = (() => {
         <div class="fgroup"><label class="flbl">Adet</label><input class="finput" id="pf-adet" type="number" value="1"></div>
       </div>
       <div class="fcheck"><input type="checkbox" id="pf-grain"><label for="pf-grain">Bu parça döndürülemez (desen/grain yönü sabit)</label></div>
+      <div class="fgroup"><label class="flbl">Delikler (opsiyonel) — "x,y,çap;x,y,çap" mm, sol-alt köşe (0,0) referanslı</label>
+        <input class="finput" id="pf-delikler" placeholder="örn. 37,37,8;37,723,8"></div>
     `;
     const footer = `<button class="btn" id="pf-cancel">Vazgeç</button><button class="btn btn-blue" id="pf-add">Ekle</button>`;
     App.openModal({ title: 'Parça Ekle', body, footer });
@@ -416,10 +437,17 @@ PageModules.nesting = (() => {
       const en = parseFloat(document.getElementById('pf-en').value);
       const adet = parseInt(document.getElementById('pf-adet').value) || 1;
       if (!ad || !boy || !en) { App.toast('Ad, boy ve en zorunlu', 'err'); return; }
+      let delikler;
+      try {
+        delikler = delikMetniniAyristir(document.getElementById('pf-delikler').value);
+      } catch (e) {
+        App.toast('Delik girişi hatalı: ' + e.message, 'err');
+        return;
+      }
       if (!satir.parcalar) satir.parcalar = [];
-      satir.parcalar.push({ ad, boy, en, adet, grainKilitli: document.getElementById('pf-grain').checked, manuel: true });
+      satir.parcalar.push({ ad, boy, en, adet, grainKilitli: document.getElementById('pf-grain').checked, manuel: true, delikler });
       await App.persist(() => Store.kesimIhtiyaclari.upsert(satir));
-      App.toast('Parça eklendi', 'ok');
+      App.toast('Parça eklendi' + (delikler.length ? ' (' + delikler.length + ' delik)' : ''), 'ok');
       App.closeModal();
       onSaved();
     };
@@ -459,7 +487,12 @@ PageModules.nesting = (() => {
           // İzlenebilirlik: parça hangi yarı mamüle / siparişe ait (DXF'e de yazılır)
           ymKod: p.ymKod || '', ymAd: p.ymAd || '',
           siparisKodlari: p.siparisKodlari || [],
-          musteriler: p.musteriler || []
+          musteriler: p.musteriler || [],
+          // Delik/form (bkz. buildDxf DELIK/FORM katmanları): parçanın KENDİ
+          // (döndürülmemiş) yerel çerçevesinde, sol-alt (0,0) referanslı.
+          // origW: rotated=true olduğunda delik koordinatlarını doğru
+          // dönüştürebilmek için orijinal genişlik (buildDxf'te kullanılır).
+          delikler: p.delikler || [], formlar: p.formlar || [], origW: p.en
         });
       }
     });
@@ -597,7 +630,8 @@ PageModules.nesting = (() => {
           // İzlenebilirlik: parça hangi yarı mamüle / siparişe ait (DXF'e de yazılır)
           ymKod: p.ymKod || '', ymAd: p.ymAd || '',
           siparisKodlari: p.siparisKodlari || [],
-          musteriler: p.musteriler || []
+          musteriler: p.musteriler || [],
+          delikler: p.delikler || [], formlar: p.formlar || [], origW: p.en
         });
       }
     });
@@ -697,6 +731,17 @@ PageModules.nesting = (() => {
   // kadar ARALIKLI konumlandırılır; DXF bu konumları birebir yazar. Yani
   // kutular arasındaki boşluk = makine payı.
   // ══════════════════════════════════════════════════════════════════════════
+  // Bir parçanın KENDİ yerel çerçevesindeki (dx,dy) noktasını (delik merkezi
+  // veya form köşesi), o parça nesting'e ROTATED (90°) yerleştirilmişse
+  // döndürülmüş çerçeveye çevirir. origW = parçanın orijinal (döndürülmemiş)
+  // genişliği (item.origW — bkz. nestParcalar/nestLineerTestere). Dönüşüm:
+  // 90° SAAT YÖNÜNDE döndürüp ilk çeyreğe (0..origH, 0..origW) kaydırma:
+  // (dx,dy) -> (dy, origW-dx). rotated=false ise değişmeden döner.
+  function delikKoordDonustur(dx, dy, origW, rotated) {
+    if (!rotated) return [dx, dy];
+    return [dy, origW - dx];
+  }
+
   function buildDxf(sonucNesting, plaka) {
     const s = [];
     const c = (code, val) => { s.push(String(code)); s.push(String(val)); };
@@ -707,6 +752,18 @@ PageModules.nesting = (() => {
       c(0, 'LWPOLYLINE'); c(8, katman); c(90, 4); c(70, 1);
       [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
         .forEach(([px, py]) => { c(10, n(px)); c(20, n(py)); });
+    };
+    // YENİ: DELIK/FORM katmanları (kullanıcı isteği: "nestinge alt montaj ve
+    // parça üzerindeki delikleri ve formları da ekle"). Delik konumları
+    // parçanın KENDİ yerel çerçevesinde (sol-alt referanslı) taşınır; burada
+    // parçanın yerleştirildiği gerçek konuma (px,py) + döndürülmüşse 90°
+    // dönüşüme (bkz. delikKoordDonustur) uğrayarak plaka koordinatına çevrilir.
+    const daire = (cx, cy, r, katman) => {
+      c(0, 'CIRCLE'); c(8, katman); c(10, n(cx)); c(20, n(cy)); c(30, 0); c(40, n(r));
+    };
+    const poligon = (noktalar, katman) => {
+      c(0, 'LWPOLYLINE'); c(8, katman); c(90, noktalar.length); c(70, 1);
+      noktalar.forEach(([px, py]) => { c(10, n(px)); c(20, n(py)); });
     };
     const yazi = (x, y, yuk, metin, katman) => {
       // Türkçe karakterler CAM okuyucularında bozulduğu için ASCII'ye çevrilir.
@@ -746,6 +803,23 @@ PageModules.nesting = (() => {
         const px = xOffset + ofs + p.x;
         const py = ofs + p.y;
         dortgen(px, py, p.w, p.h, 'KESIM');
+
+        // YENİ: delikler (DELIK katmanı) ve formlar (FORM katmanı) — bkz.
+        // solidworks_addin/src/DelikFormCikarici.cs / manuel "Parça Ekle"
+        // girişi. p.origW yoksa (eski kayıtlı planlar/manuel eski parçalar)
+        // dönüşüm uygulanmaz, delik olduğu gibi (rotasyonsuz) çizilir —
+        // güvenli varsayılan (yanlış dönüşümden iyi).
+        (p.delikler || []).forEach(d => {
+          const [lx, ly] = delikKoordDonustur(d.x, d.y, p.origW || p.w, p.rotated);
+          daire(px + lx, py + ly, (d.cap || 0) / 2, 'DELIK');
+        });
+        (p.formlar || []).forEach(f => {
+          const noktalar = (f.noktalar || []).map(([dx, dy]) => {
+            const [lx, ly] = delikKoordDonustur(dx, dy, p.origW || p.w, p.rotated);
+            return [px + lx, py + ly];
+          });
+          if (noktalar.length >= 3) poligon(noktalar, 'FORM');
+        });
         // ETİKET: parçanın kimliği + İZLENEBİLİRLİK (yarı mamül / sipariş).
         // Operatör plakadaki her parçanın hangi işe ait olduğunu görebilmeli;
         // ayrıştırma ve sevkiyat hatalarının en sık sebebi bu bilginin

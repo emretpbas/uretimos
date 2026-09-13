@@ -90,6 +90,45 @@ namespace UretimOSKesim
         // sağlanıyor, ÜretimOS tarafında hiçbir kod değişikliği gerekmedi.
         public const string TAHIL_YONU = "URETIMOS_TAHIL_YONU";
 
+        // ── Delik/Form (CNC işleme) — geometriden OTOMATİK çıkarılır ─────────
+        // Kullanıcı isteği: "nestinge alt montaj ve parça üzerindeki delikleri
+        // ve formları da ekle". Delik konumu/çapı ve form (cep/kesik) profili
+        // BOY_MM/EN_MM gibi elle girilmiyor — DelikFormCikarici.cs SolidWorks
+        // geometrisinden (silindirik yüzler = delik, düz yüzeyin iç loop'ları
+        // = form) otomatik çıkarır. AMA: bu API'ler bu ortamda GERÇEK bir
+        // SolidWorks derleyicisiyle DOĞRULANAMADI (bkz. DelikFormCikarici.cs
+        // başındaki not) — bu yüzden çıkan veri, kullanıcı bu alanı "evet"
+        // yapana kadar dışa aktarıma DAHİL EDİLMEZ (iki adımlı "çıkar →
+        // onayla" deseni, tıpkı teknik resim/montaj şeması komutları gibi).
+        public const string DELIKLER_ONAYLANDI = "URETIMOS_DELIKLER_ONAYLANDI"; // evet/hayır
+
+        // ── CNC Yerleşimi (Biesse bSolid 5 eksen, düz tabla + fincan/vakum pod) ─
+        // Kullanıcı isteği: "parçaya sağ tıklayıp bir CNC fincan ya da
+        // sıfırlama bölümüne yerleştir". GERÇEK G-kodu/postprocessor burada
+        // ÜRETİLMEZ (kullanıcı postprocessor + makine kodu örneği gönderecek,
+        // o gelene kadar TAHMİN EDİLMEZ) — bu alanlar yalnızca parça bazında
+        // "hangi fincan/pod grubu tutacak" ve "sıfır noktası hangi köşe/ofset"
+        // bilgisini SolidWorks dosyasında KALICI olarak saklar; postprocessor
+        // eşlemesi geldiğinde doğrudan kullanılabilir.
+        public const string CNC_FINCAN = "URETIMOS_CNC_FINCAN";                 // örn. "F3" veya "12" — serbest metin/no
+        public const string CNC_SIFIRLAMA_KOSE = "URETIMOS_CNC_SIFIRLAMA_KOSE"; // sol_alt | sag_alt | sol_ust | sag_ust | merkez
+        public const string CNC_SIFIRLAMA_OFSET_X = "URETIMOS_CNC_SIFIRLAMA_OFSET_X"; // mm, köşeden ek kaydırma
+        public const string CNC_SIFIRLAMA_OFSET_Y = "URETIMOS_CNC_SIFIRLAMA_OFSET_Y";
+        public const string CNC_SIFIRLAMA_OFSET_Z = "URETIMOS_CNC_SIFIRLAMA_OFSET_Z";
+
+        // ── Cam Modülü (BAŞLANGIÇ) ────────────────────────────────────────────
+        // Cam parçalar YABANCI_PARCA=evet ile zaten "plakadan kesilmez" olarak
+        // işaretlenebiliyordu (bkz. yukarısı) — bu üçü, cam'e ÖZGÜ ek işleme
+        // bilgisini taşımak için eklendi (temperleme/kenar parlatma sipariş
+        // aşamasında belirtilmesi gereken, atlanırsa yanlış/eksik sipariş
+        // riski taşıyan bilgilerdir — TAHMİN EDİLMEZ, boşsa boş kalır).
+        // CAM_KODU: ÜretimOS hammaddeler (tip:'cam') koleksiyonundan seçilen
+        // kartın kodu — PLAKA_KODU ile AYNI mantık, ayrı alan (cam bir plaka
+        // DEĞİLDİR, kesilip nesting'e girmez, YABANCI_PARCA akışını izler).
+        public const string CAM_KODU = "URETIMOS_CAM_KODU";
+        public const string CAM_TEMPERLI = "URETIMOS_CAM_TEMPERLI";           // evet/hayır
+        public const string CAM_KENAR_ISLEME = "URETIMOS_CAM_KENAR_ISLEME";   // parlak/mat/ham vb. serbest metin
+
         // ── Kesim listesi kaynak izleme (tanılama amaçlı, dışa aktarıma girmez) ─
         public const string OLCU_KAYNAGI = "URETIMOS_OLCU_KAYNAGI"; // "cutlist" | "bbox" | "elle"
     }

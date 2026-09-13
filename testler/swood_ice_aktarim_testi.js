@@ -285,14 +285,14 @@ console.log('\n-- swood_okuyucu.js: oku() Saw Cut Export boşsa Stoklar raporuna
   const okuSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'swood_okuyucu.js'), 'utf8');
   t('ReportStocks.html aranıyor', /ReportStocks\\\.html\$/.test(okuSrc));
   t('csvSatirlari boşsa stoklarHtmlAyristir çağrılıyor', /if \(!csvSatirlari\.length\) \{[\s\S]{0,400}stoklarHtmlAyristir\(html\)/.test(okuSrc));
-  t('sonuç nesnesi stokPanelleri alanı içeriyor', /return \{ dosyaAdi: file\.name, csvSatirlari, stokPanelleri, teknikResimler, uyarilar \};/.test(okuSrc));
+  t('sonuç nesnesi stokPanelleri alanı içeriyor', /return \{ dosyaAdi: file\.name, csvSatirlari, stokPanelleri, teknikResimler, delikSidecarlari, uyarilar \};/.test(okuSrc));
 }
 
 console.log('\n-- page_is_emri_formu.js: SWOOD ZIP\'i içe aktarım akışına bağlandı --');
 t('.zip dosya uzantısı kabul ediliyor', /accept="\.step,\.stp,\.STEP,\.STP,\.pdf,\.dwg,\.zip,\.ZIP"/.test(pageSrc));
 t('dosyaOku artık .zip dalını işliyor', /if \(\/\\\.zip\$\/\.test\(ad\)\) \{/.test(pageSrc));
 t('SwoodOkuyucu.oku çağrılıyor', /const sonuc = await SwoodOkuyucu\.oku\(f\);/.test(pageSrc));
-t('csvSatirlari doluysa swoodDenUret çağrılıyor', /const u = sonuc\.csvSatirlari\.length[\s\S]{0,20}\? IsEmriUretici\.swoodDenUret\(sonuc\.csvSatirlari, \{\}\)/.test(pageSrc));
+t('csvSatirlari doluysa swoodDenUret çağrılıyor', /const u = sonuc\.csvSatirlari\.length[\s\S]{0,20}\? IsEmriUretici\.swoodDenUret\(sonuc\.csvSatirlari, \{\}, sonuc\.delikSidecarlari\)/.test(pageSrc));
 t('csvSatirlari boşsa swoodStoklarDenUret\'e (yedek kaynak) düşülüyor', /: IsEmriUretici\.swoodStoklarDenUret\(sonuc\.stokPanelleri, \{\}\);/.test(pageSrc));
 t('kenarBantlariEslestir fonksiyonu tanımlı', /async function kenarBantlariEslestir\(satirlar, bantAdaylari\) \{/.test(pageSrc));
 t('kenar bandı eşleştirme Store.hammaddeler\'den tip:kenar_bandi filtreliyor', /h\.tip === 'kenar_bandi' && h\.stokKodu/.test(pageSrc));
@@ -341,6 +341,81 @@ t('jsPDF autoTable başlığı Hırdavat içeriyor', /'SOFT\\nBoy', 'SOFT\\nEn',
 t('jsPDF autoTable gövdesinde hirdavatHucre\\(s\\) kullanılıyor', /hirdavatHucre\(s\), s\.aciklamalar \|\| ''/.test(pageSrc));
 t('RESMİ FR\\.29 basılı form (pdfYazdir/window\\.print) BİLEREK değiştirilmedi — Doküman No sabit kalmalı',
   /Doküman No : FR\.29/.test(pageSrc));
+
+console.log('\n-- delik/form/CNC/cam: SolidWorks eklentisi kullanıcı isteği (nesting delik/form, CNC fincan/sıfırlama, cam modülü başlangıcı) --');
+{
+  const satirKurSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'is_emri_uretici.js'), 'utf8');
+  t('satirKur varsayılan olarak delikler/formlar/deliklerOnaylandi taşıyor (şema tutarlılığı)',
+    /delikler: \[\], formlar: \[\], deliklerOnaylandi: false,/.test(satirKurSrc));
+  t('satirKur varsayılan olarak cncFincan/cncSifirlamaKose taşıyor',
+    /cncFincan: '', cncSifirlamaKose: '',/.test(satirKurSrc));
+
+  // sidecar YOK -> delikler/formlar boş, deliklerOnaylandi false (SWOOD'un
+  // kendi raporları hiçbir zaman Delikler/*.json üretmez)
+  const r1 = IsEmriUretici.swoodDenUret([
+    { DESC: 'PANEL', SAP_CODE: 'P1', LENGHT: '800', WIDTH: '400', QTY: '1', MATERIAL: '18mm' }
+  ], {});
+  t('sidecar verilmezse delikler boş kalır (STEP/PDF ile şema tutarlı)', r1.satirlar[0].delikler.length === 0);
+  t('sidecar verilmezse deliklerOnaylandi false kalır', r1.satirlar[0].deliklerOnaylandi === false);
+
+  // sidecar VAR ve SAP_CODE eşleşiyor -> delikler/formlar dolar, onaylandı true
+  const r2 = IsEmriUretici.swoodDenUret([
+    { DESC: 'PANEL', SAP_CODE: 'P1', LENGHT: '800', WIDTH: '400', QTY: '1', MATERIAL: '18mm',
+      CNC_FINCAN: 'F3', CNC_SIFIRLAMA_KOSE: 'sol_alt' }
+  ], {}, [
+    { sapCode: 'P1', paketKodu: 'PK1', delikler: [{ x: 37, y: 37, cap: 8, derinlik: 13, tumBoyu: false }], formlar: [] }
+  ]);
+  t('sidecar SAP_CODE eşleşince delikler dolduruluyor', r2.satirlar[0].delikler.length === 1);
+  t('sidecar eşleşince deliklerOnaylandi true oluyor (sidecar varlığı = SolidWorks tarafında onaylanmış)', r2.satirlar[0].deliklerOnaylandi === true);
+  t('CNC_FINCAN/CNC_SIFIRLAMA_KOSE satıra taşınıyor', r2.satirlar[0].cncFincan === 'F3' && r2.satirlar[0].cncSifirlamaKose === 'sol_alt');
+
+  // sidecar var ama SAP_CODE eşleşmiyor -> etkilenmemeli (yanlış parçaya delik yapıştırılmamalı)
+  const r3 = IsEmriUretici.swoodDenUret([
+    { DESC: 'PANEL', SAP_CODE: 'P2', LENGHT: '800', WIDTH: '400', QTY: '1', MATERIAL: '18mm' }
+  ], {}, [
+    { sapCode: 'P1', delikler: [{ x: 1, y: 1, cap: 8, derinlik: 13, tumBoyu: false }], formlar: [] }
+  ]);
+  t('SAP_CODE eşleşmeyen sidecar başka satıra sızmıyor', r3.satirlar[0].delikler.length === 0 && r3.satirlar[0].deliklerOnaylandi === false);
+
+  // Cam modülü (başlangıç): CAM_KODU varsa açıklamaya taşınır, tahmin edilmez
+  const r4 = IsEmriUretici.swoodDenUret([
+    { DESC: 'CAM PANEL', SAP_CODE: 'C1', LENGHT: '600', WIDTH: '400', QTY: '1', MATERIAL: '',
+      CAM_KODU: 'CAM-6MM-TEMPER', CAM_TEMPERLI: 'evet', CAM_KENAR_ISLEME: 'parlak' }
+  ], {});
+  t('CAM_KODU varsa açıklamaya "Cam: <kod>" olarak notlanıyor (tahmin edilmiyor, olduğu gibi taşınıyor)',
+    /Cam: CAM-6MM-TEMPER/.test(r4.satirlar[0].aciklamalar));
+  t('CAM_TEMPERLI evet ise açıklamada "Temperli" geçiyor', /Temperli/.test(r4.satirlar[0].aciklamalar));
+  t('CAM_KENAR_ISLEME açıklamada "Kenar: parlak" olarak geçiyor', /Kenar: parlak/.test(r4.satirlar[0].aciklamalar));
+
+  // swood_okuyucu.js: sidecar okuma kodu gerçekten var mı (kaynak-doğrulama)
+  const okuSrc2 = require('fs').readFileSync(require('path').join(__dirname, '..', 'swood_okuyucu.js'), 'utf8');
+  t('swood_okuyucu.js Delikler/*.json dosyalarını arıyor', /zipTumDosyalar\(zip, \/\^Delikler\\\/\.\*\\\.json\$\/i\)/.test(okuSrc2));
+  t('sidecar JSON.parse hatası çökme yerine uyarıya dönüşüyor (try/catch)', /Delik\/form dosyası okunamadı/.test(okuSrc2));
+
+  t('GRAIN doluysa tahilKilitli true oluyor (nesting grain-lock köprüsü için)',
+    /satir\.tahilKilitli = !!\(r\.GRAIN && r\.GRAIN\.trim\(\)\)/.test(satirKurSrc));
+
+  // Cam modülü (BAŞLANGIÇ): page_hammadde.js'e yeni 'cam' tipi eklendiğinin
+  // kaynak-doğrulaması (filtre butonu + liste dropdown + form dropdown).
+  const hammaddeSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'page_hammadde.js'), 'utf8');
+  t('Hammaddeler filtre çubuğunda "Cam" butonu var', /data-tip="cam">Cam</.test(hammaddeSrc));
+  t('Liste satırındaki tip seçicide "cam" seçeneği var', /<option value="cam" \$\{h\.tip === 'cam' \? 'selected' : ''\}>Cam<\/option>/.test(hammaddeSrc));
+  t('Ekle/Düzenle formunda "cam" seçeneği var', /<option value="cam" \$\{d\.tip === 'cam'/.test(hammaddeSrc));
+}
+
+console.log('\n-- page_is_emri_formu.js: "Kesime Aktar (Nesting)" köprüsü (T3-29 ile aynı desen, delik/form dahil) --');
+{
+  t('▦ Kesime Aktar (Nesting) butonu tanımlı', /id="ie-kesime-aktar"/.test(pageSrc));
+  t('buton kesimeAktar(form)\'u çağırıyor', /document\.getElementById\('ie-kesime-aktar'\)\.onclick = \(\) => kesimeAktar\(form\)/.test(pageSrc));
+  t('kesimeAktar fonksiyonu tanımlı', /async function kesimeAktar\(form\) \{/.test(pageSrc));
+  t('plakaKartId seçilmemiş satırlar filtrelenip ATLANDI olarak bildiriliyor (tahmin edilmiyor)',
+    /secilmemis = satirlar\.filter\(s => !s\.plakaKartId\)/.test(pageSrc) && /ATLANDI/.test(pageSrc));
+  t('aynı plaka için AÇIK bir kesimIhtiyaclari satırı varsa ona eklenir (yeni satır çoğaltılmıyor)',
+    /k\.hammaddeId === s\.plakaKartId && k\.durum === 'acik'/.test(pageSrc));
+  t('delikler/formlar parçaya taşınıyor', /delikler: s\.delikler \|\| \[\], formlar: s\.formlar \|\| \[\]/.test(pageSrc));
+  t('grainKilitli s.tahilKilitli\'den geliyor (TAHMİN EDİLMİYOR)', /grainKilitli: !!s\.tahilKilitli/.test(pageSrc));
+  t('kaydettikten sonra nesting sayfasına yönlendiriyor', /App\.goTo\('nesting'\);/.test(pageSrc));
+}
 
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

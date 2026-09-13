@@ -48,6 +48,9 @@ namespace UretimOSKesim
         private ComboBox _birlesimKutusu;
         private ComboBox _tahilYonuKutusu;
         private CheckBox _yabanciParcaKutusu;
+        private ComboBox _camKoduKutusu;
+        private CheckBox _camTemperliKutusu;
+        private ComboBox _camKenarIslemeKutusu;
         private Label _durumEtiketi;
         private List<string> _sunucuHirdavatKodlari = new List<string>();
 
@@ -165,6 +168,19 @@ namespace UretimOSKesim
             _yabanciParcaKutusu = new CheckBox { Text = "Bu parça bir plakadan KESİLMEZ (satın alınır — cam/ayna/hazır profil vb.)" };
             Satir("URETIMOS_YABANCI_PARCA", _yabanciParcaKutusu);
 
+            // ── Cam Modülü (BAŞLANGIÇ) — yalnızca YABANCI_PARCA işaretli
+            // camlar için anlamlıdır (cam plakadan kesilmez, bu yüzden
+            // BOY_MM/EN_MM/PLAKA_KODU akışının DIŞINDA, ayrı alanlarla
+            // izlenir). Temperleme/kenar işleme ATLANIRSA yanlış/eksik
+            // sipariş riski taşır — TAHMİN EDİLMEZ, boş bırakılabilir.
+            _camKoduKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown };
+            Satir("URETIMOS_CAM_KODU\n(hammaddeler: tip='cam')", _camKoduKutusu);
+            _camTemperliKutusu = new CheckBox { Text = "Temperli cam" };
+            Satir("URETIMOS_CAM_TEMPERLI", _camTemperliKutusu);
+            _camKenarIslemeKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown };
+            _camKenarIslemeKutusu.Items.AddRange(new object[] { "", "parlak", "mat", "ham" });
+            Satir("URETIMOS_CAM_KENAR_ISLEME", _camKenarIslemeKutusu);
+
             var cekButonu = new Button { Text = "🌐 ÜretimOS'tan Listeleri Çek (opsiyonel)", AutoSize = true };
             cekButonu.Click += CekButonu_Click;
             ana.Controls.Add(new Label());
@@ -211,6 +227,9 @@ namespace UretimOSKesim
             _ustPaketKutusu.Text = Oku(OzelAlanlar.UST_PAKET_KODU);
             _birlesimKutusu.Text = Oku(OzelAlanlar.BIRLESIM_TIPI);
             _yabanciParcaKutusu.Checked = string.Equals(Oku(OzelAlanlar.YABANCI_PARCA), "evet", StringComparison.OrdinalIgnoreCase);
+            _camKoduKutusu.Text = Oku(OzelAlanlar.CAM_KODU);
+            _camTemperliKutusu.Checked = string.Equals(Oku(OzelAlanlar.CAM_TEMPERLI), "evet", StringComparison.OrdinalIgnoreCase);
+            _camKenarIslemeKutusu.Text = Oku(OzelAlanlar.CAM_KENAR_ISLEME);
         }
 
         private void KaydetBtn_Click(object sender, EventArgs e)
@@ -240,6 +259,9 @@ namespace UretimOSKesim
             Yaz(OzelAlanlar.UST_PAKET_KODU, _ustPaketKutusu.Text.Trim());
             Yaz(OzelAlanlar.BIRLESIM_TIPI, _birlesimKutusu.Text.Trim());
             Yaz(OzelAlanlar.YABANCI_PARCA, _yabanciParcaKutusu.Checked ? "evet" : "");
+            Yaz(OzelAlanlar.CAM_KODU, _camKoduKutusu.Text.Trim());
+            Yaz(OzelAlanlar.CAM_TEMPERLI, _camTemperliKutusu.Checked ? "evet" : "");
+            Yaz(OzelAlanlar.CAM_KENAR_ISLEME, _camKenarIslemeKutusu.Text.Trim());
 
             Tanilama.Kaydet("EtiketlemePaneli: " + _hedefModel.GetPathName() + " etiketlendi (TIP=" + _tipKutusu.SelectedItem + ")");
             DialogResult = DialogResult.OK;
@@ -279,6 +301,7 @@ namespace UretimOSKesim
                 var plakalar = new List<string>();
                 var kenarlar = new List<string>();
                 var hirdavatlar = new List<string>();
+                var camlar = new List<string>();
                 foreach (var oge in dizi)
                 {
                     string tip = (string)oge["tip"];
@@ -287,6 +310,7 @@ namespace UretimOSKesim
                     if (tip == "plaka") plakalar.Add(kod);
                     else if (tip == "kenar_bandi") kenarlar.Add(kod);
                     else if (tip == "hirdavat") hirdavatlar.Add(kod);
+                    else if (tip == "cam") camlar.Add(kod);
                 }
 
                 _plakaKutusu.Items.Clear();
@@ -296,14 +320,16 @@ namespace UretimOSKesim
                     kutu.Items.Clear();
                     kutu.Items.AddRange(kenarlar.Distinct().OrderBy(x => x).ToArray());
                 }
+                _camKoduKutusu.Items.Clear();
+                _camKoduKutusu.Items.AddRange(camlar.Distinct().OrderBy(x => x).ToArray());
 
                 _sunucuHirdavatKodlari = hirdavatlar.Distinct().OrderBy(x => x).ToList();
                 _hirdavatHizliEkleKutusu.Items.Clear();
                 _hirdavatHizliEkleKutusu.Items.AddRange(_sunucuHirdavatKodlari.ToArray());
 
                 _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ {plakalar.Count} plaka, {kenarlar.Count} kenar bandı, {hirdavatlar.Count} hırdavat kodu yüklendi " +
-                    "(aşağı ok ile seçebilir, hırdavat için '+ Ekle' ile HIRDAVAT alanına ekleyebilirsiniz).";
+                _durumEtiketi.Text = $"✓ {plakalar.Count} plaka, {kenarlar.Count} kenar bandı, {hirdavatlar.Count} hırdavat, " +
+                    $"{camlar.Count} cam kodu yüklendi (aşağı ok ile seçebilir, hırdavat için '+ Ekle' ile HIRDAVAT alanına ekleyebilirsiniz).";
             }
             catch (Exception ex)
             {

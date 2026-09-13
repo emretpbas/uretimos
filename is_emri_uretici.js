@@ -151,6 +151,19 @@ const IsEmriUretici = (() => {
       // dizi kalır (satır şeması TÜM kaynaklarda AYNI kalsın diye burada,
       // satirKur'da, varsayılan olarak tanımlanır — bkz. hirdavatEslestir).
       hirdavatlar: [],
+      // Delik/form (bkz. solidworks_addin/src/DelikFormCikarici.cs): yalnızca
+      // swoodDenUret (SolidWorks add-in kaynaklı, delikler kullanıcı
+      // tarafından SolidWorks'te ONAYLANMIŞ) doldurur; diğer kaynaklarda
+      // şema tutarlılığı için boş/varsayılan kalır (bkz. hirdavatlar notu).
+      delikler: [], formlar: [], deliklerOnaylandi: false,
+      // Tahıl/desen yönü (bkz. OzelAlanlar.TAHIL_YONU) — yalnızca SolidWorks
+      // add-in kaynaklı CSV'de dolu (GRAIN sütunu boş DEĞİLSE true). Nesting
+      // köprüsü (page_is_emri_formu.js:kesimeAktar) bunu grainKilitli olarak
+      // kullanır — TAHMİN EDİLMEZ, alan yoksa/boşsa false (döndürülebilir).
+      tahilKilitli: false,
+      // CNC yerleşimi (Biesse bSolid 5 eksen + fincan) — yalnızca SolidWorks
+      // add-in kaynaklı CSV doldurur (bkz. OzelAlanlar.CNC_*).
+      cncFincan: '', cncSifirlamaKose: '',
       aciklamalar: v.aciklama || '',
       // Sağ blok hesapları
       birimM2: Math.round(netM2 * 1000) / 1000,
@@ -272,9 +285,15 @@ const IsEmriUretici = (() => {
     }).filter(a => a.kod);
   }
 
-  function swoodDenUret(csvSatirlari, secenek) {
+  // delikSidecarlari: SwoodOkuyucu.oku()'nun döndürdüğü delikSidecarlari
+  // dizisi (bkz. swood_okuyucu.js, Delikler/*.json) — SAP_CODE ile eşlenir.
+  // Opsiyonel: verilmezse (STEP/PDF çağıranları, veya eski testler) tüm
+  // satırlar delikler:[]/formlar:[] ile boş kalır, davranış değişmez.
+  function swoodDenUret(csvSatirlari, secenek, delikSidecarlari) {
     const ay = secenek || {};
     const pay = ay.kabaPay != null ? +ay.kabaPay : VARSAYILAN_PAY.kaplamali;
+    const delikHaritasi = new Map();
+    (delikSidecarlari || []).forEach(d => { if (d && d.sapCode) delikHaritasi.set(d.sapCode, d); });
     const satirlar = [];
     const hirdavatAdaylari = [];
     (csvSatirlari || []).forEach((r, i) => {
@@ -300,6 +319,18 @@ const IsEmriUretici = (() => {
       // yöntemini bilsin — tahmin edilemeyecek bir üretim detayı, dürüstlük
       // ilkesiyle olduğu gibi aktarılır, otomatik yorumlanmaz).
       if (birlesimTipi) aciklamaParcalari.push('Birleşim: ' + birlesimTipi);
+      // Cam modülü (BAŞLANGIÇ, bkz. OzelAlanlar.CAM_*) — SWOOD raporlarında
+      // hiç yok, yalnızca SolidWorks add-in'inden gelir. Temperleme/kenar
+      // işleme sipariş aşamasında ATLANIRSA yanlış/eksik sipariş riski
+      // taşıdığı için TAHMİN EDİLMEZ, olduğu gibi açıklamaya taşınır.
+      const camKodu = (r.CAM_KODU || '').trim();
+      const camTemperli = /^(evet|true|1|yes)$/i.test((r.CAM_TEMPERLI || '').trim());
+      const camKenarIsleme = (r.CAM_KENAR_ISLEME || '').trim();
+      if (camKodu) {
+        aciklamaParcalari.push('Cam: ' + camKodu +
+          (camTemperli ? ' · Temperli' : '') +
+          (camKenarIsleme ? ' · Kenar: ' + camKenarIsleme : ''));
+      }
       // Yabancı parça (satın alınan, plakadan KESİLMEYEN — cam, ayna, hazır
       // profil vb.): kesim listesinden gizlenmiyor (hâlâ bir iş emri satırı,
       // sipariş edilmesi gerekiyor) ama AÇIKÇA işaretleniyor ki üretim/satın
@@ -322,6 +353,20 @@ const IsEmriUretici = (() => {
       satir.yabanciParca = yabanciParca;
       const buSatirinHirdavati = hirdavatAdaylariniAyristir(r.HIRDAVAT);
       satir.hirdavatlar = buSatirinHirdavati.map(a => ({ kod: a.kod, adet: a.adet, kartId: null, kartAd: '' }));
+      satir.tahilKilitli = !!(r.GRAIN && r.GRAIN.trim());
+      satir.cncFincan = (r.CNC_FINCAN || '').trim();
+      satir.cncSifirlamaKose = (r.CNC_SIFIRLAMA_KOSE || '').trim();
+      // Delik/form: yalnızca SAP_CODE eşleşen bir sidecar dosyası VARSA
+      // doldurulur — SolidWorks'te kullanıcı "delikler onaylandı" demediği
+      // sürece SwoodPaketOlusturucu.cs bu dosyayı hiç YAZMAZ (bkz.
+      // DelikFormCikarici.cs güvenilirlik notu), yani burada bir sidecar
+      // bulunması zaten "onaylanmış" anlamına gelir.
+      const delikSidecar = r.SAP_CODE ? delikHaritasi.get(r.SAP_CODE) : null;
+      if (delikSidecar) {
+        satir.delikler = delikSidecar.delikler || [];
+        satir.formlar = delikSidecar.formlar || [];
+        satir.deliklerOnaylandi = true;
+      }
       satirlar.push(satir);
       hirdavatAdaylari.push(buSatirinHirdavati);
     });

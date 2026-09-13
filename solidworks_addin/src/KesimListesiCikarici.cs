@@ -44,6 +44,26 @@ namespace UretimOSKesim
         // YENİ: desen/tahıl yönü (bkz. OzelAlanlar.TAHIL_YONU) — SWOOD'un
         // GRAIN sütunuyla AYNI amaç, ÜretimOS tarafı zaten bu sütunu okuyordu.
         public string TahilYonu;
+
+        // YENİ: delik/form (bkz. DelikFormCikarici.cs) — nesting'e taşınmak
+        // üzere geometriden OTOMATİK çıkarılır. DeliklerOnaylandi false ise
+        // (OzelAlanlar.DELIKLER_ONAYLANDI="evet" değilse) SwoodPaketOlusturucu
+        // bunları dışa aktarıma DAHİL ETMEZ — bkz. DelikFormCikarici.cs başı.
+        public List<DelikBilgisi> Delikler = new List<DelikBilgisi>();
+        public List<FormBilgisi> Formlar = new List<FormBilgisi>();
+        public bool DeliklerOnaylandi;
+
+        // YENİ: CNC yerleşimi (bkz. OzelAlanlar.CNC_*) — Biesse bSolid 5 eksen
+        // düz tabla + fincan (vakum pod) makinesi için parça bazlı kurulum
+        // bilgisi. Postprocessor/G-kodu HENÜZ ÜRETİLMEZ — yalnızca taşınır.
+        public string CncFincan;
+        public string CncSifirlamaKose;
+        public double? CncSifirlamaOfsetX, CncSifirlamaOfsetY, CncSifirlamaOfsetZ;
+
+        // YENİ (Cam Modülü — başlangıç): bkz. OzelAlanlar.CAM_*.
+        public string CamKodu;
+        public bool CamTemperli;
+        public string CamKenarIsleme;
     }
 
     public class KesimListesiCikarici
@@ -164,8 +184,27 @@ namespace UretimOSKesim
                 HirdavatListesi = OzelAlanOku(modelDoc, OzelAlanlar.HIRDAVAT_LISTESI) ?? "",
                 BirlesimTipi = OzelAlanOku(modelDoc, OzelAlanlar.BIRLESIM_TIPI) ?? "",
                 YabanciParca = EvetHayirOku(OzelAlanOku(modelDoc, OzelAlanlar.YABANCI_PARCA)),
-                TahilYonu = OzelAlanOku(modelDoc, OzelAlanlar.TAHIL_YONU) ?? ""
+                TahilYonu = OzelAlanOku(modelDoc, OzelAlanlar.TAHIL_YONU) ?? "",
+                DeliklerOnaylandi = EvetHayirOku(OzelAlanOku(modelDoc, OzelAlanlar.DELIKLER_ONAYLANDI)),
+                CncFincan = OzelAlanOku(modelDoc, OzelAlanlar.CNC_FINCAN) ?? "",
+                CncSifirlamaKose = OzelAlanOku(modelDoc, OzelAlanlar.CNC_SIFIRLAMA_KOSE) ?? "",
+                CncSifirlamaOfsetX = OzelAlanSayiOkuNullable(modelDoc, OzelAlanlar.CNC_SIFIRLAMA_OFSET_X),
+                CncSifirlamaOfsetY = OzelAlanSayiOkuNullable(modelDoc, OzelAlanlar.CNC_SIFIRLAMA_OFSET_Y),
+                CncSifirlamaOfsetZ = OzelAlanSayiOkuNullable(modelDoc, OzelAlanlar.CNC_SIFIRLAMA_OFSET_Z),
+                CamKodu = OzelAlanOku(modelDoc, OzelAlanlar.CAM_KODU) ?? "",
+                CamTemperli = EvetHayirOku(OzelAlanOku(modelDoc, OzelAlanlar.CAM_TEMPERLI)),
+                CamKenarIsleme = OzelAlanOku(modelDoc, OzelAlanlar.CAM_KENAR_ISLEME) ?? ""
             };
+
+            var (delikler, formlar) = DelikFormCikarici.Cikar(modelDoc, kalinlik);
+            satir.Delikler = delikler;
+            satir.Formlar = formlar;
+            if (delikler.Count > 0 && !satir.DeliklerOnaylandi)
+            {
+                _uyarilar.Add($"'{bilesen.Name2}' için {delikler.Count} delik OTOMATİK tespit edildi ama " +
+                    "HENÜZ ONAYLANMADI (bkz. Etiketleme Paneli) — bu delikler dışa aktarıma DAHİL EDİLMEDİ.");
+            }
+
             satirlar.Add(satir);
         }
 
@@ -204,6 +243,17 @@ namespace UretimOSKesim
             metin = metin.Trim().Replace(",", ".");
             return double.TryParse(metin, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out double deger) ? deger : 0;
+        }
+
+        // CNC sıfırlama ofsetleri gibi OPSİYONEL sayısal alanlar için: alan
+        // boşsa null döner (0 ile "kullanıcı 0 girdi" birbirinden ayrılsın).
+        private static double? OzelAlanSayiOkuNullable(ModelDoc2 modelDoc, string alanAdi)
+        {
+            string metin = OzelAlanOku(modelDoc, alanAdi);
+            if (string.IsNullOrWhiteSpace(metin)) return null;
+            metin = metin.Trim().Replace(",", ".");
+            return double.TryParse(metin, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out double deger) ? (double?)deger : null;
         }
 
         // ── ÖZEL ALAN OKUMA ──────────────────────────────────────────────────

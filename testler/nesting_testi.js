@@ -4,6 +4,7 @@ const src=fs.readFileSync(path.join(__dirname,'..','page_nesting.js'),'utf8');
 const al=(ad)=>{const i=src.indexOf('function '+ad+'(');let d=0,j=src.indexOf('{',i);do{if(src[j]==='{')d++;else if(src[j]==='}')d--;j++;}while(d>0);return src.slice(i,j);};
 eval(al('packOnePlakaSerit')); eval(al('nestLineerTestere'));
 eval(al('packOnePlaka')); eval(al('nestParcalar'));
+eval(al('delikKoordDonustur')); eval(al('buildDxf')); eval(al('delikMetniniAyristir'));
 let ok=0,bad=0;const t=(a,k)=>{if(k){ok++;console.log('  GECTI '+a)}else{bad++;console.log('  KALDI '+a)}};
 
 // GERCEK SENARYO (ekran goruntusu): 186 adet 398x760, plaka 1830x3660
@@ -55,5 +56,53 @@ const src2=fs.readFileSync(path.join(__dirname,'..','page_nesting.js'),'utf8');
 t('ekranda ortaklama var', src2.includes('aynı yerleşim ×'));
 t('TUM parcalar ciziliyor (temsilci degil)', /pl\.placed\.forEach\(p => \{[\s\S]{0,200}rects \+=/.test(src2));
 t('cevrik parca sayisi gosteriliyor', src2.includes('çevrik ↻'));
+
+console.log('\n-- DELIK/FORM: kullanici istegi "nestinge ... delikleri ve formlari da ekle" --');
+{
+  // delikMetniniAyristir: manuel hizli girisin ayristirilmasi
+  const d1 = delikMetniniAyristir('37,37,8;37,723,8');
+  t('2 delik ayristirildi', d1.length === 2);
+  t('ilk delik x/y/cap dogru', d1[0].x === 37 && d1[0].y === 37 && d1[0].cap === 8);
+  t('bos metin -> bos dizi', delikMetniniAyristir('').length === 0);
+  let hataYakalandi = false;
+  try { delikMetniniAyristir('abc,37,8'); } catch (e) { hataYakalandi = true; }
+  t('gecersiz sayi -> hata firlatiyor (sessizce yutmuyor)', hataYakalandi);
+  let hataYakalandi2 = false;
+  try { delikMetniniAyristir('37,37,-5'); } catch (e) { hataYakalandi2 = true; }
+  t('negatif/sifir cap -> hata firlatiyor', hataYakalandi2);
+
+  // delikKoordDonustur: rotated=false degismez, rotated=true 90 derece donusum
+  t('rotated=false -> degismez', JSON.stringify(delikKoordDonustur(37, 50, 800, false)) === JSON.stringify([37, 50]));
+  t('rotated=true -> (dy, origW-dx)', JSON.stringify(delikKoordDonustur(37, 50, 800, true)) === JSON.stringify([50, 763]));
+
+  // buildDxf: delik/form gercekten CIRCLE/LWPOLYLINE olarak DELIK/FORM katmaninda cikiyor mu
+  const parcalarDelikli = [{
+    ad: 'PANEL', en: 400, boy: 800, adet: 1, grainKilitli: true,
+    delikler: [{ x: 37, y: 37, cap: 8 }],
+    formlar: [{ noktalar: [[100, 100], [150, 100], [150, 150], [100, 150]] }]
+  }];
+  const plakaTest = { en: 1830, boy: 3660, ad: 'TEST PLAKA' };
+  const sonucTest = nestParcalar(plakaTest.en, plakaTest.boy, 0, 0, parcalarDelikli);
+  const dxf = buildDxf(sonucTest, plakaTest);
+  t('DXF CIRCLE (delik) icin DELIK katmani var', /CIRCLE[\s\S]{0,10}8\r\nDELIK/.test(dxf));
+  t('DXF LWPOLYLINE (form) icin FORM katmani var', /8\r\nFORM/.test(dxf));
+  t('delik yaricapi doğru yaziliyor (cap 8 -> r 4)', /40\r\n4(\r\n|$)/.test(dxf) || dxf.includes('\r\n40\r\n4\r\n'));
+
+  // Rotasyonlu parcada delik koordinati dogru donusturuluyor mu — nestParcalar'in
+  // rotasyon secimine bagli kalmamak icin sonuc dogrudan elle kuruluyor (rotated:true).
+  const sonucRotElle = {
+    plakalarOut: [{
+      usedArea: 0,
+      placed: [{
+        ad: 'DAR', x: 0, y: 0, w: 100, h: 3000, rotated: true, origW: 3000,
+        delikler: [{ x: 10, y: 20, cap: 6 }], formlar: []
+      }]
+    }],
+    kenarBosluk: 0
+  };
+  const dxfRot = buildDxf(sonucRotElle, { en: 3200, boy: 3200, ad: 'X' });
+  // delikKoordDonustur(10,20,3000,true) -> (20, 3000-10) = (20, 2990); px=py=0 -> delik merkezi (20,2990)
+  t('donmus parcada delik koordinati 90 derece donusturuluyor', /10\r\n20(\r\n|$)/.test(dxfRot) && /20\r\n2990(\r\n|$)/.test(dxfRot));
+}
 
 console.log('\nSONUC: '+ok+' gecti, '+bad+' kaldi');process.exit(bad?1:0);

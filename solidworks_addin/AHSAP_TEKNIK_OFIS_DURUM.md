@@ -270,6 +270,83 @@ doğrulandı. Pazartesi gerçek testte özellikle: (a) sürükle-bırak'ın
 gerçekten TreeView'e düştüğünü, (b) rota panelinin ustPanel'in ALTINDA
 (üstünde değil) göründüğünü doğrulayın.
 
+### 12) Nesting Delik/Form + CNC Yerleşimi (Biesse bSolid) + Cam Modülü Başlangıcı — YENİ
+
+Kullanıcı isteği: "nestinge alt montaj ve parça üzerindeki delikleri ve
+formları da ekle, cam modülü için de başlangıç yap, parçaya sağ tıklayıp
+bir CNC fincan ya da sıfırlama bölümüne yerleştir — Biesse bSolid 5 eksen
+düz tablalı ve fincanlı bir makina, postprocessor ve makina kodunu
+[kullanıcı] atacak."
+
+**a) Nesting: delik/form desteği (YENİ, uçtan uca)**
+
+`page_nesting.js`'in `parcalar[]` şeması artık `delikler[]`/`formlar[]`
+taşıyabiliyor. Kaynaklar:
+- **SolidWorks'ten otomatik:** YENİ `DelikFormCikarici.cs` — parçanın
+  silindirik yüzeylerini (`ISurface.IsCylinder`/`CylinderParams`) delik,
+  en büyük düz yüzeyin iç loop'larını (`IFace2.GetLoops`) form/cep olarak
+  tarar. **GÜVENİLİRLİK UYARISI:** bu API'ler (üye adları, `CylinderParams`
+  dizisinin eleman sırası) bu ortamda gerçek bir SolidWorks derleyicisiyle
+  DOĞRULANAMADI (ağ erişimi resmi dokümantasyona bu oturumda engellendi) —
+  yanlışsa ya derleme hatası verir (güvenli) ya da YANLIŞ sayısal değer
+  üretir (yakalanamaz). Bu yüzden **iki adımlı onay** zorunlu kılındı:
+  `OzelAlanlar.DELIKLER_ONAYLANDI` kullanıcı tarafından "evet" yapılmadan
+  (bkz. CncYerlesimPaneli, madde c) hiçbir delik SWOOD ZIP'ine/nesting'e
+  DAHİL EDİLMEZ — yalnızca panelde salt-okunur listelenir, kullanıcı
+  SolidWorks'teki gerçek parçayla karşılaştırıp onaylamalı.
+- **Manuel:** `page_nesting.js`'te "Parça Ekle" formuna "x,y,çap;x,y,çap"
+  hızlı giriş eklendi (SolidWorks köprüsü olmadan da delik tanımlanabilir).
+- **DXF çıktısı:** `buildDxf` artık `DELIK` (CIRCLE) ve `FORM` (LWPOLYLINE)
+  katmanları da yazıyor — parça 90° döndürülerek yerleştirildiyse delik/form
+  koordinatları da doğru dönüştürülüyor (`delikKoordDonustur`).
+- **Köprü (T3-29'un devamı niteliğinde bir GERÇEK boşluk kapatıldı):**
+  Daha önce SWOOD'dan gelen per-parça delik/hırdavat verisi İş Emri
+  Formu'nda görünse de nesting'e HİÇ ULAŞMIYORDU (nesting yalnızca
+  reçete/BOM'dan türetilen aggregate boy/en alıyordu). YENİ **"▦ Kesime
+  Aktar (Nesting)"** butonu (İş Emri Formu) bu köprüyü kurdu: plaka
+  hammadde kartı SEÇİLMİŞ satırları (delik/form/tahıl-kilidi dahil) ilgili
+  `kesimIhtiyaclari` satırına aktarır; plaka seçilmemiş satırlar TAHMİN
+  EDİLMEZ, sayısı bildirilip atlanır.
+
+**b) Cam Modülü — BİLEREK YALNIZCA BAŞLANGIÇ**
+
+Hammaddeler ekranına yeni `'cam'` tipi eklendi (filtre + liste + form
+dropdown'ı — mevcut `'sarf'` tipiyle AYNI, kanıtlanmış desen). SolidWorks
+tarafında `CAM_KODU`/`CAM_TEMPERLI`/`CAM_KENAR_ISLEME` özel alanları ve
+Etiketleme Paneli'nde karşılık gelen bölüm eklendi; `swoodDenUret` bu
+bilgiyi açıklamaya "Cam: ... · Temperli · Kenar: ..." olarak taşıyor
+(TAHMİN EDİLMEZ). **BİLEREK YAPILMAYAN:** cam için ayrı bir nesting/kesim
+optimizasyonu YOK — cam zaten `YABANCI_PARCA` akışını izliyor (plakadan
+kesilmez, satın alınır/temin edilir). Tam bir "cam modülü" (temperleme
+fire hesabı, kenar işleme fiyatlandırması, cam tedarikçi entegrasyonu vb.)
+ayrı bir faz olarak ele alınmalı — bu yalnızca veri modelinin başlangıcı.
+
+**c) CNC Yerleşimi Paneli (Biesse bSolid) — 9. komut**
+
+YENİ `CncYerlesimPaneli.cs` + `SwAddin.cs`'e 9. komut ("CNC Yerleşimi").
+**BİLEREK YAPILMAYAN (kritik):** gerçek postprocessor/G-kodu/XNC üretimi
+BURADA YOK — kullanıcı postprocessor + örnek makine kodu gönderene kadar
+bu eşleme TAHMİN EDİLMEDİ (yanlış G-kod eşlemesi gerçek malzeme/takım
+hasarına yol açabilir). Panel yalnızca parça başına KALICI kurulum
+bilgisini SolidWorks özel özelliklerine yazıyor: `CNC_FINCAN` (pod no),
+`CNC_SIFIRLAMA_KOSE` (sol_alt/sağ_alt/sol_üst/sağ_üst/merkez) + XYZ ofset.
+Bu veriler SWOOD ZIP CSV'sine ekstra sütun olarak zaten akıyor
+(`CNC_FINCAN`, `CNC_SIFIRLAMA_KOSE`) — postprocessor bilgisi geldiğinde
+doğrudan kullanılabilir olacak. **Ayrıca gerçek bir sağ-tık context menüsü
+DEĞİL** — SolidWorks'ün native context-menu API'si bu ortamda
+doğrulanamadığı için, EtiketlemePaneli/ReceteAgaciPaneli ile AYNI kanıtlanmış
+desen kullanıldı (bileşeni FeatureManager'da seçip komut şeridinden paneli
+açmak). Gerçek sağ-tık menüsü istenirse Visual Studio'da Object Browser
+ile context-menu üyesi bulunup tek satırda eklenebilir.
+
+**Test durumu:** JS tarafı (delik ayrıştırma, koordinat dönüşümü, DXF
+katmanları, kesimeAktar köprüsü, cam tipi) 181 testle uçtan uca doğrulandı
+(`node testler/swood_ice_aktarim_testi.js`, `node testler/nesting_testi.js`).
+C# tarafı (DelikFormCikarici, CncYerlesimPaneli, SwAddin 9. komut) yalnızca
+brace/paren dengesi ve manuel inceleme ile doğrulandı — **gerçek delik
+konumlarının ve CylinderParams okumasının SolidWorks'te MUTLAKA elle
+doğrulanması gerekiyor**, bu oturumda hiçbir şekilde canlı test edilemedi.
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini
@@ -325,6 +402,29 @@ gerçekten TreeView'e düştüğünü, (b) rota panelinin ustPanel'in ALTINDA
     bağlanıyorsanız sunucunun güncel `api.php`'yi (bu oturumda
     `CAD_ENT_OKUNABILIR`/`CAD_ENT_YAZILABILIR` genişletildi — `altMontajlar`
     ve `rotalar` eklendi) çalıştırdığından emin olun, yoksa 403 alırsınız.
+11. YENİ: Visual Studio'da projeye `DelikFormCikarici.cs` ve
+    `CncYerlesimPaneli.cs` dosyalarını ekleyin. Delik içeren bir parçada
+    (menteşe/minifix deliği gibi) **"CNC Yerleşimi (ÜretimOS)"** komutunu
+    çalıştırın: (a) "Tespit Edilen Delikler" listesinin GERÇEK delik
+    sayısı/konumuyla eşleştiğini SolidWorks'teki parçayla birebir kontrol
+    edin (bu geometri okuma ADIMI CANLI TEST EDİLMEDİ — ilk deneme
+    kritik), (b) eşleşiyorsa "doğruladım" kutusunu işaretleyip fincan
+    no + sıfırlama köşesi girip Kaydet'e basın, SolidWorks Özel
+    Özellikler'de `URETIMOS_DELIKLER_ONAYLANDI`/`URETIMOS_CNC_FINCAN`/
+    `URETIMOS_CNC_SIFIRLAMA_KOSE` alanlarının yazıldığını doğrulayın.
+12. YENİ: "ÜretimOS'a Aktar (SWOOD Uyumlu Paket)" ile onaylanmış delikli
+    bir parçayı içeren paketi dışa aktarın, üretilen ZIP'i açıp
+    `Delikler/*.json` dosyasının gerçekten oluştuğunu kontrol edin;
+    ÜretimOS'ta İş Emri Formu'na içe aktarıp satırda delik verisinin
+    (kod içinde `satir.delikler`) geldiğini doğrulayın, sonra **"▦ Kesime
+    Aktar (Nesting)"**a basıp Kesim Optimizasyonu ekranında parçanın
+    (plaka seçiliyse) göründüğünü, DXF indirince `DELIK`/`FORM`
+    katmanlarının çıktığını doğrulayın.
+13. YENİ (Cam modülü başlangıcı): Hammaddeler ekranından `tip:'cam'` bir
+    kart tanımlayın, Etiketleme Panelinde bir parçayı bu cam koduyla +
+    "Temperli" + kenar işlemesiyle etiketleyip dışa aktarın, açıklama
+    sütununda "Cam: ... · Temperli · Kenar: ..." notunun doğru göründüğünü
+    doğrulayın.
 
 ## Değişen/eklenen dosyalar
 
@@ -347,7 +447,26 @@ gerçekten TreeView'e düştüğünü, (b) rota panelinin ustPanel'in ALTINDA
   girmeyen sunucu bağlantı ayarları)
 - `solidworks_addin/src/ReceteAgaciPaneli.cs` — YENİ dosya (Reçete Ağacı +
   Rota Seç/Oluştur)
-- `solidworks_addin/src/SwAddin.cs` — 6., 7., 8. komutlar (Montaj Şeması
-  Oluştur/Onayla, Reçete Ağacı) + `HedefModelBul` paylaşılan yardımcı +
-  AssemblyResolve düzeltmesi (önceki oturumdan: ClosedXML/PdfSharp'ın
-  SolidWorks içinde yüklenememe sorunu)
+- `solidworks_addin/src/SwAddin.cs` — 6.-9. komutlar (Montaj Şeması
+  Oluştur/Onayla, Reçete Ağacı, CNC Yerleşimi) + `HedefModelBul` paylaşılan
+  yardımcı + AssemblyResolve düzeltmesi (önceki oturumdan: ClosedXML/
+  PdfSharp'ın SolidWorks içinde yüklenememe sorunu)
+- `solidworks_addin/src/DelikFormCikarici.cs` — YENİ dosya (delik/form
+  geometri çıkarımı, bkz. 12.a — GÜVENİLİRLİK UYARISI okuyun)
+- `solidworks_addin/src/CncYerlesimPaneli.cs` — YENİ dosya (CNC fincan/
+  sıfırlama + delik onay paneli, bkz. 12.c)
+- `solidworks_addin/src/SwoodPaketOlusturucu.cs` — `Delikler/*.json`
+  sidecar + CNC/cam CSV sütunları eklendi
+- `solidworks_addin/src/KesimListesiCikarici.cs` — `Delikler`/`Formlar`/
+  `DeliklerOnaylandi`/`CncFincan`/`CncSifirlamaKose`/`Cam*` alanları
+- `solidworks_addin/src/OzelAlanlar.cs` — `DELIKLER_ONAYLANDI`, `CNC_*`, `CAM_*`
+- `solidworks_addin/src/EtiketlemePaneli.cs` — Cam bölümü eklendi
+- `swood_okuyucu.js` — `Delikler/*.json` sidecar okuma
+- `is_emri_uretici.js` — `satir.delikler/formlar/deliklerOnaylandi/
+  tahilKilitli/cncFincan/cncSifirlamaKose`, cam notu (`swoodDenUret`)
+- `page_is_emri_formu.js` — "▦ Kesime Aktar (Nesting)" köprüsü (`kesimeAktar`)
+- `page_nesting.js` — delik/form veri modeli, manuel delik girişi, DXF
+  `DELIK`/`FORM` katmanları (`buildDxf`, `delikKoordDonustur`)
+- `page_hammadde.js` — yeni `'cam'` hammadde tipi (filtre + dropdown'lar)
+- `testler/swood_ice_aktarim_testi.js`, `testler/nesting_testi.js` — yeni
+  testler (hepsi geçiyor, toplam paket 0 kaldı)
