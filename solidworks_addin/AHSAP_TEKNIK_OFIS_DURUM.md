@@ -244,11 +244,49 @@ eşleştirme mantığı burada YENİDEN İNŞA EDİLMEDİ; kullanıcı adımlar�
 ÜretimOS'un kendi Rota ekranından tamamlar (panel bunu açık bir mesajla
 belirtir).
 
-**V1 kapsam sınırı (bilerek):** Ağaç yalnızca TEK SEVİYE gösterilir — bir
-alt kalemin KENDİ reçetesine inip çok katmanlı maliyet ağacı gezilmez
-(ÜretimOS'un `page_recete_agac.js`'i kadar derin değil). Bu, isteğin
-gerçek kapsamı olan "alt kalem ekle sürükle-bırak" işlevini karşılıyor;
-tam maliyet-ağacı editörü istenirse ayrı bir faz olarak ele alınmalı.
+**GÜNCELLEME (SONRAKİ İSTEK): "alt kırılımlı reçete" — V1 tek seviye
+sınırı KALDIRILDI.** Kullanıcı isteği: "alt kırılımlı reçete almak için
+soldaki parça ve alt montaj listesindeki kalemlerin hangi pakette olduğunu
+ve paket ölçü ve ağırlığını yazalım, yarımamul alt kırılımlarını ve
+rotalarını girelim ve bu ÜretimOS'taki reçete sistemine aynı şekilde
+aktarılsın." `ReceteAgaciPaneli.cs` tamamen yeniden yazıldı:
+
+- **Çok katmanlı ağaç:** `KalemDugumuOlustur` artık ÖZYİNELEMELİ — her
+  kalem (`hammadde` HARİÇ) kendi reçetesi varsa, onu da alt `TreeNode`
+  olarak gösterir. Bu, ÜretimOS'un kendi `page_recete_agac.js:renderNode`
+  fonksiyonuyla AYNI mantık (her zaman genişletilmiş, özyinelemeli render).
+  Döngüsel/çok derin referanslara karşı `MAKS_DERINLIK = 6` sabiti bir
+  GÜVENLİK SINIRIDIR — gerçek döngü tespiti (A→B→A) YAPILMAZ, TAHMİN
+  edilmez, yalnızca sonsuz özyineleme engellenir (kod içinde bilinçli
+  sınırlama olarak yorumlanmıştır).
+- **Herhangi bir derinlikte düzenleme:** Sürükle-bırak artık bırakılan
+  DÜĞÜMÜN kartına eklenir (köke sabit değil); "Kaldır"/"Miktar Değiştir"
+  de kalemin AİT OLDUĞU kartın reçetesini günceller. Hedef, `HedefKartCoz`
+  ile ağaçta yukarı doğru giderek bulunur. Birden çok seviyedeki
+  değişiklikler `Dictionary<string, JObject> _degisenReceteler` (anahtar
+  `tip|kartId`) içinde tek tek biriktirilir, "✓ ÜretimOS'a Kaydet" HEPSİNİ
+  TEK SEFERDE `receteler` koleksiyonuna PATCH eder (ekleme/güncelleme
+  ayrımıyla).
+- **"Hangi pakette" gösterimi (YENİ):** Soldaki palette bir yarı mamül/alt
+  montaj kalemi, mevcut reçetelerde bir PAKETİN içinde kalem olarak
+  geçiyorsa `[Paket: KOD]` etiketiyle işaretlenir (`HangiPakette`). **Bilinen
+  sınır:** yalnızca İLK eşleşen paket gösterilir — tam "kullanıldığı
+  yerler" analizi (bir kartın BİRDEN FAZLA pakette geçmesi durumu)
+  ÜretimOS'un kendi ekranında yapılır, burada YENİDEN İNŞA EDİLMEDİ.
+- **Paket ölçü/ağırlık düzenleme (YENİ):** ÜretimOS'un
+  `page_recete_agac.js:openPaketOlcuDuzenle` ile AYNI alanlar (`en`, `boy`,
+  `yukseklik`, `netAgirlik`, `brutAgirlik` — YENİ alan İCAT EDİLMEDİ, zaten
+  var olan paket şeması kullanıldı, bkz. `testler/olcu_agirlik_test.js`).
+  Kök kart bir paketse üst panelde özet + "Düzenle…" butonu; ağaçtaki
+  HERHANGİ bir paket kaleminde sağ tık menüsünden AYNI diyalog açılır.
+  "Taslak" davranışı ÜretimOS'la BİREBİR aynı: değişiklik yalnızca
+  `_degisenPaketler` listesine yazılır, sunucuya YALNIZCA Kaydet'te
+  `paketler` koleksiyonuna PATCH edilir. Palette paket kalemleri de artık
+  `(en×boy×yükseklik cm, brüt kg)` özetiyle listelenir.
+- **Hayalet taslak koruması korundu:** ağacı ÇİZMEK/GENİŞLETMEK asla yeni
+  bir reçete OLUŞTURMAZ — salt okunur `ReceteGetir` kullanılır; yalnızca
+  gerçek bir DÜZENLEME işleminde (`ReceteBulVeyaOlustur`) taslak
+  reçete/kalem oluşturulur.
 
 **GÜVENLİK DÜZELTMESİ (bu oturumda yapıldı):** `api.php`'deki
 `cad_entegrasyon` rolünün beyaz listesi (`CAD_ENT_OKUNABILIR`/
@@ -266,9 +304,23 @@ kapalı.
 **Test edilemeyen kısım:** WinForms `TreeView`/sürükle-bırak/Dock sırası
 görsel davranışı bu ortamda ÇALIŞTIRILAMADI (SolidWorks/Visual Studio
 yok) — yalnızca brace/paren dengesi ve manuel kod incelemesiyle
-doğrulandı. Pazartesi gerçek testte özellikle: (a) sürükle-bırak'ın
-gerçekten TreeView'e düştüğünü, (b) rota panelinin ustPanel'in ALTINDA
-(üstünde değil) göründüğünü doğrulayın.
+doğrulandı. Çok katmanlı ağaç yeniden yazımı da AYNI şekilde (derleyici
+yok) yalnızca brace/paren dengesi (193/193, 631/631) ve satır satır
+manuel inceleme ile doğrulandı — özyinelemeli `TreeNode` genişletme,
+`HedefKartCoz`/`ReceteGetir`/`ReceteBulVeyaOlustur` ayrımı ve
+Kaydet'teki çoklu-koleksiyon PATCH akışı gerçek SolidWorks ortamında
+HENÜZ ÇALIŞTIRILMADI. Pazartesi gerçek testte özellikle:
+(a) sürükle-bırak'ın gerçekten TreeView'e düştüğünü,
+(b) rota panelinin ve paket ölçü panelinin ustPanel'in ALTINDA
+(üstünde değil) göründüğünü,
+(c) çok seviyeli bir ürün açıldığında alt yarı mamül/alt montaj/paket
+kalemlerinin KENDİ reçeteleriyle otomatik genişleyerek göründüğünü,
+(d) ağacın 2-3 seviye derinliğinde bir kalemin miktarını değiştirip
+Kaydet'e bastıktan sonra ÜretimOS'un kendi `page_recete_agac.js`
+ekranında AYNI değişikliğin göründüğünü,
+(e) bir paketin ölçü/ağırlığını buradan düzenleyip kaydettikten sonra
+ÜretimOS'un `openPaketOlcuDuzenle` diyaloğunda AYNI değerlerin
+göründüğünü doğrulayın.
 
 ### 12) Nesting Delik/Form + CNC Yerleşimi (Biesse bSolid) + Cam Modülü Başlangıcı — YENİ
 
@@ -603,6 +655,29 @@ ve delik konumlarını SolidWorks'te MUTLAKA elle ölçüp doğrulayın.**
     bağlanıyorsanız sunucunun güncel `api.php`'yi (bu oturumda
     `CAD_ENT_OKUNABILIR`/`CAD_ENT_YAZILABILIR` genişletildi — `altMontajlar`
     ve `rotalar` eklendi) çalıştırdığından emin olun, yoksa 403 alırsınız.
+16. YENİ (ÇOK KATMANLI ağaç + paket ölçü/ağırlık — 10. maddenin devamı,
+    `ReceteAgaciPaneli.cs` bu sürümde YENİDEN YAZILDI): birden çok reçete
+    seviyesi olan bir ürün/paket seçip **"Reçete Ağacı (ÜretimOS)"**
+    komutunu tekrar çalıştırın: (a) alt yarı mamül/alt montaj/paket
+    kalemlerinin KENDİ reçeteleri varsa ağaçta OTOMATİK genişlemiş alt
+    düğümler olarak göründüğünü doğrulayın, (b) soldaki paletten bir yarı
+    mamül/alt montaj öğesinin, o kartın halihazırda bir pakette
+    kullanılıyorsa `[Paket: KOD]` etiketiyle göründüğünü doğrulayın,
+    (c) ağaçtaki 2-3. seviye derinlikteki bir kaleme (kök değil, alt bir
+    kartın İÇİNDEKİ kalem) sürükle-bırak ile YENİ bir alt kalem ekleyin —
+    eklenenin KÖKE değil, bıraktığınız kartın reçetesine gittiğini
+    doğrulayın, (d) aynı derinlikteki bir kalemin miktarını çift tıkla
+    değiştirip Kaydet'e basın, ÜretimOS'un kendi `page_recete_agac.js`
+    ekranında O ALT SEVİYEDEKİ değişikliğin de göründüğünü doğrulayın,
+    (e) ağaçtaki bir paket kalemine sağ tıklayıp **"Paket Ölçü / Ağırlık
+    Düzenle…"** ile en/boy/yükseklik/net-brüt ağırlık girip Kaydet'e basın,
+    ÜretimOS'un kendi paket ölçü diyaloğunda AYNI değerlerin göründüğünü
+    doğrulayın, (f) kök kart doğrudan bir PAKET ise üst paneldeki ölçü
+    özetinin ve "Düzenle…" butonunun (rota panelinin değil) göründüğünü
+    doğrulayın. **Bilinen sınırlar (TAHMİN edilmeyip belgelenmiş):**
+    `HangiPakette` yalnızca İLK eşleşen paketi gösterir (bir kart birden
+    fazla pakette geçiyorsa diğerleri gösterilmez); `MAKS_DERINLIK = 6`
+    gerçek döngü tespiti DEĞİLDİR, yalnızca bir güvenlik sınırıdır.
 11. YENİ: Visual Studio'da projeye `DelikFormCikarici.cs` ve
     `CncYerlesimPaneli.cs` dosyalarını ekleyin. Delik içeren bir parçada
     (menteşe/minifix deliği gibi) **"CNC Yerleşimi (ÜretimOS)"** komutunu
@@ -751,3 +826,32 @@ ve delik konumlarını SolidWorks'te MUTLAKA elle ölçüp doğrulayın.**
 - `solidworks_addin/src/AltiYuzKutuPaneli.cs` — YENİ dosya (10. komut, giriş formu)
 - `solidworks_addin/src/SwAddin.cs` — 10-11. komutlar, `PART_SABLON_YOLU`/
   `ASSEMBLY_SABLON_YOLU` sabitleri (kurulumunuza göre GÜNCELLEYİN)
+
+**Reçete Ağacı — çok katmanlı + paket ölçü/ağırlık (bkz. 11. madde
+güncellemesi, 16. Pazartesi maddesi) — sonradan eklendi:**
+- `solidworks_addin/src/ReceteAgaciPaneli.cs` — TAMAMEN YENİDEN YAZILDI:
+  V1'in TEK SEVİYE sınırı kaldırıldı, `KalemDugumuOlustur` artık
+  özyinelemeli (ÜretimOS'un `page_recete_agac.js:renderNode` ile aynı
+  mantık, `MAKS_DERINLIK=6` güvenlik sınırıyla); `HedefKartCoz` ile
+  sürükle-bırak/Kaldır/Miktar Değiştir artık HERHANGİ bir ağaç
+  derinliğindeki kartın reçetesini hedefleyebiliyor; `_degisenReceteler`
+  (çok seviyeli, anahtar `tip|kartId`) tek `_aktifRecete` alanının yerini
+  aldı; salt-okunur `ReceteGetir` / oluşturan-veya-bulan
+  `ReceteBulVeyaOlustur` ayrımıyla ağacı genişletmek hayalet taslak reçete
+  YARATMIYOR; YENİ `PaketOlcuAgirlikDuzenle` diyaloğu (ÜretimOS'un
+  `openPaketOlcuDuzenle`'ı ile aynı en/boy/yükseklik/netAgirlik/
+  brutAgirlik alanları, `_degisenPaketler` taslak listesi, Kaydet'te
+  `paketler` koleksiyonuna PATCH); soldaki palette yarı mamül/alt montaj
+  kalemleri için "hangi pakette" (`HangiPakette`, yalnızca ilk eşleşme)
+  ve paket kalemleri için ölçü/ağırlık özeti (`PaketOlcuOzeti`) eklendi;
+  `KaydetTikla` artık TEK basışta hem `receteler` hem `paketler`
+  koleksiyonlarına toplu PATCH gönderiyor.
+- Yeni ÜretimOS-taraflı koleksiyon/alan İCAT EDİLMEDİ — `paketler`
+  koleksiyonunun `en`/`boy`/`yukseklik`/`netAgirlik`/`brutAgirlik` alanları
+  ve `api.php`'nin `CAD_ENT_YAZILABILIR` listesindeki `paketler`/`receteler`
+  izinleri zaten mevcuttu (bkz. `testler/olcu_agirlik_test.js`), yalnızca
+  SolidWorks eklentisinden ERİŞİLEBİLİR hale getirildi.
+- Derleyici bu ortamda YOK — yalnızca brace/paren dengesi (193/193 süslü
+  parantez, 631/631 normal parantez) ve satır satır manuel kod incelemesiyle
+  doğrulandı; gerçek SolidWorks/Visual Studio testi HENÜZ YAPILMADI (bkz.
+  Pazartesi listesi madde 16).
