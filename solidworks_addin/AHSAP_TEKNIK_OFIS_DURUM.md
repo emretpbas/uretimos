@@ -608,6 +608,44 @@ doğru üye adı bulunup tek satırda düzeltilir) ama `FeatureExtrusion3`/
 üretir" riski de vardır — **Pazartesi ilk denemede oluşan panel ölçülerini
 ve delik konumlarını SolidWorks'te MUTLAKA elle ölçüp doğrulayın.**
 
+### 15) Gerçek Kurulum Programı (Setup.exe) — YENİ
+
+Kullanıcı isteği: "bunu bir setup dosyası haline getirelim, SWOOD gibi
+kurulsun bir install dosyası gibi." Şimdiye kadar kurulum tamamen ELLE
+yapılıyordu (Visual Studio'da derle → yönetici Komut İstemi açıp regasm
+çalıştır → SolidWorks'te Add-Ins'i işaretle). Artık `kurulum/UretimOSKesim.iss`
+var — ücretsiz **Inno Setup Compiler** ile derlenip TEK bir
+`UretimOSKesimSetup.exe` üreten bir kurulum betiği:
+
+- Derlenmiş DLL + TÜM NuGet bağımlılıklarını (Newtonsoft.Json, ClosedXML,
+  PdfSharp ve alt bağımlılıkları) `Program Files\UretimOSKesim`'e kopyalar
+  (wildcard ile — yeni bir paket eklenince elle güncellenmesi gereken
+  kırılgan bir liste YOK).
+- Kurulum sırasında (installer zaten yönetici hakkıyla çalıştığı için
+  AYRI bir UAC istemi çıkarmadan) `RegAsm.exe /codebase` çalıştırır —
+  bu, `SwAddin.cs`'teki mevcut `[ComRegisterFunction] RegisterFunction`'ı
+  tetikleyip hem standart COM kaydını hem SolidWorks'e özel
+  `HKLM\...\SolidWorks\Addins\{GUID}` + `HKCU\...\SolidWorks\AddInsStartup\{GUID}`
+  girdilerini YAZAR — elle regasm adımı ORTADAN KALKAR.
+- Kaldırma sırasında AYNI şekilde `RegAsm.exe /unregister` çalıştırıp
+  temiz bir kayıt-defteri geri alımı yapar (dosyalar silinmeden ÖNCE,
+  sıra `[UninstallRun]` → `[UninstallDelete]` olacak şekilde).
+- Denetim Masası'na normal bir "Program Ekle/Kaldır" girdisi ekler
+  (SWOOD'un kendi kurulumuyla AYNI kullanıcı deneyimi).
+- README.md'ye "A) Otomatik kurulum (ÖNERİLEN)" / "B) Elle kurulum
+  (geliştirme/hata ayıklama)" olarak İKİ yol da eklendi — B) yol
+  BİLEREK KALDIRILMADI, hem installer'ın arka planda ne yaptığını
+  açıklıyor hem de bir sorun çıkarsa referans/hata ayıklama yolu.
+
+**Bilinçli sınır / doğrulanamayan risk:** bu betik bu ortamda (Linux,
+Inno Setup Compiler kurulu değil) DERLENEMEDİ ve ÇALIŞTIRILAMADI —
+yalnızca Inno Setup'ın resmi `[Setup]`/`[Files]`/`[Run]`/`[UninstallRun]`
+söz dizimine göre, satır satır referans alınarak yazıldı (TAHMİN
+edilmedi — her satırın karşılığı yorumlarda gerekçelendirildi). Inno
+Setup, sözdizimi/yol hatalarını derleme sırasında satır numarasıyla
+AÇIKÇA gösterir (sessiz başarısızlık riski düşük), ama gerçek ilk
+derleme + kurulum Pazartesi'ye kadar test EDİLMEDİ.
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini
@@ -757,6 +795,27 @@ ve delik konumlarını SolidWorks'te MUTLAKA elle ölçüp doğrulayın.**
     bildirin — tek tek düzeltiriz.
     (g) Aynı Frame'e İKİNCİ bir box daha yerleştirip, İLK box'ın dosyalarının
     HİÇ DEĞİŞMEDİĞİNİ (özerk kopyalama çalışıyor mu) doğrulayın.
+17. YENİ (Gerçek kurulum programı — 15. madde): önce
+    https://jrsoftware.org/isdl.php adresinden Inno Setup Compiler'ı kurun
+    (ücretsiz). Projeyi Release/x64 derleyip `solidworks_addin\bin\x64\
+    Release\net48\` klasörünün gerçekten oluştuğunu doğrulayın. Ardından
+    `solidworks_addin\kurulum\UretimOSKesim.iss`'i Inno Setup Compiler'da
+    açıp **F9 (Compile)** tuşuna basın: (a) DERLEME sırasında bir
+    sözdizimi/yol hatası çıkıp çıkmadığını kontrol edin (çıkarsa hata
+    mesajındaki satır numarasını bana bildirin, tek satırda düzeltiriz),
+    (b) başarılıysa `kurulum\Output\UretimOSKesimSetup.exe`'i SolidWorks
+    KAPALIYKEN çift tıklatıp kurulumu tamamlayın — elle regasm adımına
+    HİÇ gerek kalmamalı, (c) SolidWorks'ü açıp Tools > Add-Ins'te
+    "ÜretimOS Kesim & Teknik Resim"in işaretli/kurulu göründüğünü
+    doğrulayın (daha önce elle regasm ile kurduysanız önce onu
+    `/unregister` ile temizleyin ki installer'ın kaydı test edilsin),
+    (d) bir komutu çalıştırıp eklentinin normal çalıştığını doğrulayın,
+    (e) Denetim Masası > Program Ekle/Kaldır'dan "ÜretimOS Kesim & Teknik
+    Resim Eklentisi"ni kaldırıp hem dosyaların hem SolidWorks Add-Ins
+    kaydının TEMİZ şekilde kalktığını (SolidWorks'te bir daha
+    görünmediğini) doğrulayın. **Bu betik hiç derlenmedi/çalıştırılmadı**
+    — ilk deneme bu yüzden kritik, en ufak bir hata Inno Setup'ın kendi
+    derleme çıktısında AÇIKÇA görünür.
 
 ## Değişen/eklenen dosyalar
 
@@ -884,3 +943,23 @@ SOL tıkta tetikleniyor — önceden her tıkta (sağ dahil) `DoDragDrop`
 çağrılıyordu, sağ tık artık bağlam menüsü seçimini bozmuyor. Brace/paren
 dengesi (217/217, 679/679) ve manuel inceleme ile doğrulandı; gerçek
 SolidWorks testi HENÜZ YAPILMADI.
+
+**Gerçek Kurulum Programı (Setup.exe — bkz. 15. madde, 17. Pazartesi
+maddesi) — YENİ:**
+- `solidworks_addin/kurulum/UretimOSKesim.iss` — YENİ dosya (Inno Setup
+  kurulum betiği). Derlenmiş DLL + tüm NuGet bağımlılıklarını wildcard ile
+  paketler, kurulum sırasında `RegAsm.exe /codebase` ile (`[ComRegisterFunction]
+  RegisterFunction` üzerinden) hem COM kaydını hem SolidWorks'ün
+  `HKLM\...\SolidWorks\Addins\{GUID}` / `HKCU\...\SolidWorks\AddInsStartup\{GUID}`
+  girdilerini otomatik yazar; kaldırmada `RegAsm.exe /unregister` ile
+  otomatik geri alır. Elle regasm adımını GEREKSİZ kılar.
+- `solidworks_addin/README.md` — "Kurulum" bölümü "A) Otomatik kurulum
+  (ÖNERİLEN)" / "B) Elle kurulum (geliştirme/hata ayıklama)" olarak ikiye
+  ayrıldı; B) yol BİLEREK SİLİNMEDİ (referans + A) başarısız olursa
+  yedek yol).
+- Yeni bir Windows/derleme aracı İCAT EDİLMEDİ — Inno Setup, ücretsiz,
+  yaygın kullanılan üçüncü parti bir kurulum derleyicisidir (WiX/MSI'ya
+  göre daha az kod/altyapı gerektirir), kullanıcı bir kere kurar.
+- Derlenemedi/çalıştırılamadı (bu ortamda Windows/Inno Setup yok) —
+  yalnızca Inno Setup'ın resmi söz dizimine göre yazıldı, ilk gerçek
+  derleme Pazartesi'ye kadar test EDİLMEDİ.

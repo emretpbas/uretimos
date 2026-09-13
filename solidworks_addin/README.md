@@ -98,7 +98,30 @@ almak, kesim listesi oluşturmak").
 
 Tam regresyon: 329/329 PHP, tüm JS paketleri yeşil.
 
-## Kurulum (özet)
+## Kurulum
+
+### A) Otomatik kurulum — Setup.exe (ÖNERİLEN, SWOOD gibi tek dosya)
+
+`kurulum/UretimOSKesim.iss` — Inno Setup ile derlenmiş DLL'leri TEK bir
+`UretimOSKesimSetup.exe` içine paketleyen, kurulum sırasında COM/regasm
+kaydını OTOMATİK yapan (ve kaldırırken OTOMATİK geri alan) bir kurulum
+betiği. Elle regasm çalıştırma adımını ORTADAN KALDIRIR — B) bölümündeki
+adım 5 (regasm) ve 6 (Add-Ins işaretleme SolidWorks tarafında hâlâ gerekli,
+ama kayıt otomatik) artık gerekmez. Ayrıntılı adımlar `kurulum/UretimOSKesim.iss`
+dosyasının başındaki yorumda: özetle (1) ücretsiz Inno Setup Compiler'ı
+kurun, (2) projeyi Release/x64 derleyin, (3) `.iss`'i Inno Setup'ta F9 ile
+derleyin, (4) çıkan `Output/UretimOSKesimSetup.exe`'i çift tıklatın.
+Başka bir bilgisayara dağıtmak için de aynı tek `.exe` yeterlidir.
+
+**Dürüstlük notu:** bu betik bu (Linux, Inno Setup'sız) ortamda
+DERLENEMEDİ/ÇALIŞTIRILAMADI — yalnızca Inno Setup'ın resmi söz dizimine
+göre yazıldı, ilk gerçek derlemede küçük bir düzeltme gerekebilir (Inno
+Setup hataları satır numarasıyla açıkça gösterir, sessiz başarısızlık
+olmaz). B) bölümündeki elle yöntem, otomatik kurulum bir sorun çıkarırsa
+başvurulacak referans/hata ayıklama yolu olarak KALICI olarak burada
+tutuluyor — installer da zaten arka planda AYNI regasm çağrısını yapıyor.
+
+### B) Elle kurulum (geliştirme / hata ayıklama / A başarısız olursa)
 
 1. Visual Studio 2022, ".NET Desktop Development" iş yükü.
 2. `UretimOSKesim.csproj`'daki 4 `HintPath`'i kendi SolidWorks kurulumunuzdaki
