@@ -91,16 +91,22 @@ namespace UretimOSKesim
             public string KalemTipi;    // urun|yarimamul|altmontaj|paket|hammadde — receteye YAZILACAK tip
             public string GosterimTipi; // Paket/Yarı Mamül/Alt Montaj/Hırdavat/Plaka/Kenar Bandı — kullanıcıya gösterilen
             public string Id, Kod, Ad;
-            // YENİ: "hangi pakette" (yarımamül/altmontaj için) ve paket
-            // ölçü/ağırlık özeti (paket kalemleri için) — kullanıcı isteği:
-            // "soldaki ... listesindeki kalemlerin hangi pakette olduğunu ve
-            // paket ölçü ve ağırlığını yazalım".
-            public string PaketKodu;
+            // TAM "kullanıldığı yerler" analizi (yarımamül/altmontaj için) —
+            // kullanıcı isteği: "hangi pakette olduğunu ... yazalım" ilk
+            // sürümde yalnızca İLK eşleşen paketi gösteriyordu; bu SONRAKİ
+            // istekle GENİŞLETİLDİ: artık bu kartın kalem olarak geçtiği
+            // TÜM üst kartlar (paket/alt montaj/ürün fark etmeksizin, hepsi
+            // aranır) burada tutulur — bkz. NeredeKullaniliyor.
+            public List<(string ustTip, JObject ustKart, double miktar)> KullanimListesi;
+            // Paket ölçü/ağırlık özeti (paket kalemleri için).
             public string OlcuAgirlikMetni;
             public override string ToString()
             {
                 string ek = "";
-                if (!string.IsNullOrEmpty(PaketKodu)) ek += $"  [Paket: {PaketKodu}]";
+                if (KullanimListesi != null && KullanimListesi.Count == 1)
+                    ek += $"  [{TipGosterimAdi(KullanimListesi[0].ustTip)}: {KullanimListesi[0].ustKart["kod"]}]";
+                else if (KullanimListesi != null && KullanimListesi.Count > 1)
+                    ek += $"  [{KullanimListesi.Count} yerde kullanılıyor — sağ tık: detay]";
                 if (!string.IsNullOrEmpty(OlcuAgirlikMetni)) ek += $"  ({OlcuAgirlikMetni})";
                 return $"[{GosterimTipi}] {Kod} — {Ad}{ek}";
             }
@@ -163,6 +169,26 @@ namespace UretimOSKesim
             var aramaEtiket = new Label { Text = "Kod/ad ara:", Dock = DockStyle.Top, Height = 18, AutoSize = false };
             _paletListesi = new ListBox { Dock = DockStyle.Fill, AllowDrop = false, IntegralHeight = false };
             _paletListesi.MouseDown += PaletListesi_MouseDown;
+            // TAM "kullanıldığı yerler" analizi — sağ tık ile detay diyaloğu.
+            var paletSagTikMenu = new ContextMenuStrip();
+            var neredeMenuOgesi = paletSagTikMenu.Items.Add("Nerede Kullanılıyor?", null, (s, e) =>
+            {
+                if (_paletListesi.SelectedItem is PaletOgesi oge) NeredeKullaniliyorGoster(oge);
+            });
+            paletSagTikMenu.Opening += (s, e) =>
+            {
+                var oge = _paletListesi.SelectedItem as PaletOgesi;
+                neredeMenuOgesi.Enabled = oge?.KullanimListesi != null && oge.KullanimListesi.Count > 0;
+            };
+            _paletListesi.ContextMenuStrip = paletSagTikMenu;
+            _paletListesi.MouseDown += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Right)
+                {
+                    int idx = _paletListesi.IndexFromPoint(e.Location);
+                    if (idx >= 0) _paletListesi.SelectedIndex = idx;
+                }
+            };
             var ekleBtn = new Button { Text = "Ekle → (seçili ağaç düğümüne, yoksa köke)", Dock = DockStyle.Bottom };
             ekleBtn.Click += (s, e) => SeciliPaletOgesiniEkle();
 
@@ -344,16 +370,14 @@ namespace UretimOSKesim
         private PaletOgesi Ogeye(JToken k, string kalemTipi, string gosterimTipi)
         {
             string id = (string)k["id"];
-            // Kullanıcı isteği: "hangi pakette olduğunu ... yazalım" —
-            // yarımamül/altmontaj için, bu kartın kalem olarak geçtiği İLK
-            // paketin kodu (bilgi amaçlı — TAM "kullanıldığı yerler" analizi
-            // ÜretimOS'un kendi ekranında yapılır).
-            string paketKodu = (kalemTipi == "yarimamul" || kalemTipi == "altmontaj") ? HangiPakette(kalemTipi, id) : null;
+            // TAM "kullanıldığı yerler" analizi — yarımamül/altmontaj için,
+            // bu kartın kalem olarak geçtiği TÜM üst kartlar (bkz. NeredeKullaniliyor).
+            var kullanim = (kalemTipi == "yarimamul" || kalemTipi == "altmontaj") ? NeredeKullaniliyor(kalemTipi, id) : null;
             return new PaletOgesi
             {
                 KalemTipi = kalemTipi, GosterimTipi = gosterimTipi,
                 Id = id, Kod = (string)k["kod"] ?? id, Ad = (string)k["ad"] ?? "",
-                PaketKodu = paketKodu,
+                KullanimListesi = kullanim,
                 OlcuAgirlikMetni = kalemTipi == "paket" ? PaketOlcuOzeti(k as JObject) : null
             };
         }
@@ -364,26 +388,46 @@ namespace UretimOSKesim
             Id = (string)k["id"], Kod = (string)k["stokKodu"] ?? (string)k["id"], Ad = (string)k["ad"] ?? ""
         };
 
-        // Bu (tip,id) kartının kalem olarak geçtiği İLK paketi bulur —
-        // _receteler içindeki paketId'li kayıtları tarar. O(n) — palet en
-        // fazla 300 öge gösterdiği ve reçete sayısı makul olduğu için kabul
-        // edilebilir bir maliyettir.
-        private string HangiPakette(string tip, string id)
+        // TAM "kullanıldığı yerler" analizi — bu (tip,id) kartının kalem
+        // olarak geçtiği TÜM reçeteleri tarar (paket/alt montaj/ürün fark
+        // etmeksizin — yalnızca paketId'li kayıtlarla SINIRLI DEĞİL, önceki
+        // sürümdeki "yalnızca hangi pakette" sınırlaması KALDIRILDI).
+        // O(n) — palet en fazla 300 öge gösterdiği ve reçete sayısı makul
+        // olduğu için kabul edilebilir bir maliyettir. NOT: bu bir ANLIK
+        // görüntüdür — ağaç panelinde yapılan (henüz Kaydet'e basılmamış)
+        // taslak değişiklikler, palet yalnızca arama/tip filtresi
+        // değiştiğinde yeniden hesaplandığı için hemen yansımayabilir.
+        private List<(string ustTip, JObject ustKart, double miktar)> NeredeKullaniliyor(string tip, string id)
         {
+            var sonuc = new List<(string, JObject, double)>();
             foreach (var r in _receteler.OfType<JObject>())
             {
-                string paketId = (string)r["paketId"];
-                if (string.IsNullOrEmpty(paketId)) continue;
                 var kalemler = r["kalemler"] as JArray;
                 if (kalemler == null) continue;
-                bool bulundu = kalemler.OfType<JObject>().Any(k => (string)k["tip"] == tip && (string)k["refId"] == id);
-                if (bulundu)
+                foreach (var k in kalemler.OfType<JObject>())
                 {
-                    var paket = FindKart("paket", paketId);
-                    if (paket != null) return (string)paket["kod"];
+                    if ((string)k["tip"] == tip && (string)k["refId"] == id)
+                    {
+                        var (ustTip, ustKart) = SahipKartCoz(r);
+                        if (ustKart != null) sonuc.Add((ustTip, ustKart, (double?)k["miktar"] ?? 1));
+                    }
                 }
             }
-            return null;
+            return sonuc;
+        }
+
+        // Bir reçete kaydının SAHİBİ olan kartı bulur — urunId/yarimamulId/
+        // altMontajId/paketId alanlarından hangisi doluysa o karttır.
+        private (string tip, JObject kart) SahipKartCoz(JObject recete)
+        {
+            foreach (var tip in new[] { "urun", "yarimamul", "altmontaj", "paket" })
+            {
+                string kartId = (string)recete[AlanAdiTipten(tip)];
+                if (string.IsNullOrEmpty(kartId)) continue;
+                var kart = FindKart(tip, kartId);
+                if (kart != null) return (tip, kart);
+            }
+            return (null, null);
         }
 
         private string PaketOlcuOzeti(JObject paket)
@@ -647,6 +691,44 @@ namespace UretimOSKesim
             _paketOlcuEtiketi.Text = "Ölçü/Ağırlık: " + PaketOlcuOzeti(_kokKart);
         }
 
+        // ── NEREDE KULLANILIYOR (TAM "kullanıldığı yerler" analizi) ──────────
+        // Kullanıcı isteği: "hangi pakette olduğunu ... yazalım" — ilk sürüm
+        // yalnızca İLK eşleşeni gösteriyordu; bu, palette görünen kısa
+        // etikete SIĞMAYAN TAM listeyi gösteren salt-okunur bir diyalog.
+        private void NeredeKullaniliyorGoster(PaletOgesi oge)
+        {
+            using (var dlg = new Form
+            {
+                Text = "Nerede Kullanılıyor — " + oge.Kod, Width = 440, Height = 380,
+                FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
+                MinimizeBox = false, MaximizeBox = false
+            })
+            {
+                var baslik = new Label
+                {
+                    Dock = DockStyle.Top, Height = 36, Padding = new Padding(10, 8, 10, 0),
+                    Text = $"'{oge.Kod} — {oge.Ad}' şu kartların reçetesinde kalem olarak geçiyor:"
+                };
+                var liste = new ListBox { Dock = DockStyle.Fill };
+                if (oge.KullanimListesi == null || oge.KullanimListesi.Count == 0)
+                {
+                    liste.Items.Add("Hiçbir reçetede kullanılmıyor.");
+                }
+                else
+                {
+                    foreach (var (ustTip, ustKart, miktar) in oge.KullanimListesi)
+                        liste.Items.Add($"[{TipGosterimAdi(ustTip)}] {ustKart["kod"]} — {ustKart["ad"]}  (×{miktar.ToString("0.##", CultureInfo.InvariantCulture)})");
+                }
+                var kapatBtn = new Button { Text = "Kapat", Dock = DockStyle.Bottom, DialogResult = DialogResult.OK };
+                dlg.Controls.Add(liste);
+                dlg.Controls.Add(baslik);
+                dlg.Controls.Add(kapatBtn);
+                dlg.AcceptButton = kapatBtn;
+                dlg.CancelButton = kapatBtn;
+                dlg.ShowDialog(this);
+            }
+        }
+
         // ── REÇETE (ÇOK KATMANLI) ────────────────────────────────────────────
         // Anahtar: tip + "|" + kartId — bir kartın reçetesini benzersiz tanımlar.
         private static string ReceteAnahtari(string tip, string kartId) => tip + "|" + kartId;
@@ -762,7 +844,8 @@ namespace UretimOSKesim
             return dugum;
         }
 
-        private string TipGosterimAdi(string tip) => tip == "urun" ? "Ürün" : tip == "yarimamul" ? "Yarı Mamül"
+        // static: PaletOgesi.ToString() (iç içe sınıf) de kullanır.
+        private static string TipGosterimAdi(string tip) => tip == "urun" ? "Ürün" : tip == "yarimamul" ? "Yarı Mamül"
             : tip == "altmontaj" ? "Alt Montaj" : tip == "paket" ? "Paket" : tip;
         private string HammaddeGosterimTipi(string hammaddeTip) => hammaddeTip == "hirdavat" ? "Hırdavat"
             : hammaddeTip == "plaka" ? "Plaka" : hammaddeTip == "kenar_bandi" ? "Kenar Bandı" : "Hammadde";
@@ -770,7 +853,10 @@ namespace UretimOSKesim
         // ── SÜRÜKLE-BIRAK / EKLE (HEDEF: bırakılan/seçili DÜĞÜMÜN kartı) ─────
         private void PaletListesi_MouseDown(object sender, MouseEventArgs e)
         {
-            if (_paletListesi.SelectedItem is PaletOgesi oge)
+            // YALNIZCA sol tık sürükleme başlatır — sağ tık, "Nerede
+            // Kullanılıyor?" bağlam menüsü içindir (aşağıdaki ikinci
+            // MouseDown abonesi seçimi günceller).
+            if (e.Button == MouseButtons.Left && _paletListesi.SelectedItem is PaletOgesi oge)
             {
                 _paletListesi.DoDragDrop(oge, DragDropEffects.Copy);
             }

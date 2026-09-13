@@ -267,12 +267,20 @@ aktarılsın." `ReceteAgaciPaneli.cs` tamamen yeniden yazıldı:
   `tip|kartId`) içinde tek tek biriktirilir, "✓ ÜretimOS'a Kaydet" HEPSİNİ
   TEK SEFERDE `receteler` koleksiyonuna PATCH eder (ekleme/güncelleme
   ayrımıyla).
-- **"Hangi pakette" gösterimi (YENİ):** Soldaki palette bir yarı mamül/alt
-  montaj kalemi, mevcut reçetelerde bir PAKETİN içinde kalem olarak
-  geçiyorsa `[Paket: KOD]` etiketiyle işaretlenir (`HangiPakette`). **Bilinen
-  sınır:** yalnızca İLK eşleşen paket gösterilir — tam "kullanıldığı
-  yerler" analizi (bir kartın BİRDEN FAZLA pakette geçmesi durumu)
-  ÜretimOS'un kendi ekranında yapılır, burada YENİDEN İNŞA EDİLMEDİ.
+- **"Nerede kullanılıyor" — TAM analiz (GÜNCELLENDİ, ilk sürümdeki
+  "yalnızca İLK eşleşen paket" sınırı KALDIRILDI):** Soldaki palette bir
+  yarı mamül/alt montaj kalemi, mevcut reçetelerde kalem olarak geçtiği
+  kartlar VARSA işaretlenir — `NeredeKullaniliyor` artık yalnızca
+  `paketId`'li kayıtları değil, TÜM reçeteleri (ürün/yarı mamül/alt
+  montaj/paket sahipliği fark etmeksizin) tarar. Tek eşleşme varsa satırda
+  doğrudan `[Paket: KOD]` / `[Alt Montaj: KOD]` gibi görünür; BİRDEN FAZLA
+  eşleşme varsa `[N yerde kullanılıyor — sağ tık: detay]` gösterilir ve
+  palette sağ tıkla açılan **"Nerede Kullanılıyor?"** diyaloğu TÜM
+  kullanım yerlerini (tip, kod, ad, miktar) salt-okunur bir listede
+  gösterir. **Bilinen sınır (kasıtlı):** bu bir ANLIK görüntüdür — ağaç
+  panelinde henüz Kaydet'e basılmamış taslak değişiklikler, palet yalnızca
+  arama/tip filtresi değiştiğinde yeniden hesaplandığı için hemen
+  yansımayabilir (TAHMİN edilmez, yalnızca belgelenir).
 - **Paket ölçü/ağırlık düzenleme (YENİ):** ÜretimOS'un
   `page_recete_agac.js:openPaketOlcuDuzenle` ile AYNI alanlar (`en`, `boy`,
   `yukseklik`, `netAgirlik`, `brutAgirlik` — YENİ alan İCAT EDİLMEDİ, zaten
@@ -661,23 +669,29 @@ ve delik konumlarını SolidWorks'te MUTLAKA elle ölçüp doğrulayın.**
     komutunu tekrar çalıştırın: (a) alt yarı mamül/alt montaj/paket
     kalemlerinin KENDİ reçeteleri varsa ağaçta OTOMATİK genişlemiş alt
     düğümler olarak göründüğünü doğrulayın, (b) soldaki paletten bir yarı
-    mamül/alt montaj öğesinin, o kartın halihazırda bir pakette
-    kullanılıyorsa `[Paket: KOD]` etiketiyle göründüğünü doğrulayın,
-    (c) ağaçtaki 2-3. seviye derinlikteki bir kaleme (kök değil, alt bir
-    kartın İÇİNDEKİ kalem) sürükle-bırak ile YENİ bir alt kalem ekleyin —
-    eklenenin KÖKE değil, bıraktığınız kartın reçetesine gittiğini
-    doğrulayın, (d) aynı derinlikteki bir kalemin miktarını çift tıkla
-    değiştirip Kaydet'e basın, ÜretimOS'un kendi `page_recete_agac.js`
-    ekranında O ALT SEVİYEDEKİ değişikliğin de göründüğünü doğrulayın,
-    (e) ağaçtaki bir paket kalemine sağ tıklayıp **"Paket Ölçü / Ağırlık
-    Düzenle…"** ile en/boy/yükseklik/net-brüt ağırlık girip Kaydet'e basın,
-    ÜretimOS'un kendi paket ölçü diyaloğunda AYNI değerlerin göründüğünü
-    doğrulayın, (f) kök kart doğrudan bir PAKET ise üst paneldeki ölçü
-    özetinin ve "Düzenle…" butonunun (rota panelinin değil) göründüğünü
-    doğrulayın. **Bilinen sınırlar (TAHMİN edilmeyip belgelenmiş):**
-    `HangiPakette` yalnızca İLK eşleşen paketi gösterir (bir kart birden
-    fazla pakette geçiyorsa diğerleri gösterilmez); `MAKS_DERINLIK = 6`
-    gerçek döngü tespiti DEĞİLDİR, yalnızca bir güvenlik sınırıdır.
+    mamül/alt montaj öğesinin, o kart BİR yerde kullanılıyorsa `[Paket:
+    KOD]` / `[Alt Montaj: KOD]` gibi tek etiketle, BİRDEN FAZLA yerde
+    kullanılıyorsa `[N yerde kullanılıyor — sağ tık: detay]` ile
+    göründüğünü, o öğeye sağ tıklayıp **"Nerede Kullanılıyor?"**
+    diyaloğunda TÜM kullanım yerlerinin (tip/kod/ad/miktar) eksiksiz
+    listelendiğini doğrulayın, (c) ağaçtaki 2-3. seviye derinlikteki bir
+    kaleme (kök değil, alt bir kartın İÇİNDEKİ kalem) sürükle-bırak ile
+    YENİ bir alt kalem ekleyin — eklenenin KÖKE değil, bıraktığınız
+    kartın reçetesine gittiğini doğrulayın, (d) aynı derinlikteki bir
+    kalemin miktarını çift tıkla değiştirip Kaydet'e basın, ÜretimOS'un
+    kendi `page_recete_agac.js` ekranında O ALT SEVİYEDEKİ değişikliğin
+    de göründüğünü doğrulayın, (e) ağaçtaki bir paket kalemine sağ
+    tıklayıp **"Paket Ölçü / Ağırlık Düzenle…"** ile en/boy/yükseklik/
+    net-brüt ağırlık girip Kaydet'e basın, ÜretimOS'un kendi paket ölçü
+    diyaloğunda AYNI değerlerin göründüğünü doğrulayın, (f) kök kart
+    doğrudan bir PAKET ise üst paneldeki ölçü özetinin ve "Düzenle…"
+    butonunun (rota panelinin değil) göründüğünü doğrulayın. **Bilinen
+    sınırlar (TAHMİN edilmeyip belgelenmiş):** "Nerede Kullanılıyor?"
+    bir ANLIK görüntüdür — ağaç panelinde henüz Kaydet'e basılmamış
+    taslak değişiklikler, palet yalnızca arama/tip filtresi
+    değiştiğinde yeniden hesaplandığı için hemen yansımayabilir;
+    `MAKS_DERINLIK = 6` gerçek döngü tespiti DEĞİLDİR, yalnızca bir
+    güvenlik sınırıdır.
 11. YENİ: Visual Studio'da projeye `DelikFormCikarici.cs` ve
     `CncYerlesimPaneli.cs` dosyalarını ekleyin. Delik içeren bir parçada
     (menteşe/minifix deliği gibi) **"CNC Yerleşimi (ÜretimOS)"** komutunu
@@ -842,16 +856,31 @@ güncellemesi, 16. Pazartesi maddesi) — sonradan eklendi:**
   `openPaketOlcuDuzenle`'ı ile aynı en/boy/yükseklik/netAgirlik/
   brutAgirlik alanları, `_degisenPaketler` taslak listesi, Kaydet'te
   `paketler` koleksiyonuna PATCH); soldaki palette yarı mamül/alt montaj
-  kalemleri için "hangi pakette" (`HangiPakette`, yalnızca ilk eşleşme)
-  ve paket kalemleri için ölçü/ağırlık özeti (`PaketOlcuOzeti`) eklendi;
-  `KaydetTikla` artık TEK basışta hem `receteler` hem `paketler`
-  koleksiyonlarına toplu PATCH gönderiyor.
+  kalemleri için "nerede kullanılıyor" özeti ve paket kalemleri için
+  ölçü/ağırlık özeti (`PaketOlcuOzeti`) eklendi; `KaydetTikla` artık TEK
+  basışta hem `receteler` hem `paketler` koleksiyonlarına toplu PATCH
+  gönderiyor.
 - Yeni ÜretimOS-taraflı koleksiyon/alan İCAT EDİLMEDİ — `paketler`
   koleksiyonunun `en`/`boy`/`yukseklik`/`netAgirlik`/`brutAgirlik` alanları
   ve `api.php`'nin `CAD_ENT_YAZILABILIR` listesindeki `paketler`/`receteler`
   izinleri zaten mevcuttu (bkz. `testler/olcu_agirlik_test.js`), yalnızca
   SolidWorks eklentisinden ERİŞİLEBİLİR hale getirildi.
-- Derleyici bu ortamda YOK — yalnızca brace/paren dengesi (193/193 süslü
-  parantez, 631/631 normal parantez) ve satır satır manuel kod incelemesiyle
-  doğrulandı; gerçek SolidWorks/Visual Studio testi HENÜZ YAPILMADI (bkz.
-  Pazartesi listesi madde 16).
+- Derleyici bu ortamda YOK — yalnızca brace/paren dengesi ve satır satır
+  manuel kod incelemesiyle doğrulandı; gerçek SolidWorks/Visual Studio
+  testi HENÜZ YAPILMADI (bkz. Pazartesi listesi madde 16).
+
+**Reçete Ağacı — TAM "nerede kullanılıyor" analizi (aynı 11./16. madde
+kapsamında) — sonradan GENİŞLETİLDİ:** eski `HangiPakette` yalnızca İLK
+eşleşen paketi (ve yalnızca `paketId`'li reçeteleri) buluyordu; bu artık
+`NeredeKullaniliyor`/`SahipKartCoz` çiftiyle değiştirildi — TÜM reçeteler
+taranıyor (sahibi ürün/yarı mamül/alt montaj/paket fark etmeksizin) ve
+bulunan TÜM kullanım yerleri (`PaletOgesi.KullanimListesi`) saklanıyor.
+Palette tek eşleşme kısa etiketle, birden fazla eşleşme
+"`N yerde kullanılıyor — sağ tık: detay`" ile gösteriliyor; sağ tık
+menüsündeki YENİ **"Nerede Kullanılıyor?"** diyaloğu (`NeredeKullaniliyorGoster`)
+tüm kullanım yerlerini (tip/kod/ad/miktar) salt-okunur listeler. Palette
+zaten var olan sol-tık sürükleme (`PaletListesi_MouseDown`) artık yalnızca
+SOL tıkta tetikleniyor — önceden her tıkta (sağ dahil) `DoDragDrop`
+çağrılıyordu, sağ tık artık bağlam menüsü seçimini bozmuyor. Brace/paren
+dengesi (217/217, 679/679) ve manuel inceleme ile doğrulandı; gerçek
+SolidWorks testi HENÜZ YAPILMADI.
