@@ -162,6 +162,53 @@ tutuluyor — installer da zaten arka planda AYNI regasm çağrısını yapıyor
 8. Çıkan ZIP'i ÜretimOS'ta **İş Emri Formu → SWOOD İçe Aktarım**'a yükleyin —
    mevcut ekran değişmeden çalışmalı.
 
+### SolidWorks 2017'de test ederken dikkat edilecekler
+
+Bu kod **SolidWorks 2025 SP3.0**'ın API yüzeyine göre yazıldı/akıl
+yürütüldü — 2017 sekiz yıl eski bir sürüm. Farklı bir makinede (2017)
+test etmeden önce/sırasında:
+
+1. **HintPath'ler** (`UretimOSKesim.csproj`'daki 4 `SolidWorks.Interop.*`/
+   `SolidWorksTools` referansı) o makinenin KENDİ `api\redist\` klasörüne
+   göre değiştirilmeli — 2025 makinesindeki yol burada işe yaramaz
+   (yukarıdaki 2. adıma bakın, aynı kural geçerli).
+2. **Şablon yolları** — `src/SwAddin.cs`'teki `SABLON_YOLU`/
+   `PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU` sabitleri şu an
+   `C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\...` — 2017
+   makinesinde muhtemelen `SOLIDWORKS 2017` klasörü olacak (TAHMİN
+   ETMEYİN, Dosya Gezgini'nde kontrol edin). Yanlış bırakılırsa çökme
+   OLMAZ — "Teknik Resim Oluştur"/"6 Yüz Kutu Oluştur" komutları "şablon
+   bulunamadı: <yol>" diye AÇIK bir mesaj gösterir.
+3. **GUID'i DEĞİŞTİRMENİZE gerek YOK** — `[Guid(...)]` eklentinin kendi
+   kimliğidir, farklı bir makine/SolidWorks sürümü GEREKTİRMEZ, aynı
+   kalabilir.
+4. **.NET Framework sürümü** — proje `net48`'i hedefliyor; 2017'nin
+   kendisi daha eski bir .NET Framework (ör. 4.6.1/4.7) ile piyasaya
+   sürülmüştü, test makinesinde 4.8'in GERÇEKTEN kurulu olduğu
+   DOĞRULANMADI. PowerShell'de kontrol edin:
+   `(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full').Release`
+   — 528040 veya üzeriyse 4.8 kuruludur; değilse Microsoft'un .NET
+   Framework 4.8 Developer Pack'ini (derlemek için) ve/veya Runtime'ını
+   (çalıştırmak için) kurun.
+5. **En riskli/çökme geçmişi olan alan**: `SwAddin.cs:KomutlariKur()`
+   (araç çubuğu/ikon/komut kaydı) — bu oturumda SolidWorks 2025'te BİRDEN
+   FAZLA çökmeye sebep olmuştu (bkz. dosyadaki "KESİN TANI #1-5" notları).
+   2017'de FARKLI davranabilir. Bir çökme olursa **önce**
+   `Masaüstü\uretimos_addin_log.txt` dosyasının SON satırına bakın — tam
+   olarak hangi API çağrısının çöktüğünü gösterir, aynı "arama oyunu"
+   yöntemiyle (bu dosyadaki KESİN TANI notları) birlikte çözeriz.
+6. **Yeni/versiyona duyarlı olabilecek API üyeleri DOĞRULANMADI** —
+   `FeatureExtrusion3`, `FeatureCut4`, `AddComponent5`,
+   `Component2.Select4`/`FixComponent`, `IPackAndGo` ailesi,
+   `IView.ShowExploded` — bunların 2017'de var olup olmadığı bu ortamda
+   araştırılmadı (kullanıcı tercihiyle doğrudan derleme denemesi
+   yapılıyor). Derleme hatası (CS1061 "does not contain a definition
+   for...") verirlerse bu GÜVENLİDİR (derleme zamanında yakalanır, çalışma
+   zamanı çökmesi değil) — Nesne Gezgini'nde (Object Browser) doğru üye
+   adını/sürümünü bulup bildirin, tek satırda düzeltiriz.
+7. **x64 varsayımı** doğrulanmadı ama SolidWorks'ün 32-bit sürümleri
+   yıllardır (2017'den çok önce) piyasadan kalktığı için düşük risklidir.
+
 ## DÜRÜSTLÜK NOTU — Faz 1 çekirdeği gerçek SolidWorks'te test EDİLDİ
 
 Bu ortamda SolidWorks/Visual Studio bulunmadığı için kod önce tahminle

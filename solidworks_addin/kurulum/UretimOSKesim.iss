@@ -94,9 +94,14 @@ WizardStyle=modern
 ; anlaşılabilsin diye kurulum bir günlük dosyası bırakır (%TEMP%'te,
 ; dosya adı kurulum sonunda ekranda gösterilir).
 SetupLogging=yes
-; SolidWorks 2025 yalnızca 64-bit'tir — 32-bit sisteme kurulumu ENGELLE
-; (README.md'de anlatılan "Any CPU ile yanlış kayıt defteri bölümüne
-; yazma" hatasının kurulum seviyesinde bir daha YAŞANMAMASI için).
+; Modern SolidWorks sürümleri (2025 SP3.0 ve — büyük ihtimalle, en azından
+; test edilecek 2017 dahil — çok daha eski sürümler) yalnızca 64-bit'tir —
+; 32-bit sisteme kurulumu ENGELLE (README.md'de anlatılan "Any CPU ile
+; yanlış kayıt defteri bölümüne yazma" hatasının kurulum seviyesinde bir
+; daha YAŞANMAMASI için). NOT: 2017'nin gerçekten 64-bit-yalnız olduğu bu
+; ortamda BAĞIMSIZ doğrulanamadı — eğer 2017 kurulumu 32-bit çıkarsa
+; installer "desteklenmeyen mimari" diyerek kuruluma İZİN VERMEZ, bu
+; satırı geçici olarak yorum satırına alıp yeniden derlemeniz gerekir.
 ArchitecturesInstallIn64BitMode=x64
 ArchitecturesAllowed=x64
 UninstallDisplayIcon={app}\{#MyAppDLL}
@@ -189,9 +194,22 @@ end;
 
 function GetRegAsmPath(): String;
 begin
-  // .NET Framework 4.0-4.8 AYNI CLR klasörünü (v4.0.30319) paylaşır —
-  // SolidWorks 2025 zaten .NET Framework 4.8 gerektirdiği için bu yol
-  // her SolidWorks 2025 makinesinde mevcut olmalıdır.
+  // .NET Framework 4.0-4.8 AYNI CLR klasörünü (v4.0.30319) paylaşır — bu
+  // klasör/RegAsm.exe, makinede HERHANGİ bir 4.x sürümü kuruluysa (4.5,
+  // 4.6.1, 4.7, 4.8 fark etmez, .NET 4.x YERİNDE GÜNCELLENİR) zaten
+  // mevcuttur. DİKKAT: bunun var OLMASI, kurulu sürümün TAM OLARAK 4.8
+  // (bu eklentinin hedeflediği sürüm, .csproj'daki TargetFramework=net48)
+  // olduğu anlamına GELMEZ — daha eski bir SolidWorks kurulumunda (ör.
+  // test edilecek 2017) yalnızca 4.6.1/4.7 kurulu olabilir. Genelde
+  // sorun çıkarmaz (.NET 4.x çalışma zamanı sürümler arası son derece
+  // geriye/ileriye uyumludur) ama eklenti SolidWorks'te GÖRÜNÜP de garip
+  // şekilde çalışmazsa/çökerse, o makinede gerçekten 4.8 kurulu olup
+  // olmadığını kontrol edin (Denetim Masası > Programlar, ya da
+  // PowerShell: (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full').Release
+  // — 528040 veya üzeri ise 4.8 kuruludur) ve gerekirse Microsoft'un
+  // .NET Framework 4.8 Runtime'ını (derlemek için ayrıca Developer Pack)
+  // kurun — bu, TAHMİN değil, gerçek bir bilinmeyen olarak burada
+  // belgeleniyor.
   Result := ExpandConstant('{win}\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe');
 end;
 
@@ -237,10 +255,11 @@ begin
   if not FileExists(RegAsm) then
   begin
     MsgBox('.NET Framework bulunamadı:' + #13#10 + RegAsm + #13#10 + #13#10 +
-      'SolidWorks 2025 normalde .NET Framework 4.8''i zaten gerektirdiği için ' +
-      'bu makinede kurulu olmalıydı — bu BEKLENMEDİK bir durum, lütfen bildirin.' + #13#10 + #13#10 +
-      'Dosyalar kuruldu ama SolidWorks eklentisi HENÜZ KAYDEDİLMEDİ; README.md''deki ' +
-      '"B) Elle kurulum" bölümündeki regasm adımını izleyerek elle tamamlayabilirsiniz.',
+      'Bu makinede .NET Framework (4.x) hiç kurulu değil gibi görünüyor.' + #13#10 + #13#10 +
+      'Dosyalar kuruldu ama SolidWorks eklentisi HENÜZ KAYDEDİLMEDİ. Microsoft''un ' +
+      '.NET Framework 4.8 Runtime''ını kurup bu Setup''ı tekrar çalıştırın, ya da ' +
+      'README.md''deki "B) Elle kurulum" bölümündeki regasm adımını izleyerek elle ' +
+      'tamamlayın.',
       mbError, MB_OK);
     Exit;
   end;

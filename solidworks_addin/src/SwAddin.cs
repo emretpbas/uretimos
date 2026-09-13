@@ -824,6 +824,15 @@ namespace UretimOSKesim
             }
         }
 
+        // DİKKAT — "2025" bu makinenin SolidWorks SÜRÜMÜNE göre SABİTLENMİŞTİR,
+        // her farklı makinede (ör. test için kullanılan SolidWorks 2017
+        // kurulumunda) klasör adı FARKLI olacaktır ("SOLIDWORKS 2017" gibi) —
+        // TAHMİN ETMEYİN, o makinede gerçekten hangi klasörün var olduğunu
+        // (Dosya Gezgini'nde C:\ProgramData\SolidWorks\ altına bakarak)
+        // kontrol edip buradaki 3 satırı ona göre güncelleyin. Yanlış/eksik
+        // bırakılırsa çökme OLMAZ — TeknikResimOlusturucu/AltiYuzKutuPaneli
+        // zaten `File.Exists` ile kontrol edip "şablon bulunamadı: <yol>"
+        // diye AÇIK bir mesaj gösterir (aşağıdaki kullanım yerlerine bakın).
         private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
 
         // 6 Yüz Kutu (Frame/Box) oluşturucu için parça/montaj şablonları —

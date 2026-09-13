@@ -674,6 +674,33 @@ hatalarını derleme sırasında satır numarasıyla AÇIKÇA gösterir (sessiz
 derleme başarısızlığı riski düşük), ama gerçek ilk derleme + kurulum +
 kaldırma akışı Pazartesi'ye kadar test EDİLMEDİ.
 
+## YENİ: SolidWorks 2017 test makinesi mevcut
+
+Kullanıcı bir SolidWorks **2017** test makinesi olduğunu bildirdi ve TÜM
+projeyi (14 özelliğin hepsi, kısıtlama YOK) doğrudan orada derleyip
+denemeyi tercih etti. Bu, projenin bu oturum boyunca ilk kez GERÇEK bir
+SolidWorks'te (üstelik kodun yazıldığı 2025'ten sekiz yıl eski bir
+sürümde) test edilme fırsatıdır — ama bu yüzden birkaç şey KESİNLİKLE
+farklı olacak (README.md'ye "SolidWorks 2017'de test ederken dikkat
+edilecekler" başlığıyla ayrıntılı bir bölüm eklendi, özet):
+- `UretimOSKesim.csproj`'daki 4 HintPath ve `SwAddin.cs`'teki 3 şablon
+  yolu (`SABLON_YOLU`/`PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU`) şu an
+  2025'e göre YAZILMIŞ — 2017 makinesinde MUTLAKA güncellenmeli (yorum
+  satırları bunu artık açıkça hatırlatıyor).
+- `.NET Framework 4.8` sürümünün o makinede kurulu olduğu DOĞRULANMADI
+  (2017 daha eski bir .NET Framework ile piyasaya sürülmüştü) —
+  `kurulum/UretimOSKesim.iss`'teki hata mesajları bunu artık "SolidWorks
+  2025 zaten gerektirir" diye YANLIŞ VARSAYMIYOR, gerçek bir kontrol
+  komutu ve kurulum linki öneriyor.
+- En yüksek risk, bu oturumda 2025'te BİRDEN FAZLA çökmeye sebep olmuş
+  `SwAddin.cs:KomutlariKur()` (ikon/toolbar kaydı) — 2017'de FARKLI
+  davranabilir, ilk denemede bir çökme olursa `Masaüstü\uretimos_addin_log.txt`
+  dosyasının SON satırı tanı için ilk bakılacak yer.
+- Kullanıcının TERCİHİYLE: hiçbir özellik devre dışı bırakılmadan,
+  hepsi birlikte derlenip test edilecek — bir çökme/hata çıkarsa HANGİ
+  komutun sebep olduğunu ayırt etmek için Tanılama günlüğü + hangi
+  komutun çalıştırıldığı bilgisi birlikte önemli.
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini
@@ -1003,3 +1030,18 @@ maddesi) — YENİ:**
 - Derlenemedi/çalıştırılamadı (bu ortamda Windows/Inno Setup yok) —
   yalnızca Inno Setup'ın resmi söz dizimine göre yazıldı, ilk gerçek
   derleme Pazartesi'ye kadar test EDİLMEDİ.
+
+**SolidWorks 2017 test makinesi haberi üzerine sağlamlaştırma — YENİ:**
+- `solidworks_addin/src/SwAddin.cs` — `SABLON_YOLU`/`PART_SABLON_YOLU`/
+  `ASSEMBLY_SABLON_YOLU` sabitlerinin üstüne, bu yolların "2025"e göre
+  yazıldığını ve HER FARKLI makinede (2017 dahil) güncellenmesi
+  gerektiğini AÇIKÇA belirten bir uyarı yorumu eklendi.
+- `solidworks_addin/kurulum/UretimOSKesim.iss` — `ArchitecturesAllowed`/
+  `GetRegAsmPath`/`RegisterAddin`'deki "SolidWorks 2025 zaten X'i
+  gerektirir" tarzı YANLIŞ VARSAYIMLAR düzeltildi; artık .NET Framework
+  eksikse (2017'de garanti değil) gerçek bir kontrol komutu ve kurulum
+  yönlendirmesi içeren bir mesaj gösteriyor.
+- `solidworks_addin/README.md` — yeni "SolidWorks 2017'de test ederken
+  dikkat edilecekler" bölümü (HintPath/şablon yolu/.NET Framework/GUID/
+  en riskli alan/versiyona duyarlı API üyeleri için somut kontrol
+  listesi).
