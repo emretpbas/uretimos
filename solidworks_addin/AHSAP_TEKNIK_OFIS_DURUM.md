@@ -608,14 +608,15 @@ doğru üye adı bulunup tek satırda düzeltilir) ama `FeatureExtrusion3`/
 üretir" riski de vardır — **Pazartesi ilk denemede oluşan panel ölçülerini
 ve delik konumlarını SolidWorks'te MUTLAKA elle ölçüp doğrulayın.**
 
-### 15) Gerçek Kurulum Programı (Setup.exe) — YENİ
+### 15) Gerçek Kurulum Programı (Setup.exe) — YENİ, SONRADAN SAĞLAMLAŞTIRILDI
 
 Kullanıcı isteği: "bunu bir setup dosyası haline getirelim, SWOOD gibi
-kurulsun bir install dosyası gibi." Şimdiye kadar kurulum tamamen ELLE
-yapılıyordu (Visual Studio'da derle → yönetici Komut İstemi açıp regasm
-çalıştır → SolidWorks'te Add-Ins'i işaretle). Artık `kurulum/UretimOSKesim.iss`
-var — ücretsiz **Inno Setup Compiler** ile derlenip TEK bir
-`UretimOSKesimSetup.exe` üreten bir kurulum betiği:
+kurulsun bir install dosyası gibi" → sonra netleştirildi: **"hiç bir şey
+bilmeyen bir insan kurabilsin, tek dosya tek tıkla."** Şimdiye kadar
+kurulum tamamen ELLE yapılıyordu (Visual Studio'da derle → yönetici Komut
+İstemi açıp regasm çalıştır → SolidWorks'te Add-Ins'i işaretle). Artık
+`kurulum/UretimOSKesim.iss` var — ücretsiz **Inno Setup Compiler** ile
+derlenip TEK bir `UretimOSKesimSetup.exe` üreten bir kurulum betiği:
 
 - Derlenmiş DLL + TÜM NuGet bağımlılıklarını (Newtonsoft.Json, ClosedXML,
   PdfSharp ve alt bağımlılıkları) `Program Files\UretimOSKesim`'e kopyalar
@@ -628,23 +629,50 @@ var — ücretsiz **Inno Setup Compiler** ile derlenip TEK bir
   `HKLM\...\SolidWorks\Addins\{GUID}` + `HKCU\...\SolidWorks\AddInsStartup\{GUID}`
   girdilerini YAZAR — elle regasm adımı ORTADAN KALKAR.
 - Kaldırma sırasında AYNI şekilde `RegAsm.exe /unregister` çalıştırıp
-  temiz bir kayıt-defteri geri alımı yapar (dosyalar silinmeden ÖNCE,
-  sıra `[UninstallRun]` → `[UninstallDelete]` olacak şekilde).
-- Denetim Masası'na normal bir "Program Ekle/Kaldır" girdisi ekler
-  (SWOOD'un kendi kurulumuyla AYNI kullanıcı deneyimi).
+  temiz bir kayıt-defteri geri alımı yapar. Denetim Masası'na normal bir
+  "Program Ekle/Kaldır" girdisi ekler (SWOOD'un kendi kurulumuyla AYNI
+  kullanıcı deneyimi).
 - README.md'ye "A) Otomatik kurulum (ÖNERİLEN)" / "B) Elle kurulum
   (geliştirme/hata ayıklama)" olarak İKİ yol da eklendi — B) yol
   BİLEREK KALDIRILMADI, hem installer'ın arka planda ne yaptığını
   açıklıyor hem de bir sorun çıkarsa referans/hata ayıklama yolu.
 
+**"Hiç bir şey bilmeyen bir insan kurabilsin" isteğiyle SONRADAN eklenen
+sağlamlaştırmalar** (regasm çağrısı düz `[Run]`/`[UninstallRun]`'dan
+`[Code]` (Pascal Script) bölümüne taşındı):
+- **SolidWorks açıkken kurulum/kaldırma engeli:** `IsAppRunning`
+  (WMI/`Win32_Process` sorgusu) kurulumdan/kaldırmadan ÖNCE SolidWorks'ün
+  çalışıp çalışmadığını kontrol eder; çalışıyorsa AÇIK bir Türkçe uyarı
+  gösterip kapatılmasını bekler — SolidWorks açıkken denenirse DLL kilitli
+  olacağı için kopyalama/kayıt YARIM kalırdı ve niye başarısız olduğunu
+  teknik bilgisi olmayan biri ASLA anlayamazdı.
+- **Sessiz başarısızlık YOK:** düz bir `[Run]` girdisi RegAsm'ın çıkış
+  kodunu KONTROL ETMEZ — hata olsa bile kurulum "başarılı" görünürdü.
+  `RegisterAddin` artık çıkış kodunu AÇIKÇA kontrol edip başarısızsa
+  (veya .NET Framework/RegAsm hiç bulunamazsa) elle ne yapılması
+  gerektiğini (README "B) Elle kurulum") açıklayan bir mesaj gösterir —
+  dürüstlük ilkesi: asla sessizce "kuruldu" deyip aslında yarım kalmamak.
+- **Sihirbaz metinleri kısmen Türkçeye çevrildi** (`[Messages]` ile,
+  ayrı bir dil dosyası GEREKTİRMEDEN) — Hoş Geldiniz ve Kurulum
+  Tamamlandı ekranlarındaki, kullanıcının GERÇEKTEN okuyacağı metinler.
+  Türkçe `Languages\Turkish.isl` KASITLI KULLANILMADI (Inno Setup'ın
+  standart kurulumuna dahil değil, varsayıp ilk derlemeyi bozma riski
+  taşırdı) — İngilizce `compiler:Default.isl` (her kurulumda garanti
+  mevcut) temel dil olarak kaldı, yalnızca kritik metinler override edildi.
+- `SetupLogging=yes` eklendi — bir sorun çıkarsa (destek isterken) elle
+  tekrarlamaya gerek kalmadan incelenebilecek bir günlük dosyası kalır.
+
 **Bilinçli sınır / doğrulanamayan risk:** bu betik bu ortamda (Linux,
 Inno Setup Compiler kurulu değil) DERLENEMEDİ ve ÇALIŞTIRILAMADI —
-yalnızca Inno Setup'ın resmi `[Setup]`/`[Files]`/`[Run]`/`[UninstallRun]`
-söz dizimine göre, satır satır referans alınarak yazıldı (TAHMİN
-edilmedi — her satırın karşılığı yorumlarda gerekçelendirildi). Inno
-Setup, sözdizimi/yol hatalarını derleme sırasında satır numarasıyla
-AÇIKÇA gösterir (sessiz başarısızlık riski düşük), ama gerçek ilk
-derleme + kurulum Pazartesi'ye kadar test EDİLMEDİ.
+yalnızca Inno Setup'ın resmi `[Setup]`/`[Files]`/`[Messages]` söz
+dizimine ve `[Code]` bölümündeki Pascal Script API'sine (`Exec`/`MsgBox`/
+`CreateOleObject`/`FileExists`) göre, referans alınarak satır satır
+yazıldı (TAHMİN edilmedi — her satırın karşılığı yorumlarda
+gerekçelendirildi). `IsAppRunning`'in WMI deseni yaygın/kanıtlanmıştır
+ama bu makinede CANLI test EDİLEMEDİ. Inno Setup, sözdizimi/yol
+hatalarını derleme sırasında satır numarasıyla AÇIKÇA gösterir (sessiz
+derleme başarısızlığı riski düşük), ama gerçek ilk derleme + kurulum +
+kaldırma akışı Pazartesi'ye kadar test EDİLMEDİ.
 
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
@@ -803,18 +831,23 @@ derleme + kurulum Pazartesi'ye kadar test EDİLMEDİ.
     açıp **F9 (Compile)** tuşuna basın: (a) DERLEME sırasında bir
     sözdizimi/yol hatası çıkıp çıkmadığını kontrol edin (çıkarsa hata
     mesajındaki satır numarasını bana bildirin, tek satırda düzeltiriz),
-    (b) başarılıysa `kurulum\Output\UretimOSKesimSetup.exe`'i SolidWorks
-    KAPALIYKEN çift tıklatıp kurulumu tamamlayın — elle regasm adımına
-    HİÇ gerek kalmamalı, (c) SolidWorks'ü açıp Tools > Add-Ins'te
+    (b) başarılıysa, SolidWorks AÇIKKEN `kurulum\Output\UretimOSKesimSetup.exe`'i
+    çift tıklatıp installer'ın gerçekten bir Türkçe uyarı gösterip
+    beklediğini doğrulayın (yeni [Code] tabanlı `IsAppRunning` kontrolü —
+    bu adımı ATLAMAYIN, tam da "hiçbir şey bilmeyen bir insan" için
+    eklenen güvenlik ağı burada), (c) SolidWorks'ü kapatıp installer'ı
+    tekrar çalıştırın, bu sefer normal tamamlanmalı — elle regasm adımına
+    HİÇ gerek kalmamalı, (d) SolidWorks'ü açıp Tools > Add-Ins'te
     "ÜretimOS Kesim & Teknik Resim"in işaretli/kurulu göründüğünü
     doğrulayın (daha önce elle regasm ile kurduysanız önce onu
     `/unregister` ile temizleyin ki installer'ın kaydı test edilsin),
-    (d) bir komutu çalıştırıp eklentinin normal çalıştığını doğrulayın,
-    (e) Denetim Masası > Program Ekle/Kaldır'dan "ÜretimOS Kesim & Teknik
-    Resim Eklentisi"ni kaldırıp hem dosyaların hem SolidWorks Add-Ins
-    kaydının TEMİZ şekilde kalktığını (SolidWorks'te bir daha
-    görünmediğini) doğrulayın. **Bu betik hiç derlenmedi/çalıştırılmadı**
-    — ilk deneme bu yüzden kritik, en ufak bir hata Inno Setup'ın kendi
+    (e) bir komutu çalıştırıp eklentinin normal çalıştığını doğrulayın,
+    (f) SolidWorks AÇIKKEN Denetim Masası'ndan kaldırmayı DENEYİN — aynı
+    şekilde bir Türkçe uyarı bekleniyor; kapatıp tekrar deneyin, hem
+    dosyaların hem SolidWorks Add-Ins kaydının TEMİZ şekilde kalktığını
+    (SolidWorks'te bir daha görünmediğini) doğrulayın. **Bu betik hiç
+    derlenmedi/çalıştırılmadı** — ilk deneme bu yüzden kritik, en ufak
+    bir hata Inno Setup'ın kendi
     derleme çıktısında AÇIKÇA görünür.
 
 ## Değişen/eklenen dosyalar
@@ -952,7 +985,14 @@ maddesi) — YENİ:**
   RegisterFunction` üzerinden) hem COM kaydını hem SolidWorks'ün
   `HKLM\...\SolidWorks\Addins\{GUID}` / `HKCU\...\SolidWorks\AddInsStartup\{GUID}`
   girdilerini otomatik yazar; kaldırmada `RegAsm.exe /unregister` ile
-  otomatik geri alır. Elle regasm adımını GEREKSİZ kılar.
+  otomatik geri alır. Elle regasm adımını GEREKSİZ kılar. SONRADAN:
+  regasm çağrısı düz `[Run]`/`[UninstallRun]`'dan `[Code]` (Pascal Script)
+  bölümüne taşındı — `IsAppRunning` (WMI) SolidWorks açıkken kurulum/
+  kaldırmayı Türkçe bir uyarıyla durdurur, `RegisterAddin`/`UnregisterAddin`
+  RegAsm'ın çıkış kodunu AÇIKÇA kontrol edip başarısızlıkta elle ne
+  yapılacağını söyler (sessiz "başarılı" görünme YOK); `[Messages]` ile
+  Hoş Geldiniz/Tamamlandı ekranları Türkçeye çevrildi (ayrı dil dosyası
+  gerektirmeden); `SetupLogging=yes` eklendi.
 - `solidworks_addin/README.md` — "Kurulum" bölümü "A) Otomatik kurulum
   (ÖNERİLEN)" / "B) Elle kurulum (geliştirme/hata ayıklama)" olarak ikiye
   ayrıldı; B) yol BİLEREK SİLİNMEDİ (referans + A) başarısız olursa
