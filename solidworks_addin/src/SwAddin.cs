@@ -219,9 +219,12 @@ namespace UretimOSKesim
             const int ID_MONTAJ_SEMASI_ONAYLA = 107;
             const int ID_RECETE_AGACI = 108;
             const int ID_CNC_YERLESIM = 109;
+            const int ID_ALTI_YUZ_KUTU = 110;
+            const int ID_KUTU_FRAME_YERLESTIR = 111;
             int[] komutIdleri = new int[] {
                 ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET,
-                ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI, ID_CNC_YERLESIM
+                ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI, ID_CNC_YERLESIM,
+                ID_ALTI_YUZ_KUTU, ID_KUTU_FRAME_YERLESTIR
             };
 
             bool eskisiniYokSay = false;
@@ -401,6 +404,41 @@ namespace UretimOSKesim
                 ID_CNC_YERLESIM, itemTipi);
             Tanilama.Kaydet("9. AddCommandItem2 tamamlandi");
 
+            // KOMUT 10 — 6 YÜZ KUTU OLUŞTUR (kullanıcı isteği: "Frame ... 6
+            // yüz eksende ... box'ı da 6 yüz olarak yap"). Frame (gövde) VE
+            // Box (çekmece/kapak/arkalık/raf/dikme kütüphanesi) İÇİN AYNI
+            // komut kullanılır — bkz. AltiYuzKutuOlusturucu.cs.
+            Tanilama.Kaydet("10. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "6 Yüz Kutu Oluştur (ÜretimOS)", -1,
+                "6 panelden (üst/alt/sol/sağ/ön/arka — istenilenler seçilebilir) oluşan bir kutu " +
+                "(Frame/gövde VEYA Box/çekmece/kapak/arkalık/raf/dikme) üretir: her panel KENDİ " +
+                "parça dosyası, hepsi bir montajda birleşir. Yeni bir SolidWorks oturumu/belgesi " +
+                "gerektirmez, bu komut kendi dosyalarını oluşturur.",
+                "6 Yüz Kutu", 9, "AltiYuzKutuOlusturCalistir", "PaketOlusturEtkinMi",
+                ID_ALTI_YUZ_KUTU, itemTipi);
+            Tanilama.Kaydet("10. AddCommandItem2 tamamlandi");
+
+            // KOMUT 11 — KUTUYU FRAME'E YERLEŞTİR (kullaniçi isteği: "box her
+            // sürükle bırakta özerk dosya haline gelsin ... hırdavatların
+            // bağlantı deliklerini cutextrude olarak ... frame'in içine
+            // atıldığında panelde delik ve kanal oluştursun"). Bir Frame
+            // montajı AÇIKKEN, box'ın YERLEŞECEĞİ panel bileşeni SEÇİLİP
+            // çalıştırılır — bkz. KutuFrameYerlestirPaneli.cs (gerçek sağ-tık
+            // sürükle-bırak DEĞİL, kanıtlanmış "seç + komut" deseni; bkz. o
+            // dosyanın başındaki gerekçe).
+            Tanilama.Kaydet("11. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "Kutuyu Frame'e Yerleştir (ÜretimOS)", -1,
+                "Aktif Frame montajında SEÇİLİ panel bileşenine bir box şablonunu ÖZERK (yeni, " +
+                "bağımsız dosya adlarıyla PackAndGo ile kopyalanmış) olarak yerleştirir ve " +
+                "hırdavat bağlantı deliklerini box'ta VE seçili Frame panelinde gerçek CutExtrude " +
+                "özelliği olarak açar. GERÇEK bir 3D geometri değişikliğidir — çalıştırmadan önce " +
+                "onay istenir.",
+                "Kutuyu Yerleştir", 10, "KutuyuFrameYeYerlestirCalistir", "PaketOlusturEtkinMi",
+                ID_KUTU_FRAME_YERLESTIR, itemTipi);
+            Tanilama.Kaydet("11. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -467,9 +505,9 @@ namespace UretimOSKesim
             Tanilama.Kaydet("AddCommandTabBox tamamlandi, kutu null mu=" + (kutu == null));
             if (kutu == null) return;
 
-            int[] cmdIdleri = new int[9];
-            int[] metinTipi = new int[9];
-            for (int i = 0; i < 9; i++)
+            int[] cmdIdleri = new int[11];
+            int[] metinTipi = new int[11];
+            for (int i = 0; i < 11; i++)
             {
                 cmdIdleri[i] = grup.get_CommandID(i);
                 metinTipi[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
@@ -513,14 +551,14 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            // NOT: dosya adı "_v6" oldu (v5'ten) — 8 kareli şeritten 9 kareli
-            // şeride geçildi (CNC Yerleşimi eklendi); "dosya zaten var"
-            // kontrolü eski 8 kareli dosyayı YENİDEN KULLANMASIN diye (aksi
-            // halde 9. komutun ikonu boş/yanlış kalır) — bkz. önceki
-            // sürümler için verilen aynı gerekçe.
-            string yol20 = Path.Combine(klasor, "komutlar_v6_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v6_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v6_40.png");
+            // NOT: dosya adı "_v7" oldu (v6'dan) — 9 kareli şeritten 11 kareli
+            // şeride geçildi (6 Yüz Kutu Oluştur + Kutuyu Frame'e Yerleştir
+            // eklendi); "dosya zaten var" kontrolü eski 9 kareli dosyayı
+            // YENİDEN KULLANMASIN diye (aksi halde 10-11. komutların ikonu
+            // boş/yanlış kalır) — bkz. önceki sürümler için verilen aynı gerekçe.
+            string yol20 = Path.Combine(klasor, "komutlar_v7_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v7_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v7_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -532,12 +570,13 @@ namespace UretimOSKesim
         // Şerit sırası (ImageListIndex ile eşleşmeli — bkz. KomutlariKur'daki
         // AddCommandItem2 çağrıları): 0=Kesim, 1=Etiketle, 2=Teknik Resim
         // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi, 5=Montaj Şeması
-        // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı, 8=CNC Yerleşimi.
+        // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı, 8=CNC Yerleşimi,
+        // 9=6 Yüz Kutu Oluştur, 10=Kutuyu Frame'e Yerleştir.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 9;
+            int genislik = kareBoyutu * 11;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -551,6 +590,8 @@ namespace UretimOSKesim
                 MontajSemasiOnayIkonuCiz(g, kareBoyutu * 6, kareBoyutu);
                 ReceteAgaciIkonuCiz(g, kareBoyutu * 7, kareBoyutu);
                 CncYerlesimIkonuCiz(g, kareBoyutu * 8, kareBoyutu);
+                AltiYuzKutuIkonuCiz(g, kareBoyutu * 9, kareBoyutu);
+                KutuFrameYerlestirIkonuCiz(g, kareBoyutu * 10, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
         }
@@ -747,7 +788,50 @@ namespace UretimOSKesim
             }
         }
 
+        // 9: 6 Yüz Kutu Oluştur — kahverengi zemin (ahşap panel çağrışımı),
+        // izometrik bir kutu/dolap taslağı (üst yüz + ön yüz + kenar çizgileri).
+        private void AltiYuzKutuIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.SaddleBrown, x, 0, s, s);
+            using (var kalem = new Pen(Color.White, Math.Max(1f, s / 18f)))
+            {
+                // Ön yüz (kare)
+                g.DrawRectangle(kalem, x + s * 0.2f, s * 0.35f, s * 0.5f, s * 0.5f);
+                // Üst yüz (paralelkenar hissi veren kaçık çizgiler)
+                g.DrawLine(kalem, x + s * 0.2f, s * 0.35f, x + s * 0.4f, s * 0.15f);
+                g.DrawLine(kalem, x + s * 0.7f, s * 0.35f, x + s * 0.9f, s * 0.15f);
+                g.DrawLine(kalem, x + s * 0.4f, s * 0.15f, x + s * 0.9f, s * 0.15f);
+                g.DrawLine(kalem, x + s * 0.9f, s * 0.15f, x + s * 0.9f, s * 0.65f);
+                g.DrawLine(kalem, x + s * 0.9f, s * 0.65f, x + s * 0.7f, s * 0.85f);
+            }
+        }
+
+        // 10: Kutuyu Frame'e Yerleştir — koyu turuncu zemin, büyük bir kutu
+        // (frame) içine küçük bir kutunun (box) inen okla yerleştirilmesi.
+        private void KutuFrameYerlestirIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.DarkOrange, x, 0, s, s);
+            using (var kalem = new Pen(Color.White, Math.Max(1f, s / 18f)))
+            {
+                // Dış çerçeve (Frame)
+                g.DrawRectangle(kalem, x + s * 0.15f, s * 0.35f, s * 0.7f, s * 0.55f);
+                // İç kutu (Box) — dış çerçevenin üstünde, inmekte
+                g.DrawRectangle(kalem, x + s * 0.35f, s * 0.08f, s * 0.3f, s * 0.22f);
+                // İniş oku
+                g.DrawLine(kalem, x + s * 0.5f, s * 0.32f, x + s * 0.5f, s * 0.5f);
+                g.DrawLine(kalem, x + s * 0.42f, s * 0.42f, x + s * 0.5f, s * 0.5f);
+                g.DrawLine(kalem, x + s * 0.58f, s * 0.42f, x + s * 0.5f, s * 0.5f);
+            }
+        }
+
         private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
+
+        // 6 Yüz Kutu (Frame/Box) oluşturucu için parça/montaj şablonları —
+        // varsayılan SolidWorks kurulum yolları; farklıysa AŞAĞIDAKİ İKİ
+        // SATIRI güncelleyin (SABLON_YOLU ile AYNI "dosya bulunamadı" güvence
+        // deseni AltiYuzKutuPaneli.cs'te uygulanıyor).
+        public const string PART_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Part.prtdot";
+        public const string ASSEMBLY_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Assembly.asmdot";
 
         // ── KOMUT: KESİM LİSTESİ + TEKNİK RESİM RAPORU OLUŞTUR ───────────────
         // CommandManager bu adı (case-sensitive) [ComVisible] genel metod
@@ -1086,10 +1170,49 @@ namespace UretimOSKesim
             }
         }
 
+        // ── KOMUT: 6 YÜZ KUTU OLUŞTUR (Frame/Box) ───────────────────────────
+        // Kullanıcı isteği: "Frame ... 6 yüz eksende ... box'ı da 6 yüz olarak
+        // yap". Aktif belgeden BAĞIMSIZ çalışır — kendi yeni dosyalarını
+        // oluşturur (bkz. AltiYuzKutuOlusturucu.cs / AltiYuzKutuPaneli.cs).
+        public void AltiYuzKutuOlusturCalistir()
+        {
+            Tanilama.Kaydet("AltiYuzKutuOlusturCalistir cagrildi");
+            using (var panel = new AltiYuzKutuPaneli(_app))
+            {
+                panel.ShowDialog();
+            }
+        }
+
+        // ── KOMUT: KUTUYU FRAME'E YERLEŞTİR ──────────────────────────────────
+        // Kullanıcı isteği: "box her sürükle bırakta özerk dosya haline
+        // gelsin ... hırdavatların bağlantı deliklerini cutextrude olarak ...
+        // frame'in içine atıldığında panelde delik ve kanal oluştursun".
+        // Aktif belge bir MONTAJ (Frame) olmalı ve box'ın yerleştirileceği
+        // panel bileşeni SEÇİLİ olmalı — bkz. KutuFrameYerlestirPaneli.cs.
+        public void KutuyuFrameYeYerlestirCalistir()
+        {
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null || aktifBelge.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                MessageBox.Show("Bu komut yalnızca bir Frame MONTAJI (.sldasm) açıkken kullanılabilir.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            var frameMontaj = (ModelDoc2)aktifBelge;
+            ModelDoc2 secilenPanel = HedefModelBul("Kutu Yerleştirme");
+            if (secilenPanel == null) return;
+
+            Tanilama.Kaydet("KutuyuFrameYeYerlestirCalistir: frame=" + frameMontaj.GetPathName() + " panel=" + secilenPanel.GetPathName());
+            using (var panel = new KutuFrameYerlestirPaneli(_app, frameMontaj, secilenPanel))
+            {
+                panel.ShowDialog();
+            }
+        }
+
         // Aktif belge bir PARÇA ise doğrudan onu, bir MONTAJ ise ağaçta SEÇİLİ
         // bileşeni hedef alır — EtiketlePaneliAc/ReceteAgaciAcCalistir/
-        // CncYerlesimAcCalistir AYNI "hangi bileşen üzerinde çalışılıyor"
-        // mantığını paylaşır.
+        // CncYerlesimAcCalistir/KutuyuFrameYeYerlestirCalistir AYNI "hangi
+        // bileşen üzerinde çalışılıyor" mantığını paylaşır.
         // islemAdi yalnızca hata mesajlarında kullanılır (hangi komutun
         // uyardığını netleştirmek için).
         private ModelDoc2 HedefModelBul(string islemAdi)

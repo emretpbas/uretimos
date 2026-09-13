@@ -14,6 +14,31 @@ PageModules.hammadde = (() => {
   let filterTip = 'hepsi';
   let searchTxt = '';
 
+  // ── BAĞLANTI DELİK ŞABLONU (tip:'hirdavat' kartları için, opsiyonel) ───────
+  // Kullanıcı isteği: "box'a eklediğimiz hırdavatların bağlantı deliklerini
+  // cutextrude olarak ... panelde delik ve kanal oluştursun" — bu şablon,
+  // SolidWorks eklentisinin (bkz. solidworks_addin/src/HirdavatDelikCikarici.cs)
+  // gerçek kesim yapabilmesi için TEK güvenilir kaynaktır; TAHMİN EDİLMEZ.
+  // Format page_nesting.js:delikMetniniAyristir ile AYNI ("x,y,çap;x,y,çap")
+  // — kullanıcı iki yerde de aynı deseni öğrenir, iki ayrı sözdizimi olmaz.
+  function delikSablonuAyristir(metin) {
+    if (!metin || !String(metin).trim()) return [];
+    return String(metin).split(';').map(s => s.trim()).filter(Boolean).map(parca => {
+      const alanlar = parca.split(',').map(s => s.trim());
+      if (alanlar.length < 3) throw new Error('"' + parca + '" — "x,y,çap" biçiminde olmalı');
+      const [xs, ys, caps] = alanlar;
+      const x = parseFloat(xs), y = parseFloat(ys), cap = parseFloat(caps);
+      if (!isFinite(x) || !isFinite(y) || !isFinite(cap) || cap <= 0) {
+        throw new Error('"' + parca + '" — x/y/çap sayısal ve çap>0 olmalı');
+      }
+      return { x, y, cap };
+    });
+  }
+  function delikSablonunuMetneCevir(delikSablonu) {
+    if (!Array.isArray(delikSablonu) || !delikSablonu.length) return '';
+    return delikSablonu.map(d => d.x + ',' + d.y + ',' + d.cap).join(';');
+  }
+
   async function render(main) {
     const list = await Store.hammaddeler.all();
     main.innerHTML = `
@@ -374,6 +399,15 @@ PageModules.hammadde = (() => {
         </div>
       </div>
 
+      <div id="f-hirdavat-fields">
+        <div class="fgroup">
+          <label class="flbl">Bağlantı Delik Şablonu (opsiyonel) — "x,y,çap;x,y,çap" mm, bir referans köşeden</label>
+          <input class="finput" id="f-delik-sablonu" value="${App.escapeHtml(delikSablonunuMetneCevir(d.delikSablonu))}" placeholder="örn. 0,37,8;0,-37,8 (minifix gibi 2 delikli hırdavat)">
+          <div class="fhint">SolidWorks eklentisi CNC Yerleşimi/Kutu otomasyonunda bu şablonu kullanarak
+            gerçek CutExtrude delikleri açar — TAHMİN EDİLMEZ, boş bırakılırsa o hırdavat için delik açılmaz.</div>
+        </div>
+      </div>
+
       <div class="frow">
         <div class="fgroup"><label class="flbl">Birim</label>
           <select class="fselect" id="f-birim">
@@ -434,7 +468,9 @@ PageModules.hammadde = (() => {
     App.openModal({ title: isEdit ? 'Hammadde Düzenle' : 'Yeni Hammadde Tanımla', sub: isEdit ? d.stokKodu : 'Plaka veya hırdavat hammadde kartı oluşturun', body, footer, wide: true });
 
     function togglePlakaFields() {
-      document.getElementById('f-plaka-fields').style.display = document.getElementById('f-tip').value === 'plaka' ? 'block' : 'none';
+      const tip = document.getElementById('f-tip').value;
+      document.getElementById('f-plaka-fields').style.display = tip === 'plaka' ? 'block' : 'none';
+      document.getElementById('f-hirdavat-fields').style.display = tip === 'hirdavat' ? 'block' : 'none';
     }
     document.getElementById('f-tip').onchange = togglePlakaFields;
     togglePlakaFields();
@@ -502,6 +538,11 @@ PageModules.hammadde = (() => {
       const tip = document.getElementById('f-tip').value;
       const ad = document.getElementById('f-ad').value.trim();
       if (!ad) { App.toast('Hammadde adı zorunlu', 'err'); return; }
+      let delikSablonu = [];
+      if (tip === 'hirdavat') {
+        try { delikSablonu = delikSablonuAyristir(document.getElementById('f-delik-sablonu').value); }
+        catch (e) { App.toast('Delik şablonu hatalı: ' + e.message, 'err'); return; }
+      }
       const next = {
         id: d.id || App.uid('HM'),
         tip,
@@ -513,6 +554,7 @@ PageModules.hammadde = (() => {
         kalinlik: tip === 'plaka' ? parseFloat(document.getElementById('f-kalinlik').value) || null : null,
         renk: tip === 'plaka' ? document.getElementById('f-renk').value.trim() : null,
         grainYonu: tip === 'plaka' ? document.getElementById('f-grain').value : 'yok',
+        delikSablonu: tip === 'hirdavat' ? delikSablonu : [],
         birim: document.getElementById('f-birim').value,
         fireYuzde: parseFloat(document.getElementById('f-fire').value) || 0,
         // MRP parametreleri: tedarik süresi sipariş tarihini belirler,

@@ -417,6 +417,31 @@ console.log('\n-- delik/form/CNC/cam: SolidWorks eklentisi kullanıcı isteği (
   t('Ekle/Düzenle formunda "cam" seçeneği var', /<option value="cam" \$\{d\.tip === 'cam'/.test(hammaddeSrc));
 }
 
+console.log('\n-- Hırdavat Bağlantı Delik Şablonu (Frame/Box otomasyonu için temel veri) --');
+{
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'page_hammadde.js'), 'utf8');
+  const al = (ad) => { const i = src.indexOf('function ' + ad + '('); let d = 0, j = src.indexOf('{', i); do { if (src[j] === '{') d++; else if (src[j] === '}') d--; j++; } while (d > 0); return src.slice(i, j); };
+  eval(al('delikSablonuAyristir'));
+  eval(al('delikSablonunuMetneCevir'));
+
+  const r = delikSablonuAyristir('0,37,8;0,-37,8');
+  t('2 delik ayrıştırıldı', r.length === 2);
+  t('x/y/çap doğru okunuyor', r[0].x === 0 && r[0].y === 37 && r[0].cap === 8);
+  t('boş metin -> boş dizi (hırdavat için delik şablonu opsiyonel)', delikSablonuAyristir('').length === 0);
+  let hataFirladi = false;
+  try { delikSablonuAyristir('abc,37,8'); } catch (e) { hataFirladi = true; }
+  t('geçersiz sayı -> hata fırlatıyor (sessizce yutmuyor, TAHMİN ETMİYOR)', hataFirladi);
+  t('metne çevirme round-trip çalışıyor (düzenlerken önceki değer geri gelir)',
+    delikSablonunuMetneCevir(r) === '0,37,8;0,-37,8');
+  t('boş/tanımsız delikSablonu -> boş metin', delikSablonunuMetneCevir(undefined) === '' && delikSablonunuMetneCevir([]) === '');
+
+  t('form: tip=hirdavat iken delik şablonu alanı gösteriliyor', /f-hirdavat-fields.*display = tip === 'hirdavat'/s.test(src));
+  t('kaydederken delikSablonu yalnızca tip=hirdavat için doluyor, diğer tiplerde boş dizi',
+    /delikSablonu: tip === 'hirdavat' \? delikSablonu : \[\],/.test(src));
+  t('geçersiz delik şablonu girişi kaydı ENGELLİYOR (err toast + return)',
+    /catch \(e\) \{ App\.toast\('Delik şablonu hatalı: ' \+ e\.message, 'err'\); return; \}/.test(src));
+}
+
 console.log('\n-- CNC Takım Kütüphanesi (CAM modülü) altyapısı: koleksiyon + menü + api.php erişimi --');
 {
   const storageSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'storage.js'), 'utf8');

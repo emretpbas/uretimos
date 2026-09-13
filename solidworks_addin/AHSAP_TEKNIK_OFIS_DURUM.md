@@ -447,6 +447,107 @@ Paint) davranışı bu ortamda ÇALIŞTIRILAMADI**, Pazartesi gerçek testte
 özellikle önizlemenin panel boyutuna göre doğru ölçeklendiğini ve takım
 seçiminin operasyon değiştirince kaybolmadığını kontrol edin.
 
+### 14) 6 Yüz Kutu (Frame/Box) Otomasyonu + Hırdavat Delik Aktarımı — YENİ, EN YÜKSEK RİSKLİ BÖLÜM
+
+Kullanıcı isteği: "6 yüz eksende hazırladığımız Frame dosyasında oluşturduğumuz
+gövde içerisine yine aynı mantıkla sürükle bırak mantığında bir box atalım.
+Frame özerk ve kendi alt montaj ve part dosyalarını oluştursun, ancak box her
+sürükle bırakta yine özerk dosya haline gelsin ve başka dosyalarda değişerek
+karışıklık çıkarmasın. Box'a eklediğimiz hırdavatların bağlantı deliklerini
+cutextrude olarak atıldığı yüzeyi delecek şekilde düzenleyelim; Frame'in
+içine atıldığında panelde delik ve kanal oluştursun."
+
+Üç netleştirme sorusuyla mimari netleştirildi: (1) Frame **6 panel ayrı
+.sldprt, bir .sldasm montajında** birleşik — Box da AYNI mantıkla üretilecek
+(kullanıcı: "Box için kütüphane yapacağım — çekmece/kapak/arkalık/raf/dikme
+— sen sadece bunu da 6 yüz olarak yap"). (2) "Özerk dosya" = **her
+yerleştirmede YENİ dosya adlarıyla kopyalansın** (tek şablona linkli
+KALMASIN).
+
+**⚠️ BU BÖLÜM, BU OTURUMUN EN YÜKSEK RİSKLİ ÇALIŞMASIDIR** — önceki tüm
+özellikler ya SolidWorks geometrisini yalnızca OKUDU (DelikFormCikarici) ya
+da sıfır SolidWorks-COM riski taşıyan WinForms/veri işleriydi. Burada
+İLK KEZ gerçek geometri OLUŞTURULUYOR (sketch + extrude + cut) — bu,
+doğrudan CNC'ye giden bir çıktıdır. Aşağıdaki HER adımda bu risk açıkça
+işaretlendi.
+
+**a) AltiYuzKutuOlusturucu.cs (YENİ)** — Genişlik/Yükseklik/Derinlik/Kalınlık
++ hangi yüzler dahil edilsin parametreleriyle 6 panel (her biri kendi
+`.sldprt`'i) + bunları birleştiren bir `.sldasm` üretir. **Rotasyon riskini
+SIFIRLAYAN tasarım kararı:** `AddComponent5` yalnızca KONUM alır, döndürme
+almaz — bu yüzden her panel BİLEREK FARKLI bir referans düzlemde (Üst/Alt →
+Top Plane, Sol/Sağ → Right Plane, Ön/Arka → Front Plane) çizilip KENDİ
+dosyasında zaten doğru yönelimde üretiliyor; montajda HİÇBİR döndürme
+matrisi hesaplanmıyor. Paneller gerçek mate YERİNE "Fix" (sabitle) ile
+konumlanıyor (çok daha büyük, doğrulanamamış bir mate-oluşturma API
+yüzeyinden kaçınmak için).
+
+**b) KutuYerlestirmeYoneticisi.cs (YENİ)** — box şablonunu SolidWorks'ün
+KENDİ resmi "Pack and Go" API'siyle (`IPackAndGo`) TÜM alt dosyalarıyla
+birlikte, referansları otomatik düzelterek, Frame'in adına göre türetilmiş
+YENİ dosya adlarıyla kopyalar, sonra Frame montajına bileşen olarak ekler.
+**GÜVENİLİRLİK UYARISI:** `IPackAndGo` arayüzünün tam kullanımı (özellikle
+`SetSaveToName`'in parametre sırası) resmi dokümantasyona bu ortamda erişim
+ENGELLENDİĞİ için yalnızca kamuya açık örneklerden bilinen genel şekliyle
+uygulandı — DOĞRULANAMADI.
+
+**c) HirdavatDelikUygulayici.cs (YENİ) — EN KRİTİK PARÇA:** Box'a atanmış
+hırdavatların (`HIRDAVAT_LISTESI`) ÜretimOS'taki delik şablonlarını
+(bkz. madde e) okuyup box'ın temas eden panelinde VE Frame'in seçili
+panelinde GERÇEK `CutExtrude` (ThroughAll) özelliği olarak açar. Bunu
+tractable kılan fikir: box ve frame panelleri AYNI AltiYuzKutuOlusturucu
+kuralını paylaştığı için, box'ın deliği Frame paneline yalnızca box'ın
+Frame'deki konum OFSETİ kadar KAYDIRILARAK (döndürme gerekmeden) doğru
+yere aktarılabiliyor — `KutuFrameYerlestirPaneli.cs`'teki ofset hesabı bunu
+uyguluyor. **BİLEREK YAPILMAYAN:** "kanal" (sürekli menteşe/ray gibi uzun
+yuvalar) bu turda YAPILMADI — yalnızca DAİRESEL delikler açılıyor; kanal
+ayrı bir sketch varlığı (slot) gerektirir, riski tek turda daha da artırırdı,
+doğal bir sonraki adım olarak bırakıldı. **GÜVENİLİRLİK UYARISI (bu
+oturumun en belirsiz çağrısı):** `IFeatureManager.FeatureCut4`'ün tam
+(~26) parametreli imzası DOĞRULANAMADI.
+
+**d) KutuFrameYerlestirPaneli.cs (YENİ, 11. komut) — orkestrasyon:**
+Kullanıcı Frame montajında box'ın oturacağı PANELİ SEÇER, komutu çalıştırır,
+box şablon dosyasını + konumu (X/Y/Z mm) girer. **Temas yüzü ayrıca
+SORULMAZ** — seçilen panelin KENDİ KOD'undan (`..._ALT`, `..._UST` gibi
+AltiYuzKutuOlusturucu'nun ürettiği sonek) otomatik okunur. **Gerçek bir
+sağ-tık sürükle-bırak DEĞİL** — SolidWorks'te canlı COM olay yakalama
+(component-added notify) bu ortamda hiç doğrulanamayan, bu kod tabanında
+HİÇ kullanılmamış bir risk katmanı olurdu; bunun yerine bu eklentideki
+HER ÖZELLİKLE AYNI, kanıtlanmış "seç + komut şeridi" deseni kullanıldı.
+İşlem çalıştırılmadan önce kullanıcıya AÇIK bir onay diyaloğu gösterilir
+("bu GERÇEK bir kesim oluşturacak, ilk çalıştırmada mutlaka elle
+doğrulayın").
+
+**e) Hırdavat kartlarına "Bağlantı Delik Şablonu" (page_hammadde.js, YENİ
+alan):** `tip:'hirdavat'` kartlarına opsiyonel bir "x,y,çap;x,y,çap" hızlı
+giriş eklendi (`page_nesting.js`'in delik girişiyle AYNI format/mantık —
+kullanıcı iki ekranda da aynı deseni öğrenir). SolidWorks eklentisi bu
+şablonu okuyarak delik açar — **TAHMİN EDİLMEZ**, şablonu olmayan bir
+hırdavat için delik açılmaz (yalnızca uyarı verilir).
+
+**f) 10. komut — AltiYuzKutuPaneli.cs:** Frame/Box oluşturma için basit bir
+giriş formu (kod/ad/ölçüler/dahil edilecek yüzler/çıkış klasörü) —
+`AltiYuzKutuOlusturucu`'yu çağırır. `PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU`
+(SwAddin.cs, YENİ sabitler) varsayılan SolidWorks kurulum yollarını
+gösterir — **farklıysa Visual Studio'da güncellenmeli**.
+
+**Test durumu:** JS tarafı (delik şablonu ayrıştırma/kaydetme, form
+toggle) 9 yeni testle doğrulandı (toplam 201 test, hepsi geçiyor). C#
+tarafı (AltiYuzKutuOlusturucu, KutuYerlestirmeYoneticisi,
+HirdavatDelikUygulayici, KutuFrameYerlestirPaneli, AltiYuzKutuPaneli, 10-11.
+komutlar) **YALNIZCA brace/paren dengesi ve manuel inceleme** ile
+doğrulandı — bu ortamda SolidWorks/Visual Studio derleyicisi OLMADIĞI için
+`SketchManager.CreateCornerRectangle`, `FeatureManager.FeatureExtrusion3`,
+`FeatureManager.FeatureCut4`, `AssemblyDoc.AddComponent5`,
+`Component2.Select4`/`FixComponent`, `IPackAndGo` ailesi HİÇBİRİ canlı
+test edilemedi. Bunların HERHANGİ biri yanlışsa EN OLASI sonuç bir derleme
+hatasıdır (güvenli — Visual Studio'da hemen görülür, Nesne Gezgini'nde
+doğru üye adı bulunup tek satırda düzeltilir) ama `FeatureExtrusion3`/
+`FeatureCut4` gibi çok parametreli çağrılarda "derlenir ama yanlış geometri
+üretir" riski de vardır — **Pazartesi ilk denemede oluşan panel ölçülerini
+ve delik konumlarını SolidWorks'te MUTLAKA elle ölçüp doğrulayın.**
+
 ## PAZARTESİ İÇİN YAPILACAKLAR (net, sıralı)
 
 1. `git pull` (veya Visual Studio'dan Çek) ile şu dosyaların güncel halini
@@ -541,6 +642,32 @@ seçiminin operasyon değiştirince kaybolmadığını kontrol edin.
     doğrulayın (Id-bazlı eşleme çalışıyor mu). Son olarak dışa aktarıp
     ZIP'teki `Delikler/*.json` dosyasında `operasyonlar[]` alanının
     dolduğunu kontrol edin.
+15. **YENİ, DİKKATLİ TEST EDİN (14. madde — en yüksek riskli bölüm):**
+    Visual Studio'da projeye `AltiYuzKutuOlusturucu.cs`,
+    `KutuYerlestirmeYoneticisi.cs`, `HirdavatDelikUygulayici.cs`,
+    `KutuFrameYerlestirPaneli.cs`, `AltiYuzKutuPaneli.cs` dosyalarını ekleyin.
+    `SwAddin.cs`'teki `PART_SABLON_YOLU`/`ASSEMBLY_SABLON_YOLU` sabitlerinin
+    GERÇEK şablon dosya yollarınızla eşleştiğini önce kontrol edin. Sırasıyla:
+    (a) **"6 Yüz Kutu Oluştur"** ile küçük, test amaçlı bir kutu (örn.
+    300×200×150mm, tüm yüzler açık) oluşturun — SolidWorks'te AÇIP her
+    panelin GERÇEKTEN doğru ölçüde/konumda olduğunu elle ölçün (bu adım
+    `FeatureExtrusion3`'ün doğru çalıştığını kanıtlar, atlanamaz).
+    (b) Aynı şekilde küçük bir "box" (örn. çekmece) oluşturun.
+    (c) Hammaddeler ekranında bir hırdavat kartına (örn. "RAY-001") basit
+    bir delik şablonu girin (örn. "0,20,5;0,-20,5").
+    (d) Etiketleme Panelinden, box'ın temas eden panel dosyasına
+    `URETIMOS_HIRDAVAT` alanına bu kodu yazın (örn. "RAY-001:1").
+    (e) Frame'i açıp içindeki bir paneli seçip **"Kutuyu Frame'e
+    Yerleştir"**i çalıştırın, box şablonunu + bir konum girin, onay
+    diyaloğunu okuyup onaylayın.
+    (f) SONUÇ: box'ın Frame'e eklendiğini, hem box panelinde hem seçtiğiniz
+    Frame panelinde YENİ delik(ler) oluştuğunu, ve bu deliklerin
+    KONUMUNUN/ÇAPININ girdiğiniz şablonla eşleştiğini SolidWorks'te elle
+    ölçüp doğrulayın. Yanlışsa Ctrl+Z ile geri alıp hangi adımın hatalı
+    olduğunu (panel oluşturma mı, yerleştirme mi, delik açma mı) bana
+    bildirin — tek tek düzeltiriz.
+    (g) Aynı Frame'e İKİNCİ bir box daha yerleştirip, İLK box'ın dosyalarının
+    HİÇ DEĞİŞMEDİĞİNİ (özerk kopyalama çalışıyor mu) doğrulayın.
 
 ## Değişen/eklenen dosyalar
 
@@ -608,3 +735,19 @@ seçiminin operasyon değiştirince kaybolmadığını kontrol edin.
 - `is_emri_uretici.js` — `satir.cncOperasyonlar` (taşınır, henüz tüketilmez)
 - `testler/swood_ice_aktarim_testi.js` — CNC takım kütüphanesi + operasyon
   akışı testleri eklendi (toplam 192 test, hepsi geçiyor)
+
+**6 Yüz Kutu (Frame/Box) Otomasyonu (bkz. 14. madde) — sonradan eklendi:**
+- `page_hammadde.js` — hırdavat kartlarına "Bağlantı Delik Şablonu" alanı
+  (`delikSablonuAyristir`/`delikSablonunuMetneCevir`, `delikSablonu[]`)
+- `testler/swood_ice_aktarim_testi.js` — 9 yeni test (toplam 201, hepsi geçiyor)
+- `solidworks_addin/src/AltiYuzKutuOlusturucu.cs` — YENİ dosya (6 panel +
+  montaj üretici, Frame VE Box için ortak — bkz. 14.a GÜVENİLİRLİK UYARISI)
+- `solidworks_addin/src/KutuYerlestirmeYoneticisi.cs` — YENİ dosya
+  (PackAndGo ile özerk dosya kopyalama + Frame'e ekleme — bkz. 14.b)
+- `solidworks_addin/src/HirdavatDelikUygulayici.cs` — YENİ dosya (hırdavat
+  delik şablonundan CutExtrude, box + Frame paneli — bkz. 14.c, EN YÜKSEK RİSK)
+- `solidworks_addin/src/KutuFrameYerlestirPaneli.cs` — YENİ dosya (11. komut,
+  orkestrasyon + onay diyaloğu — bkz. 14.d)
+- `solidworks_addin/src/AltiYuzKutuPaneli.cs` — YENİ dosya (10. komut, giriş formu)
+- `solidworks_addin/src/SwAddin.cs` — 10-11. komutlar, `PART_SABLON_YOLU`/
+  `ASSEMBLY_SABLON_YOLU` sabitleri (kurulumunuza göre GÜNCELLEYİN)
