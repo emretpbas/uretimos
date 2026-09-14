@@ -177,7 +177,7 @@ namespace UretimOSKesim
             if (_cmdMgr != null)
             {
                 // CommandGroup ID, KomutlariKur() içindeki GRUP_ID ile AYNI olmalı.
-                _cmdMgr.RemoveCommandGroup(100);
+                _cmdMgr.RemoveCommandGroup(200);
             }
             _cmdMgr = null;
             _app = null;
@@ -209,7 +209,17 @@ namespace UretimOSKesim
         private void KomutlariKur()
         {
             Tanilama.Kaydet("KomutlariKur basladi");
-            const int GRUP_ID = 100;
+            // KESİN TANI #5 (bkz. bu dosyanın geçmiş yorumları): eski GRUP_ID=100
+            // için SolidWorks'ün kendi iç araç çubuğu özelleştirme önbelleği,
+            // GetGroupDataFromRegistry/IdlerAyniMi kontrolünden BAĞIMSIZ olarak
+            // eski (4 komutluk) düzeni koruyabiliyordu — 11 komutun hepsi DLL'de
+            // mevcut ve doğru DLL kayıtlı olmasına rağmen araç çubuğunda hâlâ
+            // sadece 4 ikon görünmesi bunun kanıtıydı. GRUP_ID'yi TAMAMEN YENİ bir
+            // değere (200) taşımak, SolidWorks'e bunu hiç görmediği bir grup gibi
+            // davrandırır ve olası önbellek kaynaklı tutarsızlığı KESİN olarak
+            // ortadan kaldırır. DisconnectFromSW()'deki RemoveCommandGroup çağrısı
+            // da AYNI değerle güncellenmiştir.
+            const int GRUP_ID = 200;
             const int ID_KESIM = 101;
             const int ID_ETIKET = 102;
             const int ID_TEKNIK_OLUSTUR = 103;
