@@ -846,24 +846,27 @@ namespace UretimOSKesim
         // Part.prtdot/Assembly.asmdot zaten SolidWorks'ün kendi stok
         // şablonları olduğu için aynı klasör(ler)de hazır bulunur.
         //
-        // BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu): `swFileLocationsDocumentTemplates`
-        // üye adı ve `GetUserPreferenceStringListValue`'nun `int` parametre
-        // aldığı varsayımı bu ortamda (SolidWorks/Visual Studio yok)
-        // DOĞRULANAMADI — yaygın bilinen/belgelenmiş bir SolidWorks API
-        // kullanımıdır ama TAHMİN riski taşır. Yanlışsa GÜVENLİ bir derleme
-        // hatası (CS0117/CS1503) verir, ÇÖKME OLMAZ — Nesne Gezgini'nde
-        // doğru üye adını/imzayı bulup bildirin, tek satırda düzeltiriz. Bu
-        // yüzden eski sabit yollar (yukarıda) YEDEK olarak KORUNUYOR:
-        // dinamik arama başarısız olursa hiçbir işlevsellik KAYBEDİLMEZ.
+        // GERÇEK SolidWorks 2025 derlemesinde reflection ile doğrulandı:
+        // `swFileLocationsDocumentTemplates`, `swUserPreferenceStringListValue_e`
+        // İÇİNDE DEĞİL — `swUserPreferenceStringValue_e` (LİSTE değil TEKİL
+        // string değeri) içinde tanımlı (değer=6). Bu yüzden
+        // `GetUserPreferenceStringListValue` yerine `GetUserPreferenceStringValue`
+        // (TEK bir `string` döndürür, `object[]` değil) kullanılıyor. SolidWorks
+        // birden çok şablon klasörü yapılandırılmışsa bunları TEK bir string
+        // içinde ';' ile ayırır (Dosya Konumları ekranının kendi kuralı) —
+        // güvenlik için hem tekli hem çoklu durumu ele alıyoruz. Eski sabit
+        // yollar (yukarıda) YEDEK olarak KORUNUYOR: dinamik arama başarısız
+        // olursa hiçbir işlevsellik KAYBEDİLMEZ.
         public static string SablonYoluBul(ISldWorks app, string dosyaAdi, string eskiSabitYolYedek)
         {
             if (app != null)
             {
                 try
                 {
-                    object deger = app.GetUserPreferenceStringListValue((int)swUserPreferenceStringListValue_e.swFileLocationsDocumentTemplates);
-                    if (deger is string[] klasorler)
+                    string deger = app.GetUserPreferenceStringValue((int)swUserPreferenceStringValue_e.swFileLocationsDocumentTemplates);
+                    if (!string.IsNullOrWhiteSpace(deger))
                     {
+                        var klasorler = deger.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
                         foreach (var klasor in klasorler)
                         {
                             if (string.IsNullOrWhiteSpace(klasor)) continue;

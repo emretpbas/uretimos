@@ -192,9 +192,9 @@ namespace UretimOSKesim
 
                 foreach (Loop2 loop in looplarObj.Cast<Loop2>())
                 {
-                    // GERÇEK SolidWorks 2025 derlemesinde (reflection ile) doğrulandı:
-                    // "IsOuterLoop" DEĞİL, gerçek üye adı "IsOuter" (property).
-                    if (loop.IsOuter) continue; // dış sınır = parçanın kendi kenarı, form DEĞİL
+                    // GERÇEK SolidWorks 2025 derlemesinde (2. derleme denemesinde) doğrulandı:
+                    // "IsOuter" bir PROPERTY değil, parametresiz bir METOT (CS0428).
+                    if (loop.IsOuter()) continue; // dış sınır = parçanın kendi kenarı, form DEĞİL
 
                     object[] kenarlarObj = (object[])loop.GetEdges();
                     if (kenarlarObj == null || kenarlarObj.Length == 0) continue;

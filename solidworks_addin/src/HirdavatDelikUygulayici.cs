@@ -73,13 +73,22 @@ namespace UretimOSKesim
                 var fm = (IFeatureManager)hedefBelge.FeatureManager;
                 // ThroughAll — panel kalınlığını elle bilmeye GEREK BIRAKMAZ,
                 // "atıldığı yüzeyi delecek şekilde" isteğine tam karşılık gelir.
+                // GERÇEK SolidWorks 2025 derlemesinde reflection ile doğrulanan TAM
+                // 27 parametreli FeatureCut4 imzasına göre yeniden yazıldı — önceki
+                // denemede PropagateFeatureToParts (23) ve OptimizeGeometry (27)
+                // parametreleri eksikti.
                 object feature = fm.FeatureCut4(
                     true, false, false, (int)swEndConditions_e.swEndCondThroughAll, 0,
                     0.0, 0.0,
                     false, false, false, false, 0.0, 0.0,
                     false, false, false, false, false,
                     true, true, true, true,
-                    (int)swStartConditions_e.swStartSketchPlane, 0.0, false);
+                    true, // PropagateFeatureToParts — montajdaki alt parçalara da yansısın
+                    (int)swStartConditions_e.swStartSketchPlane,
+                    0.0,   // StartOffset
+                    false, // FlipStartOffset
+                    false  // OptimizeGeometry
+                    );
 
                 Tanilama.Kaydet("HirdavatDelikUygulayici.DeliklerAc FeatureCut4 sonuc=" + (feature != null));
                 if (feature == null)
