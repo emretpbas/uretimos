@@ -20,15 +20,13 @@ namespace UretimOSKesim
     // dosyaları elle kopyalayıp "dangling reference" (kırık referans) riski
     // almaktan çok daha güvenlidir — SolidWorks'ün KENDİ resmi çözümüdür.
     //
-    // ════ GÜVENİLİRLİK UYARISI (bu dosyadaki EN belirsiz API — ÇOK ÖNEMLİ) ════
-    // IPackAndGo arayüzü (GetPackAndGo/GetDocumentNames/SetSaveToName/
-    // SavePackAndGo) resmi dokümantasyona bu ortamda erişim ENGELLENDİ
-    // (ağ erişimi kapalıydı) — yalnızca kamuya açık makro örneklerinden
-    // BİLİNEN genel kullanım şekli uygulandı. ÖZELLİKLE SetSaveToName'in tam
-    // parametre sırası/ref kullanımı DOĞRULANAMADI. Yanlışsa derleme hatası
-    // verir (güvenli) — ilk denemede Visual Studio'da bu satırda hata
-    // çıkarsa, Nesne Gezgini'nde IPackAndGo arayüzünü açıp doğru imzayı
-    // bulup bildirin, tek satır düzeltiriz.
+    // ════ GÜNCELLEME: IPackAndGo imzaları gerçek SolidWorks 2025 derlemesinde ════
+    // (.NET reflection ile) DOĞRULANDI — ilk yazımda "resmi dokümantasyona
+    // erişim yoktu, TAHMİN edildi" notu buradaydı; artık kesin: doğru metot
+    // çifti `GetDocumentNames` / `SetDocumentSaveToNames(object)` (TEK
+    // parametre, TÜM dosyaları AYNI SIRADA yeniden adlandırır) — ilk
+    // denemede yanlışlıkla `SetSaveToName(bool, string)` (TEKİL dosya adı
+    // alan, FARKLI bir metot) kullanılmıştı, CS1503 bunu ortaya çıkardı.
     // ════════════════════════════════════════════════════════════════════════
     // Yerleştirme sonucu — YerlestirilenBilesen, yeni kopyalanan box'ın
     // Frame montajındaki bileşenidir (hırdavat delik uygulaması bunun
@@ -98,13 +96,17 @@ namespace UretimOSKesim
                     yeniDosyalar[i] = Path.Combine(cikisKlasoru, ad + benzersizEk + uzanti);
                 }
 
-                // GERÇEK SolidWorks 2025 derlemesinde ortaya çıktı (dürüstlük notu):
-                // SetSaveToName'in 2. parametresi bu interop sürümünde `ref` DEĞİL
-                // (CS1615), SavePackAndGo ise `bool` değil `object` döndürüyor
-                // (CS0266) — ikisi de burada düzeltildi.
+                // GERÇEK SolidWorks 2025 derlemesinde reflection ile doğrulandı:
+                // `SetSaveToName(bool, string)` TEK bir dosya adı alıyor — TÜM
+                // PackAndGo dosyalarını TOPLU yeniden adlandırmak için YANLIŞ
+                // metotmuş. Doğrusu `SetDocumentSaveToNames(object PathNameList)`
+                // — `GetDocumentNames`'in döndürdüğü `dosyalar` dizisiyle AYNI
+                // SIRADA bir yeni-ad dizisi bekler (tam olarak `yeniDosyalar`
+                // burada zaten o sırada oluşturuluyor). SavePackAndGo `bool`
+                // değil `object` döndürüyor (CS0266, ayrıca düzeltildi).
                 object yeniDosyalarObj = yeniDosyalar;
-                bool adAyarlandi = pgo.SetSaveToName(true, yeniDosyalarObj);
-                Tanilama.Kaydet("KutuYerlestirmeYoneticisi: SetSaveToName basarili=" + adAyarlandi);
+                bool adAyarlandi = pgo.SetDocumentSaveToNames(yeniDosyalarObj);
+                Tanilama.Kaydet("KutuYerlestirmeYoneticisi: SetDocumentSaveToNames basarili=" + adAyarlandi);
 
                 bool kaydedildi = (bool)sablonBelge.Extension.SavePackAndGo(pgo);
                 Tanilama.Kaydet("KutuYerlestirmeYoneticisi: SavePackAndGo basarili=" + kaydedildi);
