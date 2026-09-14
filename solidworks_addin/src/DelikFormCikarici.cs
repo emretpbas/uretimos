@@ -192,13 +192,17 @@ namespace UretimOSKesim
 
                 foreach (Loop2 loop in looplarObj.Cast<Loop2>())
                 {
-                    if (loop.IsOuterLoop()) continue; // dış sınır = parçanın kendi kenarı, form DEĞİL
+                    // GERÇEK SolidWorks 2025 derlemesinde (reflection ile) doğrulandı:
+                    // "IsOuterLoop" DEĞİL, gerçek üye adı "IsOuter" (property).
+                    if (loop.IsOuter) continue; // dış sınır = parçanın kendi kenarı, form DEĞİL
 
                     object[] kenarlarObj = (object[])loop.GetEdges();
                     if (kenarlarObj == null || kenarlarObj.Length == 0) continue;
 
                     var form = new FormBilgisi();
-                    foreach (Edge2 kenar in kenarlarObj.Cast<Edge2>())
+                    // GERÇEK SolidWorks 2025 derlemesinde (reflection ile) doğrulandı:
+                    // "Edge2" tipi hiç YOK — Face2/Loop2 ile aynı desende "Edge" var.
+                    foreach (Edge kenar in kenarlarObj.Cast<Edge>())
                     {
                         // v1 YAKLAŞIKLAMASI: her kenarın yalnızca BAŞLANGIÇ
                         // noktası alınır (yay/eğrilerin tam profili değil) —

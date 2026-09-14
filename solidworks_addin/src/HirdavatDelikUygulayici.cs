@@ -64,7 +64,9 @@ namespace UretimOSKesim
                 hedefBelge.SketchManager.InsertSketch(true);
                 foreach (var d in delikler)
                 {
-                    hedefBelge.SketchManager.CreateCircleByRadius2(d.x * 0.001, d.y * 0.001, 0, d.cap / 2 * 0.001);
+                    // GERÇEK SolidWorks 2025 derlemesinde (reflection ile) doğrulandı:
+                    // gerçek üye adı "CreateCircleByRadius2" DEĞİL, "CreateCircleByRadius".
+                    hedefBelge.SketchManager.CreateCircleByRadius(d.x * 0.001, d.y * 0.001, 0, d.cap / 2 * 0.001);
                 }
                 hedefBelge.SketchManager.InsertSketch(true); // sketch'i kapat
 
