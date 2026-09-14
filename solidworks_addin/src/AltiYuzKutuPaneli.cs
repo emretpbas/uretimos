@@ -125,11 +125,15 @@ namespace UretimOSKesim
             if (p.DahilYuzler.Count == 0) { MessageBox.Show("En az bir yüz seçili olmalı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
 
             // Sürüm/kurulumdan BAĞIMSIZ arama (2017-2025+ aynı derleme) —
-            // bkz. SwAddin.SablonYoluBul: SolidWorks'ün KENDİ "Dosya
+            // bkz. UretimOSAddin.SablonYoluBul: SolidWorks'ün KENDİ "Dosya
             // Konumları > Belge Şablonları" ayarı okunur, bulunamazsa
-            // SwAddin.cs'teki sabit yola (yedek) düşülür.
-            string partSablon = SwAddin.SablonYoluBul(_app, "Part.prtdot", SwAddin.PART_SABLON_YOLU);
-            string montajSablon = SwAddin.SablonYoluBul(_app, "Assembly.asmdot", SwAddin.ASSEMBLY_SABLON_YOLU);
+            // SwAddin.cs'teki sabit yola (yedek) düşülür. NOT: dosya adı
+            // SwAddin.cs olsa da içindeki sınıfın GERÇEK adı UretimOSAddin'dir
+            // (bkz. SwAddin.cs başındaki isimlendirme notu) — gerçek 2025
+            // derlemesinde "SwAddin adı geçerli bağlamda yok" (CS0103) hatası
+            // BUNU doğruladı.
+            string partSablon = UretimOSAddin.SablonYoluBul(_app, "Part.prtdot", UretimOSAddin.PART_SABLON_YOLU);
+            string montajSablon = UretimOSAddin.SablonYoluBul(_app, "Assembly.asmdot", UretimOSAddin.ASSEMBLY_SABLON_YOLU);
             if (!File.Exists(partSablon) || !File.Exists(montajSablon))
             {
                 MessageBox.Show($"Parça/Montaj şablonu bulunamadı:\n{partSablon}\n{montajSablon}\n\n" +

@@ -98,11 +98,15 @@ namespace UretimOSKesim
                     yeniDosyalar[i] = Path.Combine(cikisKlasoru, ad + benzersizEk + uzanti);
                 }
 
+                // GERÇEK SolidWorks 2025 derlemesinde ortaya çıktı (dürüstlük notu):
+                // SetSaveToName'in 2. parametresi bu interop sürümünde `ref` DEĞİL
+                // (CS1615), SavePackAndGo ise `bool` değil `object` döndürüyor
+                // (CS0266) — ikisi de burada düzeltildi.
                 object yeniDosyalarObj = yeniDosyalar;
-                bool adAyarlandi = pgo.SetSaveToName(true, ref yeniDosyalarObj);
+                bool adAyarlandi = pgo.SetSaveToName(true, yeniDosyalarObj);
                 Tanilama.Kaydet("KutuYerlestirmeYoneticisi: SetSaveToName basarili=" + adAyarlandi);
 
-                bool kaydedildi = sablonBelge.Extension.SavePackAndGo(pgo);
+                bool kaydedildi = (bool)sablonBelge.Extension.SavePackAndGo(pgo);
                 Tanilama.Kaydet("KutuYerlestirmeYoneticisi: SavePackAndGo basarili=" + kaydedildi);
                 app.CloseDoc(sablonBelge.GetTitle());
                 sablonBelge = null;

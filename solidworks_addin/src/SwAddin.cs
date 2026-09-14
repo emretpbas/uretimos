@@ -1294,7 +1294,9 @@ namespace UretimOSKesim
                         "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return null;
                 }
-                var bilesen = selMgr.GetSelectedObjectsComponent4(1, "") as Component2;
+                // GERÇEK SolidWorks 2025 derlemesinde ortaya çıktı: 2. parametre
+                // (Mark filtresi) string değil int — -1 = herhangi bir mark.
+                var bilesen = selMgr.GetSelectedObjectsComponent4(1, -1) as Component2;
                 if (bilesen == null)
                 {
                     MessageBox.Show("Seçili öğe bir bileşen (parça/alt montaj) değil.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);

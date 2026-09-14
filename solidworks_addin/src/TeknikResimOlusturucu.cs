@@ -190,7 +190,10 @@ namespace UretimOSKesim
                     denenenSayisi++;
                     try
                     {
-                        v.ShowExploded = true;
+                        // GERÇEK SolidWorks 2025 derlemesinde ortaya çıktı: ShowExploded
+                        // bu interop sürümünde PROPERTY değil, bool parametreli bir
+                        // METOT (CS1656 "method group" hatası bunu doğruladı).
+                        v.ShowExploded(true);
                         patlatilanSayisi++;
                         Tanilama.Kaydet("Gorunus patlatildi: " + v.Name);
                     }

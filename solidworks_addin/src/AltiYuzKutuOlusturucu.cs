@@ -144,13 +144,17 @@ namespace UretimOSKesim
                 var fm = (IFeatureManager)belge.FeatureManager;
                 // Blind, tek yön, kalınlık kadar extrude — bkz. dosya başı
                 // GÜVENİLİRLİK UYARISI (bu çağrı en yüksek risk taşıyan çağrıdır).
+                // GERÇEK SolidWorks 2025 derlemesinde ortaya çıktı (dürüstlük notu):
+                // T0 (başlangıç koşulu) parametresinden SONRAKİ argüman bool değil
+                // "StartOffsetDistance" (double) — 0.0 olarak düzeltildi, son argüman
+                // "FlipStartOffset" (bool) olarak kalıyor.
                 fm.FeatureExtrusion3(
                     true, false, false, (int)swEndConditions_e.swEndCondBlind, 0,
                     p.KalinlikMm * MM_TO_M, 0.0,
                     false, false, false, false, 0.0, 0.0,
                     false, false, false, false,
                     true, true, true,
-                    (int)swStartConditions_e.swStartSketchPlane, false, false);
+                    (int)swStartConditions_e.swStartSketchPlane, 0.0, false);
 
                 string kod = p.Kod + "_" + yuz.ToUpperInvariant();
                 string ad = (p.Ad ?? p.Kod) + " — " + YuzAdiTurkce(yuz);
