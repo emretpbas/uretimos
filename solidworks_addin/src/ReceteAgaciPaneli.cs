@@ -191,9 +191,20 @@ namespace UretimOSKesim
             };
             var ekleBtn = new Button { Text = "Ekle → (seçili ağaç düğümüne, yoksa köke)", Dock = DockStyle.Bottom };
             ekleBtn.Click += (s, e) => SeciliPaletOgesiniEkle();
+            // Kullanıcı isteği: "Sıfırdan bir ürün için TÜM alt kartları
+            // (hammadde, plaka, kenar bandı, hırdavat vb.) da SolidWorks
+            // içinden, panel açıkken oluşturabilme özelliği istiyorum" —
+            // yukarıdaki tip kutusunda SEÇİLİ olan tipte yeni bir kart
+            // oluşturur (bkz. YeniKartFormlari.cs), ÜretimOS'a hemen kaydeder
+            // ve paleti tazeler — reçeteye eklemek için ayrıca "Ekle"ye
+            // basılır (kart oluşturma ile reçeteye ekleme BİLEREK ayrı adım,
+            // ikisini birden yapmak zorunlu DEĞİL).
+            var yeniKartBtn = new Button { Text = "+ Yeni Kart Oluştur…", Dock = DockStyle.Bottom };
+            yeniKartBtn.Click += async (s, e) => await YeniKartOlustur();
 
             solPanel.Controls.Add(_paletListesi);
             solPanel.Controls.Add(ekleBtn);
+            solPanel.Controls.Add(yeniKartBtn);
             solPanel.Controls.Add(_paletAramaKutusu);
             solPanel.Controls.Add(aramaEtiket);
             solPanel.Controls.Add(_paletTipKutusu);
@@ -387,6 +398,99 @@ namespace UretimOSKesim
             KalemTipi = "hammadde", GosterimTipi = gosterimTipi,
             Id = (string)k["id"], Kod = (string)k["stokKodu"] ?? (string)k["id"], Ad = (string)k["ad"] ?? ""
         };
+
+        // ── YENİ KART OLUŞTUR ────────────────────────────────────────────────
+        // Palette tip kutusunda seçili olan tipte (Paket/Yarı Mamül/Alt Montaj/
+        // Hırdavat/Plaka/Kenar Bandı) sıfırdan bir kart oluşturur, ÜretimOS'a
+        // HEMEN kaydeder (ÜretimOS'un kendi web ekranlarındaki "Kaydet"
+        // davranışıyla AYNI — reçete taslak değişiklikleri gibi ertelenmez)
+        // ve yerel listeye/palete ekler.
+        private async System.Threading.Tasks.Task YeniKartOlustur()
+        {
+            if (!_verilerYuklendi || _istemci == null) return;
+
+            string secim = _paletTipKutusu.SelectedItem as string ?? "Paket";
+            string kartTipi;
+            switch (secim)
+            {
+                case "Paket": kartTipi = "paket"; break;
+                case "Yarı Mamül": kartTipi = "yarimamul"; break;
+                case "Alt Montaj": kartTipi = "altmontaj"; break;
+                case "Hırdavat": kartTipi = "hirdavat"; break;
+                case "Plaka": kartTipi = "plaka"; break;
+                case "Kenar Bandı": kartTipi = "kenar_bandi"; break;
+                default: return;
+            }
+
+            JObject yeniKart;
+            using (var dlg = new YeniKartDialog(kartTipi, _hammaddeler))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return;
+                yeniKart = dlg.SonucKart;
+            }
+
+            string koleksiyonAnahtari =
+                (kartTipi == "plaka" || kartTipi == "kenar_bandi" || kartTipi == "hirdavat") ? "hammaddeler"
+                : kartTipi == "yarimamul" ? "yarimamuller"
+                : kartTipi == "altmontaj" ? "altMontajlar"
+                : "paketler";
+
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = "Kart ÜretimOS'a kaydediliyor…";
+
+            bool basarili;
+            try
+            {
+                basarili = await _istemci.ToplukaEkleGuncelle(koleksiyonAnahtari,
+                    new List<object> { yeniKart }, new List<object>());
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("YeniKartOlustur HATA: " + ex);
+                basarili = false;
+            }
+
+            if (!basarili)
+            {
+                // KESİN TANI (bkz. api.php CAD_ENT_YAZILABILIR): "cad_entegrasyon"
+                // rolü yalnızca yarimamuller/paketler/urunler/receteler/rotalar'a
+                // yazabilir — hammaddeler VE altMontajlar dahil DEĞİL. Sessizce
+                // "başarısız" demek yerine kullanıcıya GERÇEK nedeni açıklıyoruz.
+                string ekAciklama = (koleksiyonAnahtari == "hammaddeler" || koleksiyonAnahtari == "altMontajlar")
+                    ? "\n\nNot: 'cad_entegrasyon' rolündeki hesaplar hammadde/alt montaj kartı OLUŞTURAMAZ " +
+                      "(ÜretimOS sunucusunda bilinçli bir kısıtlama) — yalnızca yarı mamül/paket oluşturabilir. " +
+                      "baglanti.json'da tam yetkili bir hesap kullanmanız gerekebilir."
+                    : "";
+                MessageBox.Show(
+                    "Kart ÜretimOS'a kaydedilemedi (sunucu reddetti)." + ekAciklama,
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _durumEtiketi.ForeColor = Color.DarkRed;
+                _durumEtiketi.Text = "Kart kaydedilemedi.";
+                return;
+            }
+
+            switch (koleksiyonAnahtari)
+            {
+                case "hammaddeler": _hammaddeler.Add(yeniKart); break;
+                case "yarimamuller": _yarimamuller.Add(yeniKart); break;
+                case "altMontajlar": _altMontajlar.Add(yeniKart); break;
+                case "paketler": _paketler.Add(yeniKart); break;
+            }
+
+            PaletiFiltrele();
+            string yeniId = (string)yeniKart["id"];
+            for (int i = 0; i < _paletListesi.Items.Count; i++)
+            {
+                if (_paletListesi.Items[i] is PaletOgesi oge && oge.Id == yeniId)
+                {
+                    _paletListesi.SelectedIndex = i;
+                    break;
+                }
+            }
+
+            _durumEtiketi.ForeColor = Color.DarkGreen;
+            _durumEtiketi.Text = $"✓ Yeni kart ÜretimOS'a kaydedildi: {(string)yeniKart["ad"]}";
+        }
 
         // TAM "kullanıldığı yerler" analizi — bu (tip,id) kartının kalem
         // olarak geçtiği TÜM reçeteleri tarar (paket/alt montaj/ürün fark

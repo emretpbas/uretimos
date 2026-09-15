@@ -98,6 +98,35 @@ almak, kesim listesi oluşturmak").
 
 Tam regresyon: 329/329 PHP, tüm JS paketleri yeşil.
 
+## Reçete Ağacı Paneli'nden sıfırdan kart oluşturma — YENİ
+
+Kullanıcı isteği: "sıfırdan paket, yarımamül, alt montaj, hammadde, plaka,
+kenar bandı, hırdavat vb. ile sıfırdan ürün reçetesi oluşturmak ve bu
+reçeteyi uretimos.com.tr'ye yüklemek istiyorum." Reçete Ağacı Paneli'ndeki
+sol taraftaki tip kutusunda (Paket/Yarı Mamül/Alt Montaj/Hırdavat/Plaka/
+Kenar Bandı) seçili olan tipte **"+ Yeni Kart Oluştur…"** butonuyla sıfırdan
+bir kart açılır (alan listeleri ÜretimOS'un kendi web formlarından — bkz.
+`solidworks_addin/src/YeniKartFormlari.cs` başlığı — birebir alındı), OK'a
+basınca ÜretimOS'a HEMEN kaydedilir (reçete taslak değişiklikleri gibi
+ertelenmez) ve palete eklenir — ardından normal "Ekle" akışıyla reçeteye
+sürüklenir/eklenir.
+
+**ÖNEMLİ — yukarıdaki (1) numaralı `cad_entegrasyon` rolü kısıtlamasıyla
+KASITLI ÇAKIŞIYOR:** o rol, hammaddeler'i (plaka/hırdavat/kenar bandı)
+BİLİNÇLİ olarak salt okunur bırakıyordu (master veri bütünlüğünü SolidWorks
+tarafından yanlışlıkla bozulmaya karşı korumak için). Bu yeni özellik
+`cad_entegrasyon` hesabıyla kullanılırsa Plaka/Kenar Bandı/Hırdavat/Alt
+Montaj kartı oluşturma sunucudan 403 ile reddedilir (Yarı Mamül ve Paket
+her zaman çalışır, onlar zaten yazılabilir listesindeydi) — add-in bunu
+sessizce yutmaz, Türkçe bir hata gösterir. Eğer SolidWorks'ten hammadde/alt
+montaj oluşturmak GERÇEKTEN isteniyorsa, iki seçenek var: (a) `baglanti.json`
+için `cad_entegrasyon` yerine tam yetkili bir hesap kullanmak (bu durumda
+salt-okunur koruması tamamen kalkar), veya (b) `api.php`'deki
+`CAD_ENT_YAZILABILIR` listesine bilinçli olarak `hammaddeler`/`altMontajlar`
+eklemek (o zaman `cad_entegrasyon` hesapları da hammadde/alt montaj
+oluşturabilir/değiştirebilir hale gelir — bu, orijinal tasarım kararının
+BİLEREK gevşetilmesi anlamına gelir, hafifçe düşünülmeden yapılmamalı).
+
 ## Kurulum
 
 ### A) Otomatik kurulum — Setup.exe (ÖNERİLEN, SWOOD gibi tek dosya)
