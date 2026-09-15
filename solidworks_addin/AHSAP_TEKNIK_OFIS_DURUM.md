@@ -1093,3 +1093,79 @@ GENİŞLETİLDİ:**
   bilinen bir API ama TAHMİN riski taşır); yanlışsa GÜVENLİ bir derleme
   hatası (CS0117) verir, çökme OLMAZ, eski sabit yol yedeği zaten
   devrede kalır.
+
+**GERÇEK SolidWorks 2025 SP3.0 makinesinde ilk canlı test — 15 derleme
+hatası + "araç çubuğunda sadece 4/11 komut görünüyor" KESİN TANI #8 —
+ÇÖZÜLDÜ:**
+- İlk gerçek derleme (bu makinenin kendi SolidWorks (2) interop
+  DLL'lerine karşı) 15 hata verdi — hepsi reflection ile (Nesne Gezgini
+  DEĞİL, gerçek `[Reflection.Assembly]::LoadFrom` + `GetMethods()`
+  sorgularıyla) doğrulanıp tek tek düzeltildi: yanlış sınıf adı
+  referansları (`SwAddin.X` → `UretimOSAddin.X`), `SetSaveToName(bool,
+  string)` (TEKİL ad) yerine `SetDocumentSaveToNames(object)` (TOPLU),
+  `CreateCircleByRadius2` → `CreateCircleByRadius`, `IsOuterLoop()` →
+  `IsOuter()` (property DEĞİL, metot), `Edge2` → `Edge` (öyle bir tip
+  yok), `FeatureCut4`'ün TAM 27 parametreli imzası, `swUserPreference
+  StringListValue_e` → `swUserPreferenceStringValue_e` (tekil), ve
+  birkaç küçük tip uyuşmazlığı. **Sonuç: 0 Hata, 0 Uyarı** — projenin
+  gerçek bir SolidWorks derlemesine karşı ilk temiz derlemesi.
+- regasm `/codebase` başarıyla çalıştı ("Türler hatasız kaydedildi") ama
+  SolidWorks'ün ÜretimOS araç çubuğu ısrarla sadece 4 komut gösterdi
+  (11 olması gerekirken) — GÜNLERCE (bu oturumda saatlerce) süren tanı
+  sürecinde şu KESİN OLARAK ELENDİ (hepsi gerçek makinede doğrudan
+  test edildi, TAHMİN edilmedi):
+  - Kayıt defteri/CLSID kaydı bozuk değildi (COM aktivasyonu doğrudan
+    `[Type]::GetTypeFromCLSID` + `Activator.CreateInstance` ile
+    PowerShell'den sorunsuz çalıştı).
+  - Eksik bağımlılık DLL'i yoktu (hepsi `bin\...\net48` altında mevcuttu).
+  - Antivirüs (Sophos) o ana ait bir tespit/engelleme kaydı göstermedi.
+  - WDAC/Code Integrity kullanıcı modunda zaten KAPALIYDI
+    (`UsermodeCodeIntegrityPolicyEnforcementStatus=0`).
+  - Klasör konumu (Desktop vs. başka bir yol) fark etmedi.
+  - Kod regresyonu DEĞİLDİ — 9 Eylül'den (değişmemiş) orijinal kaynağın
+    taze bir derlemesi bile İLK ÖNCE aynı şekilde yüklenmedi.
+  - Dijital imza (kendinden imzalı sertifika, güvenilir köke eklenmiş)
+    fark etmedi.
+  - Visual Studio'yu `SLDWORKS.exe` sürecine `Attach to Process` ile
+    bağlayıp **Modüller** penceresinde "Uretimos" araması yapıldığında
+    DLL'in SolidWorks'ün belleğine HİÇ yüklenmediği kesin olarak
+    kanıtlandı (bu, "COM aktivasyonu neden sessizce başarısız oluyor"
+    sorusunu kod dışı bir yöne çevirdi).
+  - **GERÇEK KÖK NEDEN:** kayıt defterinde ("HKLM\SOFTWARE\SolidWorks\
+    Addins") aynı "ÜretimOS Kesim & Teknik Resim" başlığıyla İKİ ayrı
+    GUID kayıtlıydı — güncel/doğru `{a7f3c912-...}` VE GUID'in
+    `a7f3c912`'ye değiştirilmesinden ÖNCEKİ, artık kullanılmayan test
+    GUID'i `{11111111-2222-3333-4444-555555555555}` (bir git bisect
+    testi sırasında o eski GUID'i hâlâ taşıyan bir commit'in derlemesi
+    yanlışlıkla `regasm /codebase` ile kaydedilince bu eski kayıt
+    YENİDEN oluşmuştu). Her iki DLL de AYNI zayıf kimliğe sahipti
+    ("UretimOSKesim, Version=1.0.0.0, Culture=neutral,
+    PublicKeyToken=null" — `AssemblyVersion` hiç artırılmamıştı). .NET
+    Framework, aynı isim+versiyon+kültür+anahtar kimliğine sahip bir
+    derlemeyi bir AppDomain'de yalnızca BİR KEZ yükler; SolidWorks bu
+    iki CLSID'i sırayla etkinleştirirken, hangi kayıt önce işlenirse o
+    dosyanın baytları belleğe alınıyor ve doğru CLSID'in (`a7f3c912`)
+    KENDİ CodeBase'i tamamen görmezden geliniyordu — bizim güncel,
+    11 komutluk kodumuzun asla çalışamamasının, GRUP_ID değişikliğinin
+    (bkz. aşağıdaki not) hiçbir fark yaratmamasının ve "4 komut" ekranda
+    KALICI olarak sabitlenmesinin tam açıklaması buydu.
+  - **ÇÖZÜM:** eski `{11111111-...}` kaydı `HKLM\SOFTWARE\SolidWorks\
+    Addins`, `HKCU\Software\SolidWorks\AddInsStartup` ve
+    `HKEY_CLASSES_ROOT\CLSID` altından TAMAMEN silindi; o eski GUID'i
+    taşıyan git worktree/klasör kopyası kaldırıldı (bir daha yanlışlıkla
+    kaydedilmesin diye). Sonrasında hem Debug hem Release derlemesi
+    SolidWorks'te **11/11 komutla** sorunsuz yüklendi/çalıştı.
+  - **DERS:** Görünüşte kod/derleme sorunu gibi duran bir "eklenti
+    yüklenmiyor/eksik komut var" belirtisi, aslında AYNI zayıf isimli
+    (`AssemblyVersion` hiç değişmeyen) bir derlemenin BİRDEN FAZLA COM
+    kaydı altında var olmasından kaynaklanabilir — `HKLM\SOFTWARE\
+    SolidWorks\Addins` altında proje adına ait BİRDEN FAZLA GUID olup
+    olmadığı, herhangi bir "eklenti garip davranıyor" tanısında EN
+    BAŞTA kontrol edilmesi gereken bir şey. `SwAddin.cs`'teki
+    `[Guid(...)]` özniteliği DEĞİŞTİRİLMİŞSE, eski GUID'i taşıyan HİÇBİR
+    eski derleme kopyası (test worktree'leri dahil) `regasm /codebase`
+    ile bir daha ASLA kaydedilmemeli.
+- GRUP_ID'nin 100'den 200'e değiştirilmesi (bu oturumun başında,
+  "stale toolbar cache" teorisiyle yapılan ilk düzeltme) sonucu
+  ETKİLEMEDİ — zararsızdı ama gerçek düzeltme değildi, gerçek düzeltme
+  yukarıdaki GUID temizliğiydi.
