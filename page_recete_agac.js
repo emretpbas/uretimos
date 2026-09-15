@@ -136,6 +136,7 @@ PageModules.recete_agac = (() => {
           <button class="btn" id="ra-geri">&larr; Normal Görünüme Dön</button>
           <button class="btn" id="ra-tekrar">🔍 Tekrar Eden Kalemler</button>
           <button class="btn" id="ra-excel-aktar">📥 Alt Kırılım Excel</button>
+          <button class="btn" id="ra-xml-aktar">📄 XML Olarak İndir</button>
           <button class="btn btn-green" id="ra-kaydet">✓ Reçete Olarak Kaydet</button>
         </div>
       </div>
@@ -150,6 +151,7 @@ PageModules.recete_agac = (() => {
     document.getElementById('ra-excel-aktar').onclick = () => {
       App.receteAltKirilimExcelIndir(kokKart, kokTip, veri.receteler, veri.yarimamuller, veri.altMontajlar, veri.urunler, veri.hammaddeler, veri.rotalar, veri.ayarlar, veri.paketler);
     };
+    document.getElementById('ra-xml-aktar').onclick = receteyiXmlOlarakIndir;
 
     const treeWrap = document.getElementById('ra-tree-wrap');
     treeWrap.innerHTML = `<div style="min-width:680px">${renderNode(kokTip, kokKart.id, null, 1, [])}</div>`;
@@ -166,6 +168,68 @@ PageModules.recete_agac = (() => {
         <div class="kpi"><div class="kpi-lbl">TOPLAM</div><div class="kpi-val blue">${App.fmtTL(sonuc.toplam)}</div></div>
       </div>
       ${sonuc.eksikKalemler.length ? `<div class="fhint" style="color:var(--red-text);margin-top:8px">⚠ ${sonuc.eksikKalemler.length} kalemin maliyeti hesaplanamadı.</div>` : ''}`;
+  }
+
+  // ── XML DIŞA AKTARMA ─────────────────────────────────────────────────────
+  // Kullanıcı isteği: "Üretimostaki reçeteleri xml formatında kaydedelim ve
+  // her satırın benzersiz unique id bilgiside olsun" — SolidWorks eklentisi
+  // tarafındaki (solidworks_addin/src/ReceteAgaciPaneli.cs)
+  // ReceteyiXmlOlarakDisaAktar ile AYNI mantık ve XML şeması: kartBul/
+  // receteBul ile AYNI özyinelemeli gezinme (sonsuz derinlik yerine
+  // güvenlik amaçlı sabit bir üst sınırla — kartBul/receteBul TAM döngü
+  // tespiti yapmaz, TAHMİN/otomatik düzeltme de yapılmaz, bkz. dosya başı
+  // "ESKİ KAYIT UYUMLULUĞU" notu). Store'a (JSON) HİÇBİR ŞEY YAZILMAZ —
+  // tamamen yerel bir indirme.
+  const XML_DISA_AKTARMA_MAKS_DERINLIK = 12;
+
+  function xmlOznitelikKacir(deger) {
+    return String(deger == null ? '' : deger)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function kalemXmlUret(kalem, derinlik) {
+    const tip = tipNormalize(kalem.tip);
+    const kart = kartBul(tip, kalem.refId);
+    const kod = kart ? (kart.kod || kart.stokKodu || String(kalem.refId)) : String(kalem.refId);
+    const ad = kart ? (kart.ad || '') : '';
+    const miktar = kalem.miktar != null ? kalem.miktar : 1;
+    const birim = kalem.birim || 'ADET';
+    // Bu kalem daha önce (kalemEkle/yeniKartIstendi) eklendiyse zaten
+    // kalıcı bir "RK-..." id'si vardır. Çok eski kayıtlarda id yoksa,
+    // yalnızca BU dışa aktarmaya özel (kaydedilmeyen) geçici bir id
+    // üretilir — sessiz veri değişikliği YAPILMAZ.
+    const id = kalem.id || ('RK-GECICI-' + Math.random().toString(36).slice(2, 10).toUpperCase());
+
+    let icerik = '';
+    if (kart && tip !== 'hammadde' && derinlik < XML_DISA_AKTARMA_MAKS_DERINLIK) {
+      const altRecete = receteBul(tip, kalem.refId);
+      if (altRecete && altRecete.kalemler) {
+        icerik = altRecete.kalemler.map(k => kalemXmlUret(k, derinlik + 1)).join('');
+      }
+    }
+    return `<Kalem id="${xmlOznitelikKacir(id)}" tip="${xmlOznitelikKacir(tip)}" refId="${xmlOznitelikKacir(kalem.refId)}" kod="${xmlOznitelikKacir(kod)}" ad="${xmlOznitelikKacir(ad)}" miktar="${xmlOznitelikKacir(miktar)}" birim="${xmlOznitelikKacir(birim)}">${icerik}</Kalem>`;
+  }
+
+  function receteyiXmlOlarakIndir() {
+    const recete = receteBul(kokTip, kokKart.id);
+    const govde = (recete && recete.kalemler && recete.kalemler.length)
+      ? recete.kalemler.map(k => kalemXmlUret(k, 0)).join('')
+      : '';
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      `<Recete kokTip="${xmlOznitelikKacir(kokTip)}" kokId="${xmlOznitelikKacir(kokKart.id)}" ` +
+      `kokKod="${xmlOznitelikKacir(kokKart.kod || kokKart.stokKodu || '')}" kokAd="${xmlOznitelikKacir(kokKart.ad)}" ` +
+      `disaAktarmaTarihi="${xmlOznitelikKacir(new Date().toISOString())}">${govde}</Recete>`;
+
+    const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (kokKart.kod || kokKart.stokKodu || 'recete').replace(/[\\/:*?"<>|]/g, '_') + '_recete.xml';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    App.toast('✓ Reçete XML olarak indirildi (taslak, kaydedilmedi)', 'ok');
   }
 
   function onGeriDon() {
@@ -749,7 +813,9 @@ PageModules.recete_agac = (() => {
       onSecildi: (secim) => {
         const kalemTip = secim.grup === 'urun' ? 'urun' : secim.grup === 'yarimamul' ? 'yarimamul' : secim.grup === 'altmontaj' ? 'altmontaj' : secim.grup === 'paket' ? 'paket' : 'hammadde';
         openMiktarSorForm(secim, (miktar, birim, olcu, kenarBantlari) => {
-          const yeniKalem = { tip: kalemTip, refId: secim._id, miktar, birim };
+          // Kullanıcı isteği: "her satırın benzersiz unique id bilgiside
+          // olsun" — SolidWorks eklentisindeki "RK-..." ile AYNI önek.
+          const yeniKalem = { id: App.uid('RK'), tip: kalemTip, refId: secim._id, miktar, birim };
           if (olcu) yeniKalem.olcu = olcu;
           if (kenarBantlari) yeniKalem.kenarBantlari = kenarBantlari;
           recete.kalemler.push(yeniKalem);
@@ -760,7 +826,7 @@ PageModules.recete_agac = (() => {
       },
       onYeniKartIstendi: (yeniKartBilgisi) => {
         openYeniKartOlusturForm(yeniKartBilgisi, (yeniTip, yeniId, miktar, birim) => {
-          recete.kalemler.push({ tip: yeniTip, refId: yeniId, miktar, birim });
+          recete.kalemler.push({ id: App.uid('RK'), tip: yeniTip, refId: yeniId, miktar, birim });
           isaretleKirli();
           App.toast('Yeni kart taslağa oluşturuldu ve eklendi (henüz kaydedilmedi)', 'ok');
           reAcVeRender();
