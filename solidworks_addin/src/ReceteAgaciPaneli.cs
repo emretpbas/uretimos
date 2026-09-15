@@ -262,8 +262,18 @@ namespace UretimOSKesim
             _durumEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DarkSlateGray };
             _kaydetBtn = new Button { Text = "✓ ÜretimOS'a Kaydet", Dock = DockStyle.Right, Width = 160, Enabled = false, Font = new Font(Font, FontStyle.Bold) };
             _kaydetBtn.Click += async (s, e) => await KaydetTikla();
+            // Kullanıcı isteği: "Üretimostaki reçeteleri xml formatında
+            // kaydedelim ve her satırın benzersiz unique id bilgiside olsun"
+            // — ÜretimOS'un kendi veri deposu (JSON) DEĞİŞMİYOR, bu SADECE
+            // yerel bir dışa aktarma (export). Her <Kalem> zaten reçeteye
+            // eklenirken atanan benzersiz "RK-..." id'yi taşır (bkz.
+            // KalemEkle) — eski/id'siz kalemler için dışa aktarma ANINDA
+            // (kalıcı olmayan) bir id üretilir, bkz. ReceteyiXmlOlarakDisaAktar.
+            var xmlDisaAktarBtn = new Button { Text = "Reçeteyi XML Olarak Dışa Aktar…", Dock = DockStyle.Right, Width = 210 };
+            xmlDisaAktarBtn.Click += (s, e) => ReceteyiXmlOlarakDisaAktar();
             altPanel.Controls.Add(_durumEtiketi);
             altPanel.Controls.Add(_kaydetBtn);
+            altPanel.Controls.Add(xmlDisaAktarBtn);
 
             // NOT: Dock=Top/Bottom/Left panelleri arasında sıralama, Controls
             // koleksiyonuna EKLENME SIRASININ TERSİNE göre işler — SON eklenen
@@ -946,6 +956,104 @@ namespace UretimOSKesim
                 }
             }
             return dugum;
+        }
+
+        // ── XML DIŞA AKTARMA ─────────────────────────────────────────────────
+        // Kullanıcı isteği: "Üretimostaki reçeteleri xml formatında
+        // kaydedelim ve her satırın benzersiz unique id bilgiside olsun."
+        // AgaciYenidenCiz/KalemDugumuOlustur ile AYNI özyinelemeli gezinme
+        // mantığı (aynı MAKS_DERINLIK güvenlik sınırı) — ama TreeNode yerine
+        // XElement üretir. Sunucudaki (JSON) veri deposu HİÇ değişmiyor,
+        // bu TAMAMEN yerel/isteğe bağlı bir dışa aktarma özelliğidir.
+        private void ReceteyiXmlOlarakDisaAktar()
+        {
+            if (_kokKart == null)
+            {
+                MessageBox.Show("Önce üstten bir kart seçin ('Farklı Kart Seç…').", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var recete = ReceteGetir(_kokTip, _kokKart);
+            var kokEleman = new System.Xml.Linq.XElement("Recete",
+                new System.Xml.Linq.XAttribute("kokTip", _kokTip),
+                new System.Xml.Linq.XAttribute("kokId", (string)_kokKart["id"] ?? ""),
+                new System.Xml.Linq.XAttribute("kokKod", (string)_kokKart["kod"] ?? (string)_kokKart["stokKodu"] ?? ""),
+                new System.Xml.Linq.XAttribute("kokAd", (string)_kokKart["ad"] ?? ""),
+                new System.Xml.Linq.XAttribute("disaAktarmaTarihi", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")));
+
+            if (recete != null)
+            {
+                var kalemler = recete["kalemler"] as JArray ?? new JArray();
+                foreach (var kalem in kalemler.OfType<JObject>())
+                    kokEleman.Add(KalemElemaniOlustur(kalem, 0));
+            }
+
+            string varsayilanAd = ((string)_kokKart["kod"] ?? (string)_kokKart["stokKodu"] ?? "recete")
+                .Trim();
+            foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                varsayilanAd = varsayilanAd.Replace(c, '_');
+
+            using (var kaydetDialog = new SaveFileDialog
+            {
+                Filter = "XML dosyası|*.xml",
+                FileName = varsayilanAd + "_recete.xml"
+            })
+            {
+                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                try
+                {
+                    new System.Xml.Linq.XDocument(
+                        new System.Xml.Linq.XDeclaration("1.0", "utf-8", "yes"),
+                        kokEleman
+                    ).Save(kaydetDialog.FileName);
+                    _durumEtiketi.ForeColor = Color.DarkGreen;
+                    _durumEtiketi.Text = "✓ Reçete XML olarak dışa aktarıldı: " + kaydetDialog.FileName;
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("ReceteyiXmlOlarakDisaAktar HATA: " + ex);
+                    MessageBox.Show("XML dosyası yazılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private System.Xml.Linq.XElement KalemElemaniOlustur(JObject kalem, int derinlik)
+        {
+            string tip = (string)kalem["tip"];
+            string refId = (string)kalem["refId"];
+            var kart = FindKart(tip == "hammadde" ? "hammadde" : tip, refId);
+            string kod = kart != null ? ((string)kart["kod"] ?? (string)kart["stokKodu"] ?? refId) : refId;
+            string ad = kart?["ad"]?.ToString() ?? "";
+            double miktar = (double?)kalem["miktar"] ?? 1;
+            string birim = (string)kalem["birim"] ?? "ADET";
+            // Her satırın benzersiz id'si — normalde KalemEkle'de zaten
+            // "RK-..." atanır; yalnızca (varsa) çok eski/id'siz kayıtlar için
+            // burada GEÇİCİ (yalnızca bu XML çıktısına özel, kaydedilmeyen)
+            // bir id üretilir — TAHMİN/sessiz veri değişikliği YOK, sadece
+            // dışa aktarma anında dolduruluyor.
+            string id = (string)kalem["id"];
+            if (string.IsNullOrWhiteSpace(id)) id = "RK-" + Guid.NewGuid().ToString("N").Substring(0, 10).ToUpperInvariant();
+
+            var eleman = new System.Xml.Linq.XElement("Kalem",
+                new System.Xml.Linq.XAttribute("id", id),
+                new System.Xml.Linq.XAttribute("tip", tip ?? ""),
+                new System.Xml.Linq.XAttribute("refId", refId ?? ""),
+                new System.Xml.Linq.XAttribute("kod", kod ?? ""),
+                new System.Xml.Linq.XAttribute("ad", ad ?? ""),
+                new System.Xml.Linq.XAttribute("miktar", miktar.ToString(CultureInfo.InvariantCulture)),
+                new System.Xml.Linq.XAttribute("birim", birim ?? ""));
+
+            if (derinlik < MAKS_DERINLIK && tip != "hammadde" && kart != null)
+            {
+                var altRecete = ReceteGetir(tip, kart);
+                if (altRecete != null)
+                {
+                    var altKalemler = altRecete["kalemler"] as JArray ?? new JArray();
+                    foreach (var altKalem in altKalemler.OfType<JObject>())
+                        eleman.Add(KalemElemaniOlustur(altKalem, derinlik + 1));
+                }
+            }
+            return eleman;
         }
 
         // static: PaletOgesi.ToString() (iç içe sınıf) de kullanır.
