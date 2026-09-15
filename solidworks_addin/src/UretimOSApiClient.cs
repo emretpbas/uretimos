@@ -28,6 +28,15 @@ namespace UretimOSKesim
 
         public UretimOSApiClient(string tabanUrl)
         {
+            // .NET Framework 4.8'in varsayılan SecurityProtocol'ü (işletim
+            // sistemine göre) TLS 1.2'yi İÇERMEYEBİLİR — gerçek denemede
+            // "Uzak taraf taşıma akışını kapattığından kimlik doğrulaması
+            // başarısız oldu" (TLS handshake sırasında bağlantı kesiliyor)
+            // hatasına yol açtı, çünkü ÜretimOS sunucusu yalnızca TLS 1.2+
+            // kabul ediyor. Bu satır olmadan HttpClient sessizce eski bir
+            // protokolle bağlanmaya çalışıp reddediliyordu.
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
             _tabanUrl = tabanUrl.TrimEnd('/');
             _cookieler = new CookieContainer();
             var handler = new HttpClientHandler { CookieContainer = _cookieler };
