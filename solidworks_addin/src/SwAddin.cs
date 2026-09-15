@@ -387,10 +387,13 @@ namespace UretimOSKesim
             Tanilama.Kaydet("8. AddCommandItem2 cagriliyor");
             grup.AddCommandItem2(
                 "Reçete Ağacı (ÜretimOS)", -1,
-                "Aktif parça/montaj bileşenine karşılık gelen ÜretimOS kartının reçetesini açar — " +
-                "paket/yarı mamül/alt montaj/hırdavat/plaka/kenar bandı sürükle-bırak ile alt kalem " +
-                "olarak eklenebilir, yarı mamüllere rota seçilebilir/oluşturulabilir. ÜretimOS " +
-                "sunucu bağlantısı gerektirir (bkz. BaglantiAyarlari.cs).",
+                "Aktif parça/montajdaki TÜM bileşenleri (component/part/assembly) listeler; " +
+                "seçilen bileşenin ÜretimOS kartı varsa otomatik eşleşir (URETIMOS_KOD kalıcıdır, " +
+                "her dosyada aynı gelir), yoksa 'Farklı Kart Seç…' ile eşleştirilir ya da '+ Yeni " +
+                "Kart Oluştur…' ile sıfırdan oluşturulur. O karta paket/yarı mamül/alt montaj/" +
+                "hırdavat/plaka/kenar bandı sürükle-bırak ile alt kalem eklenebilir, yarı mamüllere " +
+                "rota seçilebilir/oluşturulabilir. ÜretimOS sunucu bağlantısı gerektirir " +
+                "(bkz. BaglantiAyarlari.cs).",
                 "Reçete Ağacı", 7, "ReceteAgaciAcCalistir", "PaketOlusturEtkinMi",
                 ID_RECETE_AGACI, itemTipi);
             Tanilama.Kaydet("8. AddCommandItem2 tamamlandi");
@@ -1209,10 +1212,27 @@ namespace UretimOSKesim
         // "alt kalem ekle" işlevini SolidWorks'e taşır — bkz. ReceteAgaciPaneli.cs
         // başındaki kapsam notu (V1: tek seviye, çok katmanlı maliyet ağacı
         // YENİDEN İNŞA EDİLMEDİ).
+        // NOT: diğer panelleri açan HedefModelBul'un AKSİNE (montajda ÖNCEDEN
+        // bir bileşen seçilmesini ZORUNLU kılar), Reçete Ağacı artık kendi
+        // TÜM bileşen ağacını (BilesenAgaci.cs) panel açılışında çıkarıp
+        // listelediği için tek bir ön-seçime gerek YOK — kullanıcı isteği:
+        // "reçete ağacı sekmesine ilk bastığımda solidworkste olan ve tüm
+        // componets, part ve assamblyler sıralansın". Bu yüzden burada
+        // doğrudan AKTİF belge (parça veya montaj) hedef alınır.
         public void ReceteAgaciAcCalistir()
         {
-            ModelDoc2 hedefModel = HedefModelBul("Reçete ağacı");
-            if (hedefModel == null) return;
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null)
+            {
+                MessageBox.Show("Önce bir parça veya montaj açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (aktifBelge.GetType() != (int)swDocumentTypes_e.swDocPART && aktifBelge.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                MessageBox.Show("Reçete ağacı yalnızca parça veya montaj belgelerinde kullanılabilir.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            ModelDoc2 hedefModel = (ModelDoc2)aktifBelge;
 
             Tanilama.Kaydet("ReceteAgaciAcCalistir: " + hedefModel.GetPathName());
             using (var panel = new ReceteAgaciPaneli(hedefModel))

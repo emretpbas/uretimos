@@ -64,6 +64,14 @@ namespace UretimOSKesim
         private Label _durumEtiketi;
         private Label _kokKartEtiketi;
         private Button _kokKartSecBtn;
+        // Kullanıcı isteği: "reçete ağacı sekmesine ilk bastığımda solidworkste
+        // olan ve tüm componets, part ve assamblyler sıralansın" — bu ağaç
+        // AKTİF belgedeki (parça/montaj) TÜM bileşenleri, panel açılır açılmaz
+        // (herhangi bir ön-seçim GEREKMEDEN) listeler. Bir düğüme tıklanınca o
+        // bileşenin ÜretimOS kartı (varsa URETIMOS_KOD'a göre otomatik, yoksa
+        // elle) çözülür ve aşağıdaki reçete editörü O kart için açılır.
+        private TreeView _bilesenAgaciGorunumu;
+        private BilesenDugumu _seciliBilesenDugumu;
         private TreeView _agacGorunumu;
         private ComboBox _paletTipKutusu;
         private TextBox _paletAramaKutusu;
@@ -210,9 +218,23 @@ namespace UretimOSKesim
             solPanel.Controls.Add(_paletTipKutusu);
             solPanel.Controls.Add(paletBaslik);
 
-            // ── SAĞ: reçete ağacı (ÇOK KATMANLI) ─────────────────────────────
+            // ── SAĞ: SolidWorks bileşen ağacı (ÜST) + seçili kartın reçetesi (ALT) ──
             var sagPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8) };
-            var agacBaslik = new Label { Text = "Bu kartın reçetesi ve alt kırılımları — çift tık: miktar değiştir, sağ tık: diğer işlemler", Dock = DockStyle.Top, Height = 24 };
+
+            // Kullanıcı isteği: "reçete ağaç editöründeki mantıkta bir düzenle
+            // açılsın ... eğer bunu uretimostaki mevcut kartlarla eşleştirdiysem
+            // yine o bilgilerle gelsin ancak istersem değiştirebileyim" — bu
+            // bölüm SolidWorks'teki GERÇEK bileşen ağacını gösterir; ✓ zaten
+            // eşleşmiş, ⚠ kod var ama karta karşılık gelmiyor, — hiç eşleşmemiş.
+            var bilesenBaslik = new Label
+            {
+                Text = "SolidWorks bileşen ağacı — bir bileşen seçin (✓ eşleşmiş, ⚠ kart bulunamadı, — eşleşmemiş)",
+                Dock = DockStyle.Top, Height = 24
+            };
+            _bilesenAgaciGorunumu = new TreeView { Dock = DockStyle.Top, Height = 220, HideSelection = false };
+            _bilesenAgaciGorunumu.AfterSelect += (s, e) => BilesenSecildi(e.Node?.Tag as BilesenDugumu);
+
+            var agacBaslik = new Label { Text = "Seçili bileşenin ÜretimOS reçetesi ve alt kırılımları — çift tık: miktar değiştir, sağ tık: diğer işlemler", Dock = DockStyle.Top, Height = 24 };
             _agacGorunumu = new TreeView { Dock = DockStyle.Fill, AllowDrop = true, HideSelection = false, LabelEdit = false };
             _agacGorunumu.DragEnter += (s, e) => { e.Effect = e.Data.GetDataPresent(typeof(PaletOgesi)) ? DragDropEffects.Copy : DragDropEffects.None; };
             _agacGorunumu.DragDrop += AgacGorunumu_DragDrop;
@@ -256,6 +278,8 @@ namespace UretimOSKesim
             _agacGorunumu.NodeMouseClick += (s, e) => _agacGorunumu.SelectedNode = e.Node;
             sagPanel.Controls.Add(_agacGorunumu);
             sagPanel.Controls.Add(agacBaslik);
+            sagPanel.Controls.Add(_bilesenAgaciGorunumu);
+            sagPanel.Controls.Add(bilesenBaslik);
 
             // ── ALT: durum + kaydet ──────────────────────────────────────────
             var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 50, Padding = new Padding(8) };
@@ -324,34 +348,21 @@ namespace UretimOSKesim
                 PaletiFiltrele();
                 _kokKartSecBtn.Enabled = true;
 
-                // İlk açılışta, aktif/seçili SolidWorks bileşeninin URETIMOS_KOD'una
-                // göre otomatik eşleştirmeyi DENE — bulunamazsa kullanıcı elle seçer
-                // (TAHMİN ETMEZ, otomatik kart OLUŞTURMAZ).
-                string kod = KesimListesiCikarici.OzelAlanOku(_hedefModel, OzelAlanlar.KOD);
-                JObject bulunanKart = null; string bulunanTip = null;
-                if (!string.IsNullOrWhiteSpace(kod))
-                {
-                    foreach (var (liste, tip) in new[] { (_urunler, "urun"), (_yarimamuller, "yarimamul"), (_altMontajlar, "altmontaj"), (_paketler, "paket") })
-                    {
-                        var eslesen = liste.FirstOrDefault(k => string.Equals((string)k["kod"], kod, StringComparison.OrdinalIgnoreCase)) as JObject;
-                        if (eslesen != null) { bulunanKart = eslesen; bulunanTip = tip; break; }
-                    }
-                }
+                // Kullanıcı isteği: "ilk bastığımda solidworkste olan ve tüm
+                // componets, part ve assamblyler sıralansın" — TEK bir önceden
+                // seçilmiş bileşen yerine, aktif belgedeki (parça/montaj) TÜM
+                // bileşen ağacı burada çıkarılır ve doğrudan listelenir. Her
+                // düğümün ÜretimOS kart eşleşmesi (URETIMOS_KOD'a göre) ✓/⚠/—
+                // simgesiyle gösterilir; TAHMİN/otomatik kart OLUŞTURMA YOK.
+                var bilesenKokleri = BilesenAgaci.Cikar(_hedefModel);
+                BilesenAgaciniCiz(bilesenKokleri);
 
-                if (bulunanKart != null)
-                {
-                    KokKartAyarla(bulunanTip, bulunanKart);
-                    _durumEtiketi.ForeColor = Color.DarkGreen;
-                    _durumEtiketi.Text = $"✓ Bağlandı — '{kod}' koduna göre kart otomatik eşleşti.";
-                }
-                else
-                {
-                    _kokKartEtiketi.Text = string.IsNullOrWhiteSpace(kod)
-                        ? "Bu bileşende URETIMOS_KOD yok — 'Farklı Kart Seç…' ile hangi ÜretimOS kartının reçetesini düzenleyeceğinizi seçin."
-                        : $"'{kod}' koduyla eşleşen bir ÜretimOS kartı bulunamadı — 'Farklı Kart Seç…' ile elle seçin.";
-                    _durumEtiketi.ForeColor = Color.DarkGreen;
-                    _durumEtiketi.Text = $"✓ Bağlandı — {_receteler.Count} reçete, {_hammaddeler.Count} hammadde yüklendi.";
-                }
+                int toplamBilesen = ToplamBilesenSayisi(bilesenKokleri);
+                _kokKartEtiketi.Text = toplamBilesen > 0
+                    ? "Yukarıdaki bileşen ağacından bir bileşen seçin — kartı otomatik eşleşirse burada görünür, eşleşmezse 'Farklı Kart Seç…' ile eşleştirin."
+                    : "Aktif belgede bileşen bulunamadı.";
+                _durumEtiketi.ForeColor = Color.DarkGreen;
+                _durumEtiketi.Text = $"✓ Bağlandı — {toplamBilesen} bileşen listelendi, {_receteler.Count} reçete, {_hammaddeler.Count} hammadde yüklendi.";
             }
             catch (Exception ex)
             {
@@ -359,6 +370,125 @@ namespace UretimOSKesim
                 _durumEtiketi.ForeColor = Color.DarkRed;
                 _durumEtiketi.Text = "Veri çekilemedi: " + ex.Message;
             }
+        }
+
+        // ── SOLIDWORKS BİLEŞEN AĞACI (TÜM component/part/assembly'ler) ───────
+        private static int ToplamBilesenSayisi(List<BilesenDugumu> dugumler) =>
+            dugumler.Sum(d => 1 + ToplamBilesenSayisi(d.Cocuklar));
+
+        private void BilesenAgaciniCiz(List<BilesenDugumu> kokDugumler)
+        {
+            _bilesenAgaciGorunumu.Nodes.Clear();
+            foreach (var d in kokDugumler)
+                _bilesenAgaciGorunumu.Nodes.Add(BilesenTreeNodeOlustur(d));
+            _bilesenAgaciGorunumu.ExpandAll();
+        }
+
+        private TreeNode BilesenTreeNodeOlustur(BilesenDugumu dugum)
+        {
+            var node = new TreeNode(BilesenDugumMetni(dugum)) { Tag = dugum };
+            foreach (var cocuk in dugum.Cocuklar)
+                node.Nodes.Add(BilesenTreeNodeOlustur(cocuk));
+            return node;
+        }
+
+        // ✓ = URETIMOS_KOD dolu VE bu koda sahip bir ÜretimOS kartı bulundu.
+        // ⚠ = URETIMOS_KOD dolu ama karşılığı bir kart YOK (silinmiş/yazım hatası olabilir).
+        // — = URETIMOS_KOD hiç yazılmamış (henüz eşleştirilmemiş).
+        private string BilesenDugumMetni(BilesenDugumu dugum)
+        {
+            if (dugum.BelgeYuklenemedi) return "⚠ " + dugum.GosterimAdi;
+            if (string.IsNullOrWhiteSpace(dugum.MevcutKod)) return "— (eşleşmemiş)  " + dugum.GosterimAdi;
+            bool kartVar = KodileKartBul(dugum.MevcutKod).kart != null;
+            return (kartVar ? "✓ " : "⚠ (kart bulunamadı) ") + dugum.MevcutKod + " — " + dugum.GosterimAdi;
+        }
+
+        // URETIMOS_KOD custom property'sine göre 4 reçete-taşıyan koleksiyonda
+        // (ürün/yarımamül/altmontaj/paket) arar — hammadde kartları burada
+        // ARANMAZ (bir SolidWorks bileşeni bir reçetenin KÖKÜ olabilir, ama
+        // hammadde kartlarının kendi reçetesi yoktur).
+        private (string tip, JObject kart) KodileKartBul(string kod)
+        {
+            if (string.IsNullOrWhiteSpace(kod)) return (null, null);
+            foreach (var (liste, tip) in new[] { (_urunler, "urun"), (_yarimamuller, "yarimamul"), (_altMontajlar, "altmontaj"), (_paketler, "paket") })
+            {
+                var eslesen = liste?.FirstOrDefault(k => string.Equals((string)k["kod"], kod, StringComparison.OrdinalIgnoreCase)) as JObject;
+                if (eslesen != null) return (tip, eslesen);
+            }
+            return (null, null);
+        }
+
+        // Bileşen ağacında bir düğüme tıklanınca çağrılır — kullanıcı isteği:
+        // "eğer bunu uretimostaki mevcut kartlarla eşleştirdiysem yine o
+        // bilgilerle gelsin ancak istersem değiştirebileyim": kod zaten
+        // eşleşiyorsa OTOMATİK o kartın reçetesini açar; eşleşmiyorsa/boşsa
+        // TAHMİN ETMEZ, kullanıcıyı 'Farklı Kart Seç…'e ya da '+ Yeni Kart
+        // Oluştur…'a yönlendirir.
+        private void BilesenSecildi(BilesenDugumu dugum)
+        {
+            _seciliBilesenDugumu = dugum;
+            if (dugum == null || !_verilerYuklendi) return;
+
+            if (dugum.BelgeYuklenemedi)
+            {
+                _kokTip = null; _kokKart = null;
+                _kaydetBtn.Enabled = false;
+                _agacGorunumu.Nodes.Clear();
+                _rotaPanel.Visible = false;
+                _paketOlcuPanel.Visible = false;
+                _kokKartEtiketi.Text = dugum.GosterimAdi;
+                return;
+            }
+
+            var (bulunanTip, bulunanKart) = KodileKartBul(dugum.MevcutKod);
+            if (bulunanKart != null)
+            {
+                KokKartAyarla(bulunanTip, bulunanKart);
+                _durumEtiketi.ForeColor = Color.DarkGreen;
+                _durumEtiketi.Text = $"✓ '{dugum.MevcutKod}' koduna göre kart otomatik eşleşti.";
+            }
+            else
+            {
+                _kokTip = null; _kokKart = null;
+                _kaydetBtn.Enabled = false;
+                _agacGorunumu.Nodes.Clear();
+                _rotaPanel.Visible = false;
+                _paketOlcuPanel.Visible = false;
+                _kokKartEtiketi.Text = string.IsNullOrWhiteSpace(dugum.MevcutKod)
+                    ? $"'{dugum.GosterimAdi}' henüz bir ÜretimOS kartıyla eşleştirilmemiş — 'Farklı Kart Seç…' ile eşleştirin ya da soldan '+ Yeni Kart Oluştur…' ile oluşturun."
+                    : $"'{dugum.GosterimAdi}' için kayıtlı kod '{dugum.MevcutKod}' ile eşleşen bir ÜretimOS kartı bulunamadı — 'Farklı Kart Seç…' ile eşleştirin.";
+            }
+        }
+
+        // Seçili SolidWorks bileşenini verilen karta eşleştirir VE bu eşleşmeyi
+        // bileşenin KENDİ dosyasındaki URETIMOS_KOD özel alanına YAZAR —
+        // kullanıcı isteği: "ister aynı dosyada ister farklı dosyada
+        // çağrıldığında aynı bilgiler ile ... açılsın" — özel alan fiziksel
+        // dosyayla birlikte taşındığı için bu, hangi montajdan açılırsa
+        // açılsın (ya da dosya tek başına açılsa da) eşleşmenin KALICI
+        // olmasını sağlar (bkz. KesimListesiCikarici.OzelAlanYaz).
+        private void EslesmeYazVeUygula(string tip, JObject kart)
+        {
+            if (kart == null) return;
+            if (_seciliBilesenDugumu?.Model != null)
+            {
+                string kod = (string)kart["kod"] ?? (string)kart["stokKodu"];
+                if (!string.IsNullOrWhiteSpace(kod))
+                {
+                    try
+                    {
+                        KesimListesiCikarici.OzelAlanYaz(_seciliBilesenDugumu.Model, OzelAlanlar.KOD, kod);
+                        _seciliBilesenDugumu.MevcutKod = kod;
+                        if (_bilesenAgaciGorunumu.SelectedNode != null)
+                            _bilesenAgaciGorunumu.SelectedNode.Text = BilesenDugumMetni(_seciliBilesenDugumu);
+                    }
+                    catch (Exception ex)
+                    {
+                        Tanilama.Kaydet("EslesmeYazVeUygula (URETIMOS_KOD yazılamadı) HATA: " + ex);
+                    }
+                }
+            }
+            KokKartAyarla(tip, kart);
         }
 
         // ── PALET (SOLDAKİ LİSTE) ────────────────────────────────────────────
@@ -498,6 +628,18 @@ namespace UretimOSKesim
                 }
             }
 
+            // Kullanıcı isteği doğrultusunda: yeni oluşturulan kart, KENDİ
+            // reçetesi olabilen bir tip İSE (yarımamül/alt montaj/paket —
+            // hammadde/plaka/kenar bandı/hırdavat DEĞİL, onların kendi
+            // reçetesi olmaz) VE ağaçta o an seçili bir SolidWorks bileşeni
+            // varsa, bu yeni kart OTOMATİK olarak o bileşenle eşleştirilir
+            // (URETIMOS_KOD'a yazılarak kalıcı olur) — "boş bileşen seç →
+            // yeni kart oluştur" akışını tek adıma indirir.
+            if (_seciliBilesenDugumu != null && (kartTipi == "yarimamul" || kartTipi == "altmontaj" || kartTipi == "paket"))
+            {
+                EslesmeYazVeUygula(kartTipi, yeniKart);
+            }
+
             _durumEtiketi.ForeColor = Color.DarkGreen;
             _durumEtiketi.Text = $"✓ Yeni kart ÜretimOS'a kaydedildi: {(string)yeniKart["ad"]}";
         }
@@ -586,7 +728,12 @@ namespace UretimOSKesim
                     if (liste.SelectedItem is PaletOgesi secilen)
                     {
                         var kart = FindKart(secilen.KalemTipi, secilen.Id);
-                        if (kart != null) KokKartAyarla(secilen.KalemTipi, kart);
+                        // EslesmeYazVeUygula (KokKartAyarla YERİNE): seçilen kart,
+                        // (varsa) ağaçta seçili SolidWorks bileşeninin KENDİ
+                        // URETIMOS_KOD özel alanına da yazılır — böylece bu
+                        // eşleşme, dosya tekrar açıldığında/başka bir montajdan
+                        // çağrıldığında KALICI olarak aynen görünür.
+                        if (kart != null) EslesmeYazVeUygula(secilen.KalemTipi, kart);
                         secici.DialogResult = DialogResult.OK;
                     }
                 };

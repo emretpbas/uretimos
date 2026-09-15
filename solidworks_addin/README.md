@@ -127,6 +127,45 @@ eklemek (o zaman `cad_entegrasyon` hesapları da hammadde/alt montaj
 oluşturabilir/değiştirebilir hale gelir — bu, orijinal tasarım kararının
 BİLEREK gevşetilmesi anlamına gelir, hafifçe düşünülmeden yapılmamalı).
 
+## Reçete Ağacı Paneli — TÜM bileşen ağacını listeleme ve KALICI kart eşleştirme — YENİ
+
+Kullanıcı isteği: "reçete ağacı sekmesine ilk bastığımda solidworkste olan
+ve tüm componets, part ve assamblyler sıralansın ... buraya yazdığım her
+bilgi daha sonra ister aynı dosyada ister farklı dosyada çağrıldığında aynı
+bilgiler ile reçete ağacı satırlarında açılsın eğer bunu uretimostaki
+mevcut kartlarla eşleştirdiysem yine o bilgilerle gelsin ancak istersem
+değiştirebileyim."
+
+Önceki sürümde "Reçete Ağacı" komutu, montaj içindeyken ÖNCE FeatureManager
+ağacında TEK bir bileşen seçilmesini zorunlu kılıyordu. Artık:
+
+1. **Ön-seçim gerekmiyor** — komut, aktif belge (parça ya da montaj) ne
+   olursa olsun doğrudan açılır (bkz. `SwAddin.cs:ReceteAgaciAcCalistir`).
+2. Panel açılır açılmaz, `BilesenAgaci.cs` (yeni dosya) `KesimListesiCikarici.
+   GezRecursive` ile AYNI gezinme desenini (`Component2.GetChildren` +
+   `IsSuppressed`) kullanarak aktif belgedeki TÜM component/part/assembly'leri
+   çıkarır ve ekranın üst yarısındaki yeni bir `TreeView`'da
+   (`_bilesenAgaciGorunumu`) doğrudan listeler — hiçbir bileşen filtrelenmez
+   veya "etiketlenmemiş" diye atlanmaz (bu, kesim listesi çıkarımından farklı
+   bir amaç: burada hedef, kullanıcının HER bileşeni görüp istediğini
+   ÜretimOS kartıyla eşleştirebilmesi).
+3. Her düğüm, kendi `URETIMOS_KOD` özel alanına göre bir simge taşır:
+   `✓ KOD — ad` (kod dolu VE karşılığı bir ÜretimOS kartı bulundu),
+   `⚠ (kart bulunamadı) KOD — ad` (kod var ama karta karşılık gelmiyor),
+   `— (eşleşmemiş)  ad` (kod hiç yazılmamış).
+4. Bir düğüme tıklanınca (`BilesenSecildi`): kod zaten eşleşiyorsa alttaki
+   reçete editörü OTOMATİK olarak o kartın reçetesiyle açılır (TAHMİN YOK);
+   eşleşmiyorsa/boşsa kullanıcı üstteki "Farklı Kart Seç…" ile mevcut bir
+   karta eşleştirir ya da soldan "+ Yeni Kart Oluştur…" ile sıfırdan bir kart
+   oluşturup otomatik eşleştirir.
+5. **Kalıcılık**: bir eşleştirme yapıldığında (`EslesmeYazVeUygula`), seçilen
+   kartın `kod` alanı o SolidWorks bileşeninin KENDİ dosyasındaki
+   `URETIMOS_KOD` özel alanına (`KesimListesiCikarici.OzelAlanYaz`) YAZILIR.
+   Bu özel alan fiziksel `.sldprt`/`.sldasm` dosyasıyla birlikte taşındığı
+   için, aynı bileşen İSTER aynı montajda tekrar açılsın İSTER başka bir
+   montaja referans olarak eklensin, eşleşme her zaman AYNEN geri gelir — ama
+   her zaman "Farklı Kart Seç…" ile değiştirilebilir kalır.
+
 ## Kurulum
 
 ### A) Otomatik kurulum — Setup.exe (ÖNERİLEN, SWOOD gibi tek dosya)
