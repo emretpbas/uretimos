@@ -24,7 +24,6 @@ namespace UretimOSKesim
     {
         private readonly string _tabanUrl;      // örn. https://uretimos.firmaniz.com/api.php
         private readonly HttpClient _http;
-        private CookieContainer _cookieler;
 
         public UretimOSApiClient(string tabanUrl)
         {
@@ -38,20 +37,35 @@ namespace UretimOSKesim
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             _tabanUrl = tabanUrl.TrimEnd('/');
-            _cookieler = new CookieContainer();
-            var handler = new HttpClientHandler { CookieContainer = _cookieler };
-            _http = new HttpClient(handler);
+            _http = new HttpClient();
         }
 
-        // api.php'nin login ucu oturum çerezi (PHP session) döner; sonraki
-        // istekler bu çerezle kimliklenir — tarayıcı akışıyla birebir aynı.
+        // GERÇEK ÜretimOS sunucusunda (reflection DEĞİL, doğrudan api.php
+        // kaynağı okunarak) doğrulandı: kimlik doğrulama ÇEREZ (PHP session)
+        // TABANLI DEĞİL — api.php'nin kendi yorumu "sonraki istekler
+        // 'Authorization: Bearer <token>' başlığıyla gelir" diyor. İlk
+        // yazımda (yanlışlıkla, tarayıcı oturumuyla KARIŞTIRILARAK) bir
+        // CookieContainer kullanılmıştı — login isteği başarılı dönüyordu
+        // (200 OK + token gövdede) ama SONRAKİ Getir() çağrıları hep 401
+        // veriyordu, çünkü o token hiçbir yere eklenmiyordu. Şimdi login
+        // sonrası dönen token, HttpClient'ın varsayılan Authorization
+        // başlığına yazılıyor — tüm sonraki istekler bunu otomatik taşır.
         public async Task<bool> GirisYap(string kullaniciAdi, string sifre)
         {
             var icerik = new StringContent(
                 Newtonsoft.Json.JsonConvert.SerializeObject(new { kullaniciAdi, sifre }),
                 Encoding.UTF8, "application/json");
             var yanit = await _http.PostAsync(_tabanUrl + "?action=login", icerik);
-            return yanit.IsSuccessStatusCode;
+            if (!yanit.IsSuccessStatusCode) return false;
+
+            var govde = await yanit.Content.ReadAsStringAsync();
+            dynamic obj = Newtonsoft.Json.JsonConvert.DeserializeObject(govde);
+            string token = obj?.token;
+            if (string.IsNullOrWhiteSpace(token)) return false;
+
+            _http.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            return true;
         }
 
         // action=get&key=... → { key, value(JSON string), surum }
