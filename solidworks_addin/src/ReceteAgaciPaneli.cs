@@ -438,7 +438,7 @@ namespace UretimOSKesim
         {
             _kokTip = null; _kokKart = null;
             _kaydetBtn.Enabled = false;
-            _agacGorunumu.Nodes.Clear();
+            _agacGorunumu.Controls.Clear();
             _rotaPanel.Visible = false;
             _paketOlcuPanel.Visible = false;
             _kokKartEtiketi.Text = mesaj;
