@@ -191,9 +191,11 @@ namespace UretimOSKesim
                 if (adet <= 0) return null;
 
                 double? boy = null, en = null, kalinlik = null;
+                var hamDenklemler = new List<string>(); // yalnızca TANI amaçlı — eşleşme başarısızsa günlüğe yazılır.
                 for (int i = 0; i < adet; i++)
                 {
                     string denklem = eqMgr.Equation[i];
+                    hamDenklemler.Add(denklem);
                     var (ad, degerMm) = DenklemAyristir(denklem);
                     if (ad == null || degerMm == null) continue;
                     string adKucuk = ad.Trim().ToLowerInvariant();
@@ -204,6 +206,11 @@ namespace UretimOSKesim
                 // Boy/En'in İKİSİ de yoksa "kısmen doldu" gibi görünüp yanlış
                 // bir ölçü izlenimi VERMEMEK için hiç döndürülmez — TAHMİN YOK.
                 if (boy.HasValue && en.HasValue) return (boy.Value, en.Value, kalinlik ?? 0);
+
+                // TANI: eşleşme başarısız oldu — GERÇEK denklem string'lerini
+                // günlüğe yaz (Desktop\uretimos_addin_log.txt) ki format
+                // TAHMİN edilmeden, gerçek veriye göre düzeltilebilsin.
+                Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku eşleşmedi (" + adet + " denklem): " + string.Join(" | ", hamDenklemler));
                 return null;
             }
             catch (System.Exception ex)

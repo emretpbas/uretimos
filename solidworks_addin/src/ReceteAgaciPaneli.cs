@@ -192,7 +192,7 @@ namespace UretimOSKesim
             var solPanel = new Panel { Dock = DockStyle.Left, Width = 320, Padding = new Padding(8) };
             var paletBaslik = new Label { Text = "Ekle — sürükleyip ağaçta bir kartın ÜSTÜNE bırakın (o kartın reçetesine eklenir)", Dock = DockStyle.Top, Height = 32, AutoSize = false };
             _paletTipKutusu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-            _paletTipKutusu.Items.AddRange(new object[] { "Ürün", "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı" });
+            _paletTipKutusu.Items.AddRange(new object[] { "Ürün", "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı", "Sarf Malzeme" });
             _paletTipKutusu.SelectedIndexChanged += (s, e) => PaletiFiltrele();
             _paletAramaKutusu = new TextBox { Dock = DockStyle.Top };
             _paletAramaKutusu.TextChanged += (s, e) => PaletiFiltrele();
@@ -425,8 +425,8 @@ namespace UretimOSKesim
         // Sınıf açılır kutusunun index<->sistem-tipi eşlemesi — gerçek sistem
         // tipleriyle AYNI değerler (KodileKartBul/KoleksiyonAdiTipten/FindKart
         // ile birebir uyumlu), TAHMİN edilen ayrı bir kelime dağarcığı DEĞİL.
-        private static readonly string[] SinifEtiketleri = { "— Sınıf Seç —", "Hırdavat", "Panel (Plaka)", "Kenar Bandı", "Yarı Mamül", "Alt Montaj", "Paket", "Ürün" };
-        private static readonly string[] SinifDegerleri = { null, "hirdavat", "plaka", "kenar_bandi", "yarimamul", "altmontaj", "paket", "urun" };
+        private static readonly string[] SinifEtiketleri = { "— Sınıf Seç —", "Hırdavat", "Panel (Plaka)", "Kenar Bandı", "Sarf Malzeme", "Yarı Mamül", "Alt Montaj", "Paket", "Ürün" };
+        private static readonly string[] SinifDegerleri = { null, "hirdavat", "plaka", "kenar_bandi", "sarf", "yarimamul", "altmontaj", "paket", "urun" };
         private static int SinifIndexBul(string sinif) { int i = Array.IndexOf(SinifDegerleri, sinif); return i < 0 ? 0 : i; }
         private static string SinifKarsilikBul(int index) => index >= 0 && index < SinifDegerleri.Length ? SinifDegerleri[index] : null;
 
@@ -595,7 +595,7 @@ namespace UretimOSKesim
             using (var dlg = new Form { Text = "Ek Kalem Ekle", Width = 480, Height = 520, StartPosition = FormStartPosition.CenterParent })
             {
                 var tipKutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-                tipKutu.Items.AddRange(new object[] { "Hırdavat", "Plaka", "Kenar Bandı", "Yarı Mamül", "Alt Montaj", "Paket", "Ürün" });
+                tipKutu.Items.AddRange(new object[] { "Hırdavat", "Plaka", "Kenar Bandı", "Sarf Malzeme", "Yarı Mamül", "Alt Montaj", "Paket", "Ürün" });
                 tipKutu.SelectedIndex = 0;
                 var aramaKutu = new TextBox { Dock = DockStyle.Top };
                 var liste = new ListBox { Dock = DockStyle.Fill };
@@ -607,6 +607,7 @@ namespace UretimOSKesim
                     IEnumerable<PaletOgesi> kaynak = tip == "Hırdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
                         : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
                         : tip == "Kenar Bandı" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
+                        : tip == "Sarf Malzeme" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
                         : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
                         : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
                         : tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
@@ -694,7 +695,7 @@ namespace UretimOSKesim
             foreach (var d in _bilesenKokListesi) Topla(d);
 
             var sinifsizlar = tumDugumler.Where(d => !d.BelgeYuklenemedi && string.IsNullOrEmpty(d.Sinif)).ToList();
-            var hammaddeSiniflari = new[] { "hirdavat", "plaka", "kenar_bandi" };
+            var hammaddeSiniflari = new[] { "hirdavat", "plaka", "kenar_bandi", "sarf" };
             var eslesmeyenHammaddeler = tumDugumler.Where(d =>
                 !d.BelgeYuklenemedi && !d.ElleEklendi &&
                 hammaddeSiniflari.Contains(d.Sinif) &&
@@ -711,7 +712,7 @@ namespace UretimOSKesim
                 }
                 if (eslesmeyenHammaddeler.Count > 0)
                 {
-                    mesaj.Append("\nMevcut bir hammadde kartıyla eşleşmeyen ").Append(eslesmeyenHammaddeler.Count).Append(" bileşen (Hırdavat/Panel/Kenar Bandı):\n");
+                    mesaj.Append("\nMevcut bir hammadde kartıyla eşleşmeyen ").Append(eslesmeyenHammaddeler.Count).Append(" bileşen (Hırdavat/Panel/Kenar Bandı/Sarf Malzeme):\n");
                     foreach (var d in eslesmeyenHammaddeler.Take(20))
                         mesaj.Append("  • ").Append(d.GosterimAdi).Append(string.IsNullOrEmpty(d.MevcutKod) ? "" : $" (kod: {d.MevcutKod})").Append('\n');
                     if (eslesmeyenHammaddeler.Count > 20) mesaj.Append("  ... ve ").Append(eslesmeyenHammaddeler.Count - 20).Append(" tane daha.\n");
@@ -1080,6 +1081,7 @@ namespace UretimOSKesim
                 case "Hırdavat": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat")); break;
                 case "Plaka": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka")); break;
                 case "Kenar Bandı": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı")); break;
+                case "Sarf Malzeme": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme")); break;
                 default: kaynak = Enumerable.Empty<PaletOgesi>(); break;
             }
 
@@ -1282,7 +1284,7 @@ namespace UretimOSKesim
                 // Kenar Bandı/Hırdavat da seçilebilir hedef tipleri arasına
                 // eklendi (bkz. EslesmeYazVeUygula'nın "hammadde" dalı — bu
                 // kartların kendi reçetesi olmaz, yalnızca eşleşme kaydedilir).
-                tipKutu.Items.AddRange(new object[] { "Ürün", "Yarı Mamül", "Alt Montaj", "Paket", "Plaka", "Kenar Bandı", "Hırdavat" });
+                tipKutu.Items.AddRange(new object[] { "Ürün", "Yarı Mamül", "Alt Montaj", "Paket", "Plaka", "Kenar Bandı", "Hırdavat", "Sarf Malzeme" });
                 tipKutu.SelectedIndex = 0;
                 var aramaKutu = new TextBox { Dock = DockStyle.Top };
                 var liste = new ListBox { Dock = DockStyle.Fill };
@@ -1298,6 +1300,7 @@ namespace UretimOSKesim
                         : tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
                         : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
                         : tip == "Kenar Bandı" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
+                        : tip == "Sarf Malzeme" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
                         : _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"));
                     string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
                     mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
@@ -1904,7 +1907,7 @@ namespace UretimOSKesim
             using (var dlg = new Form { Text = "Alt Kalem Ekle — " + hedefKart["kod"], Width = 480, Height = 520, StartPosition = FormStartPosition.CenterParent })
             {
                 var tipKutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-                tipKutu.Items.AddRange(new object[] { "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı" });
+                tipKutu.Items.AddRange(new object[] { "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı", "Sarf Malzeme" });
                 tipKutu.SelectedIndex = 0;
                 var aramaKutu = new TextBox { Dock = DockStyle.Top };
                 var liste = new ListBox { Dock = DockStyle.Fill };
@@ -1918,6 +1921,7 @@ namespace UretimOSKesim
                         : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
                         : tip == "Hırdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
                         : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
+                        : tip == "Sarf Malzeme" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
                         : _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"));
                     string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
                     mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
@@ -2106,7 +2110,8 @@ namespace UretimOSKesim
         private static string TipGosterimAdi(string tip) => tip == "urun" ? "Ürün" : tip == "yarimamul" ? "Yarı Mamül"
             : tip == "altmontaj" ? "Alt Montaj" : tip == "paket" ? "Paket" : tip;
         private string HammaddeGosterimTipi(string hammaddeTip) => hammaddeTip == "hirdavat" ? "Hırdavat"
-            : hammaddeTip == "plaka" ? "Plaka" : hammaddeTip == "kenar_bandi" ? "Kenar Bandı" : "Hammadde";
+            : hammaddeTip == "plaka" ? "Plaka" : hammaddeTip == "kenar_bandi" ? "Kenar Bandı"
+            : hammaddeTip == "sarf" ? "Sarf Malzeme" : "Hammadde";
 
         // ── SÜRÜKLE-BIRAK / EKLE (HEDEF: bırakılan/seçili DÜĞÜMÜN kartı) ─────
         private void PaletListesi_MouseDown(object sender, MouseEventArgs e)
