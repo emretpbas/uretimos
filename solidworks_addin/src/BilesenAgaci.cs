@@ -40,6 +40,29 @@ namespace UretimOSKesim
         public double BoyMm, EnMm, KalinlikMm;
         public int DelikSayisi, FormSayisi;
 
+        // Kullanıcı isteği: "her kalemin sınıfını belirleyelim (hırdavat, paket,
+        // hammadde, panel, kenar bandı, yarımamül vb.)" — panelde bu oturum
+        // boyunca elle atanır (null = henüz sınıflandırılmamış). Gerçek sistem
+        // tipleriyle AYNI değerler kullanılır: "hirdavat" | "plaka" (= "Panel")
+        // | "kenar_bandi" | "yarimamul" | "altmontaj" | "paket" | "urun".
+        public string Sinif;
+
+        // "yarımamül seçince parçanın en boy yüksekliği gelsin" — OlcuVar
+        // doluysa BURADAN ön-doldurulur (BilesenAgaci.DugumOlustur'da), ama
+        // panelde kullanıcı tarafından ELLE değiştirilebilir taslak alanlar
+        // (gerçek özel alanları — BoyMm/EnMm/KalinlikMm — HİÇ değiştirmez).
+        public double TaslakBoyMm, TaslakEnMm, TaslakKalinlikMm;
+
+        // "panel'e (plaka) kenar bandını 4 kenardan hangisine hangi tip
+        // eklediğimizi de çıkartalım" — Sinif == "plaka" iken kullanılır;
+        // her biri bir kenar_bandi hammadde kartının id'sidir (boş = yok).
+        public string KenarOnId, KenarArkaId, KenarSolId, KenarSagId;
+
+        // "+ Ek Kalem" ile elle eklenen, gerçek bir SolidWorks bileşenine
+        // karşılık GELMEYEN sentetik alt kalem — Bilesen/Model burada hep null,
+        // MevcutKod doğrudan seçilen mevcut karta sabitlenir (değiştirilemez).
+        public bool ElleEklendi;
+
         public readonly List<BilesenDugumu> Cocuklar = new List<BilesenDugumu>();
     }
 
@@ -103,6 +126,9 @@ namespace UretimOSKesim
                     dugum.BoyMm = boy;
                     dugum.EnMm = en;
                     dugum.KalinlikMm = kalinlik;
+                    dugum.TaslakBoyMm = boy;
+                    dugum.TaslakEnMm = en;
+                    dugum.TaslakKalinlikMm = kalinlik;
                 }
                 try
                 {

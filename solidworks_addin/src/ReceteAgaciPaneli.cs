@@ -76,7 +76,19 @@ namespace UretimOSKesim
         // (herhangi bir ön-seçim GEREKMEDEN) listeler. Bir düğüme tıklanınca o
         // bileşenin ÜretimOS kartı (varsa URETIMOS_KOD'a göre otomatik, yoksa
         // elle) çözülür ve aşağıdaki reçete editörü O kart için açılır.
-        private TreeView _bilesenAgaciGorunumu;
+        // Kullanıcı isteği: "solidworks bileşen ağacı bölümünü olduğu gibi
+        // reçete haline getirelim ve üretimosa atalım, her kalemin sınıfını
+        // belirleyelim ... direkt bu haliyle uretimosa aktaralım" — artık
+        // TreeView DEĞİL, kalem editörüyle AYNI "düz satır listesi + girinti"
+        // deseninde (bkz. BilesenAgaciniCiz/BilesenAnaSatiriOlustur): her
+        // satırda Sınıf seçici, (yarımamül/panel için) ölçü, (panel için)
+        // 4 kenar bandı seçici, "+ Ek Kalem" ve sürükle-bırak ile taşıma var.
+        private Panel _bilesenAgaciGorunumu;
+        // İlk BilesenAgaci.Cikar çağrısından sonra BURADA saklanır — panel
+        // kullanıcı tarafından sınıflandırıldıkça/taşındıkça bu YERİNDE
+        // mutasyona uğrar, asla yeniden SolidWorks'ten OKUNMAZ (aksi halde
+        // kullanıcının yaptığı tüm sınıflandırma/taşıma kaybolurdu).
+        private List<BilesenDugumu> _bilesenKokListesi;
         private BilesenDugumu _seciliBilesenDugumu;
         // Kullanıcı isteği: "bu ekranla solidworksteki reçete ağaç editörünü
         // aynı esneklikte olsun" — artık bir TreeView DEĞİL, her reçete
@@ -249,11 +261,20 @@ namespace UretimOSKesim
             // eşleşmiş, ⚠ kod var ama karta karşılık gelmiyor, — hiç eşleşmemiş.
             var bilesenBaslik = new Label
             {
-                Text = "SolidWorks bileşen ağacı — bir bileşen seçin (✓ eşleşmiş, ⚠ kart bulunamadı, — eşleşmemiş)",
+                Text = "SolidWorks bileşen ağacı — kod/ad'a tıkla (✓/⚠/—), sınıf seç, sürükle-bırakla taşı",
                 Dock = DockStyle.Top, Height = 24
             };
-            _bilesenAgaciGorunumu = new TreeView { Dock = DockStyle.Top, Height = 220, HideSelection = false };
-            _bilesenAgaciGorunumu.AfterSelect += (s, e) => BilesenSecildi(e.Node?.Tag as BilesenDugumu);
+            _bilesenAgaciGorunumu = new Panel { Dock = DockStyle.Top, Height = 240, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle };
+
+            // Kullanıcı isteği: "direkt bu haliyle uretimosa aktaralım ve
+            // üretimos yeni kartlar ve kodları direkt kaydetsin" — tüm ağacı
+            // TEK seferde tarayıp eşleşmeyen yarı mamül/alt montaj/paket/
+            // ürünler için YENİ kart oluşturur, reçete yapısını kurar ve
+            // hepsini sunucuya yazar (bkz. BilesenAgaciniReceteOlarakAktar).
+            var bilesenAraPanel = new Panel { Dock = DockStyle.Top, Height = 30 };
+            var receteOlarakAktarBtn = new Button { Text = "📤 Reçete Olarak ÜretimOS'a Aktar…", Dock = DockStyle.Left, Width = 240 };
+            receteOlarakAktarBtn.Click += async (s, e) => await BilesenAgaciniReceteOlarakAktar();
+            bilesenAraPanel.Controls.Add(receteOlarakAktarBtn);
 
             // Kullanıcı isteği: "bu ekranla solidworksteki reçete ağaç
             // editörünü aynı esneklikte olsun" — TreeView'daki çift tık/sağ
@@ -270,6 +291,7 @@ namespace UretimOSKesim
             sagPanel.Controls.Add(_agacGorunumu);
             sagPanel.Controls.Add(agacBaslik);
             sagPanel.Controls.Add(_bilesenAgaciGorunumu);
+            sagPanel.Controls.Add(bilesenAraPanel);
             sagPanel.Controls.Add(bilesenBaslik);
 
             // ── ALT: durum + kaydet ──────────────────────────────────────────
@@ -367,20 +389,262 @@ namespace UretimOSKesim
         private static int ToplamBilesenSayisi(List<BilesenDugumu> dugumler) =>
             dugumler.Sum(d => 1 + ToplamBilesenSayisi(d.Cocuklar));
 
-        private void BilesenAgaciniCiz(List<BilesenDugumu> kokDugumler)
+        // kokDugumler verilirse (ilk yükleme) _bilesenKokListesi'ne KAYDEDİLİR;
+        // sonraki çağrılarda (sınıf değişti / sürükle-bırak taşındı / +Ek Kalem
+        // eklendi) parametresiz çağrılır — SolidWorks'ten YENİDEN OKUMAZ,
+        // yalnızca mevcut (kullanıcı tarafından zaten düzenlenmiş) yapıyı
+        // yeniden çizer.
+        private void BilesenAgaciniCiz(List<BilesenDugumu> kokDugumler = null)
         {
-            _bilesenAgaciGorunumu.Nodes.Clear();
-            foreach (var d in kokDugumler)
-                _bilesenAgaciGorunumu.Nodes.Add(BilesenTreeNodeOlustur(d));
-            _bilesenAgaciGorunumu.ExpandAll();
+            if (kokDugumler != null) _bilesenKokListesi = kokDugumler;
+            if (_bilesenKokListesi == null) return;
+
+            var satirlar = new List<Control>();
+            foreach (var d in _bilesenKokListesi)
+                BilesenSatirlariTopla(satirlar, d, 0);
+
+            _bilesenAgaciGorunumu.SuspendLayout();
+            _bilesenAgaciGorunumu.Controls.Clear();
+            // Dock=Top TERS sırada eklenir (bkz. KurulumYap'ın başındaki NOT).
+            for (int i = satirlar.Count - 1; i >= 0; i--)
+                _bilesenAgaciGorunumu.Controls.Add(satirlar[i]);
+            _bilesenAgaciGorunumu.ResumeLayout();
         }
 
-        private TreeNode BilesenTreeNodeOlustur(BilesenDugumu dugum)
+        private void BilesenSatirlariTopla(List<Control> hedefListe, BilesenDugumu dugum, int derinlik)
         {
-            var node = new TreeNode(BilesenDugumMetni(dugum)) { Tag = dugum };
-            foreach (var cocuk in dugum.Cocuklar)
-                node.Nodes.Add(BilesenTreeNodeOlustur(cocuk));
-            return node;
+            hedefListe.Add(BilesenAnaSatiriOlustur(dugum, derinlik));
+            if (!dugum.BelgeYuklenemedi && (dugum.Sinif == "yarimamul" || dugum.Sinif == "plaka"))
+                hedefListe.Add(BilesenOlcuSatiriOlustur(dugum, derinlik));
+            if (!dugum.BelgeYuklenemedi && dugum.Sinif == "plaka")
+                hedefListe.Add(BilesenKenarBandiSatiriOlustur(dugum, derinlik));
+            foreach (var cocuk in dugum.Cocuklar.ToList())
+                BilesenSatirlariTopla(hedefListe, cocuk, derinlik + 1);
+        }
+
+        // Sınıf açılır kutusunun index<->sistem-tipi eşlemesi — gerçek sistem
+        // tipleriyle AYNI değerler (KodileKartBul/KoleksiyonAdiTipten/FindKart
+        // ile birebir uyumlu), TAHMİN edilen ayrı bir kelime dağarcığı DEĞİL.
+        private static readonly string[] SinifEtiketleri = { "— Sınıf Seç —", "Hırdavat", "Panel (Plaka)", "Kenar Bandı", "Yarı Mamül", "Alt Montaj", "Paket", "Ürün" };
+        private static readonly string[] SinifDegerleri = { null, "hirdavat", "plaka", "kenar_bandi", "yarimamul", "altmontaj", "paket", "urun" };
+        private static int SinifIndexBul(string sinif) { int i = Array.IndexOf(SinifDegerleri, sinif); return i < 0 ? 0 : i; }
+        private static string SinifKarsilikBul(int index) => index >= 0 && index < SinifDegerleri.Length ? SinifDegerleri[index] : null;
+
+        // Bileşen ağacındaki bir düğümün ANA satırı — kod/ad + eşleşme durumu
+        // (tıklanınca BilesenSecildi çalışır, mevcut "Farklı Kart Seç…" akışı
+        // AYNEN devam eder), "Sınıf" seçici, "+ Ek Kalem" ve sürükle-bırak
+        // tutamacı. Kullanıcı isteği: "her kalemin sınıfını belirleyelim
+        // (hırdavat, paket, hammadde, panel, kenar bandı, yarımamül vb.)".
+        private Panel BilesenAnaSatiriOlustur(BilesenDugumu dugum, int derinlik)
+        {
+            var panel = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = derinlik == 0 ? Color.AliceBlue : Color.White };
+            var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+
+            satir.Controls.Add(new Panel { Width = 8 + derinlik * 22, Height = 1 });
+
+            if (!dugum.ElleEklendi && !dugum.BelgeYuklenemedi)
+            {
+                // Sürükle-bırak ile taşıma — kullanıcı isteği: "istediğimiz
+                // kalemi sürükle bırak ile taşıyabilelim." Gerçek SolidWorks
+                // montaj yapısına DOKUNMAZ — yalnızca bu taslak reçete
+                // ağacındaki mantıksal ebeveyn/çocuk ilişkisini değiştirir.
+                var tutamac = new Label { Text = "⠿", AutoSize = true, Cursor = Cursors.SizeAll, ForeColor = Color.Gray, Padding = new Padding(0, 6, 6, 0) };
+                tutamac.MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) tutamac.DoDragDrop(dugum, DragDropEffects.Move); };
+                satir.Controls.Add(tutamac);
+            }
+
+            var durumLbl = new Label
+            {
+                Text = BilesenDugumMetni(dugum), AutoSize = true, Padding = new Padding(0, 6, 8, 0),
+                Cursor = dugum.BelgeYuklenemedi ? Cursors.Default : Cursors.Hand
+            };
+            if (!dugum.BelgeYuklenemedi) durumLbl.Click += (s, e) => BilesenSecildi(dugum);
+            satir.Controls.Add(durumLbl);
+
+            if (!dugum.BelgeYuklenemedi)
+            {
+                var sinifKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130, Margin = new Padding(3) };
+                sinifKutusu.Items.AddRange(SinifEtiketleri);
+                sinifKutusu.SelectedIndex = SinifIndexBul(dugum.Sinif);
+                sinifKutusu.SelectedIndexChanged += (s, e) =>
+                {
+                    dugum.Sinif = SinifKarsilikBul(sinifKutusu.SelectedIndex);
+                    BilesenAgaciniCiz();
+                };
+                satir.Controls.Add(sinifKutusu);
+
+                var ekKalemBtn = new Button { Text = "+ Ek Kalem", AutoSize = true, Margin = new Padding(3) };
+                ekKalemBtn.Click += (s, e) => BilesenEkKalemEkleDialogAc(dugum);
+                satir.Controls.Add(ekKalemBtn);
+            }
+
+            // Sürükle-bırak HEDEFİ — bu satırın üstüne bırakılan başka bir
+            // bileşen, bu düğümün ÇOCUĞU olur (kendi alt dalına taşıma
+            // engellenir, TAM döngü tespiti YAPILMAZ — yalnızca bu bariz
+            // durum kontrol edilir).
+            panel.AllowDrop = true;
+            panel.DragEnter += (s, e) => { e.Effect = e.Data.GetDataPresent(typeof(BilesenDugumu)) ? DragDropEffects.Move : DragDropEffects.None; };
+            panel.DragDrop += (s, e) =>
+            {
+                if (!(e.Data.GetData(typeof(BilesenDugumu)) is BilesenDugumu tasinan) || ReferenceEquals(tasinan, dugum)) return;
+                if (BilesenAltIcindeMi(tasinan, dugum))
+                {
+                    MessageBox.Show("Bir bileşen kendi alt dalının içine taşınamaz.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                BilesenUstListesiniBul(tasinan)?.Remove(tasinan);
+                dugum.Cocuklar.Add(tasinan);
+                BilesenAgaciniCiz();
+            };
+
+            panel.Controls.Add(satir);
+            return panel;
+        }
+
+        // "yarımamül seçince parçanın en boy yüksekliği gelsin" — Sinif ==
+        // yarimamul/plaka iken görünür, BilesenAgaci'nin okuduğu ölçüden
+        // (varsa) ön-doldurulmuş Taslak* alanlarını gösterir/düzenletir.
+        private Panel BilesenOlcuSatiriOlustur(BilesenDugumu dugum, int derinlik)
+        {
+            var panel = new Panel { Dock = DockStyle.Top, Height = 28 };
+            var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+            satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
+
+            void EkleOlcuKutusu(string etiket, Func<double> al, Action<double> yaz)
+            {
+                satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Color.DarkSlateGray });
+                var kutu = new TextBox { Width = 60, Text = al().ToString(CultureInfo.InvariantCulture), Margin = new Padding(3) };
+                kutu.Leave += (s, e) => yaz(ParseCift(kutu.Text));
+                satir.Controls.Add(kutu);
+            }
+            EkleOlcuKutusu("Boy(mm):", () => dugum.TaslakBoyMm, v => dugum.TaslakBoyMm = v);
+            EkleOlcuKutusu("En(mm):", () => dugum.TaslakEnMm, v => dugum.TaslakEnMm = v);
+            EkleOlcuKutusu("Kalınlık(mm):", () => dugum.TaslakKalinlikMm, v => dugum.TaslakKalinlikMm = v);
+            if (dugum.OlcuVar)
+                satir.Controls.Add(new Label { Text = "(SolidWorks ölçüsünden dolduruldu)", AutoSize = true, ForeColor = Color.Gray, Padding = new Padding(8, 6, 0, 0) });
+
+            panel.Controls.Add(satir);
+            return panel;
+        }
+
+        // "panele (plaka) kenar bandını 4 kenardan hangisine hangi tip
+        // eklediğimizi de çıkartalım" — Sinif == plaka iken görünür; her
+        // kenar için MEVCUT bir kenar_bandi hammadde kartı seçilir (yeni
+        // hammadde burada OLUŞTURULMAZ — bkz. eşleşme kontrolü aktarımda).
+        private Panel BilesenKenarBandiSatiriOlustur(BilesenDugumu dugum, int derinlik)
+        {
+            var panel = new Panel { Dock = DockStyle.Top, Height = 28 };
+            var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+            satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
+
+            var kenarBandilari = _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(h => OgeyeHammadde(h, "Kenar Bandı")).ToList();
+            void EkleKenarKutusu(string etiket, Func<string> al, Action<string> yaz)
+            {
+                satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Color.DarkSlateGray });
+                var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 150, Margin = new Padding(3), AutoCompleteMode = AutoCompleteMode.SuggestAppend, AutoCompleteSource = AutoCompleteSource.ListItems };
+                kutu.Items.Add("— Yok —");
+                foreach (var kb in kenarBandilari) kutu.Items.Add(kb);
+                var mevcut = kenarBandilari.FirstOrDefault(kb => kb.Id == al());
+                kutu.Text = mevcut?.ToString() ?? "— Yok —";
+                void Uygula()
+                {
+                    var secilen = kutu.SelectedItem as PaletOgesi ?? kenarBandilari.FirstOrDefault(kb => kb.ToString() == kutu.Text);
+                    yaz(secilen?.Id);
+                }
+                kutu.SelectedIndexChanged += (s, e) => Uygula();
+                kutu.Leave += (s, e) => Uygula();
+                satir.Controls.Add(kutu);
+            }
+            EkleKenarKutusu("Ön:", () => dugum.KenarOnId, v => dugum.KenarOnId = v);
+            EkleKenarKutusu("Arka:", () => dugum.KenarArkaId, v => dugum.KenarArkaId = v);
+            EkleKenarKutusu("Sol:", () => dugum.KenarSolId, v => dugum.KenarSolId = v);
+            EkleKenarKutusu("Sağ:", () => dugum.KenarSagId, v => dugum.KenarSagId = v);
+
+            panel.Controls.Add(satir);
+            return panel;
+        }
+
+        private static bool BilesenAltIcindeMi(BilesenDugumu ata, BilesenDugumu hedef)
+        {
+            if (ReferenceEquals(ata, hedef)) return true;
+            return ata.Cocuklar.Any(c => BilesenAltIcindeMi(c, hedef));
+        }
+
+        private List<BilesenDugumu> BilesenUstListesiniBul(BilesenDugumu aranan)
+        {
+            if (_bilesenKokListesi.Contains(aranan)) return _bilesenKokListesi;
+            return BilesenUstListesiniBulRecursive(_bilesenKokListesi, aranan);
+        }
+
+        private List<BilesenDugumu> BilesenUstListesiniBulRecursive(List<BilesenDugumu> liste, BilesenDugumu aranan)
+        {
+            foreach (var d in liste)
+            {
+                if (d.Cocuklar.Contains(aranan)) return d.Cocuklar;
+                var sonuc = BilesenUstListesiniBulRecursive(d.Cocuklar, aranan);
+                if (sonuc != null) return sonuc;
+            }
+            return null;
+        }
+
+        // "+ Ek Kalem" — gerçek bir SolidWorks bileşenine karşılık GELMEYEN,
+        // mevcut bir ÜretimOS kartına doğrudan işaret eden sentetik bir alt
+        // düğüm ekler (ör. modellenmemiş bir vida/tutkal kalemi).
+        private void BilesenEkKalemEkleDialogAc(BilesenDugumu ustDugum)
+        {
+            using (var dlg = new Form { Text = "Ek Kalem Ekle", Width = 480, Height = 520, StartPosition = FormStartPosition.CenterParent })
+            {
+                var tipKutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
+                tipKutu.Items.AddRange(new object[] { "Hırdavat", "Plaka", "Kenar Bandı", "Yarı Mamül", "Alt Montaj", "Paket", "Ürün" });
+                tipKutu.SelectedIndex = 0;
+                var aramaKutu = new TextBox { Dock = DockStyle.Top };
+                var liste = new ListBox { Dock = DockStyle.Fill };
+                var ekleBtn = new Button { Text = "Ekle", Dock = DockStyle.Bottom };
+                List<PaletOgesi> mevcutListe = new List<PaletOgesi>();
+                void Doldur()
+                {
+                    string tip = tipKutu.SelectedItem as string;
+                    IEnumerable<PaletOgesi> kaynak = tip == "Hırdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
+                        : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
+                        : tip == "Kenar Bandı" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
+                        : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
+                        : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
+                        : tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
+                        : _urunler.Select(k => Ogeye(k, "urun", "Ürün"));
+                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
+                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
+                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    liste.Items.Clear();
+                    liste.Items.AddRange(mevcutListe.ToArray());
+                }
+                tipKutu.SelectedIndexChanged += (s, e) => Doldur();
+                aramaKutu.TextChanged += (s, e) => Doldur();
+                ekleBtn.Click += (s, e) =>
+                {
+                    if (!(liste.SelectedItem is PaletOgesi secilen)) return;
+                    var kart = FindKart(secilen.KalemTipi, secilen.Id);
+                    if (kart == null) return;
+                    // secilen.KalemTipi hammadde ailesinde hep "hammadde" olur
+                    // (bkz. OgeyeHammadde) — Sınıf için kartın KENDİ 'tip'
+                    // alanından (hirdavat/plaka/kenar_bandi) okunması gerekir.
+                    string sinif = secilen.KalemTipi == "hammadde" ? (string)kart["tip"] : secilen.KalemTipi;
+                    var yeniDugum = new BilesenDugumu
+                    {
+                        ElleEklendi = true,
+                        GosterimAdi = secilen.Ad,
+                        MevcutKod = (string)(kart["kod"] ?? kart["stokKodu"]),
+                        Sinif = sinif
+                    };
+                    ustDugum.Cocuklar.Add(yeniDugum);
+                    dlg.DialogResult = DialogResult.OK;
+                };
+                dlg.Controls.Add(liste);
+                dlg.Controls.Add(ekleBtn);
+                dlg.Controls.Add(aramaKutu);
+                dlg.Controls.Add(tipKutu);
+                Doldur();
+                if (dlg.ShowDialog(this) == DialogResult.OK) BilesenAgaciniCiz();
+            }
         }
 
         // ✓ = URETIMOS_KOD dolu VE bu koda sahip bir ÜretimOS kartı bulundu
@@ -409,6 +673,282 @@ namespace UretimOSKesim
             if (string.IsNullOrWhiteSpace(dugum.MevcutKod)) return "— (eşleşmemiş)  " + dugum.GosterimAdi + ekBilgi;
             bool kartVar = KodileKartBul(dugum.MevcutKod).kart != null;
             return (kartVar ? "✓ " : "⚠ (kart bulunamadı) ") + dugum.MevcutKod + " — " + dugum.GosterimAdi + ekBilgi;
+        }
+
+        // ── BİLEŞEN AĞACINI TOPLU OLARAK REÇETE OLARAK AKTAR ─────────────────
+        // Kullanıcı isteği: "solidworks bileşen ağacı bölümünü olduğu gibi
+        // reçete haline getirelim ve üretimosa atalım ... direkt bu haliyle
+        // uretimosa aktaralım ve üretimos yeni kartlar ve kodları direkt
+        // kaydetsin." ÖN KONTROL (kullanıcı onayı): hiçbir hammadde kartı
+        // SESSİZCE OLUŞTURULMAZ — sınıfı hırdavat/panel/kenar bandı olup
+        // mevcut bir kartla eşleşmeyen düğüm varsa aktarım DURDURULUR.
+        private async System.Threading.Tasks.Task BilesenAgaciniReceteOlarakAktar()
+        {
+            if (_bilesenKokListesi == null || _bilesenKokListesi.Count == 0)
+            {
+                MessageBox.Show("Aktarılacak bir bileşen ağacı yok.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var tumDugumler = new List<BilesenDugumu>();
+            void Topla(BilesenDugumu d) { tumDugumler.Add(d); foreach (var c in d.Cocuklar) Topla(c); }
+            foreach (var d in _bilesenKokListesi) Topla(d);
+
+            var sinifsizlar = tumDugumler.Where(d => !d.BelgeYuklenemedi && string.IsNullOrEmpty(d.Sinif)).ToList();
+            var hammaddeSiniflari = new[] { "hirdavat", "plaka", "kenar_bandi" };
+            var eslesmeyenHammaddeler = tumDugumler.Where(d =>
+                !d.BelgeYuklenemedi && !d.ElleEklendi &&
+                hammaddeSiniflari.Contains(d.Sinif) &&
+                !HammaddeKoduGecerliMi(d.MevcutKod)).ToList();
+
+            if (sinifsizlar.Count > 0 || eslesmeyenHammaddeler.Count > 0)
+            {
+                var mesaj = new System.Text.StringBuilder("Aktarım durduruldu — önce şunları düzeltin:\n");
+                if (sinifsizlar.Count > 0)
+                {
+                    mesaj.Append("\nSınıflandırılmamış ").Append(sinifsizlar.Count).Append(" bileşen:\n");
+                    foreach (var d in sinifsizlar.Take(20)) mesaj.Append("  • ").Append(d.GosterimAdi).Append('\n');
+                    if (sinifsizlar.Count > 20) mesaj.Append("  ... ve ").Append(sinifsizlar.Count - 20).Append(" tane daha.\n");
+                }
+                if (eslesmeyenHammaddeler.Count > 0)
+                {
+                    mesaj.Append("\nMevcut bir hammadde kartıyla eşleşmeyen ").Append(eslesmeyenHammaddeler.Count).Append(" bileşen (Hırdavat/Panel/Kenar Bandı):\n");
+                    foreach (var d in eslesmeyenHammaddeler.Take(20))
+                        mesaj.Append("  • ").Append(d.GosterimAdi).Append(string.IsNullOrEmpty(d.MevcutKod) ? "" : $" (kod: {d.MevcutKod})").Append('\n');
+                    if (eslesmeyenHammaddeler.Count > 20) mesaj.Append("  ... ve ").Append(eslesmeyenHammaddeler.Count - 20).Append(" tane daha.\n");
+                    mesaj.Append("\nBu bileşenleri seçip 'Farklı Kart Seç…' ile mevcut bir hammadde kartına eşleştirin ya da '+ Yeni Kart Oluştur…' ile oluşturun.");
+                }
+                MessageBox.Show(mesaj.ToString(), "ÜretimOS — Eksik Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            int siniflandirilmisSayisi = tumDugumler.Count(d => !d.BelgeYuklenemedi);
+            if (MessageBox.Show(
+                $"{siniflandirilmisSayisi} bileşen taranacak; eşleşmeyen yarı mamül/alt montaj/paket/ürünler için YENİ KART OLUŞTURULACAK ve reçete yapısı ÜretimOS'a kaydedilecek. Devam edilsin mi?",
+                "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = "Bileşen ağacı reçeteye dönüştürülüyor…";
+            try
+            {
+                var yeniKartlar = new Dictionary<string, List<object>>();
+                var kullanilanKodlar = new HashSet<string>(
+                    _urunler.Concat(_yarimamuller).Concat(_altMontajlar).Concat(_paketler)
+                        .Select(k => (string)k["kod"]).Where(k => !string.IsNullOrEmpty(k)), StringComparer.OrdinalIgnoreCase);
+
+                var kartCozumleri = new Dictionary<BilesenDugumu, (string tip, JObject kart)>();
+                foreach (var d in tumDugumler)
+                {
+                    if (d.BelgeYuklenemedi) continue;
+                    (string tip, JObject kart) cozum;
+                    if (hammaddeSiniflari.Contains(d.Sinif))
+                    {
+                        var hammadde = _hammaddeler.FirstOrDefault(h =>
+                            string.Equals((string)h["stokKodu"], d.MevcutKod, StringComparison.OrdinalIgnoreCase)
+                            || (string)h["id"] == d.MevcutKod) as JObject;
+                        cozum = ("hammadde", hammadde);
+                    }
+                    else
+                    {
+                        var mevcut = KodileKartBul(d.MevcutKod);
+                        if (mevcut.kart != null && mevcut.tip == d.Sinif)
+                        {
+                            cozum = mevcut;
+                        }
+                        else
+                        {
+                            // YENİ KART — kod SolidWorks bileşeninin GERÇEK adından
+                            // türetilir (TAHMİN edilen bir numaralandırma DEĞİL).
+                            string kod = BenzersizKodUret(d.GosterimAdi, kullanilanKodlar);
+                            kullanilanKodlar.Add(kod);
+                            var yeniKart = YeniKartUret(d.Sinif, kod, d);
+                            string koleksiyon = KoleksiyonAdiTipten(d.Sinif);
+                            if (koleksiyon == null) continue;
+                            if (!yeniKartlar.ContainsKey(koleksiyon)) yeniKartlar[koleksiyon] = new List<object>();
+                            yeniKartlar[koleksiyon].Add(yeniKart);
+                            cozum = (d.Sinif, yeniKart);
+                        }
+                    }
+                    kartCozumleri[d] = cozum;
+                }
+
+                foreach (var grup in yeniKartlar)
+                {
+                    bool basarili = await _istemci.ToplukaEkleGuncelle(grup.Key, grup.Value, new List<object>());
+                    if (!basarili) throw new Exception($"Sunucu '{grup.Key}' kartlarını reddetti (HTTP hata / yetki sorunu olabilir).");
+                }
+                foreach (var grup in yeniKartlar)
+                {
+                    var hedefListe = grup.Key == "urunler" ? _urunler : grup.Key == "yarimamuller" ? _yarimamuller
+                        : grup.Key == "altMontajlar" ? _altMontajlar : _paketler;
+                    foreach (JObject k in grup.Value) hedefListe.Add(k);
+                }
+
+                // Her düğümün SolidWorks dosyasına eşleşen kodu yaz — kalıcılık
+                // (bkz. EslesmeYazVeUygula'daki AYNI gerekçe).
+                foreach (var d in tumDugumler)
+                {
+                    if (d.BelgeYuklenemedi || d.ElleEklendi || d.Model == null) continue;
+                    if (!kartCozumleri.TryGetValue(d, out var cozum) || cozum.kart == null) continue;
+                    string kod = (string)cozum.kart["kod"] ?? (string)cozum.kart["stokKodu"];
+                    if (string.IsNullOrWhiteSpace(kod)) continue;
+                    try { KesimListesiCikarici.OzelAlanYaz(d.Model, OzelAlanlar.KOD, kod); d.MevcutKod = kod; }
+                    catch (Exception ex) { Tanilama.Kaydet("BilesenAgaciniReceteOlarakAktar (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                }
+
+                // Reçete yapısını kur: reçete-taşıyan (hammadde OLMAYAN) her
+                // düğümün ÇOCUKLARINI kalem olarak ekle — AYNI karta çözülen
+                // kardeşler TEK bir kalemde TOPLANIR (miktar = tekrar sayısı).
+                var receteMap = new Dictionary<string, JObject>();
+                JObject ReceteBul(string tip, JObject kart)
+                {
+                    string anahtar = tip + "|" + (string)kart["id"];
+                    if (receteMap.TryGetValue(anahtar, out var mevcutR)) return mevcutR;
+                    string alanAdi = AlanAdiTipten(tip);
+                    var recete = _receteler.FirstOrDefault(r => (string)r[alanAdi] == (string)kart["id"]) as JObject
+                        ?? new JObject { ["id"] = "RC-" + Guid.NewGuid().ToString("N").Substring(0, 12).ToUpperInvariant(), ["ad"] = (string)kart["ad"] + " Reçetesi", ["kalemler"] = new JArray(), [alanAdi] = (string)kart["id"] };
+                    receteMap[anahtar] = recete;
+                    return recete;
+                }
+
+                var etkilenenReceteler = new List<object>();
+                foreach (var d in tumDugumler)
+                {
+                    if (d.BelgeYuklenemedi) continue;
+                    if (!kartCozumleri.TryGetValue(d, out var ustCozum) || ustCozum.kart == null || ustCozum.tip == "hammadde") continue;
+                    if (d.Cocuklar.Count == 0) continue;
+
+                    var recete = ReceteBul(ustCozum.tip, ustCozum.kart);
+                    var kalemler = (JArray)recete["kalemler"];
+                    bool receteDegisti = false;
+
+                    var gruplar = d.Cocuklar.Where(c => kartCozumleri.ContainsKey(c) && kartCozumleri[c].kart != null)
+                        .GroupBy(c => kartCozumleri[c]);
+                    foreach (var grup in gruplar)
+                    {
+                        var (cocukTip, cocukKart) = grup.Key;
+                        bool zatenVar = kalemler.OfType<JObject>().Any(k => (string)k["tip"] == cocukTip && (string)k["refId"] == (string)cocukKart["id"]);
+                        if (zatenVar) continue;
+
+                        var ilkCocuk = grup.First();
+                        var yeniKalem = new JObject
+                        {
+                            ["id"] = "RK-" + Guid.NewGuid().ToString("N").Substring(0, 10).ToUpperInvariant(),
+                            ["tip"] = cocukTip,
+                            ["refId"] = (string)cocukKart["id"],
+                            ["miktar"] = grup.Count(),
+                            ["birim"] = "ADET"
+                        };
+                        // "kenar bandını 4 kenardan hangisine hangi tip
+                        // eklediğimizi de çıkartalım" — web'in kalemBaglami.
+                        // kenarBantlari/olcu ile AYNI şekilde kaleme yazılır,
+                        // ÜretimOS'un kendi Reçete Ağaç Editörü'nde de görünür.
+                        if (ilkCocuk.Sinif == "plaka")
+                        {
+                            yeniKalem["olcu"] = new JObject { ["netEn"] = ilkCocuk.TaslakEnMm, ["netBoy"] = ilkCocuk.TaslakBoyMm, ["kabaEn"] = ilkCocuk.TaslakEnMm, ["kabaBoy"] = ilkCocuk.TaslakBoyMm };
+                            var kenarlar = new JObject();
+                            if (!string.IsNullOrEmpty(ilkCocuk.KenarOnId)) kenarlar["on"] = ilkCocuk.KenarOnId;
+                            if (!string.IsNullOrEmpty(ilkCocuk.KenarArkaId)) kenarlar["arka"] = ilkCocuk.KenarArkaId;
+                            if (!string.IsNullOrEmpty(ilkCocuk.KenarSolId)) kenarlar["sol"] = ilkCocuk.KenarSolId;
+                            if (!string.IsNullOrEmpty(ilkCocuk.KenarSagId)) kenarlar["sag"] = ilkCocuk.KenarSagId;
+                            if (kenarlar.Count > 0) yeniKalem["kenarBantlari"] = kenarlar;
+                        }
+                        kalemler.Add(yeniKalem);
+                        receteDegisti = true;
+                    }
+                    if (receteDegisti && !etkilenenReceteler.Contains(recete)) etkilenenReceteler.Add(recete);
+                }
+
+                if (etkilenenReceteler.Count > 0)
+                {
+                    bool receteBasarili = await _istemci.ToplukaEkleGuncelle("receteler", etkilenenReceteler, new List<object>());
+                    if (!receteBasarili) throw new Exception("Sunucu 'receteler' kaydını reddetti (HTTP hata).");
+                    foreach (JObject r in etkilenenReceteler)
+                        if (!_receteler.Contains(r)) _receteler.Add(r);
+                }
+
+                int yeniKartSayisi = yeniKartlar.Values.Sum(l => l.Count);
+                _durumEtiketi.ForeColor = Color.DarkGreen;
+                _durumEtiketi.Text = $"✓ Bileşen ağacı ÜretimOS'a aktarıldı — {yeniKartSayisi} yeni kart, {etkilenenReceteler.Count} reçete kaydedildi.";
+                Tanilama.Kaydet($"BilesenAgaciniReceteOlarakAktar: kart={yeniKartSayisi}, recete={etkilenenReceteler.Count}");
+                BilesenAgaciniCiz();
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("BilesenAgaciniReceteOlarakAktar HATA: " + ex);
+                MessageBox.Show("Aktarım sırasında hata: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _durumEtiketi.ForeColor = Color.DarkRed;
+                _durumEtiketi.Text = "Aktarım başarısız: " + ex.Message;
+            }
+        }
+
+        private bool HammaddeKoduGecerliMi(string kod)
+        {
+            if (string.IsNullOrWhiteSpace(kod)) return false;
+            return _hammaddeler.Any(h => string.Equals((string)h["stokKodu"], kod, StringComparison.OrdinalIgnoreCase) || (string)h["id"] == kod);
+        }
+
+        // SolidWorks bileşeninin GERÇEK adından türetilmiş, benzersiz bir kod
+        // üretir — TAHMİN EDİLEN bir şirket numaralandırma şeması DEĞİL,
+        // doğrudan bileşenin kendi (kullanıcı tarafından SolidWorks'te
+        // verilmiş) adına dayanır; çakışma olursa sayısal sonek eklenir.
+        private static string BenzersizKodUret(string ad, HashSet<string> kullanilanKodlar)
+        {
+            string kaynak = (ad ?? "PARCA").ToUpperInvariant()
+                .Replace('Ç', 'C').Replace('Ğ', 'G').Replace('İ', 'I').Replace('Ö', 'O').Replace('Ş', 'S').Replace('Ü', 'U');
+            var sb = new System.Text.StringBuilder();
+            foreach (char c in kaynak) sb.Append(char.IsLetterOrDigit(c) && c < 128 ? c : '_');
+            string taban = sb.ToString();
+            while (taban.Contains("__")) taban = taban.Replace("__", "_");
+            taban = taban.Trim('_');
+            if (string.IsNullOrEmpty(taban)) taban = "PARCA";
+            string aday = taban;
+            int sayac = 1;
+            while (kullanilanKodlar.Contains(aday)) aday = taban + "_" + (++sayac);
+            return aday;
+        }
+
+        // Bulk aktarımda eşleşmeyen bir düğüm için sıfırdan kart üretir —
+        // YeniKartFormlari.cs'teki alan şemasıyla AYNI (yalnızca burada
+        // diyalog YOK, tüm alanlar makul varsayılanlarla otomatik doldurulur;
+        // kullanıcı isteği: "üretimos yeni kartlar ve kodları direkt kaydetsin").
+        private static JObject YeniKartUret(string sinif, string kod, BilesenDugumu d)
+        {
+            var kart = new JObject { ["id"] = sinif.Substring(0, System.Math.Min(3, sinif.Length)).ToUpperInvariant() + "-" + Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant() };
+            kart["kod"] = kod;
+            kart["ad"] = d.GosterimAdi;
+            kart["gorseller"] = new JArray();
+            kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+            switch (sinif)
+            {
+                case "yarimamul":
+                    kart["netBoy"] = d.TaslakBoyMm > 0 ? (JToken)d.TaslakBoyMm : null;
+                    kart["netEn"] = d.TaslakEnMm > 0 ? (JToken)d.TaslakEnMm : null;
+                    kart["kalinlik"] = d.TaslakKalinlikMm > 0 ? (JToken)d.TaslakKalinlikMm : null;
+                    kart["adet"] = 1;
+                    kart["rotaId"] = null;
+                    kart["amortismanGideri"] = 0;
+                    kart["gygOraniYuzde"] = 0;
+                    kart["kapasiteGunlukMax"] = 0; kart["kapasiteHaftalikMax"] = 0; kart["kapasiteAylikMax"] = 0;
+                    kart["aciklama"] = "";
+                    break;
+                case "altmontaj":
+                    kart["aciklama"] = "";
+                    kart["rotaId"] = null; kart["amortismanGideri"] = 0; kart["gygOraniYuzde"] = 0;
+                    break;
+                case "paket":
+                    kart["ambalajTipi"] = "Koli"; kart["koliIciAdet"] = 1;
+                    kart["en"] = 0; kart["boy"] = 0; kart["yukseklik"] = 0; kart["netAgirlik"] = 0; kart["brutAgirlik"] = 0;
+                    kart["aciklama"] = ""; kart["rotaId"] = null; kart["amortismanGideri"] = 0; kart["gygOraniYuzde"] = 0;
+                    break;
+                case "urun":
+                    kart["tip"] = "bitmis_urun";
+                    kart["aciklama"] = ""; kart["rotaId"] = null; kart["amortismanGideri"] = 0; kart["gygOraniYuzde"] = 0;
+                    kart["kapasiteGunlukMax"] = 0; kart["kapasiteHaftalikMax"] = 0; kart["kapasiteAylikMax"] = 0;
+                    kart["en"] = 0; kart["boy"] = 0; kart["yukseklik"] = 0; kart["netAgirlik"] = 0; kart["brutAgirlik"] = 0;
+                    break;
+            }
+            return kart;
         }
 
         // URETIMOS_KOD custom property'sine göre önce 4 reçete-taşıyan
@@ -502,8 +1042,7 @@ namespace UretimOSKesim
                     {
                         KesimListesiCikarici.OzelAlanYaz(_seciliBilesenDugumu.Model, OzelAlanlar.KOD, kod);
                         _seciliBilesenDugumu.MevcutKod = kod;
-                        if (_bilesenAgaciGorunumu.SelectedNode != null)
-                            _bilesenAgaciGorunumu.SelectedNode.Text = BilesenDugumMetni(_seciliBilesenDugumu);
+                        BilesenAgaciniCiz();
                     }
                     catch (Exception ex)
                     {
