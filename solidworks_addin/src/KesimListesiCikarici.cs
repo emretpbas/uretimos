@@ -238,7 +238,10 @@ namespace UretimOSKesim
         // repodaki yerleşik ilkeyle birebir aynı (bkz. step_okuyucu.js:
         // "yanlış varsaymaktan boş bırakmak/elle girdirmek daha ucuzdur").
         // Otomatik geometri okuma, gerçek API doğrulanınca Faz 2'de eklenebilir.
-        private (double boy, double en, double kalinlik, string kaynak) OlcuHesapla(ModelDoc2 modelDoc)
+        // public static yapıldı (durumsuz) — bkz. OzelAlanOku'daki aynı gerekçe.
+        // BilesenAgaci.cs bunu, Reçete Ağacı panelindeki bileşen ağacında
+        // parça ölçülerini göstermek için kullanır (kopyalamak yerine paylaşır).
+        public static (double boy, double en, double kalinlik, string kaynak) OlcuHesapla(ModelDoc2 modelDoc)
         {
             double boy = OzelAlanSayiOku(modelDoc, OzelAlanlar.BOY_MM);
             double en = OzelAlanSayiOku(modelDoc, OzelAlanlar.EN_MM);
@@ -252,7 +255,7 @@ namespace UretimOSKesim
 
         // Bir özel alanı ondalıklı sayı olarak okur (virgül/nokta ayracı
         // ikisi de kabul edilir); alan boşsa veya sayı değilse 0 döner.
-        private double OzelAlanSayiOku(ModelDoc2 modelDoc, string alanAdi)
+        private static double OzelAlanSayiOku(ModelDoc2 modelDoc, string alanAdi)
         {
             string metin = OzelAlanOku(modelDoc, alanAdi);
             if (string.IsNullOrWhiteSpace(metin)) return 0;

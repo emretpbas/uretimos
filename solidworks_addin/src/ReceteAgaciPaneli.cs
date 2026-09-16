@@ -170,7 +170,7 @@ namespace UretimOSKesim
             var solPanel = new Panel { Dock = DockStyle.Left, Width = 320, Padding = new Padding(8) };
             var paletBaslik = new Label { Text = "Ekle — sürükleyip ağaçta bir kartın ÜSTÜNE bırakın (o kartın reçetesine eklenir)", Dock = DockStyle.Top, Height = 32, AutoSize = false };
             _paletTipKutusu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-            _paletTipKutusu.Items.AddRange(new object[] { "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı" });
+            _paletTipKutusu.Items.AddRange(new object[] { "Ürün", "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı" });
             _paletTipKutusu.SelectedIndexChanged += (s, e) => PaletiFiltrele();
             _paletAramaKutusu = new TextBox { Dock = DockStyle.Top };
             _paletAramaKutusu.TextChanged += (s, e) => PaletiFiltrele();
@@ -392,21 +392,41 @@ namespace UretimOSKesim
             return node;
         }
 
-        // ✓ = URETIMOS_KOD dolu VE bu koda sahip bir ÜretimOS kartı bulundu.
+        // ✓ = URETIMOS_KOD dolu VE bu koda sahip bir ÜretimOS kartı bulundu
+        //     (ürün/yarımamül/altmontaj/paket VEYA hammadde — bkz. KodileKartBul).
         // ⚠ = URETIMOS_KOD dolu ama karşılığı bir kart YOK (silinmiş/yazım hatası olabilir).
         // — = URETIMOS_KOD hiç yazılmamış (henüz eşleştirilmemiş).
+        // Kullanıcı isteği: "bu listeye parçanın ebatı en boy yükseklikte
+        // gelmeli ve üzerinde olan delik ve formlarda buraya işlensin" —
+        // BilesenAgaci.cs'te toplanan ölçü/delik/form bilgisi burada ek bilgi
+        // olarak satırın sonuna eklenir (yalnızca parça belgelerinde dolu olur).
         private string BilesenDugumMetni(BilesenDugumu dugum)
         {
             if (dugum.BelgeYuklenemedi) return "⚠ " + dugum.GosterimAdi;
-            if (string.IsNullOrWhiteSpace(dugum.MevcutKod)) return "— (eşleşmemiş)  " + dugum.GosterimAdi;
+
+            string ekBilgi = "";
+            if (dugum.OlcuVar)
+                ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm)";
+            if (dugum.DelikSayisi > 0 || dugum.FormSayisi > 0)
+            {
+                var parcalar = new List<string>();
+                if (dugum.DelikSayisi > 0) parcalar.Add(dugum.DelikSayisi + " delik");
+                if (dugum.FormSayisi > 0) parcalar.Add(dugum.FormSayisi + " form");
+                ekBilgi += "  [" + string.Join(", ", parcalar) + "]";
+            }
+
+            if (string.IsNullOrWhiteSpace(dugum.MevcutKod)) return "— (eşleşmemiş)  " + dugum.GosterimAdi + ekBilgi;
             bool kartVar = KodileKartBul(dugum.MevcutKod).kart != null;
-            return (kartVar ? "✓ " : "⚠ (kart bulunamadı) ") + dugum.MevcutKod + " — " + dugum.GosterimAdi;
+            return (kartVar ? "✓ " : "⚠ (kart bulunamadı) ") + dugum.MevcutKod + " — " + dugum.GosterimAdi + ekBilgi;
         }
 
-        // URETIMOS_KOD custom property'sine göre 4 reçete-taşıyan koleksiyonda
-        // (ürün/yarımamül/altmontaj/paket) arar — hammadde kartları burada
-        // ARANMAZ (bir SolidWorks bileşeni bir reçetenin KÖKÜ olabilir, ama
-        // hammadde kartlarının kendi reçetesi yoktur).
+        // URETIMOS_KOD custom property'sine göre önce 4 reçete-taşıyan
+        // koleksiyonda (ürün/yarımamül/altmontaj/paket, 'kod' alanı), sonra
+        // — kullanıcı isteği: "mevcut hammadde kartlarıyla ... eşleştirebileyim" —
+        // hammaddeler'de ('stokKodu' alanı) arar. Bir SolidWorks bileşeni
+        // doğrudan bir hammadde karşılığı olabilir (ör. modellenmiş bir plaka/
+        // hırdavat parçası); hammadde kartlarının kendi reçetesi olmadığı için
+        // bu durumda aşağıdaki reçete editörü BİLEREK boş kalır (bkz. BilesenSecildi).
         private (string tip, JObject kart) KodileKartBul(string kod)
         {
             if (string.IsNullOrWhiteSpace(kod)) return (null, null);
@@ -415,7 +435,22 @@ namespace UretimOSKesim
                 var eslesen = liste?.FirstOrDefault(k => string.Equals((string)k["kod"], kod, StringComparison.OrdinalIgnoreCase)) as JObject;
                 if (eslesen != null) return (tip, eslesen);
             }
+            var hammaddeEslesen = _hammaddeler?.FirstOrDefault(h => string.Equals((string)h["stokKodu"], kod, StringComparison.OrdinalIgnoreCase)) as JObject;
+            if (hammaddeEslesen != null) return ("hammadde", hammaddeEslesen);
             return (null, null);
+        }
+
+        // Alt taraftaki reçete editörünü/üst bilgi panellerini "kart yok"
+        // durumuna sıfırlar — hem "hiç eşleşmemiş" hem "hammadde kartıyla
+        // eşleşti" (reçetesi olmayan) durumları AYNI temizliği paylaşır.
+        private void KokKartYokGoster(string mesaj)
+        {
+            _kokTip = null; _kokKart = null;
+            _kaydetBtn.Enabled = false;
+            _agacGorunumu.Nodes.Clear();
+            _rotaPanel.Visible = false;
+            _paketOlcuPanel.Visible = false;
+            _kokKartEtiketi.Text = mesaj;
         }
 
         // Bileşen ağacında bir düğüme tıklanınca çağrılır — kullanıcı isteği:
@@ -431,17 +466,19 @@ namespace UretimOSKesim
 
             if (dugum.BelgeYuklenemedi)
             {
-                _kokTip = null; _kokKart = null;
-                _kaydetBtn.Enabled = false;
-                _agacGorunumu.Nodes.Clear();
-                _rotaPanel.Visible = false;
-                _paketOlcuPanel.Visible = false;
-                _kokKartEtiketi.Text = dugum.GosterimAdi;
+                KokKartYokGoster(dugum.GosterimAdi);
                 return;
             }
 
             var (bulunanTip, bulunanKart) = KodileKartBul(dugum.MevcutKod);
-            if (bulunanKart != null)
+            if (bulunanTip == "hammadde" && bulunanKart != null)
+            {
+                KokKartYokGoster($"✓ '{dugum.MevcutKod}' bir HAMMADDE kartıyla eşleşti: {bulunanKart["ad"]}. " +
+                    "Hammaddelerin kendi reçetesi olmadığı için burada düzenlenecek bir şey yok — eşleşme kaydedildi.");
+                _durumEtiketi.ForeColor = Color.DarkGreen;
+                _durumEtiketi.Text = "✓ Hammadde kartıyla eşleşme onaylandı.";
+            }
+            else if (bulunanKart != null)
             {
                 KokKartAyarla(bulunanTip, bulunanKart);
                 _durumEtiketi.ForeColor = Color.DarkGreen;
@@ -449,14 +486,9 @@ namespace UretimOSKesim
             }
             else
             {
-                _kokTip = null; _kokKart = null;
-                _kaydetBtn.Enabled = false;
-                _agacGorunumu.Nodes.Clear();
-                _rotaPanel.Visible = false;
-                _paketOlcuPanel.Visible = false;
-                _kokKartEtiketi.Text = string.IsNullOrWhiteSpace(dugum.MevcutKod)
+                KokKartYokGoster(string.IsNullOrWhiteSpace(dugum.MevcutKod)
                     ? $"'{dugum.GosterimAdi}' henüz bir ÜretimOS kartıyla eşleştirilmemiş — 'Farklı Kart Seç…' ile eşleştirin ya da soldan '+ Yeni Kart Oluştur…' ile oluşturun."
-                    : $"'{dugum.GosterimAdi}' için kayıtlı kod '{dugum.MevcutKod}' ile eşleşen bir ÜretimOS kartı bulunamadı — 'Farklı Kart Seç…' ile eşleştirin.";
+                    : $"'{dugum.GosterimAdi}' için kayıtlı kod '{dugum.MevcutKod}' ile eşleşen bir ÜretimOS kartı bulunamadı — 'Farklı Kart Seç…' ile eşleştirin.");
             }
         }
 
@@ -488,6 +520,17 @@ namespace UretimOSKesim
                     }
                 }
             }
+
+            // Hammadde kartlarının kendi reçetesi yok — KokKartAyarla'yı
+            // ÇAĞIRMAYIZ, aksi halde AlanAdiTipten'in bilmediği bir tip için
+            // yanlış bir alanla (ör. paketId) hayalet bir 'hammadde reçetesi'
+            // taslağı oluşturulabilirdi. Yalnızca eşleşme kaydedilir.
+            if (tip == "hammadde")
+            {
+                KokKartYokGoster($"✓ Hammadde kartıyla eşleşti: {kart["stokKodu"] ?? kart["id"]} — {kart["ad"]}. " +
+                    "Hammaddelerin kendi reçetesi olmadığı için burada düzenlenecek bir şey yok.");
+                return;
+            }
             KokKartAyarla(tip, kart);
         }
 
@@ -501,6 +544,7 @@ namespace UretimOSKesim
             IEnumerable<PaletOgesi> kaynak;
             switch (secim)
             {
+                case "Ürün": kaynak = _urunler.Select(k => Ogeye(k, "urun", "Ürün")); break;
                 case "Paket": kaynak = _paketler.Select(k => Ogeye(k, "paket", "Paket")); break;
                 case "Yarı Mamül": kaynak = _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül")); break;
                 case "Alt Montaj": kaynak = _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj")); break;
@@ -553,6 +597,7 @@ namespace UretimOSKesim
             string kartTipi;
             switch (secim)
             {
+                case "Ürün": kartTipi = "urun"; break;
                 case "Paket": kartTipi = "paket"; break;
                 case "Yarı Mamül": kartTipi = "yarimamul"; break;
                 case "Alt Montaj": kartTipi = "altmontaj"; break;
@@ -573,6 +618,7 @@ namespace UretimOSKesim
                 (kartTipi == "plaka" || kartTipi == "kenar_bandi" || kartTipi == "hirdavat") ? "hammaddeler"
                 : kartTipi == "yarimamul" ? "yarimamuller"
                 : kartTipi == "altmontaj" ? "altMontajlar"
+                : kartTipi == "urun" ? "urunler"
                 : "paketler";
 
             _durumEtiketi.ForeColor = Color.DarkSlateGray;
@@ -614,6 +660,7 @@ namespace UretimOSKesim
                 case "hammaddeler": _hammaddeler.Add(yeniKart); break;
                 case "yarimamuller": _yarimamuller.Add(yeniKart); break;
                 case "altMontajlar": _altMontajlar.Add(yeniKart); break;
+                case "urunler": _urunler.Add(yeniKart); break;
                 case "paketler": _paketler.Add(yeniKart); break;
             }
 
@@ -635,7 +682,7 @@ namespace UretimOSKesim
             // varsa, bu yeni kart OTOMATİK olarak o bileşenle eşleştirilir
             // (URETIMOS_KOD'a yazılarak kalıcı olur) — "boş bileşen seç →
             // yeni kart oluştur" akışını tek adıma indirir.
-            if (_seciliBilesenDugumu != null && (kartTipi == "yarimamul" || kartTipi == "altmontaj" || kartTipi == "paket"))
+            if (_seciliBilesenDugumu != null && (kartTipi == "yarimamul" || kartTipi == "altmontaj" || kartTipi == "paket" || kartTipi == "urun"))
             {
                 EslesmeYazVeUygula(kartTipi, yeniKart);
             }
@@ -701,7 +748,12 @@ namespace UretimOSKesim
             using (var secici = new Form { Text = "Reçete Hedefi Seç", Width = 480, Height = 520, StartPosition = FormStartPosition.CenterParent })
             {
                 var tipKutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-                tipKutu.Items.AddRange(new object[] { "Ürün", "Yarı Mamül", "Alt Montaj", "Paket" });
+                // Kullanıcı isteği: "mevcut hammadde kartlarıyla ... sol
+                // sütundaki tüm kompanentlerini eşleştirebileyim" — Plaka/
+                // Kenar Bandı/Hırdavat da seçilebilir hedef tipleri arasına
+                // eklendi (bkz. EslesmeYazVeUygula'nın "hammadde" dalı — bu
+                // kartların kendi reçetesi olmaz, yalnızca eşleşme kaydedilir).
+                tipKutu.Items.AddRange(new object[] { "Ürün", "Yarı Mamül", "Alt Montaj", "Paket", "Plaka", "Kenar Bandı", "Hırdavat" });
                 tipKutu.SelectedIndex = 0;
                 var aramaKutu = new TextBox { Dock = DockStyle.Top };
                 var liste = new ListBox { Dock = DockStyle.Fill };
@@ -714,7 +766,10 @@ namespace UretimOSKesim
                     IEnumerable<PaletOgesi> kaynak = tip == "Ürün" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
                         : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
                         : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
-                        : _paketler.Select(k => Ogeye(k, "paket", "Paket"));
+                        : tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
+                        : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
+                        : tip == "Kenar Bandı" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
+                        : _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"));
                     string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
                     mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
                         .OrderBy(o => o.Kod).Take(300).ToList();

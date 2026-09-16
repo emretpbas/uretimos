@@ -33,7 +33,7 @@ namespace UretimOSKesim
     // ════════════════════════════════════════════════════════════════════════
     public class YeniKartDialog : Form
     {
-        // "plaka" | "kenar_bandi" | "hirdavat" | "yarimamul" | "altmontaj" | "paket"
+        // "plaka" | "kenar_bandi" | "hirdavat" | "yarimamul" | "altmontaj" | "paket" | "urun"
         private readonly string _kartTipi;
         private readonly JArray _hammaddelerListesi; // yarımamül için "hammadde ata" alanı
 
@@ -82,6 +82,7 @@ namespace UretimOSKesim
                 case "yarimamul": return "Yeni Yarı Mamül";
                 case "altmontaj": return "Yeni Alt Montaj";
                 case "paket": return "Yeni Paket";
+                case "urun": return "Yeni Bitmiş Ürün";
                 default: return "Yeni Kart";
             }
         }
@@ -187,7 +188,8 @@ namespace UretimOSKesim
             TextBox netBoyKutusu = null, netEnKutusu = null, ymKalinlikKutusu = null,
                 kabaBoyKutusu = null, kabaEnKutusu = null, adetKutusu = null, ymRenkKutusu = null,
                 referansFiyatKutusu = null, amortismanKutusu = null, gygKutusu = null, aciklamaKutusu = null;
-            ComboBox referansDvzKutusu = null, hammaddeKutusu = null;
+            ComboBox referansDvzKutusu = null;
+            ListBox hammaddeListesi = null;
 
             if (_kartTipi == "yarimamul")
             {
@@ -199,12 +201,34 @@ namespace UretimOSKesim
                 adetKutusu = new TextBox { Text = "1" }; Satir("Adet", adetKutusu);
                 ymRenkKutusu = new TextBox(); Satir("Renk", ymRenkKutusu);
 
-                hammaddeKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-                hammaddeKutusu.Items.Add("— Seçilmedi —");
-                foreach (var h in _hammaddelerListesi.Where(x => (string)x["tip"] == "plaka" || (string)x["tip"] == "hirdavat"))
-                    hammaddeKutusu.Items.Add(new HammaddeSecenegi((JObject)h));
-                hammaddeKutusu.SelectedIndex = 0;
-                Satir("Atanacak Hammadde", hammaddeKutusu);
+                // Kullanıcı isteği: "tüm hammadde ... kodlarını arayabilelim
+                // bulmak çok zor" — yüzlerce hammadde arasından tek bir açılır
+                // kutuda (ComboBox) bulmak zordu; ReceteAgaciPaneli'nin palet
+                // arama kutusuyla AYNI mantık (canlı, kod/ad'a göre filtreleyen
+                // arama + liste) burada da kullanılıyor.
+                var hammaddeSecenekleri = _hammaddelerListesi
+                    .Where(x => (string)x["tip"] == "plaka" || (string)x["tip"] == "hirdavat")
+                    .Select(h => new HammaddeSecenegi((JObject)h))
+                    .ToList();
+                var hammaddePanel = new Panel { Height = 150 };
+                var hammaddeAramaKutusu = new TextBox { Dock = DockStyle.Top };
+                hammaddeListesi = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
+                void HammaddeListesiniFiltrele()
+                {
+                    string arama = (hammaddeAramaKutusu.Text ?? "").Trim().ToLowerInvariant();
+                    var eslesenler = string.IsNullOrEmpty(arama)
+                        ? hammaddeSecenekleri
+                        : hammaddeSecenekleri.Where(h => h.AramaMetni.Contains(arama)).ToList();
+                    hammaddeListesi.Items.Clear();
+                    hammaddeListesi.Items.Add("— Seçilmedi —");
+                    hammaddeListesi.Items.AddRange(eslesenler.Cast<object>().ToArray());
+                    hammaddeListesi.SelectedIndex = 0;
+                }
+                hammaddeAramaKutusu.TextChanged += (s, e) => HammaddeListesiniFiltrele();
+                hammaddePanel.Controls.Add(hammaddeListesi);
+                hammaddePanel.Controls.Add(hammaddeAramaKutusu);
+                HammaddeListesiniFiltrele();
+                Satir("Atanacak Hammadde (kod/ad ara)", hammaddePanel);
 
                 referansFiyatKutusu = new TextBox(); Satir("Referans Fiyat (opsiyonel)", referansFiyatKutusu);
                 referansDvzKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
@@ -216,7 +240,7 @@ namespace UretimOSKesim
                 Satir("", rotaBilgi);
             }
 
-            if (_kartTipi == "yarimamul" || _kartTipi == "altmontaj" || _kartTipi == "paket")
+            if (_kartTipi == "yarimamul" || _kartTipi == "altmontaj" || _kartTipi == "paket" || _kartTipi == "urun")
             {
                 amortismanKutusu = new TextBox { Text = "0" }; Satir("Amortisman Gideri (₺)", amortismanKutusu);
                 gygKutusu = new TextBox { Text = "0" }; Satir("GYG Oranı %", gygKutusu);
@@ -227,6 +251,32 @@ namespace UretimOSKesim
             {
                 aciklamaKutusu = new TextBox { Multiline = true, Height = 60 };
                 Satir("Açıklama", aciklamaKutusu);
+            }
+
+            // ── ÜRÜN (BİTMİŞ ÜRÜN) ───────────────────────────────────────────
+            // Kullanıcı isteği: "solidde yeni reçete yapacağız ve uretimosa
+            // atacağız bu sebeple yeni bitmiş ürün kartınıda dosyadan al" —
+            // alan listesi page_kartlar.js:openForm (ürün formu) ile AYNI;
+            // rota/kapasite limitleri BİLİNÇLİ olarak burada sorulmuyor
+            // (yarımamül'deki rota alanı gibi, kart oluşturulduktan sonra
+            // ÜretimOS'un kendi Ürün ekranından tamamlanır — TAHMİN YOK).
+            TextBox urnEnKutusu = null, urnBoyKutusu = null, urnYukseklikKutusu = null,
+                urnNetAgirlikKutusu = null, urnBrutAgirlikKutusu = null;
+            if (_kartTipi == "urun")
+            {
+                aciklamaKutusu = new TextBox { Multiline = true, Height = 60 };
+                Satir("Açıklama", aciklamaKutusu);
+                urnEnKutusu = new TextBox(); Satir("En (cm)", urnEnKutusu);
+                urnBoyKutusu = new TextBox(); Satir("Boy (cm)", urnBoyKutusu);
+                urnYukseklikKutusu = new TextBox(); Satir("Yükseklik (cm)", urnYukseklikKutusu);
+                urnNetAgirlikKutusu = new TextBox(); Satir("Net Ağırlık (kg)", urnNetAgirlikKutusu);
+                urnBrutAgirlikKutusu = new TextBox(); Satir("Brüt Ağırlık (kg)", urnBrutAgirlikKutusu);
+                var kapasiteBilgi = new Label
+                {
+                    Text = "Rota ve üretim kapasite limitleri (günlük/haftalık/aylık),\nkart oluşturulduktan sonra ÜretimOS'un Ürün ekranından\nayarlanabilir.",
+                    AutoSize = true, ForeColor = Color.DarkSlateGray
+                };
+                Satir("", kapasiteBilgi);
             }
 
             // ── PAKET ─────────────────────────────────────────────────────────
@@ -330,7 +380,7 @@ namespace UretimOSKesim
                         kart["renk"] = (ymRenkKutusu.Text ?? "").Trim();
                         kart["referansFiyat"] = string.IsNullOrWhiteSpace(referansFiyatKutusu.Text) ? (JToken)null : Cift(referansFiyatKutusu);
                         kart["referansDvz"] = referansDvzKutusu.SelectedItem as string ?? "TL";
-                        kart["hammaddeId"] = (hammaddeKutusu.SelectedItem as HammaddeSecenegi)?.Id;
+                        kart["hammaddeId"] = (hammaddeListesi.SelectedItem as HammaddeSecenegi)?.Id;
                         kart["rotaId"] = null;
                         kart["amortismanGideri"] = Cift(amortismanKutusu);
                         kart["gygOraniYuzde"] = Cift(gygKutusu);
@@ -368,6 +418,27 @@ namespace UretimOSKesim
                         kart["rotaId"] = null;
                         kart["amortismanGideri"] = Cift(amortismanKutusu);
                         kart["gygOraniYuzde"] = Cift(gygKutusu);
+                        kart["gorseller"] = new JArray();
+                        kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+                    }
+                    else if (_kartTipi == "urun")
+                    {
+                        kart["id"] = YeniId("URN");
+                        kart["kod"] = kod;
+                        kart["ad"] = ad;
+                        kart["tip"] = "bitmis_urun";
+                        kart["aciklama"] = (aciklamaKutusu.Text ?? "").Trim();
+                        kart["rotaId"] = null;
+                        kart["amortismanGideri"] = Cift(amortismanKutusu);
+                        kart["gygOraniYuzde"] = Cift(gygKutusu);
+                        kart["kapasiteGunlukMax"] = 0;
+                        kart["kapasiteHaftalikMax"] = 0;
+                        kart["kapasiteAylikMax"] = 0;
+                        kart["en"] = Cift(urnEnKutusu);
+                        kart["boy"] = Cift(urnBoyKutusu);
+                        kart["yukseklik"] = Cift(urnYukseklikKutusu);
+                        kart["netAgirlik"] = Cift(urnNetAgirlikKutusu);
+                        kart["brutAgirlik"] = Cift(urnBrutAgirlikKutusu);
                         kart["gorseller"] = new JArray();
                         kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
                     }
@@ -413,11 +484,13 @@ namespace UretimOSKesim
         private class HammaddeSecenegi
         {
             public string Id;
+            public readonly string AramaMetni; // küçük harf, arama filtresi için
             private readonly string _gosterim;
             public HammaddeSecenegi(JObject h)
             {
                 Id = (string)h["id"];
                 _gosterim = ((string)h["stokKodu"] ?? Id) + " — " + (string)h["ad"];
+                AramaMetni = _gosterim.ToLowerInvariant();
             }
             public override string ToString() => _gosterim;
         }

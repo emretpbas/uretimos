@@ -29,6 +29,17 @@ namespace UretimOSKesim
         // tarafındaki karşılığının 'kod' alanı. Boş olabilir (henüz eşleştirilmemiş).
         public string MevcutKod;
         public bool BelgeYuklenemedi;
+
+        // Kullanıcı isteği: "bu listeye parçanın ebatı en boy yükseklikte
+        // gelmeli ve üzerinde olan delik ve formlarda buraya işlensin" —
+        // KesimListesiCikarici.OlcuHesapla/DelikFormCikarici.Cikar ile AYNI
+        // okuma (BOY_MM/EN_MM/KALINLIK_MM özel alanları + geometri taraması),
+        // yalnızca PARÇA belgeleri için denenir (montaj/alt montaj düğümlerinde
+        // bu alanlar anlamsızdır, DugumOlustur'da hiç doldurulmaz).
+        public bool OlcuVar;
+        public double BoyMm, EnMm, KalinlikMm;
+        public int DelikSayisi, FormSayisi;
+
         public readonly List<BilesenDugumu> Cocuklar = new List<BilesenDugumu>();
     }
 
@@ -79,6 +90,31 @@ namespace UretimOSKesim
             dugum.MevcutKod = KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.KOD);
             string ad = KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.AD);
             dugum.GosterimAdi = !string.IsNullOrWhiteSpace(ad) ? ad : Path.GetFileNameWithoutExtension(modelDoc.GetPathName());
+
+            // Ölçü + delik/form — yalnızca PARÇA (.sldprt) belgeleri için;
+            // montaj/alt montaj düğümlerinde BOY_MM/EN_MM gibi alanlar hiç
+            // set edilmez, geometri taraması da anlamsız/gereksiz olurdu.
+            if (modelDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
+            {
+                var (boy, en, kalinlik, kaynak) = KesimListesiCikarici.OlcuHesapla(modelDoc);
+                if (kaynak == "elle")
+                {
+                    dugum.OlcuVar = true;
+                    dugum.BoyMm = boy;
+                    dugum.EnMm = en;
+                    dugum.KalinlikMm = kalinlik;
+                }
+                try
+                {
+                    var (delikler, formlar) = DelikFormCikarici.Cikar(modelDoc, kalinlik);
+                    dugum.DelikSayisi = delikler.Count;
+                    dugum.FormSayisi = formlar.Count;
+                }
+                catch (System.Exception ex)
+                {
+                    Tanilama.Kaydet("BilesenAgaci delik/form çıkarma HATA (" + dugum.GosterimAdi + "): " + ex);
+                }
+            }
 
             if (bilesen != null)
             {
