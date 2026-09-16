@@ -55,7 +55,13 @@ namespace UretimOSKesim
         // olarak oluşturulur, sunucuya YALNIZCA Kaydet'te yazılır.
         private readonly Dictionary<string, JObject> _degisenReceteler = new Dictionary<string, JObject>();
         // Ölçü/ağırlığı düzenlenen paket kartları — Kaydet'te 'paketler'e yazılır.
-        private readonly List<JObject> _degisenPaketler = new List<JObject>();
+        // Kullanıcı isteği: "üretimosta nasıl reçete yapıp kaydediyorsak
+        // solidde o şekilde reçete yapıp kaydedebilelim" — web'in inline Rota/
+        // Amortisman/GYG düzenlemesiyle AYNI: bir kartın KENDİ alanları (paket
+        // ölçüsü DAHİL, artık paket'e özel bir liste değil) burada tip+id'ye
+        // göre tutulur, Kaydet'te KENDİ koleksiyonuna (urunler/yarimamuller/
+        // altMontajlar/paketler) 'guncelle' olarak gönderilir.
+        private readonly Dictionary<string, (string tip, JObject kart)> _degisenKartlar = new Dictionary<string, (string, JObject)>();
 
         // Döngüsel/çok derin referanslara karşı güvenlik sınırı — TAHMİN/
         // otomatik döngü tespiti YAPILMAZ, yalnızca sonsuz özyinelemeyi önler.
@@ -72,7 +78,11 @@ namespace UretimOSKesim
         // elle) çözülür ve aşağıdaki reçete editörü O kart için açılır.
         private TreeView _bilesenAgaciGorunumu;
         private BilesenDugumu _seciliBilesenDugumu;
-        private TreeView _agacGorunumu;
+        // Kullanıcı isteği: "bu ekranla solidworksteki reçete ağaç editörünü
+        // aynı esneklikte olsun" — artık bir TreeView DEĞİL, her reçete
+        // kalemi kendi inline-düzenlenebilir satır Panel'i olarak (web'in
+        // renderNode'u ile AYNI mantıkla) burada üst üste (Dock=Top) dizilir.
+        private Panel _agacGorunumu;
         private ComboBox _paletTipKutusu;
         private TextBox _paletAramaKutusu;
         private ListBox _paletListesi;
@@ -197,8 +207,19 @@ namespace UretimOSKesim
                     if (idx >= 0) _paletListesi.SelectedIndex = idx;
                 }
             };
-            var ekleBtn = new Button { Text = "Ekle → (seçili ağaç düğümüne, yoksa köke)", Dock = DockStyle.Bottom };
-            ekleBtn.Click += (s, e) => SeciliPaletOgesiniEkle();
+            // Her satırın kendi "+ Alt Kalem" butonu/sürükle-bırak hedefi
+            // olduğu için (bkz. SatirPaneliOlustur), bu buton yalnızca KÖK
+            // karta doğrudan eklemek için basit bir kısayoldur.
+            var ekleBtn = new Button { Text = "Ekle → Kök Karta", Dock = DockStyle.Bottom };
+            ekleBtn.Click += (s, e) =>
+            {
+                if (!(_paletListesi.SelectedItem is PaletOgesi oge))
+                {
+                    MessageBox.Show("Önce soldaki listeden bir öğe seçin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                KalemEkle(oge, _kokTip, _kokKart);
+            };
             // Kullanıcı isteği: "Sıfırdan bir ürün için TÜM alt kartları
             // (hammadde, plaka, kenar bandı, hırdavat vb.) da SolidWorks
             // içinden, panel açıkken oluşturabilme özelliği istiyorum" —
@@ -234,48 +255,18 @@ namespace UretimOSKesim
             _bilesenAgaciGorunumu = new TreeView { Dock = DockStyle.Top, Height = 220, HideSelection = false };
             _bilesenAgaciGorunumu.AfterSelect += (s, e) => BilesenSecildi(e.Node?.Tag as BilesenDugumu);
 
-            var agacBaslik = new Label { Text = "Seçili bileşenin ÜretimOS reçetesi ve alt kırılımları — çift tık: miktar değiştir, sağ tık: diğer işlemler", Dock = DockStyle.Top, Height = 24 };
-            _agacGorunumu = new TreeView { Dock = DockStyle.Fill, AllowDrop = true, HideSelection = false, LabelEdit = false };
-            _agacGorunumu.DragEnter += (s, e) => { e.Effect = e.Data.GetDataPresent(typeof(PaletOgesi)) ? DragDropEffects.Copy : DragDropEffects.None; };
-            _agacGorunumu.DragDrop += AgacGorunumu_DragDrop;
-            _agacGorunumu.NodeMouseDoubleClick += (s, e) => MiktarDuzenle(e.Node);
-            var sagTikMenu = new ContextMenuStrip();
-            sagTikMenu.Items.Add("Miktar Değiştir…", null, (s, e) => { if (_agacGorunumu.SelectedNode != null) MiktarDuzenle(_agacGorunumu.SelectedNode); });
-            sagTikMenu.Items.Add("Kaldır", null, (s, e) => { if (_agacGorunumu.SelectedNode != null) KalemKaldir(_agacGorunumu.SelectedNode); });
-            var rotaMenuOgesi = sagTikMenu.Items.Add("Rota Seç / Oluştur…", null, async (s, e) =>
-            {
-                if (_agacGorunumu.SelectedNode?.Tag is JObject kalem && (string)kalem["tip"] == "yarimamul")
-                {
-                    var kart = FindKart("yarimamul", (string)kalem["refId"]);
-                    if (kart != null)
-                    {
-                        await RotaSecVeyaOlusturDialogAc(kart);
-                        AgaciYenidenCiz();
-                    }
-                }
-            });
-            var paketOlcuMenuOgesi = sagTikMenu.Items.Add("Paket Ölçü / Ağırlık Düzenle…", null, (s, e) =>
-            {
-                if (_agacGorunumu.SelectedNode?.Tag is JObject kalem && (string)kalem["tip"] == "paket")
-                {
-                    var kart = FindKart("paket", (string)kalem["refId"]);
-                    if (kart != null)
-                    {
-                        PaketOlcuAgirlikDuzenle(kart);
-                        AgaciYenidenCiz();
-                    }
-                }
-            });
-            // Bu öğeler SADECE ilgili tipte bir kalem seçiliyken etkinleştirilir
-            // — menü açılmadan hemen önce kontrol edilir (tahmin/yanlış işlem yok).
-            sagTikMenu.Opening += (s, e) =>
-            {
-                string secilenTip = (_agacGorunumu.SelectedNode?.Tag as JObject)?["tip"]?.ToString();
-                rotaMenuOgesi.Enabled = secilenTip == "yarimamul";
-                paketOlcuMenuOgesi.Enabled = secilenTip == "paket";
-            };
-            _agacGorunumu.ContextMenuStrip = sagTikMenu;
-            _agacGorunumu.NodeMouseClick += (s, e) => _agacGorunumu.SelectedNode = e.Node;
+            // Kullanıcı isteği: "bu ekranla solidworksteki reçete ağaç
+            // editörünü aynı esneklikte olsun" — TreeView'daki çift tık/sağ
+            // tık dolaylı akışı TAMAMEN kaldırıldı; ÜretimOS'un kendi
+            // page_recete_agac.js:renderNode'u ile AYNI mantık: her SATIR
+            // kendi miktar/birim kutusunu, "+ Alt Kalem"/"Değiştir"/"↕ Taşı"/
+            // "Sil" butonlarını ve (hammadde hariç) inline Rota/Amortisman/
+            // GYG alanlarını doğrudan taşır (bkz. SatirPaneliOlustur/
+            // AyarPaneliOlustur). Sürükle-bırak da artık TreeView seviyesinde
+            // DEĞİL, doğrudan HER SATIRIN kendi Panel'inde (o satırın kartı
+            // hedef alınarak) çalışır.
+            var agacBaslik = new Label { Text = "Seçili bileşenin ÜretimOS reçetesi ve alt kırılımları — her satırda miktar/birim doğrudan düzenlenebilir", Dock = DockStyle.Top, Height = 24 };
+            _agacGorunumu = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle };
             sagPanel.Controls.Add(_agacGorunumu);
             sagPanel.Controls.Add(agacBaslik);
             sagPanel.Controls.Add(_bilesenAgaciGorunumu);
@@ -989,7 +980,7 @@ namespace UretimOSKesim
                     paket["yukseklik"] = Cift(yukKutu);
                     paket["netAgirlik"] = Cift(netKutu);
                     paket["brutAgirlik"] = Cift(brutKutu);
-                    if (!_degisenPaketler.Contains(paket)) _degisenPaketler.Add(paket);
+                    KartDegistiIsaretle("paket", paket);
                     dlg.DialogResult = DialogResult.OK;
                 };
                 if (dlg.ShowDialog(this) == DialogResult.OK)
@@ -1087,77 +1078,392 @@ namespace UretimOSKesim
             return recete;
         }
 
-        // Bir ağaç düğümünden yukarı doğru giderek, İLK "kendi reçetesi olan"
-        // (hammadde OLMAYAN) kartı bulur — sürükle-bırak/Ekle hedefini, ve
-        // Kaldır/Miktar Değiştir'in HANGİ reçeteyi güncelleyeceğini belirler.
-        // Kök bulunamazsa (boş alana bırakıldıysa) KÖK karta düşer.
-        private (string tip, JObject kart) HedefKartCoz(TreeNode dugum)
+        // Bir kartın (kendi rotaId/amortismanGideri/gygOraniYuzde ya da paket
+        // ölçü/ağırlık alanları) inline düzenlendiğini işaretler — Kaydet'te
+        // bu kart KENDİ koleksiyonuna 'guncelle' olarak gönderilir.
+        private void KartDegistiIsaretle(string tip, JObject kart)
         {
-            while (dugum != null)
-            {
-                if (dugum.Tag is JObject kalem)
-                {
-                    string tip = (string)kalem["tip"];
-                    if (tip != "hammadde")
-                    {
-                        var kart = FindKart(tip, (string)kalem["refId"]);
-                        if (kart != null) return (tip, kart);
-                    }
-                }
-                dugum = dugum.Parent;
-            }
-            return (_kokTip, _kokKart);
+            _degisenKartlar[tip + "|" + (string)kart["id"]] = (tip, kart);
+            _durumEtiketi.ForeColor = Color.DarkOrange;
+            _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
         }
 
-        // ── AĞAÇ GÖSTERİMİ (ÇOK KATMANLI — page_recete_agac.js:renderNode ile
-        // AYNI mantık: her kalem, kendi reçetesi varsa alt düğümler olarak onu
-        // da gösterir) ────────────────────────────────────────────────────────
+        private static string KoleksiyonAdiTipten(string tip) =>
+            tip == "urun" ? "urunler" : tip == "yarimamul" ? "yarimamuller"
+            : tip == "altmontaj" ? "altMontajlar" : tip == "paket" ? "paketler" : null;
+
+        private static double ParseCift(string metin) =>
+            double.TryParse((metin ?? "").Trim().Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out double v) ? v : 0;
+
+        // ── AĞAÇ GÖSTERİMİ — ÇOK KATMANLI, page_recete_agac.js:renderNode ile
+        // AYNI mantık VE AYNI ESNEKLİK: TreeView değil, her kalem KENDİ inline
+        // düzenlenebilir satır Panel'i — miktar/birim doğrudan kutuda, "+ Alt
+        // Kalem"/"✏ Değiştir"/"↕ Taşı"/"🗑" butonları ve (hammadde hariç)
+        // inline Rota/Amortisman/GYG alt-satırı. Kalemler DÜZ bir listede
+        // (derinlik artırılmış girinti ile) üst üste dizilir — web'in DOM'daki
+        // iç içe div'leri de görsel olarak margin-left ile aynı işi yapıyor,
+        // burada da gerçek kapsayıcı iç içeliği yerine düz liste + girinti
+        // kullanmak WinForms'ta çok daha basit ve AYNI görsel sonucu verir.
+        // ────────────────────────────────────────────────────────────────────
         private void AgaciYenidenCiz()
         {
-            _agacGorunumu.Nodes.Clear();
+            var satirlar = new List<Control>();
             var recete = ReceteGetir(_kokTip, _kokKart);
-            if (recete == null) return;
-            var kalemler = recete["kalemler"] as JArray ?? new JArray();
+            var kalemler = recete?["kalemler"] as JArray ?? new JArray();
             foreach (var kalem in kalemler.OfType<JObject>())
-            {
-                var dugum = KalemDugumuOlustur(kalem, 0);
-                _agacGorunumu.Nodes.Add(dugum);
-                dugum.Expand();
-            }
+                KalemSatirlariEkle(satirlar, kalem, 0, _kokTip, _kokKart);
+
+            _agacGorunumu.SuspendLayout();
+            _agacGorunumu.Controls.Clear();
+            // Dock=Top koleksiyona EKLENME SIRASININ TERSİNE göre işler (son
+            // eklenen en dıştaki/en üstteki olur) — bu yüzden mantıksal
+            // yukarıdan-aşağıya sırayı korumak için TERS sırada ekliyoruz
+            // (bkz. KurulumYap'ın başındaki aynı gerekçeli NOT).
+            for (int i = satirlar.Count - 1; i >= 0; i--)
+                _agacGorunumu.Controls.Add(satirlar[i]);
+            _agacGorunumu.ResumeLayout();
         }
 
-        private TreeNode KalemDugumuOlustur(JObject kalem, int derinlik)
+        // hedefListe: sonuç DÜZ (derinlik sırasına göre) toplanır — ustTip/
+        // ustKart, bu kalemin AİT OLDUĞU reçeteyi (miktar/birim/sil/taşı
+        // değişikliklerinde ReceteBulVeyaOlustur'a) doğrudan verebilmek için
+        // özyinelemeli çağrılarda TAŞINIR (eski TreeNode.Parent gezintisinin
+        // yerine geçer — artık bir ağaç kontrolü olmadığı için gerekli).
+        private void KalemSatirlariEkle(List<Control> hedefListe, JObject kalem, int derinlik, string ustTip, JObject ustKart)
         {
             string tip = (string)kalem["tip"];
             string refId = (string)kalem["refId"];
             var kart = FindKart(tip == "hammadde" ? "hammadde" : tip, refId);
-            string kod = kart != null ? ((string)kart["kod"] ?? (string)kart["stokKodu"] ?? refId) : "(kart bulunamadı)";
-            string ad = kart?["ad"]?.ToString() ?? "";
-            double miktar = (double?)kalem["miktar"] ?? 1;
-            string birim = (string)kalem["birim"] ?? "ADET";
-            string tipGosterim = tip == "hammadde" ? (kart != null ? HammaddeGosterimTipi((string)kart["tip"]) : "Hammadde") : TipGosterimAdi(tip);
-            string ekBilgi = "";
-            if (tip == "yarimamul" && kart != null && !string.IsNullOrEmpty((string)kart["rotaId"])) ekBilgi += "  🔧rota";
-            if (tip == "paket" && kart != null) ekBilgi += "  📐" + PaketOlcuOzeti(kart);
-            var dugum = new TreeNode($"[{tipGosterim}] {kod} — {ad}  ×{miktar} {birim}{ekBilgi}") { Tag = kalem };
+
+            hedefListe.Add(SatirPaneliOlustur(kalem, tip, kart, derinlik, ustTip, ustKart));
+
+            bool hammadde = tip == "hammadde";
+            if (!hammadde && kart != null)
+                hedefListe.Add(AyarPaneliOlustur(tip, kart, derinlik));
 
             // ALT KIRILIM: bu kalemin KENDİ reçetesi varsa (urun/yarımamül/
-            // altmontaj/paket — hammadde HARİÇ) alt düğümler olarak GÖSTER.
+            // altmontaj/paket — hammadde HARİÇ) alt satırlar olarak GÖSTER.
             // Salt okunur arama (ReceteGetir) kullanılır — yalnızca GÖRMEK
             // hayalet bir taslak reçete YARATMAMALI.
-            if (derinlik < MAKS_DERINLIK && tip != "hammadde" && kart != null)
+            if (derinlik < MAKS_DERINLIK && !hammadde && kart != null)
             {
                 var altRecete = ReceteGetir(tip, kart);
                 if (altRecete != null)
                 {
                     var altKalemler = altRecete["kalemler"] as JArray ?? new JArray();
                     foreach (var altKalem in altKalemler.OfType<JObject>())
-                    {
-                        dugum.Nodes.Add(KalemDugumuOlustur(altKalem, derinlik + 1));
-                    }
+                        KalemSatirlariEkle(hedefListe, altKalem, derinlik + 1, tip, kart);
                 }
             }
-            return dugum;
+        }
+
+        // Bir reçete KALEMİNİN satırı: pill+kod/ad, miktar/birim (inline
+        // düzenlenebilir), ve (hammadde hariç) + Alt Kalem/Değiştir/Taşı/Sil
+        // butonları. Web'in ra-row'u ile AYNI bilgiyi taşır (maliyet sütunu
+        // HARİÇ — bu panelde bir maliyet motoru YOK, TAHMİN EDİLMEDİ).
+        private Panel SatirPaneliOlustur(JObject kalem, string tip, JObject kart, int derinlik, string ustTip, JObject ustKart)
+        {
+            string refId = (string)kalem["refId"];
+            string kod = kart != null ? ((string)kart["kod"] ?? (string)kart["stokKodu"] ?? refId) : "(kart bulunamadı)";
+            string ad = kart?["ad"]?.ToString() ?? "";
+            string tipGosterim = tip == "hammadde" ? (kart != null ? HammaddeGosterimTipi((string)kart["tip"]) : "Hammadde") : TipGosterimAdi(tip);
+            bool hammadde = tip == "hammadde";
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 30,
+                BackColor = derinlik == 0 ? Color.AliceBlue : Color.White,
+                Padding = new Padding(0)
+            };
+            var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoScroll = false };
+
+            satir.Controls.Add(new Panel { Width = 8 + derinlik * 22, Height = 1 }); // girinti
+
+            var etiketLbl = new Label
+            {
+                Text = "[" + tipGosterim + "]", AutoSize = true, Font = new Font(Font, FontStyle.Bold),
+                Padding = new Padding(0, 7, 4, 0), ForeColor = Color.DarkSlateBlue
+            };
+            satir.Controls.Add(etiketLbl);
+
+            var kartLbl = new Label { Text = $"{kod} — {ad}", AutoSize = true, Padding = new Padding(0, 7, 10, 0), MinimumSize = new Size(180, 0) };
+            satir.Controls.Add(kartLbl);
+
+            double miktar = (double?)kalem["miktar"] ?? 1;
+            var miktarKutusu = new TextBox { Width = 55, Text = miktar.ToString(CultureInfo.InvariantCulture), TextAlign = HorizontalAlignment.Right, Margin = new Padding(3, 4, 3, 3) };
+            void MiktarUygula()
+            {
+                double yeni = ParseCift(miktarKutusu.Text);
+                if (yeni <= 0) { miktarKutusu.Text = ((double?)kalem["miktar"] ?? 1).ToString(CultureInfo.InvariantCulture); return; }
+                if ((double?)kalem["miktar"] == yeni) return;
+                kalem["miktar"] = yeni;
+                ReceteBulVeyaOlustur(ustTip, ustKart);
+                _durumEtiketi.ForeColor = Color.DarkOrange;
+                _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
+            }
+            miktarKutusu.Leave += (s, e) => MiktarUygula();
+            miktarKutusu.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; MiktarUygula(); } };
+            satir.Controls.Add(miktarKutusu);
+
+            var birimKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 72, Margin = new Padding(3, 4, 8, 3) };
+            birimKutusu.Items.AddRange(new object[] { "ADET", "M2", "METRE", "KG", "GRAM", "LITRE" });
+            birimKutusu.SelectedItem = (string)kalem["birim"] ?? "ADET";
+            if (birimKutusu.SelectedIndex < 0) birimKutusu.SelectedIndex = 0;
+            birimKutusu.SelectedIndexChanged += (s, e) =>
+            {
+                kalem["birim"] = birimKutusu.SelectedItem as string;
+                ReceteBulVeyaOlustur(ustTip, ustKart);
+                _durumEtiketi.ForeColor = Color.DarkOrange;
+                _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
+            };
+            satir.Controls.Add(birimKutusu);
+
+            if (!hammadde)
+            {
+                var altKalemBtn = new Button { Text = "+ Alt Kalem", AutoSize = true, Margin = new Padding(3) };
+                altKalemBtn.Click += (s, e) => { if (kart != null) AltKalemEkleDialogAc(tip, kart); };
+                satir.Controls.Add(altKalemBtn);
+
+                var degistirBtn = new Button { Text = "✏ Değiştir", AutoSize = true, Margin = new Padding(3) };
+                degistirBtn.Click += (s, e) => KalemDegistir(kalem, tip, ustTip, ustKart);
+                satir.Controls.Add(degistirBtn);
+            }
+
+            if (tip == "paket" && kart != null)
+            {
+                var olcuBtn = new Button { Text = "📐 Ölçü/Ağırlık", AutoSize = true, Margin = new Padding(3) };
+                olcuBtn.Click += (s, e) => { PaketOlcuAgirlikDuzenle(kart); AgaciYenidenCiz(); };
+                satir.Controls.Add(olcuBtn);
+            }
+
+            var tasiBtn = new Button { Text = "↕ Taşı", AutoSize = true, Margin = new Padding(3) };
+            tasiBtn.Click += (s, e) => KalemiTasiDialogAc(kalem, ustTip, ustKart);
+            satir.Controls.Add(tasiBtn);
+
+            var silBtn = new Button { Text = "🗑", AutoSize = true, ForeColor = Color.DarkRed, Margin = new Padding(3) };
+            silBtn.Click += (s, e) =>
+            {
+                var recete = ReceteBulVeyaOlustur(ustTip, ustKart);
+                ((JArray)recete["kalemler"]).Remove(kalem);
+                AgaciYenidenCiz();
+                _durumEtiketi.ForeColor = Color.DarkOrange;
+                _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
+            };
+            satir.Controls.Add(silBtn);
+
+            // Sürükle-bırak hedefi: palet öğesi bu SATIRIN üstüne bırakılırsa,
+            // o satırın KENDİ kartı hedef alınır (eskiden TreeView seviyesinde
+            // GetNodeAt ile çözülüyordu — artık her satır KENDİ hedefini bilir).
+            if (!hammadde && kart != null)
+            {
+                panel.AllowDrop = true;
+                panel.DragEnter += (s, e) => { e.Effect = e.Data.GetDataPresent(typeof(PaletOgesi)) ? DragDropEffects.Copy : DragDropEffects.None; };
+                panel.DragDrop += (s, e) => { if (e.Data.GetData(typeof(PaletOgesi)) is PaletOgesi oge) KalemEkle(oge, tip, kart); };
+            }
+
+            panel.Controls.Add(satir);
+            return panel;
+        }
+
+        // Web'in "İNLİNE ROTA + AMORTİSMAN AYARI" alt-satırı ile AYNI —
+        // hammadde HARİÇ her kart tipi için (ürün/yarımamül/altmontaj/paket)
+        // KENDİ rotaId/amortismanGideri/gygOraniYuzde alanlarını doğrudan
+        // düzenler; değişiklik KartDegistiIsaretle ile Kaydet'e taşınır.
+        private Panel AyarPaneliOlustur(string tip, JObject kart, int derinlik)
+        {
+            var panel = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.White };
+            var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+
+            satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
+
+            satir.Controls.Add(new Label { Text = "⚙ Rota:", AutoSize = true, ForeColor = Color.DarkSlateGray, Padding = new Padding(0, 6, 2, 0) });
+            var rotalarListe = _rotalar.OfType<JObject>().ToList();
+            var rotaKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170, Margin = new Padding(3, 3, 8, 3) };
+            rotaKutusu.Items.Add("— Rota Yok —");
+            foreach (var r in rotalarListe) rotaKutusu.Items.Add($"{r["ad"]}");
+            string rotaId = (string)kart["rotaId"];
+            int mevcutRotaIndex = rotalarListe.FindIndex(r => (string)r["id"] == rotaId);
+            rotaKutusu.SelectedIndex = mevcutRotaIndex >= 0 ? mevcutRotaIndex + 1 : 0;
+            rotaKutusu.SelectedIndexChanged += (s, e) =>
+            {
+                kart["rotaId"] = rotaKutusu.SelectedIndex > 0 ? (string)rotalarListe[rotaKutusu.SelectedIndex - 1]["id"] : null;
+                KartDegistiIsaretle(tip, kart);
+            };
+            satir.Controls.Add(rotaKutusu);
+
+            var yeniRotaBtn = new Button { Text = "+ Yeni Rota", AutoSize = true, Margin = new Padding(3) };
+            yeniRotaBtn.Click += async (s, e) => { await RotaSecVeyaOlusturDialogAc(kart); AgaciYenidenCiz(); };
+            satir.Controls.Add(yeniRotaBtn);
+
+            satir.Controls.Add(new Label { Text = "Amortisman (₺):", AutoSize = true, ForeColor = Color.DarkSlateGray, Padding = new Padding(8, 6, 2, 0) });
+            var amortismanKutusu = new TextBox { Width = 60, Text = ((double?)kart["amortismanGideri"] ?? 0).ToString(CultureInfo.InvariantCulture), Margin = new Padding(3) };
+            amortismanKutusu.Leave += (s, e) => { kart["amortismanGideri"] = ParseCift(amortismanKutusu.Text); KartDegistiIsaretle(tip, kart); };
+            satir.Controls.Add(amortismanKutusu);
+
+            satir.Controls.Add(new Label { Text = "GYG (%):", AutoSize = true, ForeColor = Color.DarkSlateGray, Padding = new Padding(8, 6, 2, 0) });
+            var gygKutusu = new TextBox { Width = 50, Text = ((double?)kart["gygOraniYuzde"] ?? 0).ToString(CultureInfo.InvariantCulture), Margin = new Padding(3) };
+            gygKutusu.Leave += (s, e) => { kart["gygOraniYuzde"] = ParseCift(gygKutusu.Text); KartDegistiIsaretle(tip, kart); };
+            satir.Controls.Add(gygKutusu);
+
+            panel.Controls.Add(satir);
+            return panel;
+        }
+
+        // Bir kalemi FARKLI bir mevcut karta (AYNI tipte) bağlar — web'in
+        // "✏️ Değiştir" ile AYNI amaç. Tip değiştirme (ör. yarımamülü paketle
+        // değiştirme) BİLEREK desteklenmiyor — bu, o reçete YUVASININ ne tür
+        // bir şey taşıdığını kökten değiştirir, TAHMİN EDİLECEK bir alan değil.
+        private void KalemDegistir(JObject kalem, string tip, string ustTip, JObject ustKart)
+        {
+            string gosterimTip = tip == "hammadde" ? "Hammadde" : TipGosterimAdi(tip);
+            using (var dlg = new Form { Text = "Değiştir — " + gosterimTip, Width = 440, Height = 480, StartPosition = FormStartPosition.CenterParent })
+            {
+                var aramaKutu = new TextBox { Dock = DockStyle.Top };
+                var liste = new ListBox { Dock = DockStyle.Fill };
+                var tamamBtn = new Button { Text = "Bu Kartla Değiştir", Dock = DockStyle.Bottom };
+                List<PaletOgesi> mevcutListe = new List<PaletOgesi>();
+                void Doldur()
+                {
+                    IEnumerable<PaletOgesi> kaynak = tip == "urun" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
+                        : tip == "yarimamul" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
+                        : tip == "altmontaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
+                        : tip == "paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
+                        : _hammaddeler.Select(k => OgeyeHammadde(k, HammaddeGosterimTipi((string)((JObject)k)["tip"])));
+                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
+                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
+                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    liste.Items.Clear();
+                    liste.Items.AddRange(mevcutListe.ToArray());
+                }
+                aramaKutu.TextChanged += (s, e) => Doldur();
+                tamamBtn.Click += (s, e) =>
+                {
+                    if (liste.SelectedItem is PaletOgesi secilen)
+                    {
+                        kalem["refId"] = secilen.Id;
+                        ReceteBulVeyaOlustur(ustTip, ustKart);
+                        dlg.DialogResult = DialogResult.OK;
+                    }
+                };
+                dlg.Controls.Add(liste);
+                dlg.Controls.Add(tamamBtn);
+                dlg.Controls.Add(aramaKutu);
+                Doldur();
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    AgaciYenidenCiz();
+                    _durumEtiketi.ForeColor = Color.DarkOrange;
+                    _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
+                }
+            }
+        }
+
+        // Bir satırın altına yeni bir kalem ekler — web'in "+ Alt Kalem"
+        // butonuyla AYNI (sürükle-bırak GEREKMEDEN, tip+arama ile tek adımda).
+        private void AltKalemEkleDialogAc(string hedefTip, JObject hedefKart)
+        {
+            using (var dlg = new Form { Text = "Alt Kalem Ekle — " + hedefKart["kod"], Width = 480, Height = 520, StartPosition = FormStartPosition.CenterParent })
+            {
+                var tipKutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
+                tipKutu.Items.AddRange(new object[] { "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı" });
+                tipKutu.SelectedIndex = 0;
+                var aramaKutu = new TextBox { Dock = DockStyle.Top };
+                var liste = new ListBox { Dock = DockStyle.Fill };
+                var ekleBtn = new Button { Text = "Ekle", Dock = DockStyle.Bottom };
+                List<PaletOgesi> mevcutListe = new List<PaletOgesi>();
+                void Doldur()
+                {
+                    string tip = tipKutu.SelectedItem as string;
+                    IEnumerable<PaletOgesi> kaynak = tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
+                        : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
+                        : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
+                        : tip == "Hırdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
+                        : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
+                        : _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"));
+                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
+                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
+                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    liste.Items.Clear();
+                    liste.Items.AddRange(mevcutListe.ToArray());
+                }
+                tipKutu.SelectedIndexChanged += (s, e) => Doldur();
+                aramaKutu.TextChanged += (s, e) => Doldur();
+                ekleBtn.Click += (s, e) =>
+                {
+                    if (liste.SelectedItem is PaletOgesi secilen)
+                    {
+                        KalemEkle(secilen, hedefTip, hedefKart);
+                        dlg.DialogResult = DialogResult.OK;
+                    }
+                };
+                dlg.Controls.Add(liste);
+                dlg.Controls.Add(ekleBtn);
+                dlg.Controls.Add(aramaKutu);
+                dlg.Controls.Add(tipKutu);
+                Doldur();
+                dlg.ShowDialog(this);
+            }
+        }
+
+        // Bir kalemi BAŞKA bir üst kartın reçetesine taşır — web'in "↕ Taşı"
+        // ile AYNI (eski reçeteden çıkarır, yeni reçeteye ekler). TAM döngü
+        // tespiti YAPILMAZ (web'deki gibi) — yalnızca "zaten aynı yere taşıma"
+        // engellenir; MAKS_DERINLIK zaten sonsuz özyinelemeye karşı korur.
+        private void KalemiTasiDialogAc(JObject kalem, string ustTip, JObject ustKart)
+        {
+            using (var dlg = new Form { Text = "Kalemi Taşı", Width = 480, Height = 520, StartPosition = FormStartPosition.CenterParent })
+            {
+                var tipKutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
+                tipKutu.Items.AddRange(new object[] { "Ürün", "Yarı Mamül", "Alt Montaj", "Paket" });
+                tipKutu.SelectedIndex = 0;
+                var aramaKutu = new TextBox { Dock = DockStyle.Top };
+                var liste = new ListBox { Dock = DockStyle.Fill };
+                var tasiBtn = new Button { Text = "Buraya Taşı", Dock = DockStyle.Bottom };
+                List<PaletOgesi> mevcutListe = new List<PaletOgesi>();
+                void Doldur()
+                {
+                    string tip = tipKutu.SelectedItem as string;
+                    IEnumerable<PaletOgesi> kaynak = tip == "Ürün" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
+                        : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
+                        : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
+                        : _paketler.Select(k => Ogeye(k, "paket", "Paket"));
+                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
+                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
+                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    liste.Items.Clear();
+                    liste.Items.AddRange(mevcutListe.ToArray());
+                }
+                tipKutu.SelectedIndexChanged += (s, e) => Doldur();
+                aramaKutu.TextChanged += (s, e) => Doldur();
+                tasiBtn.Click += (s, e) =>
+                {
+                    if (!(liste.SelectedItem is PaletOgesi secilen)) return;
+                    var yeniKart = FindKart(secilen.KalemTipi, secilen.Id);
+                    if (yeniKart == null) return;
+                    if (secilen.KalemTipi == ustTip && secilen.Id == (string)ustKart["id"])
+                    {
+                        MessageBox.Show("Kalem zaten bu kartın reçetesinde.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+                    var eskiRecete = ReceteBulVeyaOlustur(ustTip, ustKart);
+                    ((JArray)eskiRecete["kalemler"]).Remove(kalem);
+                    var yeniRecete = ReceteBulVeyaOlustur(secilen.KalemTipi, yeniKart);
+                    ((JArray)yeniRecete["kalemler"]).Add(kalem);
+                    dlg.DialogResult = DialogResult.OK;
+                };
+                dlg.Controls.Add(liste);
+                dlg.Controls.Add(tasiBtn);
+                dlg.Controls.Add(aramaKutu);
+                dlg.Controls.Add(tipKutu);
+                Doldur();
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    AgaciYenidenCiz();
+                    _durumEtiketi.ForeColor = Color.DarkOrange;
+                    _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
+                }
+            }
         }
 
         // ── XML DIŞA AKTARMA ─────────────────────────────────────────────────
@@ -1276,26 +1582,6 @@ namespace UretimOSKesim
             }
         }
 
-        private void AgacGorunumu_DragDrop(object sender, DragEventArgs e)
-        {
-            if (!(e.Data.GetData(typeof(PaletOgesi)) is PaletOgesi oge)) return;
-            Point clientNoktasi = _agacGorunumu.PointToClient(new Point(e.X, e.Y));
-            TreeNode hedefDugum = _agacGorunumu.GetNodeAt(clientNoktasi);
-            var (hedefTip, hedefKart) = HedefKartCoz(hedefDugum);
-            KalemEkle(oge, hedefTip, hedefKart);
-        }
-
-        private void SeciliPaletOgesiniEkle()
-        {
-            if (!(_paletListesi.SelectedItem is PaletOgesi oge))
-            {
-                MessageBox.Show("Önce soldaki listeden bir öğe seçin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            var (hedefTip, hedefKart) = HedefKartCoz(_agacGorunumu.SelectedNode);
-            KalemEkle(oge, hedefTip, hedefKart);
-        }
-
         private void KalemEkle(PaletOgesi oge, string hedefTip, JObject hedefKart)
         {
             if (hedefKart == null)
@@ -1331,35 +1617,6 @@ namespace UretimOSKesim
             _durumEtiketi.Text = $"● '{hedefKart["kod"]}' reçetesine eklendi — kaydedilmemiş değişiklik var, bitirince '✓ ÜretimOS'a Kaydet'e basın.";
         }
 
-        private void KalemKaldir(TreeNode dugum)
-        {
-            if (!(dugum.Tag is JObject kalem)) return;
-            var (ustTip, ustKart) = HedefKartCoz(dugum.Parent);
-            if (ustKart == null) return;
-            var recete = ReceteBulVeyaOlustur(ustTip, ustKart);
-            ((JArray)recete["kalemler"]).Remove(kalem);
-            AgaciYenidenCiz();
-            _durumEtiketi.ForeColor = Color.DarkOrange;
-            _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
-        }
-
-        private void MiktarDuzenle(TreeNode dugum)
-        {
-            if (!(dugum.Tag is JObject kalem)) return;
-            double mevcut = (double?)kalem["miktar"] ?? 1;
-            double yeni = MiktarSor("Yeni miktar", mevcut);
-            if (yeni <= 0) return;
-            kalem["miktar"] = yeni;
-            // Kalemin AİT OLDUĞU reçeteyi dirty işaretle — aksi halde yalnızca
-            // miktarı değişen ama hiç kalem eklenmemiş bir alt kırılım
-            // Kaydet'e dahil edilmez.
-            var (ustTip, ustKart) = HedefKartCoz(dugum.Parent);
-            if (ustKart != null) ReceteBulVeyaOlustur(ustTip, ustKart);
-            AgaciYenidenCiz();
-            _durumEtiketi.ForeColor = Color.DarkOrange;
-            _durumEtiketi.Text = "● Kaydedilmemiş değişiklik var — bitirince '✓ ÜretimOS'a Kaydet'e basın.";
-        }
-
         // Basit bir sayı girme penceresi — .NET Framework WinForms'ta yerleşik
         // bir InputBox yok (Microsoft.VisualBasic.Interaction.InputBox yeni bir
         // derleme referansı gerektirirdi), bu yüzden minik bir Form ile.
@@ -1388,7 +1645,7 @@ namespace UretimOSKesim
                 MessageBox.Show("Önce bir hedef kart seçin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            if (_degisenReceteler.Count == 0 && _degisenPaketler.Count == 0)
+            if (_degisenReceteler.Count == 0 && _degisenKartlar.Count == 0)
             {
                 MessageBox.Show("Kaydedilecek bir değişiklik yok.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -1415,18 +1672,30 @@ namespace UretimOSKesim
                     _degisenReceteler.Clear();
                 }
 
-                int paketSayisi = 0;
-                if (_degisenPaketler.Count > 0)
+                // Kullanıcı isteği: "üretimosta nasıl reçete yapıp kaydediyorsak
+                // solidde o şekilde reçete yapıp kaydedebilelim" — inline Rota/
+                // Amortisman/GYG/paket ölçüsü değişiklikleri artık TEK bir genel
+                // sözlükte (_degisenKartlar), tip başına GRUPLANIP kendi
+                // koleksiyonuna (urunler/yarimamuller/altMontajlar/paketler)
+                // 'guncelle' olarak gönderilir.
+                int kartSayisi = 0;
+                if (_degisenKartlar.Count > 0)
                 {
-                    bool paketBasarili = await _istemci.ToplukaEkleGuncelle("paketler", new List<object>(), _degisenPaketler.Cast<object>().ToList());
-                    if (!paketBasarili) throw new Exception("Sunucu 'paketler' kaydını reddetti (HTTP hata).");
-                    paketSayisi = _degisenPaketler.Count;
-                    _degisenPaketler.Clear();
+                    foreach (var grup in _degisenKartlar.Values.GroupBy(v => v.tip))
+                    {
+                        string koleksiyon = KoleksiyonAdiTipten(grup.Key);
+                        if (koleksiyon == null) continue;
+                        var guncelleListesi = grup.Select(v => (object)v.kart).ToList();
+                        bool basarili = await _istemci.ToplukaEkleGuncelle(koleksiyon, new List<object>(), guncelleListesi);
+                        if (!basarili) throw new Exception($"Sunucu '{koleksiyon}' kaydını reddetti (HTTP hata).");
+                        kartSayisi += guncelleListesi.Count;
+                    }
+                    _degisenKartlar.Clear();
                 }
 
                 _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ Kaydedildi — {receteSayisi} reçete, {paketSayisi} paket ölçüsü ({_kokKart["kod"]} ve alt kırılımları).";
-                Tanilama.Kaydet($"ReceteAgaciPaneli: kaydedildi, kok={_kokKart["kod"]}, recete={receteSayisi}, paket={paketSayisi}");
+                _durumEtiketi.Text = $"✓ Kaydedildi — {receteSayisi} reçete, {kartSayisi} kart güncellemesi ({_kokKart["kod"]} ve alt kırılımları).";
+                Tanilama.Kaydet($"ReceteAgaciPaneli: kaydedildi, kok={_kokKart["kod"]}, recete={receteSayisi}, kart={kartSayisi}");
                 AgaciYenidenCiz();
             }
             catch (Exception ex)
