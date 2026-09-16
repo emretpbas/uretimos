@@ -67,6 +67,11 @@ namespace UretimOSKesim
         // MevcutKod doğrudan seçilen mevcut karta sabitlenir (değiştirilemez).
         public bool ElleEklendi;
 
+        // "uretimosa aktarılacak kalemleri bir kutucukla seçeyim, sadece
+        // onlar aktarılsın" — işareti kaldırılan düğüm (ve tüm alt dalı)
+        // BilesenAgaciniReceteOlarakAktar tarafından tamamen yok sayılır.
+        public bool AktarimaDahil = true;
+
         public readonly List<BilesenDugumu> Cocuklar = new List<BilesenDugumu>();
     }
 

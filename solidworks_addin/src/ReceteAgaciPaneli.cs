@@ -430,6 +430,19 @@ namespace UretimOSKesim
         private static int SinifIndexBul(string sinif) { int i = Array.IndexOf(SinifDegerleri, sinif); return i < 0 ? 0 : i; }
         private static string SinifKarsilikBul(int index) => index >= 0 && index < SinifDegerleri.Length ? SinifDegerleri[index] : null;
 
+        // "panel seçtiğimde muhakkak hammadde de seçmem gerekiyor aksi
+        // taktirde eşleşmemiş kalıyor" — hammadde ailesinden bir sınıf
+        // seçilince "Farklı Kart Seç…" dialogunun HANGİ tipten başlaması
+        // gerektiğini söyler (KokKartSeciciAc'in tipKutu listesindeki
+        // etiketlerle birebir aynı yazım).
+        private static readonly Dictionary<string, string> HammaddeSinifTipEtiketi = new Dictionary<string, string>
+        {
+            ["hirdavat"] = "Hırdavat",
+            ["plaka"] = "Plaka",
+            ["kenar_bandi"] = "Kenar Bandı",
+            ["sarf"] = "Sarf Malzeme",
+        };
+
         // Bileşen ağacındaki bir düğümün ANA satırı — kod/ad + eşleşme durumu
         // (tıklanınca BilesenSecildi çalışır, mevcut "Farklı Kart Seç…" akışı
         // AYNEN devam eder), "Sınıf" seçici, "+ Ek Kalem" ve sürükle-bırak
@@ -441,6 +454,17 @@ namespace UretimOSKesim
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
 
             satir.Controls.Add(new Panel { Width = 8 + derinlik * 22, Height = 1 });
+
+            // Kullanıcı isteği: "üretimosa aktarılacak kalemleri bir kutucukla
+            // seçeyim, sadece onlar aktarılsın" — işareti kaldırılan bir
+            // düğüm (VE ALTINDAKİ TÜM ALT DALI) BilesenAgaciniReceteOlarakAktar
+            // tarafından tamamen YOK SAYILIR (bkz. o metottaki Topla() closure'ı).
+            if (!dugum.BelgeYuklenemedi)
+            {
+                var dahilKutu = new CheckBox { Checked = dugum.AktarimaDahil, AutoSize = true, Margin = new Padding(2, 7, 2, 0) };
+                dahilKutu.CheckedChanged += (s, e) => { dugum.AktarimaDahil = dahilKutu.Checked; };
+                satir.Controls.Add(dahilKutu);
+            }
 
             if (!dugum.ElleEklendi && !dugum.BelgeYuklenemedi)
             {
@@ -470,6 +494,17 @@ namespace UretimOSKesim
                 {
                     dugum.Sinif = SinifKarsilikBul(sinifKutusu.SelectedIndex);
                     BilesenAgaciniCiz();
+                    // Kullanıcı isteği: "panel seçtiğimde muhakkak hammadde de
+                    // seçmem gerekiyor aksi taktirde eşleşmemiş kalıyor" —
+                    // hammadde ailesinden bir sınıf seçilince VE henüz bir
+                    // hammadde kartıyla eşleşmemişse, "Farklı Kart Seç…"
+                    // akışı O TİPTEN başlayarak HEMEN açılır (unutmayı önler).
+                    if (HammaddeSinifTipEtiketi.TryGetValue(dugum.Sinif ?? "", out string tipEtiketi)
+                        && KodileKartBul(dugum.MevcutKod).kart == null)
+                    {
+                        _seciliBilesenDugumu = dugum;
+                        KokKartSeciciAc(tipEtiketi);
+                    }
                 };
                 satir.Controls.Add(sinifKutusu);
 
@@ -690,8 +725,17 @@ namespace UretimOSKesim
                 return;
             }
 
+            // "uretimosa aktarılacak kalemleri bir kutucukla seçeyim, sadece
+            // onlar aktarılsın" — işareti kaldırılmış bir düğüm VE onun tüm
+            // alt dalı burada tamamen atlanır (kök kök listesine dokunulmaz,
+            // yalnızca bu tek seferlik aktarım taramasından hariç tutulur).
             var tumDugumler = new List<BilesenDugumu>();
-            void Topla(BilesenDugumu d) { tumDugumler.Add(d); foreach (var c in d.Cocuklar) Topla(c); }
+            void Topla(BilesenDugumu d)
+            {
+                if (!d.AktarimaDahil) return;
+                tumDugumler.Add(d);
+                foreach (var c in d.Cocuklar) Topla(c);
+            }
             foreach (var d in _bilesenKokListesi) Topla(d);
 
             var sinifsizlar = tumDugumler.Where(d => !d.BelgeYuklenemedi && string.IsNullOrEmpty(d.Sinif)).ToList();
@@ -1274,7 +1318,11 @@ namespace UretimOSKesim
         }
 
         // ── KÖK KART SEÇİMİ ──────────────────────────────────────────────────
-        private void KokKartSeciciAc()
+        // baslangicTipi: "panel seçtiğimde muhakkak hammadde de seçmem
+        // gerekiyor" — bir hammadde ailesi Sınıf'ı seçilir seçilmez dialog
+        // doğrudan o tipten (ör. "Plaka") açılsın diye BilesenAnaSatiriOlustur
+        // tarafından verilir; elle açılan normal kullanımda null kalır (Ürün).
+        private void KokKartSeciciAc(string baslangicTipi = null)
         {
             using (var secici = new Form { Text = "Reçete Hedefi Seç", Width = 480, Height = 520, StartPosition = FormStartPosition.CenterParent })
             {
@@ -1285,7 +1333,8 @@ namespace UretimOSKesim
                 // eklendi (bkz. EslesmeYazVeUygula'nın "hammadde" dalı — bu
                 // kartların kendi reçetesi olmaz, yalnızca eşleşme kaydedilir).
                 tipKutu.Items.AddRange(new object[] { "Ürün", "Yarı Mamül", "Alt Montaj", "Paket", "Plaka", "Kenar Bandı", "Hırdavat", "Sarf Malzeme" });
-                tipKutu.SelectedIndex = 0;
+                int baslangicIndex = baslangicTipi != null ? tipKutu.Items.IndexOf(baslangicTipi) : -1;
+                tipKutu.SelectedIndex = baslangicIndex >= 0 ? baslangicIndex : 0;
                 var aramaKutu = new TextBox { Dock = DockStyle.Top };
                 var liste = new ListBox { Dock = DockStyle.Fill };
                 var tamamBtn = new Button { Text = "Seç", Dock = DockStyle.Bottom };
