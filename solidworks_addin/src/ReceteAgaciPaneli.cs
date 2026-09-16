@@ -659,15 +659,14 @@ namespace UretimOSKesim
         {
             if (dugum.BelgeYuklenemedi) return "⚠ " + dugum.GosterimAdi;
 
+            // NOT: delik/form sayısı BİLEREK burada YOK — kullanıcı isteği:
+            // "delik özelliğini şimdilik yazmayalım, onu CNC yerleşiminde
+            // yapacağız" (bkz. BilesenAgaci.cs'teki AYNI gerekçe).
             string ekBilgi = "";
             if (dugum.OlcuVar)
-                ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm)";
-            if (dugum.DelikSayisi > 0 || dugum.FormSayisi > 0)
             {
-                var parcalar = new List<string>();
-                if (dugum.DelikSayisi > 0) parcalar.Add(dugum.DelikSayisi + " delik");
-                if (dugum.FormSayisi > 0) parcalar.Add(dugum.FormSayisi + " form");
-                ekBilgi += "  [" + string.Join(", ", parcalar) + "]";
+                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : "";
+                ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm{kaynakEtiket})";
             }
 
             if (string.IsNullOrWhiteSpace(dugum.MevcutKod)) return "— (eşleşmemiş)  " + dugum.GosterimAdi + ekBilgi;
