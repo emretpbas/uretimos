@@ -771,14 +771,14 @@ namespace UretimOSKesim
                 // tuşuna bastığımda seçtiğim (ürün kartı, yarımamül, alt
                 // montaj vb.) düzenleme ekranı açılsın ... özellikle
                 // yarımamül seçtiğim kalemlerde direkt yarımamül düzenleme
-                // ekranı açılsın" — eşleşen kart varsa (kod bir hammadde
-                // içinse dahil) o TİPTEN düzenleme formu açılır.
-                if (!string.IsNullOrWhiteSpace(dugum.MevcutKod) && KodileKartBul(dugum.MevcutKod).kart != null)
-                {
-                    var duzenleBtn = new Button { Text = "✎ Düzenle", AutoSize = true, Margin = new Padding(3) };
-                    duzenleBtn.Click += async (s, e) => await BilesenKartDuzenle(dugum);
-                    satir.Controls.Add(duzenleBtn);
-                }
+                // ekranı açılsın" — "+ Ek Kalem" ile AYNI şekilde HER satırda
+                // gösterilir (sadece eşleşenlerde değil): eşleşen kart varsa
+                // düzenleme formu, henüz eşleşmemiş ama sınıflandırılmış bir
+                // satırsa YENİ kart oluşturup HEMEN eşleştiren form açılır
+                // (bkz. BilesenKartDuzenle).
+                var duzenleBtn = new Button { Text = "✎ Düzenle", AutoSize = true, Margin = new Padding(3) };
+                duzenleBtn.Click += async (s, e) => await BilesenKartDuzenle(dugum);
+                satir.Controls.Add(duzenleBtn);
 
                 // Kullanıcı isteği: "eklediğim kalemleri ve parçaları
                 // silebileyim" — bu, gerçek SolidWorks montaj yapısına
@@ -1633,8 +1633,38 @@ namespace UretimOSKesim
             var (bulunanTip, bulunanKart) = KodileKartBul(dugum.MevcutKod);
             if (bulunanKart == null)
             {
-                MessageBox.Show("Bu bileşen henüz bir ÜretimOS kartıyla eşleşmemiş — önce 'Farklı Kart Seç…' ya da '+ Yeni Kart Oluştur…' ile eşleştirin.",
-                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                // Kullanıcı isteği: "sınıflandırılmış ama henüz eşleşmemiş"
+                // satırlarda da bu buton çalışsın — burada YENİ kart
+                // oluşturulup HEMEN bu düğümle eşleştirilir (Farklı Kart
+                // Seç… → + Yeni Kart Oluştur… akışının kısayolu). Sinif
+                // değerleri (hirdavat/plaka/kenar_bandi/sarf/yarimamul/
+                // altmontaj/paket/urun) zaten YeniKartDialog/KartApiyaKaydet
+                // ile birebir aynı sözlüğü kullanıyor.
+                if (string.IsNullOrEmpty(dugum.Sinif))
+                {
+                    MessageBox.Show("Önce yukarıdaki 'Sınıf' açılır kutusundan bir sınıf seçin (Panel, Yarı Mamül, Hırdavat vb.) — kart buradan sonra oluşturulabilir.",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                string yeniKartTipi = dugum.Sinif;
+                JObject yeniKart;
+                using (var dlg = new YeniKartDialog(yeniKartTipi, _hammaddeler, dugum.GosterimAdi))
+                {
+                    if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return;
+                    yeniKart = dlg.SonucKart;
+                }
+                if (!await KartApiyaKaydet(yeniKartTipi, yeniKart)) return;
+
+                string yeniOlusanKod = (string)(yeniKart["kod"] ?? yeniKart["stokKodu"]);
+                dugum.MevcutKod = yeniOlusanKod;
+                dugum.GosterimAdi = (string)yeniKart["ad"] ?? dugum.GosterimAdi;
+                if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniOlusanKod))
+                {
+                    try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniOlusanKod); }
+                    catch (Exception ex) { Tanilama.Kaydet("BilesenKartDuzenle (yeni kart, URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                }
+                BilesenAgaciniCiz();
                 return;
             }
             // KodileKartBul hammadde ailesinde genel "hammadde" döner —
