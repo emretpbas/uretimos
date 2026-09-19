@@ -95,11 +95,11 @@ namespace UretimOSKesim
                 // okunduğu için) çalışır ama feature/equation verisi diskten
                 // henüz tam okunmaz. Component2.ForceResolve DENENDİ, bu
                 // interop sürümünde YOK (CS1061) — bunun yerine TÜM montajı
-                // tek seferde çözümleyen belgelenmiş IModelDocExtension API'si
+                // tek seferde çözümleyen belgelenmiş IAssemblyDoc API'si
                 // kullanılıyor.
-                kokBelge.Extension.ResolveAllLightWeightComponents(false);
-
                 var asmDoc = (AssemblyDoc)kokBelge;
+                asmDoc.ResolveAllLightWeightComponents(false);
+
                 object[] enUstBilesenler = (object[])asmDoc.GetComponents(true /* TopLevelOnly */);
                 if (enUstBilesenler != null)
                 {
