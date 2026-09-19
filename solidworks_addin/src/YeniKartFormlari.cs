@@ -41,17 +41,26 @@ namespace UretimOSKesim
 
         private TextBox _kodKutusu, _adKutusu;
         private readonly string _baslangicAdi;
+        private readonly JObject _duzenlenecekKart; // null = yeni kart oluşturma; doluysa DÜZENLEME modu
 
         // baslangicAdi: "ürün ağacı komutunu açınca dosyanın adı ile yeni
         // ürün kartı ekranı çıksın" — verilirse Kod VE Ad alanları bununla ÖN
         // DOLDURULUR (ikisi de düzenlenebilir kalır, tahmin/kilitli DEĞİL —
         // BenzersizKodUret'teki "gerçek bileşen adını kullan, uydurma"
-        // ilkesiyle aynı).
-        public YeniKartDialog(string kartTipi, JArray hammaddelerListesi, string baslangicAdi = null)
+        // ilkesiyle aynı). duzenlenecekKart verilirse: "tüm satırları
+        // düzenleyebileyim ... kodunu ismini ve diğer özelliklerini
+        // değiştirebileyim" — form BU KARTIN mevcut değerleriyle önceden
+        // doldurulur ve kaydedince (yeni id ÜRETMEDEN) AYNI karta güncelleme
+        // olarak yazılır. NOT: bu form ROTA/kapasite limiti/galeri gibi
+        // alanları GÖSTERMEZ — düzenleme modunda bu alanlara ASLA
+        // dokunulmaz (aşağıdaki "_duzenlenecekKart == null" korumaları),
+        // aksi halde ekranda olmayan gerçek veriler sessizce silinirdi.
+        public YeniKartDialog(string kartTipi, JArray hammaddelerListesi, string baslangicAdi = null, JObject duzenlenecekKart = null)
         {
             _kartTipi = kartTipi;
             _hammaddelerListesi = hammaddelerListesi ?? new JArray();
             _baslangicAdi = baslangicAdi;
+            _duzenlenecekKart = duzenlenecekKart;
             KurulumYap();
         }
 
@@ -97,7 +106,8 @@ namespace UretimOSKesim
 
         private void KurulumYap()
         {
-            Text = "ÜretimOS — " + BaslikYaz(_kartTipi);
+            bool duzenlemeModu = _duzenlenecekKart != null;
+            Text = "ÜretimOS — " + (duzenlemeModu ? "Düzenle: " + BaslikYaz(_kartTipi).Replace("Yeni ", "") : BaslikYaz(_kartTipi));
             Width = 560;
             Height = 620;
             StartPosition = FormStartPosition.CenterParent;
@@ -138,7 +148,12 @@ namespace UretimOSKesim
             Satir(hammaddeAilesi ? "Stok Kodu" : "Kod *", _kodKutusu);
             _adKutusu = new TextBox();
             Satir("Ad *", _adKutusu);
-            if (!string.IsNullOrWhiteSpace(_baslangicAdi))
+            if (duzenlemeModu)
+            {
+                _kodKutusu.Text = (string)(_duzenlenecekKart["kod"] ?? _duzenlenecekKart["stokKodu"]) ?? "";
+                _adKutusu.Text = (string)_duzenlenecekKart["ad"] ?? "";
+            }
+            else if (!string.IsNullOrWhiteSpace(_baslangicAdi))
             {
                 _kodKutusu.Text = _baslangicAdi;
                 _adKutusu.Text = _baslangicAdi;
@@ -156,49 +171,49 @@ namespace UretimOSKesim
 
             if (hammaddeAilesi)
             {
-                kategoriKutusu = new TextBox { Text = _kartTipi == "plaka" ? "Plaka" : _kartTipi == "kenar_bandi" ? "Kenar Bandı" : _kartTipi == "sarf" ? "Sarf" : "Hırdavat" };
+                kategoriKutusu = new TextBox { Text = duzenlemeModu ? (string)_duzenlenecekKart["kategori"] ?? "" : _kartTipi == "plaka" ? "Plaka" : _kartTipi == "kenar_bandi" ? "Kenar Bandı" : _kartTipi == "sarf" ? "Sarf" : "Hırdavat" };
                 Satir("Kategori", kategoriKutusu);
 
                 birimKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 birimKutusu.Items.AddRange(new object[] { "M2", "METRE", "ADET", "KG", "GRAM", "LITRE" });
-                birimKutusu.SelectedItem = _kartTipi == "plaka" ? "M2" : _kartTipi == "kenar_bandi" ? "METRE" : _kartTipi == "sarf" ? "KG" : "ADET";
+                birimKutusu.SelectedItem = duzenlemeModu ? (string)_duzenlenecekKart["birim"] ?? "ADET" : _kartTipi == "plaka" ? "M2" : _kartTipi == "kenar_bandi" ? "METRE" : _kartTipi == "sarf" ? "KG" : "ADET";
                 Satir("Birim", birimKutusu);
 
                 if (_kartTipi == "plaka")
                 {
-                    enKutusu = new TextBox { Text = "1830" };
+                    enKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["en"] ?? 0).ToString(CultureInfo.InvariantCulture) : "1830" };
                     Satir("En (mm)", enKutusu);
-                    boyKutusu = new TextBox { Text = "3660" };
+                    boyKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["boy"] ?? 0).ToString(CultureInfo.InvariantCulture) : "3660" };
                     Satir("Boy (mm)", boyKutusu);
-                    kalinlikKutusu = new TextBox();
+                    kalinlikKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["kalinlik"])?.ToString(CultureInfo.InvariantCulture) ?? "" : "" };
                     Satir("Kalınlık (mm)", kalinlikKutusu);
-                    renkKutusu = new TextBox();
+                    renkKutusu = new TextBox { Text = duzenlemeModu ? (string)_duzenlenecekKart["renk"] ?? "" : "" };
                     Satir("Renk/Desen", renkKutusu);
-                    tahilYonluKutusu = new CheckBox { Text = "Yönlü (Grain — tahıl yönü var)" };
+                    tahilYonluKutusu = new CheckBox { Text = "Yönlü (Grain — tahıl yönü var)", Checked = duzenlemeModu && (string)_duzenlenecekKart["grainYonu"] == "var" };
                     Satir("", tahilYonluKutusu);
                 }
 
                 if (_kartTipi == "hirdavat")
                 {
-                    delikSablonuKutusu = new TextBox();
+                    delikSablonuKutusu = new TextBox { Text = duzenlemeModu ? DelikSablonuMetneCevir(_duzenlenecekKart["delikSablonu"] as JArray) : "" };
                     Satir("Delik Şablonu (x,y,çap; x,y,çap — mm)", delikSablonuKutusu);
                 }
 
-                fireYuzdeKutusu = new TextBox { Text = _kartTipi == "plaka" ? "8" : "2" };
+                fireYuzdeKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["fireYuzde"] ?? 0).ToString(CultureInfo.InvariantCulture) : _kartTipi == "plaka" ? "8" : "2" };
                 Satir("Fire %", fireYuzdeKutusu);
-                birimFiyatKutusu = new TextBox { Text = "0" };
+                birimFiyatKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["birimFiyat"] ?? 0).ToString(CultureInfo.InvariantCulture) : "0" };
                 Satir("Birim Fiyat", birimFiyatKutusu);
                 dvzKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 dvzKutusu.Items.AddRange(new object[] { "TL", "USD", "EUR" });
-                dvzKutusu.SelectedItem = "TL";
+                dvzKutusu.SelectedItem = duzenlemeModu ? (string)_duzenlenecekKart["dvz"] ?? "TL" : "TL";
                 Satir("Döviz", dvzKutusu);
-                kdvKutusu = new TextBox { Text = "18" };
+                kdvKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["kdvOraniYuzde"] ?? 18).ToString(CultureInfo.InvariantCulture) : "18" };
                 Satir("KDV Oranı %", kdvKutusu);
-                tedarikSuresiKutusu = new TextBox { Text = "14" };
+                tedarikSuresiKutusu = new TextBox { Text = duzenlemeModu ? ((int?)_duzenlenecekKart["tedarikSuresiGun"] ?? 14).ToString(CultureInfo.InvariantCulture) : "14" };
                 Satir("Tedarik Süresi (gün)", tedarikSuresiKutusu);
-                minSiparisKutusu = new TextBox { Text = "0" };
+                minSiparisKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["minSiparisMiktari"] ?? 0).ToString(CultureInfo.InvariantCulture) : "0" };
                 Satir("Min. Sipariş Miktarı", minSiparisKutusu);
-                emniyetStoguKutusu = new TextBox { Text = "0" };
+                emniyetStoguKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["emniyetStogu"] ?? 0).ToString(CultureInfo.InvariantCulture) : "0" };
                 Satir("Emniyet Stoğu", emniyetStoguKutusu);
             }
 
@@ -211,13 +226,14 @@ namespace UretimOSKesim
 
             if (_kartTipi == "yarimamul")
             {
-                netBoyKutusu = new TextBox(); Satir("Net Boy (mm)", netBoyKutusu);
-                netEnKutusu = new TextBox(); Satir("Net En (mm)", netEnKutusu);
-                ymKalinlikKutusu = new TextBox(); Satir("Kalınlık (mm)", ymKalinlikKutusu);
-                kabaBoyKutusu = new TextBox(); Satir("Kaba Boy (mm)", kabaBoyKutusu);
-                kabaEnKutusu = new TextBox(); Satir("Kaba En (mm)", kabaEnKutusu);
-                adetKutusu = new TextBox { Text = "1" }; Satir("Adet", adetKutusu);
-                ymRenkKutusu = new TextBox(); Satir("Renk", ymRenkKutusu);
+                string OpsiyonelSayi(string alan) => duzenlemeModu ? ((double?)_duzenlenecekKart[alan])?.ToString(CultureInfo.InvariantCulture) ?? "" : "";
+                netBoyKutusu = new TextBox { Text = OpsiyonelSayi("netBoy") }; Satir("Net Boy (mm)", netBoyKutusu);
+                netEnKutusu = new TextBox { Text = OpsiyonelSayi("netEn") }; Satir("Net En (mm)", netEnKutusu);
+                ymKalinlikKutusu = new TextBox { Text = OpsiyonelSayi("kalinlik") }; Satir("Kalınlık (mm)", ymKalinlikKutusu);
+                kabaBoyKutusu = new TextBox { Text = OpsiyonelSayi("kabaBoy") }; Satir("Kaba Boy (mm)", kabaBoyKutusu);
+                kabaEnKutusu = new TextBox { Text = OpsiyonelSayi("kabaEn") }; Satir("Kaba En (mm)", kabaEnKutusu);
+                adetKutusu = new TextBox { Text = duzenlemeModu ? ((int?)_duzenlenecekKart["adet"] ?? 1).ToString(CultureInfo.InvariantCulture) : "1" }; Satir("Adet", adetKutusu);
+                ymRenkKutusu = new TextBox { Text = duzenlemeModu ? (string)_duzenlenecekKart["renk"] ?? "" : "" }; Satir("Renk", ymRenkKutusu);
 
                 // Kullanıcı isteği: "tüm hammadde ... kodlarını arayabilelim
                 // bulmak çok zor" — yüzlerce hammadde arasından tek bir açılır
@@ -240,7 +256,14 @@ namespace UretimOSKesim
                     hammaddeListesi.Items.Clear();
                     hammaddeListesi.Items.Add("— Seçilmedi —");
                     hammaddeListesi.Items.AddRange(eslesenler.Cast<object>().ToArray());
-                    hammaddeListesi.SelectedIndex = 0;
+                    string mevcutHammaddeId = duzenlemeModu ? (string)_duzenlenecekKart["hammaddeId"] : null;
+                    int secilecekIndex = 0;
+                    if (!string.IsNullOrEmpty(mevcutHammaddeId))
+                    {
+                        for (int i = 0; i < eslesenler.Count; i++)
+                            if (eslesenler[i].Id == mevcutHammaddeId) { secilecekIndex = i + 1; break; }
+                    }
+                    hammaddeListesi.SelectedIndex = secilecekIndex;
                 }
                 hammaddeAramaKutusu.TextChanged += (s, e) => HammaddeListesiniFiltrele();
                 hammaddePanel.Controls.Add(hammaddeListesi);
@@ -248,10 +271,11 @@ namespace UretimOSKesim
                 HammaddeListesiniFiltrele();
                 Satir("Atanacak Hammadde (kod/ad ara)", hammaddePanel);
 
-                referansFiyatKutusu = new TextBox(); Satir("Referans Fiyat (opsiyonel)", referansFiyatKutusu);
+                referansFiyatKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["referansFiyat"])?.ToString(CultureInfo.InvariantCulture) ?? "" : "" };
+                Satir("Referans Fiyat (opsiyonel)", referansFiyatKutusu);
                 referansDvzKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 referansDvzKutusu.Items.AddRange(new object[] { "TL", "USD", "EUR" });
-                referansDvzKutusu.SelectedItem = "TL";
+                referansDvzKutusu.SelectedItem = duzenlemeModu ? (string)_duzenlenecekKart["referansDvz"] ?? "TL" : "TL";
                 Satir("Referans Döviz", referansDvzKutusu);
 
                 var rotaBilgi = new Label { Text = "Rota, kart oluşturulduktan sonra bu panelin\n\"Rota Seç / Oluştur…\" seçeneğiyle atanabilir.", AutoSize = true, ForeColor = Color.DarkSlateGray };
@@ -260,14 +284,16 @@ namespace UretimOSKesim
 
             if (_kartTipi == "yarimamul" || _kartTipi == "altmontaj" || _kartTipi == "paket" || _kartTipi == "urun")
             {
-                amortismanKutusu = new TextBox { Text = "0" }; Satir("Amortisman Gideri (₺)", amortismanKutusu);
-                gygKutusu = new TextBox { Text = "0" }; Satir("GYG Oranı %", gygKutusu);
+                amortismanKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["amortismanGideri"] ?? 0).ToString(CultureInfo.InvariantCulture) : "0" };
+                Satir("Amortisman Gideri (₺)", amortismanKutusu);
+                gygKutusu = new TextBox { Text = duzenlemeModu ? ((double?)_duzenlenecekKart["gygOraniYuzde"] ?? 0).ToString(CultureInfo.InvariantCulture) : "0" };
+                Satir("GYG Oranı %", gygKutusu);
             }
 
             // ── ALT MONTAJ ────────────────────────────────────────────────────
             if (_kartTipi == "altmontaj")
             {
-                aciklamaKutusu = new TextBox { Multiline = true, Height = 60 };
+                aciklamaKutusu = new TextBox { Multiline = true, Height = 60, Text = duzenlemeModu ? (string)_duzenlenecekKart["aciklama"] ?? "" : "" };
                 Satir("Açıklama", aciklamaKutusu);
             }
 
@@ -282,13 +308,14 @@ namespace UretimOSKesim
                 urnNetAgirlikKutusu = null, urnBrutAgirlikKutusu = null;
             if (_kartTipi == "urun")
             {
-                aciklamaKutusu = new TextBox { Multiline = true, Height = 60 };
+                string UrunSayi(string alan) => duzenlemeModu ? ((double?)_duzenlenecekKart[alan] ?? 0).ToString(CultureInfo.InvariantCulture) : "";
+                aciklamaKutusu = new TextBox { Multiline = true, Height = 60, Text = duzenlemeModu ? (string)_duzenlenecekKart["aciklama"] ?? "" : "" };
                 Satir("Açıklama", aciklamaKutusu);
-                urnEnKutusu = new TextBox(); Satir("En (cm)", urnEnKutusu);
-                urnBoyKutusu = new TextBox(); Satir("Boy (cm)", urnBoyKutusu);
-                urnYukseklikKutusu = new TextBox(); Satir("Yükseklik (cm)", urnYukseklikKutusu);
-                urnNetAgirlikKutusu = new TextBox(); Satir("Net Ağırlık (kg)", urnNetAgirlikKutusu);
-                urnBrutAgirlikKutusu = new TextBox(); Satir("Brüt Ağırlık (kg)", urnBrutAgirlikKutusu);
+                urnEnKutusu = new TextBox { Text = UrunSayi("en") }; Satir("En (cm)", urnEnKutusu);
+                urnBoyKutusu = new TextBox { Text = UrunSayi("boy") }; Satir("Boy (cm)", urnBoyKutusu);
+                urnYukseklikKutusu = new TextBox { Text = UrunSayi("yukseklik") }; Satir("Yükseklik (cm)", urnYukseklikKutusu);
+                urnNetAgirlikKutusu = new TextBox { Text = UrunSayi("netAgirlik") }; Satir("Net Ağırlık (kg)", urnNetAgirlikKutusu);
+                urnBrutAgirlikKutusu = new TextBox { Text = UrunSayi("brutAgirlik") }; Satir("Brüt Ağırlık (kg)", urnBrutAgirlikKutusu);
                 var kapasiteBilgi = new Label
                 {
                     Text = "Rota ve üretim kapasite limitleri (günlük/haftalık/aylık),\nkart oluşturulduktan sonra ÜretimOS'un Ürün ekranından\nayarlanabilir.",
@@ -304,23 +331,25 @@ namespace UretimOSKesim
 
             if (_kartTipi == "paket")
             {
+                string PaketSayi(string alan) => duzenlemeModu ? ((double?)_duzenlenecekKart[alan] ?? 0).ToString(CultureInfo.InvariantCulture) : "0";
                 ambalajTipiKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 ambalajTipiKutusu.Items.AddRange(new object[] { "Koli", "Kutu", "Esas Kutu", "Ambalaj", "Diğer" });
-                ambalajTipiKutusu.SelectedItem = "Koli";
+                ambalajTipiKutusu.SelectedItem = duzenlemeModu ? (string)_duzenlenecekKart["ambalajTipi"] ?? "Koli" : "Koli";
                 Satir("Ambalaj Tipi", ambalajTipiKutusu);
-                koliIciAdetKutusu = new TextBox { Text = "1" }; Satir("Koli İçi Adet", koliIciAdetKutusu);
-                pkEnKutusu = new TextBox { Text = "0" }; Satir("En (cm)", pkEnKutusu);
-                pkBoyKutusu = new TextBox { Text = "0" }; Satir("Boy (cm)", pkBoyKutusu);
-                pkYukseklikKutusu = new TextBox { Text = "0" }; Satir("Yükseklik (cm)", pkYukseklikKutusu);
-                netAgirlikKutusu = new TextBox { Text = "0" }; Satir("Net Ağırlık (kg)", netAgirlikKutusu);
-                brutAgirlikKutusu = new TextBox { Text = "0" }; Satir("Brüt Ağırlık (kg)", brutAgirlikKutusu);
-                aciklamaKutusu = new TextBox { Multiline = true, Height = 60 };
+                koliIciAdetKutusu = new TextBox { Text = duzenlemeModu ? ((int?)_duzenlenecekKart["koliIciAdet"] ?? 1).ToString(CultureInfo.InvariantCulture) : "1" };
+                Satir("Koli İçi Adet", koliIciAdetKutusu);
+                pkEnKutusu = new TextBox { Text = PaketSayi("en") }; Satir("En (cm)", pkEnKutusu);
+                pkBoyKutusu = new TextBox { Text = PaketSayi("boy") }; Satir("Boy (cm)", pkBoyKutusu);
+                pkYukseklikKutusu = new TextBox { Text = PaketSayi("yukseklik") }; Satir("Yükseklik (cm)", pkYukseklikKutusu);
+                netAgirlikKutusu = new TextBox { Text = PaketSayi("netAgirlik") }; Satir("Net Ağırlık (kg)", netAgirlikKutusu);
+                brutAgirlikKutusu = new TextBox { Text = PaketSayi("brutAgirlik") }; Satir("Brüt Ağırlık (kg)", brutAgirlikKutusu);
+                aciklamaKutusu = new TextBox { Multiline = true, Height = 60, Text = duzenlemeModu ? (string)_duzenlenecekKart["aciklama"] ?? "" : "" };
                 Satir("Açıklama", aciklamaKutusu);
             }
 
             // ── ALT: OK/İptal ─────────────────────────────────────────────────
             var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
-            var tamamBtn = new Button { Text = "Oluştur", DialogResult = DialogResult.None, Width = 100, Dock = DockStyle.Right };
+            var tamamBtn = new Button { Text = duzenlemeModu ? "Kaydet" : "Oluştur", DialogResult = DialogResult.None, Width = 100, Dock = DockStyle.Right };
             var iptalBtn = new Button { Text = "İptal", DialogResult = DialogResult.Cancel, Width = 90, Dock = DockStyle.Right };
             altPanel.Controls.Add(tamamBtn);
             altPanel.Controls.Add(iptalBtn);
@@ -341,12 +370,15 @@ namespace UretimOSKesim
                     return;
                 }
 
-                var kart = new JObject();
+                // Düzenleme modunda AYNI nesne mutasyona uğratılır (id VE bu
+                // formun göstermediği alanlar — nakliye maliyeti/dövizi vb. —
+                // dokunulmadan kalır); yeni kart modunda sıfırdan üretilir.
+                var kart = _duzenlenecekKart ?? new JObject();
                 try
                 {
                     if (hammaddeAilesi)
                     {
-                        kart["id"] = YeniId("HM");
+                        if (!duzenlemeModu) kart["id"] = YeniId("HM");
                         kart["tip"] = _kartTipi;
                         kart["kategori"] = (kategoriKutusu.Text ?? "").Trim();
                         kart["stokKodu"] = kod;
@@ -358,8 +390,7 @@ namespace UretimOSKesim
                         kart["emniyetStogu"] = Cift(emniyetStoguKutusu);
                         kart["birimFiyat"] = Cift(birimFiyatKutusu);
                         kart["dvz"] = dvzKutusu.SelectedItem as string ?? "TL";
-                        kart["nakliyeBirimMaliyeti"] = 0;
-                        kart["nakliyeDvz"] = "TL";
+                        if (!duzenlemeModu) { kart["nakliyeBirimMaliyeti"] = 0; kart["nakliyeDvz"] = "TL"; }
                         kart["kdvOraniYuzde"] = Cift(kdvKutusu, 18);
                         kart["grainYonu"] = (_kartTipi == "plaka" && tahilYonluKutusu.Checked) ? "var" : "yok";
 
@@ -386,7 +417,7 @@ namespace UretimOSKesim
                     }
                     else if (_kartTipi == "yarimamul")
                     {
-                        kart["id"] = YeniId("YM");
+                        if (!duzenlemeModu) kart["id"] = YeniId("YM");
                         kart["kod"] = kod;
                         kart["ad"] = ad;
                         kart["netBoy"] = string.IsNullOrWhiteSpace(netBoyKutusu.Text) ? (JToken)null : Cift(netBoyKutusu);
@@ -399,30 +430,40 @@ namespace UretimOSKesim
                         kart["referansFiyat"] = string.IsNullOrWhiteSpace(referansFiyatKutusu.Text) ? (JToken)null : Cift(referansFiyatKutusu);
                         kart["referansDvz"] = referansDvzKutusu.SelectedItem as string ?? "TL";
                         kart["hammaddeId"] = (hammaddeListesi.SelectedItem as HammaddeSecenegi)?.Id;
-                        kart["rotaId"] = null;
                         kart["amortismanGideri"] = Cift(amortismanKutusu);
                         kart["gygOraniYuzde"] = Cift(gygKutusu);
-                        kart["kapasiteGunlukMax"] = 0;
-                        kart["kapasiteHaftalikMax"] = 0;
-                        kart["kapasiteAylikMax"] = 0;
-                        kart["aciklama"] = "";
-                        kart["gorseller"] = new JArray();
+                        // Bu form GÖSTERMEDİĞİ için düzenleme modunda rota/
+                        // kapasite/açıklama/galeri alanlarına DOKUNULMAZ —
+                        // aksi halde ekranda olmayan gerçek veriler sessizce
+                        // silinirdi (bkz. sınıf yorumundaki uyarı).
+                        if (!duzenlemeModu)
+                        {
+                            kart["rotaId"] = null;
+                            kart["kapasiteGunlukMax"] = 0;
+                            kart["kapasiteHaftalikMax"] = 0;
+                            kart["kapasiteAylikMax"] = 0;
+                            kart["aciklama"] = "";
+                            kart["gorseller"] = new JArray();
+                        }
                     }
                     else if (_kartTipi == "altmontaj")
                     {
-                        kart["id"] = YeniId("AM");
+                        if (!duzenlemeModu) kart["id"] = YeniId("AM");
                         kart["kod"] = kod;
                         kart["ad"] = ad;
                         kart["aciklama"] = (aciklamaKutusu.Text ?? "").Trim();
-                        kart["rotaId"] = null;
                         kart["amortismanGideri"] = Cift(amortismanKutusu);
                         kart["gygOraniYuzde"] = Cift(gygKutusu);
-                        kart["gorseller"] = new JArray();
-                        kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+                        if (!duzenlemeModu)
+                        {
+                            kart["rotaId"] = null;
+                            kart["gorseller"] = new JArray();
+                            kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+                        }
                     }
                     else if (_kartTipi == "paket")
                     {
-                        kart["id"] = YeniId("PKT");
+                        if (!duzenlemeModu) kart["id"] = YeniId("PKT");
                         kart["kod"] = kod;
                         kart["ad"] = ad;
                         kart["ambalajTipi"] = ambalajTipiKutusu.SelectedItem as string ?? "Koli";
@@ -433,32 +474,37 @@ namespace UretimOSKesim
                         kart["netAgirlik"] = Cift(netAgirlikKutusu);
                         kart["brutAgirlik"] = Cift(brutAgirlikKutusu);
                         kart["aciklama"] = (aciklamaKutusu.Text ?? "").Trim();
-                        kart["rotaId"] = null;
                         kart["amortismanGideri"] = Cift(amortismanKutusu);
                         kart["gygOraniYuzde"] = Cift(gygKutusu);
-                        kart["gorseller"] = new JArray();
-                        kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+                        if (!duzenlemeModu)
+                        {
+                            kart["gorseller"] = new JArray();
+                            kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+                        }
                     }
                     else if (_kartTipi == "urun")
                     {
-                        kart["id"] = YeniId("URN");
+                        if (!duzenlemeModu) kart["id"] = YeniId("URN");
                         kart["kod"] = kod;
                         kart["ad"] = ad;
                         kart["tip"] = "bitmis_urun";
                         kart["aciklama"] = (aciklamaKutusu.Text ?? "").Trim();
-                        kart["rotaId"] = null;
                         kart["amortismanGideri"] = Cift(amortismanKutusu);
                         kart["gygOraniYuzde"] = Cift(gygKutusu);
-                        kart["kapasiteGunlukMax"] = 0;
-                        kart["kapasiteHaftalikMax"] = 0;
-                        kart["kapasiteAylikMax"] = 0;
                         kart["en"] = Cift(urnEnKutusu);
                         kart["boy"] = Cift(urnBoyKutusu);
                         kart["yukseklik"] = Cift(urnYukseklikKutusu);
                         kart["netAgirlik"] = Cift(urnNetAgirlikKutusu);
                         kart["brutAgirlik"] = Cift(urnBrutAgirlikKutusu);
-                        kart["gorseller"] = new JArray();
-                        kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+                        if (!duzenlemeModu)
+                        {
+                            kart["rotaId"] = null;
+                            kart["kapasiteGunlukMax"] = 0;
+                            kart["kapasiteHaftalikMax"] = 0;
+                            kart["kapasiteAylikMax"] = 0;
+                            kart["gorseller"] = new JArray();
+                            kart["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -497,6 +543,15 @@ namespace UretimOSKesim
                 sonuc.Add(new JObject { ["x"] = x, ["y"] = y, ["cap"] = cap });
             }
             return sonuc;
+        }
+
+        // DelikSablonuAyristir'in TERSİ — düzenleme modunda mevcut
+        // delikSablonu dizisini metin kutusuna geri yazmak için.
+        private static string DelikSablonuMetneCevir(JArray dizi)
+        {
+            if (dizi == null || dizi.Count == 0) return "";
+            return string.Join("; ", dizi.OfType<JObject>().Select(d =>
+                $"{(double?)d["x"] ?? 0},{(double?)d["y"] ?? 0},{(double?)d["cap"] ?? 0}"));
         }
 
         private class HammaddeSecenegi

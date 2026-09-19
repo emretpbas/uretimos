@@ -767,6 +767,19 @@ namespace UretimOSKesim
                 ekKalemBtn.Click += (s, e) => BilesenEkKalemEkleDialogAc(dugum);
                 satir.Controls.Add(ekKalemBtn);
 
+                // Kullanıcı isteği: "tüm satırları düzenleyebileyim düzenle
+                // tuşuna bastığımda seçtiğim (ürün kartı, yarımamül, alt
+                // montaj vb.) düzenleme ekranı açılsın ... özellikle
+                // yarımamül seçtiğim kalemlerde direkt yarımamül düzenleme
+                // ekranı açılsın" — eşleşen kart varsa (kod bir hammadde
+                // içinse dahil) o TİPTEN düzenleme formu açılır.
+                if (!string.IsNullOrWhiteSpace(dugum.MevcutKod) && KodileKartBul(dugum.MevcutKod).kart != null)
+                {
+                    var duzenleBtn = new Button { Text = "✎ Düzenle", AutoSize = true, Margin = new Padding(3) };
+                    duzenleBtn.Click += async (s, e) => await BilesenKartDuzenle(dugum);
+                    satir.Controls.Add(duzenleBtn);
+                }
+
                 // Kullanıcı isteği: "eklediğim kalemleri ve parçaları
                 // silebileyim" — bu, gerçek SolidWorks montaj yapısına
                 // DOKUNMAZ, yalnızca bu oturumun taslak ağacından düğümü (ve
@@ -1564,6 +1577,92 @@ namespace UretimOSKesim
             }
             PaletiFiltrele();
             return true;
+        }
+
+        // Kullanıcı isteği: "tüm satırları düzenleyebileyim düzenle tuşuna
+        // bastığımda seçtiğim (ürün kartı, yarımamül, alt montaj vb.)
+        // düzenleme ekranı açılsın ... kodunu ismini ve diğer özelliklerini
+        // değiştirebileyim" — KartApiyaKaydet'in TERSİ: kart zaten var,
+        // sadece güncellenir (ekle listesi BOŞ, güncelle listesine kart
+        // konur). 'kart' zaten yerel koleksiyonun İÇİNDEKİ nesnenin ta
+        // kendisi (YeniKartDialog düzenleme modunda AYNI referansı
+        // mutasyona uğratır) — bu yüzden yerel listeye TEKRAR eklenmez,
+        // sadece palet tazelenir.
+        private async System.Threading.Tasks.Task<bool> KartApiyaGuncelle(string kartTipi, JObject kart)
+        {
+            string koleksiyonAnahtari =
+                (kartTipi == "plaka" || kartTipi == "kenar_bandi" || kartTipi == "hirdavat" || kartTipi == "sarf") ? "hammaddeler"
+                : kartTipi == "yarimamul" ? "yarimamuller"
+                : kartTipi == "altmontaj" ? "altMontajlar"
+                : kartTipi == "urun" ? "urunler"
+                : "paketler";
+
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = "Kart güncelleniyor…";
+            bool basarili;
+            try
+            {
+                basarili = await _istemci.ToplukaEkleGuncelle(koleksiyonAnahtari, new List<object>(), new List<object> { kart });
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("KartApiyaGuncelle HATA: " + ex);
+                basarili = false;
+            }
+            if (!basarili)
+            {
+                MessageBox.Show("Kart güncellenemedi (sunucu reddetti).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _durumEtiketi.ForeColor = Color.DarkRed;
+                _durumEtiketi.Text = "Kart güncellenemedi.";
+                return false;
+            }
+            PaletiFiltrele();
+            _durumEtiketi.ForeColor = Color.DarkGreen;
+            _durumEtiketi.Text = $"✓ Kart güncellendi: {(string)kart["ad"]}";
+            return true;
+        }
+
+        // "✎ Düzenle" — bileşen ağacındaki bir satırın eşleştiği kartı
+        // (tipi ne olursa olsun: ürün/yarımamül/alt montaj/paket/hammadde)
+        // YeniKartDialog'u DÜZENLEME modunda açarak kod/ad/diğer alanları
+        // değiştirmeye izin verir. "özellikle yarımamül seçtiğim kalemlerde
+        // direkt yarımamül düzenleme ekranı açılsın" — tip otomatik
+        // KodileKartBul'dan çözülür, ayrıca bir seçim gerekmez.
+        private async System.Threading.Tasks.Task BilesenKartDuzenle(BilesenDugumu dugum)
+        {
+            var (bulunanTip, bulunanKart) = KodileKartBul(dugum.MevcutKod);
+            if (bulunanKart == null)
+            {
+                MessageBox.Show("Bu bileşen henüz bir ÜretimOS kartıyla eşleşmemiş — önce 'Farklı Kart Seç…' ya da '+ Yeni Kart Oluştur…' ile eşleştirin.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            // KodileKartBul hammadde ailesinde genel "hammadde" döner —
+            // YeniKartDialog'un doğru form alanlarını açması için kartın
+            // KENDİ 'tip' alanından (plaka/kenar_bandi/hirdavat/sarf) okunur.
+            string kartTipi = bulunanTip == "hammadde" ? (string)bulunanKart["tip"] : bulunanTip;
+
+            JObject guncellenmisKart;
+            using (var dlg = new YeniKartDialog(kartTipi, _hammaddeler, null, bulunanKart))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return;
+                guncellenmisKart = dlg.SonucKart;
+            }
+            if (!await KartApiyaGuncelle(kartTipi, guncellenmisKart)) return;
+
+            // Kod değişmiş olabilir — düğümün taslak bilgisini VE (gerçek
+            // bir SolidWorks bileşeniyse) dosyanın kendi özel alanını da
+            // güncelleyip kalıcı kılıyoruz (EslesmeYazVeUygula'daki AYNI
+            // gerekçe).
+            string yeniKod = (string)(guncellenmisKart["kod"] ?? guncellenmisKart["stokKodu"]);
+            dugum.MevcutKod = yeniKod;
+            dugum.GosterimAdi = (string)guncellenmisKart["ad"] ?? dugum.GosterimAdi;
+            if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniKod))
+            {
+                try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniKod); }
+                catch (Exception ex) { Tanilama.Kaydet("BilesenKartDuzenle (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+            }
+            BilesenAgaciniCiz();
         }
 
         // ── YENİ KART OLUŞTUR ────────────────────────────────────────────────
