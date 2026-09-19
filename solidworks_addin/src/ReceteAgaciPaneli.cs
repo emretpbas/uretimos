@@ -378,9 +378,21 @@ namespace UretimOSKesim
                 // düğümün ÜretimOS kart eşleşmesi (URETIMOS_KOD'a göre) ✓/⚠/—
                 // simgesiyle gösterilir; TAHMİN/otomatik kart OLUŞTURMA YOK.
                 var bilesenKokleri = BilesenAgaci.Cikar(_hedefModel);
+
+                // Kullanıcı isteği: "reçete ağacı açılır açılmaz ürün kodu ve
+                // kartı oluştur ekranı açılsın ... tüm alt kalemler bu kod ve
+                // kartın altında kalsın" — ürün kartı kaydedilince tüm bileşen
+                // kökleri bu ürün düğümünün ÇOCUĞU olur (iptal edilirse ağaç
+                // eskisi gibi, ürün kökü olmadan çizilir).
+                var urunKoku = await UrunKokuOlustur();
+                int toplamBilesen = ToplamBilesenSayisi(bilesenKokleri);
+                if (urunKoku != null)
+                {
+                    urunKoku.Cocuklar.AddRange(bilesenKokleri);
+                    bilesenKokleri = new List<BilesenDugumu> { urunKoku };
+                }
                 BilesenAgaciniCiz(bilesenKokleri);
 
-                int toplamBilesen = ToplamBilesenSayisi(bilesenKokleri);
                 _kokKartEtiketi.Text = toplamBilesen > 0
                     ? "Yukarıdaki bileşen ağacından bir bileşen seçin — kartı otomatik eşleşirse burada görünür, eşleşmezse 'Farklı Kart Seç…' ile eşleştirin."
                     : "Aktif belgede bileşen bulunamadı.";
@@ -393,6 +405,47 @@ namespace UretimOSKesim
                 _durumEtiketi.ForeColor = Color.DarkRed;
                 _durumEtiketi.Text = "Veri çekilemedi: " + ex.Message;
             }
+        }
+
+        // Ürün kodu/kartı oluşturma ekranını açar, kartı ÜretimOS'a kaydeder ve
+        // ağacın en üstüne konacak sentetik ürün düğümünü döndürür (iptal veya
+        // kayıt hatasında null).
+        private async System.Threading.Tasks.Task<BilesenDugumu> UrunKokuOlustur()
+        {
+            JObject urunKarti;
+            using (var dlg = new YeniKartDialog("urun", _hammaddeler))
+            {
+                dlg.Text = "Ürün Kodu ve Kartı Oluştur — reçetenin en üst kalemi";
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return null;
+                urunKarti = dlg.SonucKart;
+            }
+
+            bool basarili;
+            try
+            {
+                basarili = await _istemci.ToplukaEkleGuncelle("urunler", new List<object> { urunKarti }, new List<object>());
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("UrunKokuOlustur HATA: " + ex);
+                basarili = false;
+            }
+            if (!basarili)
+            {
+                MessageBox.Show("Ürün kartı ÜretimOS'a kaydedilemedi (sunucu reddetti). Ağaç ürün kökü olmadan açılacak.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
+            }
+            _urunler.Add(urunKarti);
+            PaletiFiltrele();
+
+            return new BilesenDugumu
+            {
+                Sinif = "urun",
+                ElleEklendi = true,
+                MevcutKod = (string)urunKarti["kod"],
+                GosterimAdi = (string)urunKarti["ad"]
+            };
         }
 
         // ── SOLIDWORKS BİLEŞEN AĞACI (TÜM component/part/assembly'ler) ───────
