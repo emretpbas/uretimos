@@ -15,3 +15,8 @@ google_arama_anahtari.php
 dist/
 
 node_modules/
+
+# Visual Studio / .NET derleme çıktısı (solidworks_addin)
+solidworks_addin/bin/
+solidworks_addin/obj/
+solidworks_addin/.vs/
