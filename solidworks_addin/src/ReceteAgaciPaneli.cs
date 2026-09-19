@@ -612,25 +612,63 @@ namespace UretimOSKesim
                 var ekKalemBtn = new Button { Text = "+ Ek Kalem", AutoSize = true, Margin = new Padding(3) };
                 ekKalemBtn.Click += (s, e) => BilesenEkKalemEkleDialogAc(dugum);
                 satir.Controls.Add(ekKalemBtn);
+
+                // Kullanıcı isteği: "eklediğim kalemleri ve parçaları
+                // silebileyim" — bu, gerçek SolidWorks montaj yapısına
+                // DOKUNMAZ, yalnızca bu oturumun taslak ağacından düğümü (ve
+                // varsa tüm alt dalını) kaldırır; SolidWorks'ten yeniden
+                // açılırsa (panel kapatılıp tekrar açılırsa) gerçek bileşen
+                // yine listelenir — yanlışlıkla eklenen "+ Ek Kalem"
+                // tekrarlarını/hatalı sınıflandırmaları temizlemek içindir.
+                var silBtn = new Button { Text = "🗑", AutoSize = true, Margin = new Padding(3), ForeColor = Color.DarkRed };
+                silBtn.Click += (s, e) =>
+                {
+                    string uyari = dugum.Cocuklar.Count > 0
+                        ? $"'{dugum.GosterimAdi}' ve {dugum.Cocuklar.Count} alt kalemi taslak listeden kaldırılsın mı?\n\nSolidWorks dosyaları ETKİLENMEZ — yalnızca bu ekrandaki taslaktan kaldırılır."
+                        : $"'{dugum.GosterimAdi}' taslak listeden kaldırılsın mı?\n\nSolidWorks dosyaları ETKİLENMEZ — yalnızca bu ekrandaki taslaktan kaldırılır.";
+                    if (MessageBox.Show(uyari, "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                    BilesenUstListesiniBul(dugum)?.Remove(dugum);
+                    if (ReferenceEquals(_seciliBilesenDugumu, dugum)) _seciliBilesenDugumu = null;
+                    BilesenAgaciniCiz();
+                };
+                satir.Controls.Add(silBtn);
             }
 
             // Sürükle-bırak HEDEFİ — bu satırın üstüne bırakılan başka bir
             // bileşen, bu düğümün ÇOCUĞU olur (kendi alt dalına taşıma
             // engellenir, TAM döngü tespiti YAPILMAZ — yalnızca bu bariz
-            // durum kontrol edilir).
+            // durum kontrol edilir). Kullanıcı isteği: "sol taraftaki
+            // solidworks component seçim kolonundan ekleyebileyim" — soldaki
+            // ÜretimOS kart paleti (PaletOgesi) buraya bırakılırsa, "+ Ek
+            // Kalem" dialogu AÇMADAN aynı sentetik alt kalem doğrudan eklenir.
             panel.AllowDrop = true;
-            panel.DragEnter += (s, e) => { e.Effect = e.Data.GetDataPresent(typeof(BilesenDugumu)) ? DragDropEffects.Move : DragDropEffects.None; };
+            panel.DragEnter += (s, e) =>
+            {
+                e.Effect = e.Data.GetDataPresent(typeof(BilesenDugumu)) ? DragDropEffects.Move
+                    : e.Data.GetDataPresent(typeof(PaletOgesi)) ? DragDropEffects.Copy
+                    : DragDropEffects.None;
+            };
             panel.DragDrop += (s, e) =>
             {
-                if (!(e.Data.GetData(typeof(BilesenDugumu)) is BilesenDugumu tasinan) || ReferenceEquals(tasinan, dugum)) return;
-                if (BilesenAltIcindeMi(tasinan, dugum))
+                if (e.Data.GetData(typeof(BilesenDugumu)) is BilesenDugumu tasinan)
                 {
-                    MessageBox.Show("Bir bileşen kendi alt dalının içine taşınamaz.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
+                    if (ReferenceEquals(tasinan, dugum)) return;
+                    if (BilesenAltIcindeMi(tasinan, dugum))
+                    {
+                        MessageBox.Show("Bir bileşen kendi alt dalının içine taşınamaz.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    BilesenUstListesiniBul(tasinan)?.Remove(tasinan);
+                    dugum.Cocuklar.Add(tasinan);
+                    BilesenAgaciniCiz();
                 }
-                BilesenUstListesiniBul(tasinan)?.Remove(tasinan);
-                dugum.Cocuklar.Add(tasinan);
-                BilesenAgaciniCiz();
+                else if (e.Data.GetData(typeof(PaletOgesi)) is PaletOgesi secilen)
+                {
+                    var yeniDugum = BilesenSentetikCocukOlustur(secilen);
+                    if (yeniDugum == null) return;
+                    dugum.Cocuklar.Add(yeniDugum);
+                    BilesenAgaciniCiz();
+                }
             };
 
             panel.Controls.Add(satir);
@@ -754,6 +792,28 @@ namespace UretimOSKesim
             return null;
         }
 
+        // Seçilen bir palet öğesinden (mevcut ÜretimOS kartı), gerçek bir
+        // SolidWorks bileşenine karşılık GELMEYEN sentetik bir alt düğüm
+        // üretir — hem "+ Ek Kalem" dialogu hem de sol paletten doğrudan
+        // sürükle-bırak (bkz. BilesenAnaSatiriOlustur'un DragDrop'u) AYNI
+        // mantığı kullanır (kart bulunamazsa null döner).
+        private BilesenDugumu BilesenSentetikCocukOlustur(PaletOgesi secilen)
+        {
+            var kart = FindKart(secilen.KalemTipi, secilen.Id);
+            if (kart == null) return null;
+            // secilen.KalemTipi hammadde ailesinde hep "hammadde" olur
+            // (bkz. OgeyeHammadde) — Sınıf için kartın KENDİ 'tip'
+            // alanından (hirdavat/plaka/kenar_bandi) okunması gerekir.
+            string sinif = secilen.KalemTipi == "hammadde" ? (string)kart["tip"] : secilen.KalemTipi;
+            return new BilesenDugumu
+            {
+                ElleEklendi = true,
+                GosterimAdi = secilen.Ad,
+                MevcutKod = (string)(kart["kod"] ?? kart["stokKodu"]),
+                Sinif = sinif
+            };
+        }
+
         // "+ Ek Kalem" — gerçek bir SolidWorks bileşenine karşılık GELMEYEN,
         // mevcut bir ÜretimOS kartına doğrudan işaret eden sentetik bir alt
         // düğüm ekler (ör. modellenmemiş bir vida/tutkal kalemi).
@@ -790,19 +850,8 @@ namespace UretimOSKesim
                 ekleBtn.Click += (s, e) =>
                 {
                     if (!(liste.SelectedItem is PaletOgesi secilen)) return;
-                    var kart = FindKart(secilen.KalemTipi, secilen.Id);
-                    if (kart == null) return;
-                    // secilen.KalemTipi hammadde ailesinde hep "hammadde" olur
-                    // (bkz. OgeyeHammadde) — Sınıf için kartın KENDİ 'tip'
-                    // alanından (hirdavat/plaka/kenar_bandi) okunması gerekir.
-                    string sinif = secilen.KalemTipi == "hammadde" ? (string)kart["tip"] : secilen.KalemTipi;
-                    var yeniDugum = new BilesenDugumu
-                    {
-                        ElleEklendi = true,
-                        GosterimAdi = secilen.Ad,
-                        MevcutKod = (string)(kart["kod"] ?? kart["stokKodu"]),
-                        Sinif = sinif
-                    };
+                    var yeniDugum = BilesenSentetikCocukOlustur(secilen);
+                    if (yeniDugum == null) return;
                     ustDugum.Cocuklar.Add(yeniDugum);
                     dlg.DialogResult = DialogResult.OK;
                 };
