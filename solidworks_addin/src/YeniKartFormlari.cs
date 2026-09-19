@@ -86,6 +86,7 @@ namespace UretimOSKesim
                 case "plaka": return "Yeni Plaka (Hammadde)";
                 case "kenar_bandi": return "Yeni Kenar Bandı (Hammadde)";
                 case "hirdavat": return "Yeni Hırdavat (Hammadde)";
+                case "sarf": return "Yeni Sarf Malzeme (Hammadde)";
                 case "yarimamul": return "Yeni Yarı Mamül";
                 case "altmontaj": return "Yeni Alt Montaj";
                 case "paket": return "Yeni Paket";
@@ -125,7 +126,12 @@ namespace UretimOSKesim
                 ana.Controls.Add(kontrol);
             }
 
-            bool hammaddeAilesi = _kartTipi == "plaka" || _kartTipi == "kenar_bandi" || _kartTipi == "hirdavat";
+            // "sarf" (Sarf Malzeme — boya, tutkal, kimyasal) da bir hammadde
+            // alt tipi (bkz. page_hammadde.js: TIP_AD içinde 4. tip) — aşağıdaki
+            // genel hammadde alan üretimi (kart["tip"] = _kartTipi) BUNU zaten
+            // doğru işler, yalnızca "hammaddeAilesi" kontrolüne dahil edilmesi
+            // yeterli (plaka/hirdavat'a özel alt bloklar sarf için atlanır).
+            bool hammaddeAilesi = _kartTipi == "plaka" || _kartTipi == "kenar_bandi" || _kartTipi == "hirdavat" || _kartTipi == "sarf";
 
             // ── ORTAK: kod/stokKodu + ad ────────────────────────────────────
             _kodKutusu = new TextBox();
@@ -150,12 +156,12 @@ namespace UretimOSKesim
 
             if (hammaddeAilesi)
             {
-                kategoriKutusu = new TextBox { Text = _kartTipi == "plaka" ? "Plaka" : _kartTipi == "kenar_bandi" ? "Kenar Bandı" : "Hırdavat" };
+                kategoriKutusu = new TextBox { Text = _kartTipi == "plaka" ? "Plaka" : _kartTipi == "kenar_bandi" ? "Kenar Bandı" : _kartTipi == "sarf" ? "Sarf" : "Hırdavat" };
                 Satir("Kategori", kategoriKutusu);
 
                 birimKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 birimKutusu.Items.AddRange(new object[] { "M2", "METRE", "ADET", "KG", "GRAM", "LITRE" });
-                birimKutusu.SelectedItem = _kartTipi == "plaka" ? "M2" : _kartTipi == "kenar_bandi" ? "METRE" : "ADET";
+                birimKutusu.SelectedItem = _kartTipi == "plaka" ? "M2" : _kartTipi == "kenar_bandi" ? "METRE" : _kartTipi == "sarf" ? "KG" : "ADET";
                 Satir("Birim", birimKutusu);
 
                 if (_kartTipi == "plaka")
