@@ -2038,7 +2038,7 @@ namespace UretimOSKesim
         private async System.Threading.Tasks.Task RotaSecVeyaOlusturDialogAc(string kartTipi, JObject kart)
         {
             string koleksiyon = kartTipi == "paket" ? "paketler" : kartTipi == "altmontaj" ? "altMontajlar" : kartTipi == "urun" ? "urunler" : "yarimamuller";
-            using (var dlg = new Form { Text = "Rota Seç / Oluştur — " + kart["kod"], Width = 520, Height = 380, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = new Font(Control.DefaultFont.FontFamily, 10f) })
+            using (var dlg = new Form { Text = "Rota Seç / Oluştur — " + kart["kod"], Width = 520, Height = 440, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = new Font(Control.DefaultFont.FontFamily, 10f) })
             {
                 var icPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
                 var mevcutRotaId = (string)kart["rotaId"];
@@ -2107,6 +2107,46 @@ namespace UretimOSKesim
                     }
                 };
 
+                // Kullanıcı isteği: "yeni rota oluşturunca makina ve hatlar
+                // ayrıca süre düzenlemelerinde gelsin, üretimosun yeni rota
+                // oluştur ekranı gelsin" — hat/makine seçimi ve adım bazlı
+                // süre girişi ÜretimOS'un KENDİ 'Hat & Rota' ekranında,
+                // gerçek hat/makine kataloğu ve maliyet özetiyle birlikte
+                // yapılıyor; bunu burada (WinForms'ta) TAHMİN ederek/
+                // kopyalayarak YENİDEN İNŞA ETMİYORUZ (rota_sablon.js'in
+                // kapsamıyla AYNI gerekçe, yukarıdaki NOT) — bunun yerine
+                // doğrudan o ekrana açılır.
+                var webdeAcBtn = new Button { Text = "🌐 ÜretimOS'ta Hat/Makine/Süre Düzenle…", Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 14, 0, 0) };
+                webdeAcBtn.Click += (s, e) =>
+                {
+                    var ayar = BaglantiAyarlari.Yukle();
+                    string tabanUrl = null;
+                    if (ayar != null && !string.IsNullOrWhiteSpace(ayar.SunucuUrl))
+                    {
+                        int son = ayar.SunucuUrl.LastIndexOf('/');
+                        tabanUrl = son >= 0 ? ayar.SunucuUrl.Substring(0, son + 1) : ayar.SunucuUrl;
+                    }
+                    if (string.IsNullOrEmpty(tabanUrl))
+                    {
+                        MessageBox.Show("ÜretimOS sunucu adresi bulunamadı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    try
+                    {
+                        System.Diagnostics.Process.Start(tabanUrl);
+                        MessageBox.Show(
+                            "Açılan sayfada 'Hat & Rota' ekranından hat/makine seçip süre ve maliyet ayarlarını yapabilirsiniz.\n\n" +
+                            "Kaydettikten sonra bu pencereyi kapatıp tekrar açarsanız yeni/güncellenmiş rota listede görünür.",
+                            "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        Tanilama.Kaydet("RotaSecVeyaOlusturDialogAc (tarayıcı açılamadı) HATA: " + ex);
+                        MessageBox.Show("Tarayıcı açılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                };
+
+                icPanel.Controls.Add(webdeAcBtn);
                 icPanel.Controls.Add(yeniOlusturBtn);
                 icPanel.Controls.Add(yeniAdKutu);
                 icPanel.Controls.Add(yeniAdEtiket);
@@ -2753,6 +2793,86 @@ namespace UretimOSKesim
                 new System.Xml.Linq.XAttribute("ad", ad ?? ""),
                 new System.Xml.Linq.XAttribute("miktar", miktar.ToString(CultureInfo.InvariantCulture)),
                 new System.Xml.Linq.XAttribute("birim", birim ?? ""));
+
+            // Kullanıcı isteği: "xml dosyasına eklediğim plaka ve hangi
+            // kenarda hangi bant olduğu bilgisi girdiğim en boy yükseklik
+            // ağırlık bilgileri rota bilgileri vb. bilgilerde gelsin yani
+            // xmlde bütün girdiğim bilgiler gelsin" — kartın KENDİ ölçü/
+            // ağırlık/rota alanları (panelde görülen değerlerin gerçek
+            // kaynağı) buraya eklenir.
+            string Sayi(JToken deger) => deger != null ? ((double?)deger)?.ToString(CultureInfo.InvariantCulture) ?? "" : "";
+            if (kart != null)
+            {
+                if (tip == "yarimamul")
+                {
+                    eleman.Add(new System.Xml.Linq.XElement("Olcu",
+                        new System.Xml.Linq.XAttribute("netBoy", Sayi(kart["netBoy"])),
+                        new System.Xml.Linq.XAttribute("netEn", Sayi(kart["netEn"])),
+                        new System.Xml.Linq.XAttribute("kalinlik", Sayi(kart["kalinlik"])),
+                        new System.Xml.Linq.XAttribute("kabaBoy", Sayi(kart["kabaBoy"])),
+                        new System.Xml.Linq.XAttribute("kabaEn", Sayi(kart["kabaEn"]))));
+                }
+                else if (tip == "paket" || tip == "urun")
+                {
+                    eleman.Add(new System.Xml.Linq.XElement("OlcuAgirlik",
+                        new System.Xml.Linq.XAttribute("en", Sayi(kart["en"])),
+                        new System.Xml.Linq.XAttribute("boy", Sayi(kart["boy"])),
+                        new System.Xml.Linq.XAttribute("yukseklik", Sayi(kart["yukseklik"])),
+                        new System.Xml.Linq.XAttribute("netAgirlik", Sayi(kart["netAgirlik"])),
+                        new System.Xml.Linq.XAttribute("brutAgirlik", Sayi(kart["brutAgirlik"]))));
+                }
+                else if (tip == "hammadde" && (string)kart["tip"] == "plaka")
+                {
+                    // Plakanın KENDİ stok ölçüsü (ör. 1830x3660) — kalemin
+                    // KesimOlcusu'ndan (aşağıda) FARKLI: bu tam levha ölçüsü.
+                    eleman.Add(new System.Xml.Linq.XElement("StokOlcusu",
+                        new System.Xml.Linq.XAttribute("en", Sayi(kart["en"])),
+                        new System.Xml.Linq.XAttribute("boy", Sayi(kart["boy"])),
+                        new System.Xml.Linq.XAttribute("kalinlik", Sayi(kart["kalinlik"]))));
+                }
+
+                if (tip == "yarimamul" || tip == "altmontaj" || tip == "paket" || tip == "urun")
+                {
+                    string rotaId = (string)kart["rotaId"];
+                    var rota = string.IsNullOrEmpty(rotaId) ? null : _rotalar.OfType<JObject>().FirstOrDefault(r => (string)r["id"] == rotaId);
+                    if (rota != null)
+                    {
+                        eleman.Add(new System.Xml.Linq.XElement("Rota",
+                            new System.Xml.Linq.XAttribute("kod", (string)rota["kod"] ?? ""),
+                            new System.Xml.Linq.XAttribute("ad", (string)rota["ad"] ?? "")));
+                    }
+                }
+            }
+
+            // Kalemin KENDİ kesim ölçüsü/kenar bandı ataması — SolidWorks
+            // bileşen ağacından toplu aktarımda panel çocukları için
+            // yazılır (bkz. BilesenAgaciniReceteOlarakAktar'ın olcu/
+            // kenarBantlari alanları).
+            if (kalem["olcu"] is JObject kalemOlcu)
+            {
+                eleman.Add(new System.Xml.Linq.XElement("KesimOlcusu",
+                    new System.Xml.Linq.XAttribute("netEn", Sayi(kalemOlcu["netEn"])),
+                    new System.Xml.Linq.XAttribute("netBoy", Sayi(kalemOlcu["netBoy"])),
+                    new System.Xml.Linq.XAttribute("kabaEn", Sayi(kalemOlcu["kabaEn"])),
+                    new System.Xml.Linq.XAttribute("kabaBoy", Sayi(kalemOlcu["kabaBoy"]))));
+            }
+            if (kalem["kenarBantlari"] is JObject kenarlar)
+            {
+                var kenarEleman = new System.Xml.Linq.XElement("KenarBantlari");
+                void KenarEkle(string yon, string bantId)
+                {
+                    if (string.IsNullOrEmpty(bantId)) return;
+                    var bantKart = _hammaddeler?.OfType<JObject>().FirstOrDefault(h => (string)h["id"] == bantId);
+                    kenarEleman.Add(new System.Xml.Linq.XElement(yon,
+                        new System.Xml.Linq.XAttribute("kod", bantKart != null ? (string)bantKart["stokKodu"] ?? "" : ""),
+                        new System.Xml.Linq.XAttribute("ad", bantKart != null ? (string)bantKart["ad"] ?? "" : "")));
+                }
+                KenarEkle("On", (string)kenarlar["on"]);
+                KenarEkle("Arka", (string)kenarlar["arka"]);
+                KenarEkle("Sol", (string)kenarlar["sol"]);
+                KenarEkle("Sag", (string)kenarlar["sag"]);
+                if (kenarEleman.HasElements) eleman.Add(kenarEleman);
+            }
 
             if (derinlik < MAKS_DERINLIK && tip != "hammadde" && kart != null)
             {
