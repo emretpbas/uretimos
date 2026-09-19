@@ -1008,13 +1008,36 @@ namespace UretimOSKesim
             // (bkz. OgeyeHammadde) — Sınıf için kartın KENDİ 'tip'
             // alanından (hirdavat/plaka/kenar_bandi) okunması gerekir.
             string sinif = secilen.KalemTipi == "hammadde" ? (string)kart["tip"] : secilen.KalemTipi;
-            return new BilesenDugumu
+            var yeniDugum = new BilesenDugumu
             {
                 ElleEklendi = true,
                 GosterimAdi = secilen.Ad,
                 MevcutKod = (string)(kart["kod"] ?? kart["stokKodu"]),
                 Sinif = sinif
             };
+
+            // Kullanıcı isteği: "solidworks bileşen ağacında alt kalem
+            // ekleyince gelen boy en ve kalınlık ölçülerini otomatik olarak
+            // parça ölçüsünden doldur" — kartın KENDİ ölçü alanları varsa
+            // (plaka: en/boy/kalinlik — stok levha ölçüsü; yarımamül:
+            // netEn/netBoy/kalinlik) taslak alanlara ÖN DOLDURULUR; kartta
+            // hiç ölçü yoksa TAHMİN EDİLMEZ, taslak 0 kalır (elle girilir).
+            double en = 0, boy = 0, kalinlik = 0;
+            if (sinif == "plaka")
+            {
+                en = (double?)kart["en"] ?? 0; boy = (double?)kart["boy"] ?? 0; kalinlik = (double?)kart["kalinlik"] ?? 0;
+            }
+            else if (sinif == "yarimamul")
+            {
+                en = (double?)kart["netEn"] ?? 0; boy = (double?)kart["netBoy"] ?? 0; kalinlik = (double?)kart["kalinlik"] ?? 0;
+            }
+            if (en > 0 || boy > 0 || kalinlik > 0)
+            {
+                yeniDugum.BoyMm = boy; yeniDugum.EnMm = en; yeniDugum.KalinlikMm = kalinlik;
+                yeniDugum.TaslakBoyMm = boy; yeniDugum.TaslakEnMm = en; yeniDugum.TaslakKalinlikMm = kalinlik;
+                yeniDugum.OlcuVar = true; yeniDugum.OlcuKaynagi = "karttan";
+            }
+            return yeniDugum;
         }
 
         // "+ Ek Kalem" — gerçek bir SolidWorks bileşenine karşılık GELMEYEN,
@@ -1085,7 +1108,7 @@ namespace UretimOSKesim
             string ekBilgi = "";
             if (dugum.OlcuVar)
             {
-                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : dugum.OlcuKaynagi == "ozelalan" ? " oa" : dugum.OlcuKaynagi == "bbox" ? " bb" : "";
+                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : dugum.OlcuKaynagi == "ozelalan" ? " oa" : dugum.OlcuKaynagi == "bbox" ? " bb" : dugum.OlcuKaynagi == "karttan" ? " kt" : "";
                 ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm{kaynakEtiket})";
             }
 
@@ -2863,29 +2886,45 @@ namespace UretimOSKesim
             // bileşen ağacından toplu aktarımda panel çocukları için
             // yazılır (bkz. BilesenAgaciniReceteOlarakAktar'ın olcu/
             // kenarBantlari alanları).
-            if (kalem["olcu"] is JObject kalemOlcu)
+            // Kullanıcı isteği: "xmldeki banta çekilen kısmına göre ön arka
+            // için net boy +30mm, sağ ve sol için net en+30mm olarak
+            // hesapla (30mm başlangıç ve sondaki fire) panel m2 si ile
+            // birlikte xml'e ekle" — bant uzunluğu VE panel m²'si burada
+            // hesaplanıp XML'e eklenir (sunucudaki veri değişmez, sadece
+            // dışa aktarma anında hesaplanır).
+            const double FIRE_PAYI_MM = 30;
+            JObject kalemOlcuObj = kalem["olcu"] as JObject;
+            double? kalemNetEn = kalemOlcuObj != null ? (double?)kalemOlcuObj["netEn"] : null;
+            double? kalemNetBoy = kalemOlcuObj != null ? (double?)kalemOlcuObj["netBoy"] : null;
+            if (kalemOlcuObj != null)
             {
+                double? panelM2 = (kalemNetEn > 0 && kalemNetBoy > 0) ? kalemNetEn * kalemNetBoy / 1_000_000.0 : (double?)null;
                 eleman.Add(new System.Xml.Linq.XElement("KesimOlcusu",
-                    new System.Xml.Linq.XAttribute("netEn", Sayi(kalemOlcu["netEn"])),
-                    new System.Xml.Linq.XAttribute("netBoy", Sayi(kalemOlcu["netBoy"])),
-                    new System.Xml.Linq.XAttribute("kabaEn", Sayi(kalemOlcu["kabaEn"])),
-                    new System.Xml.Linq.XAttribute("kabaBoy", Sayi(kalemOlcu["kabaBoy"]))));
+                    new System.Xml.Linq.XAttribute("netEn", Sayi(kalemOlcuObj["netEn"])),
+                    new System.Xml.Linq.XAttribute("netBoy", Sayi(kalemOlcuObj["netBoy"])),
+                    new System.Xml.Linq.XAttribute("kabaEn", Sayi(kalemOlcuObj["kabaEn"])),
+                    new System.Xml.Linq.XAttribute("kabaBoy", Sayi(kalemOlcuObj["kabaBoy"])),
+                    new System.Xml.Linq.XAttribute("panelM2", panelM2.HasValue ? panelM2.Value.ToString("0.####", CultureInfo.InvariantCulture) : "")));
             }
             if (kalem["kenarBantlari"] is JObject kenarlar)
             {
                 var kenarEleman = new System.Xml.Linq.XElement("KenarBantlari");
-                void KenarEkle(string yon, string bantId)
+                void KenarEkle(string yon, string bantId, double? uzunlukMm)
                 {
                     if (string.IsNullOrEmpty(bantId)) return;
                     var bantKart = _hammaddeler?.OfType<JObject>().FirstOrDefault(h => (string)h["id"] == bantId);
-                    kenarEleman.Add(new System.Xml.Linq.XElement(yon,
+                    var kenarBantEl = new System.Xml.Linq.XElement(yon,
                         new System.Xml.Linq.XAttribute("kod", bantKart != null ? (string)bantKart["stokKodu"] ?? "" : ""),
-                        new System.Xml.Linq.XAttribute("ad", bantKart != null ? (string)bantKart["ad"] ?? "" : "")));
+                        new System.Xml.Linq.XAttribute("ad", bantKart != null ? (string)bantKart["ad"] ?? "" : ""));
+                    if (uzunlukMm.HasValue) kenarBantEl.Add(new System.Xml.Linq.XAttribute("uzunlukMm", uzunlukMm.Value.ToString(CultureInfo.InvariantCulture)));
+                    kenarEleman.Add(kenarBantEl);
                 }
-                KenarEkle("On", (string)kenarlar["on"]);
-                KenarEkle("Arka", (string)kenarlar["arka"]);
-                KenarEkle("Sol", (string)kenarlar["sol"]);
-                KenarEkle("Sag", (string)kenarlar["sag"]);
+                double? onArkaUzunluk = kalemNetBoy > 0 ? kalemNetBoy + FIRE_PAYI_MM : (double?)null;
+                double? solSagUzunluk = kalemNetEn > 0 ? kalemNetEn + FIRE_PAYI_MM : (double?)null;
+                KenarEkle("On", (string)kenarlar["on"], onArkaUzunluk);
+                KenarEkle("Arka", (string)kenarlar["arka"], onArkaUzunluk);
+                KenarEkle("Sol", (string)kenarlar["sol"], solSagUzunluk);
+                KenarEkle("Sag", (string)kenarlar["sag"], solSagUzunluk);
                 if (kenarEleman.HasElements) eleman.Add(kenarEleman);
             }
 
@@ -2930,28 +2969,40 @@ namespace UretimOSKesim
 
                 if (!d.BelgeYuklenemedi && (d.Sinif == "yarimamul" || d.Sinif == "plaka"))
                 {
+                    // Kullanıcı isteği: "burdaki xml'de de bant ve panel
+                    // m2'lerini hesapla ve xml'e ekle" — bileşen ağacı
+                    // XML'i de reçete XML'iyle AYNI fire payı (30mm) ve
+                    // panel m² mantığını kullanır (bkz. KalemElemaniOlustur).
+                    const double FIRE_PAYI_MM = 30;
+                    double? panelM2 = (d.TaslakEnMm > 0 && d.TaslakBoyMm > 0) ? d.TaslakEnMm * d.TaslakBoyMm / 1_000_000.0 : (double?)null;
                     el.Add(new System.Xml.Linq.XElement("Olcu",
                         new System.Xml.Linq.XAttribute("boy", d.TaslakBoyMm.ToString(CultureInfo.InvariantCulture)),
                         new System.Xml.Linq.XAttribute("en", d.TaslakEnMm.ToString(CultureInfo.InvariantCulture)),
                         new System.Xml.Linq.XAttribute("kalinlik", d.TaslakKalinlikMm.ToString(CultureInfo.InvariantCulture)),
-                        new System.Xml.Linq.XAttribute("kaynak", d.OlcuKaynagi ?? "")));
-                }
-                if (!d.BelgeYuklenemedi && d.Sinif == "plaka")
-                {
-                    var kenarEl = new System.Xml.Linq.XElement("KenarBantlari");
-                    void KenarEkle(string yon, string bantId)
+                        new System.Xml.Linq.XAttribute("kaynak", d.OlcuKaynagi ?? ""),
+                        new System.Xml.Linq.XAttribute("panelM2", panelM2.HasValue ? panelM2.Value.ToString("0.####", CultureInfo.InvariantCulture) : "")));
+
+                    if (d.Sinif == "plaka")
                     {
-                        if (string.IsNullOrEmpty(bantId)) return;
-                        var bant = _hammaddeler?.OfType<JObject>().FirstOrDefault(h => (string)h["id"] == bantId);
-                        kenarEl.Add(new System.Xml.Linq.XElement(yon,
-                            new System.Xml.Linq.XAttribute("kod", bant != null ? (string)bant["stokKodu"] ?? "" : ""),
-                            new System.Xml.Linq.XAttribute("ad", bant != null ? (string)bant["ad"] ?? "" : "")));
+                        var kenarEl = new System.Xml.Linq.XElement("KenarBantlari");
+                        void KenarEkle(string yon, string bantId, double? uzunlukMm)
+                        {
+                            if (string.IsNullOrEmpty(bantId)) return;
+                            var bant = _hammaddeler?.OfType<JObject>().FirstOrDefault(h => (string)h["id"] == bantId);
+                            var kenarBantEl = new System.Xml.Linq.XElement(yon,
+                                new System.Xml.Linq.XAttribute("kod", bant != null ? (string)bant["stokKodu"] ?? "" : ""),
+                                new System.Xml.Linq.XAttribute("ad", bant != null ? (string)bant["ad"] ?? "" : ""));
+                            if (uzunlukMm.HasValue) kenarBantEl.Add(new System.Xml.Linq.XAttribute("uzunlukMm", uzunlukMm.Value.ToString(CultureInfo.InvariantCulture)));
+                            kenarEl.Add(kenarBantEl);
+                        }
+                        double? onArkaUzunluk = d.TaslakBoyMm > 0 ? d.TaslakBoyMm + FIRE_PAYI_MM : (double?)null;
+                        double? solSagUzunluk = d.TaslakEnMm > 0 ? d.TaslakEnMm + FIRE_PAYI_MM : (double?)null;
+                        KenarEkle("On", d.KenarOnId, onArkaUzunluk);
+                        KenarEkle("Arka", d.KenarArkaId, onArkaUzunluk);
+                        KenarEkle("Sol", d.KenarSolId, solSagUzunluk);
+                        KenarEkle("Sag", d.KenarSagId, solSagUzunluk);
+                        if (kenarEl.HasElements) el.Add(kenarEl);
                     }
-                    KenarEkle("On", d.KenarOnId);
-                    KenarEkle("Arka", d.KenarArkaId);
-                    KenarEkle("Sol", d.KenarSolId);
-                    KenarEkle("Sag", d.KenarSagId);
-                    if (kenarEl.HasElements) el.Add(kenarEl);
                 }
                 foreach (var c in d.Cocuklar) el.Add(BilesenElemaniOlustur(c));
                 return el;
@@ -3086,11 +3137,16 @@ namespace UretimOSKesim
             JObject sonucOlcu = null, sonucKenar = null;
             bool tamamlandi = false;
 
-            using (var f = new Form { Text = "Miktar / Ölçü / Kenar Bandı", Width = 420, Height = 520, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            // Kullanıcı isteği: "bant seçim satırını genişlet en az 3 katı
+            // uzunlukta ve arama fonksiyonu ekle" — diyalog eskiden 420px
+            // genişliğindeydi (kenar bandı kutuları ~230px kalıyordu);
+            // şimdi kutular en az 3 katı geniş VE BilesenKenarBandiSatiriOlustur
+            // ile AYNI canlı arama mantığını kullanıyor.
+            using (var f = new Form { Text = "Miktar / Ölçü / Kenar Bandı", Width = 1050, Height = 560, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
             {
                 var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14), AutoScroll = true };
-                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 75));
                 void Satir(string etiket, Control kontrol)
                 {
                     panel.RowCount++;
@@ -3119,14 +3175,33 @@ namespace UretimOSKesim
                 Satir("Net Boy (mm)", netBoyKutu);
 
                 var kenarBandilari = _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(h => OgeyeHammadde(h, "Kenar Bandı")).ToList();
+                // BilesenKenarBandiSatiriOlustur'daki EkleKenarKutusu ile AYNI
+                // canlı arama mantığı — DropDownList yerine DropDown, her
+                // tuş vuruşunda kod/ad içinde arayıp listeyi filtreler.
                 ComboBox KenarKutusuOlustur()
                 {
-                    var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-                    kutu.Items.Add("— Yok —");
-                    foreach (var kb in kenarBandilari) kutu.Items.Add(kb);
-                    kutu.SelectedIndex = 0;
+                    var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, DropDownWidth = 620, AutoCompleteMode = AutoCompleteMode.None };
+                    void ListeyiDoldur(string arama)
+                    {
+                        kutu.Items.Clear();
+                        kutu.Items.Add("— Yok —");
+                        string a = (arama ?? "").Trim().ToLowerInvariant();
+                        foreach (var kb in kenarBandilari.Where(kb => string.IsNullOrEmpty(a) || (kb.Kod ?? "").ToLowerInvariant().Contains(a) || (kb.Ad ?? "").ToLowerInvariant().Contains(a)))
+                            kutu.Items.Add(kb);
+                    }
+                    ListeyiDoldur(null);
+                    kutu.Text = "— Yok —";
+                    kutu.TextChanged += (s, e) =>
+                    {
+                        if (kutu.SelectedItem is PaletOgesi secili && secili.ToString() == kutu.Text) return;
+                        if (kutu.Text == "— Yok —") return;
+                        ListeyiDoldur(kutu.Text);
+                        kutu.DroppedDown = true;
+                        kutu.SelectionStart = kutu.Text.Length;
+                    };
                     return kutu;
                 }
+                string KenarKutusuId(ComboBox kutu) => (kutu.SelectedItem as PaletOgesi ?? kenarBandilari.FirstOrDefault(kb => kb.ToString() == kutu.Text))?.Id;
                 var onKutu = KenarKutusuOlustur();
                 Satir("Ön (Net Boy)", onKutu);
                 var arkaKutu = KenarKutusuOlustur();
@@ -3160,10 +3235,10 @@ namespace UretimOSKesim
                         ["netBoy"] = ParseOpsiyonel(netBoyKutu)
                     };
                     sonucKenar = new JObject();
-                    if (onKutu.SelectedItem is PaletOgesi on) sonucKenar["on"] = on.Id;
-                    if (arkaKutu.SelectedItem is PaletOgesi arka) sonucKenar["arka"] = arka.Id;
-                    if (sagKutu.SelectedItem is PaletOgesi sag) sonucKenar["sag"] = sag.Id;
-                    if (solKutu.SelectedItem is PaletOgesi sol) sonucKenar["sol"] = sol.Id;
+                    string onId = KenarKutusuId(onKutu); if (onId != null) sonucKenar["on"] = onId;
+                    string arkaId = KenarKutusuId(arkaKutu); if (arkaId != null) sonucKenar["arka"] = arkaId;
+                    string sagId = KenarKutusuId(sagKutu); if (sagId != null) sonucKenar["sag"] = sagId;
+                    string solId = KenarKutusuId(solKutu); if (solId != null) sonucKenar["sol"] = solId;
                     tamamlandi = true;
                     f.DialogResult = DialogResult.OK;
                 };
