@@ -142,7 +142,7 @@ namespace UretimOSKesim
                     // alanları BOŞSA, SolidWorks'ün kendi "Equations" (Global
                     // Variables) listesindeki Length/Width/Thickness (ya da
                     // Boy/En/Kalınlık) adlı değişkenlerden dene.
-                    var denklemOlcusu = EquationsOlcuOku(modelDoc);
+                    var denklemOlcusu = EquationsOlcuOku(modelDoc, dugum.GosterimAdi);
                     if (denklemOlcusu.HasValue)
                     {
                         dugum.OlcuVar = true;
@@ -186,14 +186,26 @@ namespace UretimOSKesim
         // biçiminde bir string döner). Bu, bu makinede HENÜZ CANLI test
         // edilmedi — derleme/çalışma zamanı hatası çıkarsa (ör. üye adı farklı
         // sürümde değişmişse) TAHMİN EDİLMEDEN gerçek hataya göre düzeltilecek.
-        private static (double boy, double en, double kalinlik)? EquationsOlcuOku(ModelDoc2 modelDoc)
+        private static (double boy, double en, double kalinlik)? EquationsOlcuOku(ModelDoc2 modelDoc, string parcaAdi)
         {
             try
             {
                 IEquationMgr eqMgr = modelDoc.GetEquationMgr();
-                if (eqMgr == null) return null;
+                if (eqMgr == null)
+                {
+                    Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku '" + parcaAdi + "': GetEquationMgr() null döndü.");
+                    return null;
+                }
                 int adet = eqMgr.GetCount();
-                if (adet <= 0) return null;
+                if (adet <= 0)
+                {
+                    // TANI: bu parçada HİÇ denklem/global değişken yok — Equations
+                    // klasörü boş demektir, "eşleşmedi" ile KARIŞTIRILMASIN diye
+                    // ayrı bir mesajla loglanır (bkz. kullanıcı raporu: hiç log
+                    // satırı çıkmıyor, bu durumun ta kendisi olabilir).
+                    Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku '" + parcaAdi + "': hiç denklem/global değişken yok (GetCount()=0).");
+                    return null;
+                }
 
                 double? boy = null, en = null, kalinlik = null;
                 var hamDenklemler = new List<string>(); // yalnızca TANI amaçlı — eşleşme başarısızsa günlüğe yazılır.
@@ -210,17 +222,21 @@ namespace UretimOSKesim
                 }
                 // Boy/En'in İKİSİ de yoksa "kısmen doldu" gibi görünüp yanlış
                 // bir ölçü izlenimi VERMEMEK için hiç döndürülmez — TAHMİN YOK.
-                if (boy.HasValue && en.HasValue) return (boy.Value, en.Value, kalinlik ?? 0);
+                if (boy.HasValue && en.HasValue)
+                {
+                    Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku '" + parcaAdi + "': BAŞARILI boy=" + boy + " en=" + en + " kalinlik=" + kalinlik);
+                    return (boy.Value, en.Value, kalinlik ?? 0);
+                }
 
                 // TANI: eşleşme başarısız oldu — GERÇEK denklem string'lerini
                 // günlüğe yaz (Desktop\uretimos_addin_log.txt) ki format
                 // TAHMİN edilmeden, gerçek veriye göre düzeltilebilsin.
-                Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku eşleşmedi (" + adet + " denklem): " + string.Join(" | ", hamDenklemler));
+                Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku '" + parcaAdi + "' eşleşmedi (" + adet + " denklem): " + string.Join(" | ", hamDenklemler));
                 return null;
             }
             catch (System.Exception ex)
             {
-                Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku HATA: " + ex);
+                Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku '" + parcaAdi + "' HATA: " + ex);
                 return null;
             }
         }

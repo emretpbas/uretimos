@@ -1380,7 +1380,7 @@ namespace UretimOSKesim
                 }
                 tipKutu.SelectedIndexChanged += (s, e) => Doldur();
                 aramaKutu.TextChanged += (s, e) => Doldur();
-                tamamBtn.Click += (s, e) =>
+                void SeciliyiUygula()
                 {
                     if (liste.SelectedItem is PaletOgesi secilen)
                     {
@@ -1393,7 +1393,12 @@ namespace UretimOSKesim
                         if (kart != null) EslesmeYazVeUygula(secilen.KalemTipi, kart);
                         secici.DialogResult = DialogResult.OK;
                     }
-                };
+                }
+                tamamBtn.Click += (s, e) => SeciliyiUygula();
+                // Kullanıcı isteği: "eklemeye basmanın yanında seçtiğim kaleme
+                // çift tıklayınca da eklensin" — ListBox'ta çift tık, "Seç"
+                // butonuna basmakla AYNI işlemi tetikler.
+                liste.DoubleClick += (s, e) => SeciliyiUygula();
 
                 secici.Controls.Add(liste);
                 secici.Controls.Add(tamamBtn);
