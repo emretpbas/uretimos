@@ -142,6 +142,17 @@ namespace UretimOSKesim
                     // alanları BOŞSA, SolidWorks'ün kendi "Equations" (Global
                     // Variables) listesindeki Length/Width/Thickness (ya da
                     // Boy/En/Kalınlık) adlı değişkenlerden dene.
+                    //
+                    // GERÇEK TANI KANITI (log): montaj içindeki TÜM bileşenlerde
+                    // GetEquationMgr().GetCount() = 0 çıktı — Equations klasöründe
+                    // gözle Length/Width dolu görünen parçalarda BİLE. Sebep:
+                    // montaj bileşenleri VARSAYILAN "hafif" (lightweight) yüklenir;
+                    // bu modda özel alanlar (OLE başlığından ayrı okunduğu için)
+                    // çalışır ama feature/equation verisi diskten henüz tam
+                    // okunmamıştır. ForceResolve() bileşeni tam çözümlenmiş hâle
+                    // getirir — dogrudanModel (tek parça belgesi, bilesen==null)
+                    // durumunda zaten tam yüklü olduğu için gerekmez.
+                    bilesen?.ForceResolve();
                     var denklemOlcusu = EquationsOlcuOku(modelDoc, dugum.GosterimAdi);
                     if (denklemOlcusu.HasValue)
                     {
