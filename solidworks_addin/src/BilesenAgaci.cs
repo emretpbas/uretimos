@@ -98,7 +98,11 @@ namespace UretimOSKesim
                 // tek seferde çözümleyen belgelenmiş IAssemblyDoc API'si
                 // kullanılıyor.
                 var asmDoc = (AssemblyDoc)kokBelge;
-                asmDoc.ResolveAllLightWeightComponents(false);
+                int cozumSonucu = asmDoc.ResolveAllLightWeightComponents(false);
+                // TANI: "[Viewing]" (view-only) modda feature/denklem verisi yüklenmez.
+                Tanilama.Kaydet("BilesenAgaci Cikar: ResolveAllLightWeightComponents sonucu=" + cozumSonucu
+                    + " IsOpenedViewOnly=" + kokBelge.IsOpenedViewOnly()
+                    + " IsOpenedReadOnly=" + kokBelge.IsOpenedReadOnly());
 
                 object[] enUstBilesenler = (object[])asmDoc.GetComponents(true /* TopLevelOnly */);
                 if (enUstBilesenler != null)
@@ -167,13 +171,23 @@ namespace UretimOSKesim
                         dugum.BoyMm = denklemOlcusu.Value.boy; dugum.EnMm = denklemOlcusu.Value.en; dugum.KalinlikMm = denklemOlcusu.Value.kalinlik;
                         dugum.TaslakBoyMm = denklemOlcusu.Value.boy; dugum.TaslakEnMm = denklemOlcusu.Value.en; dugum.TaslakKalinlikMm = denklemOlcusu.Value.kalinlik;
                     }
-                    // NOT: Equations'ta da yoksa BİLEREK boş bırakılır — bir
-                    // parçanın sınır kutusundan (bounding box) "hangi eksen
-                    // kalınlık" TAHMİN ETMEK, bu projenin kendi ilkesiyle
-                    // (OlcuHesapla'daki AYNI gerekçe: "yanlış varsaymaktan
-                    // boş bırakmak/elle girdirmek daha ucuzdur") ÇELİŞİR —
-                    // kullanıcı panelde elle girer (Taslak* alanları zaten
-                    // düzenlenebilir).
+                    else
+                    {
+                        // Kullanıcı isteği: "swood'dan alma, solidworks kendi
+                        // ölçülerini al" — Equations da boşsa parçanın SolidWorks
+                        // sınır kutusu (IPartDoc.GetPartBox) kullanılır: en büyük
+                        // boyut = boy, ortanca = en, en küçük = kalınlık. Bu bir
+                        // KURALDIR (levha parçalarda doğru); sonuç panelde " bb"
+                        // etiketiyle gösterilir ve Taslak* alanlarından düzeltilebilir.
+                        var kutu = SinirKutusuOlcusu(modelDoc, dugum.GosterimAdi);
+                        if (kutu.HasValue)
+                        {
+                            dugum.OlcuVar = true;
+                            dugum.OlcuKaynagi = "bbox";
+                            dugum.BoyMm = kutu.Value.boy; dugum.EnMm = kutu.Value.en; dugum.KalinlikMm = kutu.Value.kalinlik;
+                            dugum.TaslakBoyMm = kutu.Value.boy; dugum.TaslakEnMm = kutu.Value.en; dugum.TaslakKalinlikMm = kutu.Value.kalinlik;
+                        }
+                    }
                 }
             }
 
@@ -203,6 +217,27 @@ namespace UretimOSKesim
         // biçiminde bir string döner). Bu, bu makinede HENÜZ CANLI test
         // edilmedi — derleme/çalışma zamanı hatası çıkarsa (ör. üye adı farklı
         // sürümde değişmişse) TAHMİN EDİLMEDEN gerçek hataya göre düzeltilecek.
+        private static (double boy, double en, double kalinlik)? SinirKutusuOlcusu(ModelDoc2 modelDoc, string parcaAdi)
+        {
+            try
+            {
+                var parca = modelDoc as PartDoc;
+                if (parca == null) return null;
+                double[] kutu = parca.GetPartBox(true) as double[]; // metre: xmin,ymin,zmin,xmax,ymax,zmax
+                if (kutu == null || kutu.Length < 6) return null;
+                var olcu = new[] { System.Math.Abs(kutu[3] - kutu[0]), System.Math.Abs(kutu[4] - kutu[1]), System.Math.Abs(kutu[5] - kutu[2]) }
+                    .Select(m => System.Math.Round(m * 1000.0, 1)).OrderByDescending(x => x).ToArray();
+                if (olcu[0] <= 0) return null;
+                Tanilama.Kaydet("BilesenAgaci SinirKutusuOlcusu '" + parcaAdi + "': " + olcu[0] + "x" + olcu[1] + "x" + olcu[2]);
+                return (olcu[0], olcu[1], olcu[2]);
+            }
+            catch (System.Exception ex)
+            {
+                Tanilama.Kaydet("BilesenAgaci SinirKutusuOlcusu '" + parcaAdi + "' HATA: " + ex);
+                return null;
+            }
+        }
+
         private static (double boy, double en, double kalinlik)? EquationsOlcuOku(ModelDoc2 modelDoc, string parcaAdi)
         {
             try

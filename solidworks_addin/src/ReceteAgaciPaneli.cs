@@ -722,7 +722,7 @@ namespace UretimOSKesim
             string ekBilgi = "";
             if (dugum.OlcuVar)
             {
-                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : "";
+                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : dugum.OlcuKaynagi == "bbox" ? " bb" : "";
                 ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm{kaynakEtiket})";
             }
 
