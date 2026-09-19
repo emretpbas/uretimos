@@ -657,7 +657,11 @@ namespace UretimOSKesim
             void EkleKenarKutusu(string etiket, Func<string> al, Action<string> yaz)
             {
                 satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Color.DarkSlateGray });
-                var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 170, Margin = new Padding(3), AutoCompleteMode = AutoCompleteMode.None };
+                // Kullanıcı isteği: "bant ararken okuyamıyorum, seçim
+                // sütununu genişlet" — kapalıyken kutu dar kalsın (4'ü yan
+                // yana sığsın) ama AÇILAN liste çok daha geniş olsun ki uzun
+                // kod/ad metinleri kesilmesin.
+                var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 170, DropDownWidth = 420, Margin = new Padding(3), AutoCompleteMode = AutoCompleteMode.None };
 
                 void ListeyiDoldur(string arama)
                 {
