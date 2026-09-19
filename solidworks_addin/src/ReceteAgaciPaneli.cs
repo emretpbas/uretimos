@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using Newtonsoft.Json.Linq;
@@ -379,9 +380,12 @@ namespace UretimOSKesim
                 // simgesiyle gösterilir; TAHMİN/otomatik kart OLUŞTURMA YOK.
                 var bilesenKokleri = BilesenAgaci.Cikar(_hedefModel);
 
-                // Kullanıcı isteği: "reçete ağacı açılır açılmaz ürün kodu ve
-                // kartı oluştur ekranı açılsın ... tüm alt kalemler bu kod ve
-                // kartın altında kalsın" — ürün kartı kaydedilince tüm bileşen
+                // Kullanıcı isteği: "ürün ağacı komutunu açınca dosyanın adı
+                // ile yeni ürün kartı ekranı çıksın ve bu tüm ürünün en üst
+                // başlangıç kodu olsun, sonra yaptığım paket/yarımamül/
+                // hammadde kırılımları bu kodun altında kırılım olarak
+                // eklensin" — ürün kartı kaydedilince (ya da dosyanın zaten
+                // eşleştiği bir kart varsa OTOMATİK bulununca) tüm bileşen
                 // kökleri bu ürün düğümünün ÇOCUĞU olur (iptal edilirse ağaç
                 // eskisi gibi, ürün kökü olmadan çizilir).
                 var urunKoku = await UrunKokuOlustur();
@@ -393,9 +397,15 @@ namespace UretimOSKesim
                 }
                 BilesenAgaciniCiz(bilesenKokleri);
 
-                _kokKartEtiketi.Text = toplamBilesen > 0
-                    ? "Yukarıdaki bileşen ağacından bir bileşen seçin — kartı otomatik eşleşirse burada görünür, eşleşmezse 'Farklı Kart Seç…' ile eşleştirin."
-                    : "Aktif belgede bileşen bulunamadı.";
+                // urunKoku kurulduysa KokKartAyarla (UrunKokuOlustur içinde)
+                // zaten _kokKartEtiketi'ni "[ÜRÜN] kod — ad" olarak ayarladı —
+                // bunu genel mesajla EZMEYELİM.
+                if (urunKoku == null)
+                {
+                    _kokKartEtiketi.Text = toplamBilesen > 0
+                        ? "Yukarıdaki bileşen ağacından bir bileşen seçin — kartı otomatik eşleşirse burada görünür, eşleşmezse 'Farklı Kart Seç…' ile eşleştirin."
+                        : "Aktif belgede bileşen bulunamadı.";
+                }
                 _durumEtiketi.ForeColor = Color.DarkGreen;
                 _durumEtiketi.Text = $"✓ Bağlandı — {toplamBilesen} bileşen listelendi, {_receteler.Count} reçete, {_hammaddeler.Count} hammadde yüklendi.";
             }
@@ -407,38 +417,55 @@ namespace UretimOSKesim
             }
         }
 
-        // Ürün kodu/kartı oluşturma ekranını açar, kartı ÜretimOS'a kaydeder ve
-        // ağacın en üstüne konacak sentetik ürün düğümünü döndürür (iptal veya
-        // kayıt hatasında null).
+        // Ürün kodu/kartı oluşturma ekranını açar (ya da belge zaten bir ürün
+        // kartıyla eşleşmişse TEKRAR SORMADAN onu kullanır), kartı gerekirse
+        // ÜretimOS'a kaydeder, kalıcılık için belgenin KENDİ URETIMOS_KOD özel
+        // alanına yazar (EslesmeYazVeUygula'daki AYNI gerekçe) ve ağacın en
+        // üstüne konacak sentetik ürün düğümünü döndürür (iptal veya kayıt
+        // hatasında null). _kokKart/_kokTip de bu karta ayarlanır — böylece üst
+        // özet/Kaydet/Rota panelleri de aynı kökü yansıtır.
         private async System.Threading.Tasks.Task<BilesenDugumu> UrunKokuOlustur()
         {
-            JObject urunKarti;
-            using (var dlg = new YeniKartDialog("urun", _hammaddeler))
+            JObject urunKarti = null;
+            string mevcutKod = KesimListesiCikarici.OzelAlanOku(_hedefModel, OzelAlanlar.KOD);
+            if (!string.IsNullOrWhiteSpace(mevcutKod))
+                urunKarti = _urunler.OfType<JObject>().FirstOrDefault(k => (string)k["kod"] == mevcutKod);
+
+            if (urunKarti == null)
             {
-                dlg.Text = "Ürün Kodu ve Kartı Oluştur — reçetenin en üst kalemi";
-                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return null;
-                urunKarti = dlg.SonucKart;
+                string dosyaAdi = Path.GetFileNameWithoutExtension(_hedefModel.GetPathName());
+                using (var dlg = new YeniKartDialog("urun", _hammaddeler, dosyaAdi))
+                {
+                    dlg.Text = "Ürün Kodu ve Kartı Oluştur — reçetenin en üst kalemi";
+                    if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return null;
+                    urunKarti = dlg.SonucKart;
+                }
+
+                bool basarili;
+                try
+                {
+                    basarili = await _istemci.ToplukaEkleGuncelle("urunler", new List<object> { urunKarti }, new List<object>());
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("UrunKokuOlustur HATA: " + ex);
+                    basarili = false;
+                }
+                if (!basarili)
+                {
+                    MessageBox.Show("Ürün kartı ÜretimOS'a kaydedilemedi (sunucu reddetti). Ağaç ürün kökü olmadan açılacak.",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return null;
+                }
+                _urunler.Add(urunKarti);
+                PaletiFiltrele();
+
+                string kod = (string)urunKarti["kod"];
+                try { KesimListesiCikarici.OzelAlanYaz(_hedefModel, OzelAlanlar.KOD, kod); }
+                catch (Exception ex) { Tanilama.Kaydet("UrunKokuOlustur (URETIMOS_KOD yazılamadı) HATA: " + ex); }
             }
 
-            bool basarili;
-            try
-            {
-                basarili = await _istemci.ToplukaEkleGuncelle("urunler", new List<object> { urunKarti }, new List<object>());
-            }
-            catch (Exception ex)
-            {
-                Tanilama.Kaydet("UrunKokuOlustur HATA: " + ex);
-                basarili = false;
-            }
-            if (!basarili)
-            {
-                MessageBox.Show("Ürün kartı ÜretimOS'a kaydedilemedi (sunucu reddetti). Ağaç ürün kökü olmadan açılacak.",
-                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return null;
-            }
-            _urunler.Add(urunKarti);
-            PaletiFiltrele();
-
+            KokKartAyarla("urun", urunKarti);
             return new BilesenDugumu
             {
                 Sinif = "urun",
@@ -961,17 +988,13 @@ namespace UretimOSKesim
                 }
 
                 var etkilenenReceteler = new List<object>();
-                foreach (var d in tumDugumler)
+                void ReceteKurEkle(string ustTip, JObject ustKart, List<BilesenDugumu> cocuklar)
                 {
-                    if (d.BelgeYuklenemedi) continue;
-                    if (!kartCozumleri.TryGetValue(d, out var ustCozum) || ustCozum.kart == null || ustCozum.tip == "hammadde") continue;
-                    if (d.Cocuklar.Count == 0) continue;
-
-                    var recete = ReceteBul(ustCozum.tip, ustCozum.kart);
+                    var recete = ReceteBul(ustTip, ustKart);
                     var kalemler = (JArray)recete["kalemler"];
                     bool receteDegisti = false;
 
-                    var gruplar = d.Cocuklar.Where(c => kartCozumleri.ContainsKey(c) && kartCozumleri[c].kart != null)
+                    var gruplar = cocuklar.Where(c => kartCozumleri.ContainsKey(c) && kartCozumleri[c].kart != null)
                         .GroupBy(c => kartCozumleri[c]);
                     foreach (var grup in gruplar)
                     {
@@ -1006,6 +1029,22 @@ namespace UretimOSKesim
                         receteDegisti = true;
                     }
                     if (receteDegisti && !etkilenenReceteler.Contains(recete)) etkilenenReceteler.Add(recete);
+                }
+
+                // NOT: _bilesenKokListesi artık (UrunKokuOlustur kurulduysa)
+                // TEK bir sentetik "urun" düğümü (urunKoku) içeriyor, gerçek
+                // üst düzey SolidWorks bileşenleri onun Cocuklar'ı — bu yüzden
+                // urunKoku da tumDugumler'in İÇİNDE ve aşağıdaki döngü onun
+                // reçetesini de (kendi Cocuklar'ından) AYNEN diğer düğümler
+                // gibi kurar; kök kart için AYRI bir çağrıya gerek YOK (aksi
+                // halde urunKarti kendi reçetesine kendini referans eden bir
+                // kalem olarak eklenirdi).
+                foreach (var d in tumDugumler)
+                {
+                    if (d.BelgeYuklenemedi) continue;
+                    if (!kartCozumleri.TryGetValue(d, out var ustCozum) || ustCozum.kart == null || ustCozum.tip == "hammadde") continue;
+                    if (d.Cocuklar.Count == 0) continue;
+                    ReceteKurEkle(ustCozum.tip, ustCozum.kart, d.Cocuklar);
                 }
 
                 if (etkilenenReceteler.Count > 0)

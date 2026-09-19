@@ -40,11 +40,18 @@ namespace UretimOSKesim
         public JObject SonucKart { get; private set; }
 
         private TextBox _kodKutusu, _adKutusu;
+        private readonly string _baslangicAdi;
 
-        public YeniKartDialog(string kartTipi, JArray hammaddelerListesi)
+        // baslangicAdi: "ürün ağacı komutunu açınca dosyanın adı ile yeni
+        // ürün kartı ekranı çıksın" — verilirse Kod VE Ad alanları bununla ÖN
+        // DOLDURULUR (ikisi de düzenlenebilir kalır, tahmin/kilitli DEĞİL —
+        // BenzersizKodUret'teki "gerçek bileşen adını kullan, uydurma"
+        // ilkesiyle aynı).
+        public YeniKartDialog(string kartTipi, JArray hammaddelerListesi, string baslangicAdi = null)
         {
             _kartTipi = kartTipi;
             _hammaddelerListesi = hammaddelerListesi ?? new JArray();
+            _baslangicAdi = baslangicAdi;
             KurulumYap();
         }
 
@@ -125,6 +132,11 @@ namespace UretimOSKesim
             Satir(hammaddeAilesi ? "Stok Kodu" : "Kod *", _kodKutusu);
             _adKutusu = new TextBox();
             Satir("Ad *", _adKutusu);
+            if (!string.IsNullOrWhiteSpace(_baslangicAdi))
+            {
+                _kodKutusu.Text = _baslangicAdi;
+                _adKutusu.Text = _baslangicAdi;
+            }
 
             // ── HAMMADDE AİLESİ (plaka/kenar_bandi/hirdavat ORTAK alanları) ──
             TextBox kategoriKutusu = null, fireYuzdeKutusu = null, birimFiyatKutusu = null,
