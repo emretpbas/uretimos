@@ -158,7 +158,7 @@ namespace UretimOSKesim
         {
             Text = "ÜretimOS — Reçete Ağacı (Alt Kalem Ekle, Çok Katmanlı)";
             Width = 900;
-            Height = 680;
+            Height = 820;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(760, 520);
 
@@ -264,7 +264,12 @@ namespace UretimOSKesim
                 Text = "SolidWorks bileşen ağacı — kod/ad'a tıkla (✓/⚠/—), sınıf seç, sürükle-bırakla taşı",
                 Dock = DockStyle.Top, Height = 24
             };
-            _bilesenAgaciGorunumu = new Panel { Dock = DockStyle.Top, Height = 240, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle };
+            // Kullanıcı isteği: "bu bölümü biraz genişletelim" — sabit 240px
+            // yerine daha büyük bir varsayılan yükseklik VERİLİR; aşağıdaki
+            // Splitter ile kullanıcı bu sınırı istediği gibi sürükleyip
+            // büyütüp küçültebilir (bkz. bilesenSplitter, aşağıda eklenir).
+            _bilesenAgaciGorunumu = new Panel { Dock = DockStyle.Top, Height = 420, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle };
+            var bilesenSplitter = new Splitter { Dock = DockStyle.Top, Height = 4, BackColor = Color.Silver };
 
             // Kullanıcı isteği: "direkt bu haliyle uretimosa aktaralım ve
             // üretimos yeni kartlar ve kodları direkt kaydetsin" — tüm ağacı
@@ -290,6 +295,11 @@ namespace UretimOSKesim
             _agacGorunumu = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle };
             sagPanel.Controls.Add(_agacGorunumu);
             sagPanel.Controls.Add(agacBaslik);
+            // NOT: Splitter, kendisinden SONRA eklenen aynı-kenarlı kontrolü
+            // (burada _bilesenAgaciGorunumu) yeniden boyutlandırır — bu yüzden
+            // agacBaslik'tan SONRA, _bilesenAgaciGorunumu'ndan ÖNCE eklenmesi
+            // gerekir (bkz. .NET Splitter'ın standart kullanım deseni).
+            sagPanel.Controls.Add(bilesenSplitter);
             sagPanel.Controls.Add(_bilesenAgaciGorunumu);
             sagPanel.Controls.Add(bilesenAraPanel);
             sagPanel.Controls.Add(bilesenBaslik);
@@ -403,12 +413,23 @@ namespace UretimOSKesim
             foreach (var d in _bilesenKokListesi)
                 BilesenSatirlariTopla(satirlar, d, 0);
 
+            // Kullanıcı isteği: "birşey seçince sıra kayıyor tekrar onu bulmam
+            // gerekiyor" — Controls.Clear() kaydırma konumunu sıfırlar; her
+            // sınıf/eşleşme değişikliğinde TÜM satırlar yeniden oluşturulduğu
+            // için (bkz. yukarıdaki NOT), kaydırma konumu elle saklanıp geri
+            // yüklenmezse kullanıcı üzerinde çalıştığı satırı kaybediyordu.
+            var kaydirmaKonumu = _bilesenAgaciGorunumu.AutoScrollPosition;
+
             _bilesenAgaciGorunumu.SuspendLayout();
             _bilesenAgaciGorunumu.Controls.Clear();
             // Dock=Top TERS sırada eklenir (bkz. KurulumYap'ın başındaki NOT).
             for (int i = satirlar.Count - 1; i >= 0; i--)
                 _bilesenAgaciGorunumu.Controls.Add(satirlar[i]);
             _bilesenAgaciGorunumu.ResumeLayout();
+
+            // AutoScrollPosition GETTER'ı zaten negatif döner — geri yazarken
+            // TEKRAR negatiflemek gerekir (WinForms'un kendi tuhaf kuralı).
+            _bilesenAgaciGorunumu.AutoScrollPosition = new Point(-kaydirmaKonumu.X, -kaydirmaKonumu.Y);
         }
 
         private void BilesenSatirlariTopla(List<Control> hedefListe, BilesenDugumu dugum, int derinlik)
