@@ -281,7 +281,18 @@ namespace UretimOSKesim
             var bilesenAraPanel = new Panel { Dock = DockStyle.Top, Height = 30 };
             var receteOlarakAktarBtn = new Button { Text = "📤 Reçete Olarak ÜretimOS'a Aktar…", Dock = DockStyle.Left, Width = 240 };
             receteOlarakAktarBtn.Click += async (s, e) => await BilesenAgaciniReceteOlarakAktar();
+            // Kullanıcı isteği: "solidworkste bileşen ağacı için ayrı xml
+            // altta çıkan üretimos reçete ağacı için ayrı xml almak için
+            // ayrı sekmeler oluştur" — bu, YUKARIDAKİ SolidWorks bileşen
+            // ağacının (Sınıf/ölçü/kenar bandı taslağı dahil, henüz
+            // ÜretimOS'a hiç aktarılmamış olsa BİLE) kendi XML çıktısı;
+            // alttaki "Reçeteyi XML Olarak Dışa Aktar…" ise sunucudaki
+            // GERÇEK kaydedilmiş reçete ağacını dışa aktarır — ikisi
+            // BİLEREK ayrı butonlar/dosyalardır, birbirini kapsamaz.
+            var bilesenXmlBtn = new Button { Text = "Bileşen Ağacını XML Olarak Dışa Aktar…", Dock = DockStyle.Left, Width = 240 };
+            bilesenXmlBtn.Click += (s, e) => BilesenAgaciniXmlOlarakDisaAktar();
             bilesenAraPanel.Controls.Add(receteOlarakAktarBtn);
+            bilesenAraPanel.Controls.Add(bilesenXmlBtn);
 
             // Kullanıcı isteği: "bu ekranla solidworksteki reçete ağaç
             // editörünü aynı esneklikte olsun" — TreeView'daki çift tık/sağ
@@ -2887,6 +2898,85 @@ namespace UretimOSKesim
             return eleman;
         }
 
+        // Kullanıcı isteği: "solidworkste bileşen ağacı için ayrı xml
+        // altta çıkan üretimos reçete ağacı için ayrı xml almak için ayrı
+        // sekmeler oluştur" — bu, YUKARIDAKİ SolidWorks bileşen ağacının
+        // (henüz ÜretimOS'a hiç aktarılmamış olsa BİLE — Sınıf, taslak
+        // ölçü, kenar bandı ataması, dahil/hariç işareti dahil) kendi XML
+        // çıktısıdır; ReceteyiXmlOlarakDisaAktar (aşağıda) ise sunucudaki
+        // GERÇEK kaydedilmiş reçeteyi dışa aktarır — ikisi BİLEREK ayrı
+        // butonlar/dosyalardır.
+        private void BilesenAgaciniXmlOlarakDisaAktar()
+        {
+            if (_bilesenKokListesi == null || _bilesenKokListesi.Count == 0)
+            {
+                MessageBox.Show("Dışa aktarılacak bir bileşen ağacı yok.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            System.Xml.Linq.XElement BilesenElemaniOlustur(BilesenDugumu d)
+            {
+                var el = new System.Xml.Linq.XElement("Bilesen",
+                    new System.Xml.Linq.XAttribute("ad", d.GosterimAdi ?? ""),
+                    new System.Xml.Linq.XAttribute("kod", d.MevcutKod ?? ""),
+                    new System.Xml.Linq.XAttribute("sinif", d.Sinif ?? ""),
+                    new System.Xml.Linq.XAttribute("elleEklendi", d.ElleEklendi),
+                    new System.Xml.Linq.XAttribute("aktarimaDahil", d.AktarimaDahil),
+                    new System.Xml.Linq.XAttribute("belgeYuklenemedi", d.BelgeYuklenemedi));
+
+                if (!d.BelgeYuklenemedi && (d.Sinif == "yarimamul" || d.Sinif == "plaka"))
+                {
+                    el.Add(new System.Xml.Linq.XElement("Olcu",
+                        new System.Xml.Linq.XAttribute("boy", d.TaslakBoyMm.ToString(CultureInfo.InvariantCulture)),
+                        new System.Xml.Linq.XAttribute("en", d.TaslakEnMm.ToString(CultureInfo.InvariantCulture)),
+                        new System.Xml.Linq.XAttribute("kalinlik", d.TaslakKalinlikMm.ToString(CultureInfo.InvariantCulture)),
+                        new System.Xml.Linq.XAttribute("kaynak", d.OlcuKaynagi ?? "")));
+                }
+                if (!d.BelgeYuklenemedi && d.Sinif == "plaka")
+                {
+                    var kenarEl = new System.Xml.Linq.XElement("KenarBantlari");
+                    void KenarEkle(string yon, string bantId)
+                    {
+                        if (string.IsNullOrEmpty(bantId)) return;
+                        var bant = _hammaddeler?.OfType<JObject>().FirstOrDefault(h => (string)h["id"] == bantId);
+                        kenarEl.Add(new System.Xml.Linq.XElement(yon,
+                            new System.Xml.Linq.XAttribute("kod", bant != null ? (string)bant["stokKodu"] ?? "" : ""),
+                            new System.Xml.Linq.XAttribute("ad", bant != null ? (string)bant["ad"] ?? "" : "")));
+                    }
+                    KenarEkle("On", d.KenarOnId);
+                    KenarEkle("Arka", d.KenarArkaId);
+                    KenarEkle("Sol", d.KenarSolId);
+                    KenarEkle("Sag", d.KenarSagId);
+                    if (kenarEl.HasElements) el.Add(kenarEl);
+                }
+                foreach (var c in d.Cocuklar) el.Add(BilesenElemaniOlustur(c));
+                return el;
+            }
+
+            var kokEleman = new System.Xml.Linq.XElement("BilesenAgaci",
+                new System.Xml.Linq.XAttribute("disaAktarmaTarihi", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")));
+            foreach (var d in _bilesenKokListesi) kokEleman.Add(BilesenElemaniOlustur(d));
+
+            using (var kaydetDialog = new SaveFileDialog { Filter = "XML dosyası|*.xml", FileName = "bilesen_agaci.xml" })
+            {
+                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                try
+                {
+                    new System.Xml.Linq.XDocument(
+                        new System.Xml.Linq.XDeclaration("1.0", "utf-8", "yes"),
+                        kokEleman
+                    ).Save(kaydetDialog.FileName);
+                    _durumEtiketi.ForeColor = Color.DarkGreen;
+                    _durumEtiketi.Text = "✓ Bileşen ağacı XML olarak dışa aktarıldı: " + kaydetDialog.FileName;
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar HATA: " + ex);
+                    MessageBox.Show("XML dosyası yazılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
         // static: PaletOgesi.ToString() (iç içe sınıf) de kullanır.
         private static string TipGosterimAdi(string tip) => tip == "urun" ? "Ürün" : tip == "yarimamul" ? "Yarı Mamül"
             : tip == "altmontaj" ? "Alt Montaj" : tip == "paket" ? "Paket" : tip;
@@ -2923,8 +3013,27 @@ namespace UretimOSKesim
                 return;
             }
 
-            double miktar = MiktarSor("Miktar (ADET)", 1);
-            if (miktar <= 0) return;
+            // Kullanıcı isteği: "yarımamüle plaka çekerken sadece adet
+            // çıkıyor ... plaka seçtiğimde uretimostaki gibi kaba en boy
+            // net en boy hangi kenara hangi bantın çekileceğini
+            // seçebileceğim ... ekranı ekle" — web'in "Kalem Ekle (Taslak)"
+            // ekranıyla AYNI alanlar (page_recete_agac.js).
+            var eklenenKart = FindKart(oge.KalemTipi, oge.Id);
+            bool plakaMi = oge.KalemTipi == "hammadde" && eklenenKart != null && (string)eklenenKart["tip"] == "plaka";
+
+            double miktar;
+            JObject olcu = null, kenarBantlari = null;
+            if (plakaMi)
+            {
+                var sonuc = PlakaMiktarOlcuKenarBandiSor((string)eklenenKart["birim"] ?? "M2");
+                if (sonuc == null) return;
+                (miktar, olcu, kenarBantlari) = sonuc.Value;
+            }
+            else
+            {
+                miktar = MiktarSor("Miktar (ADET)", 1);
+                if (miktar <= 0) return;
+            }
 
             var recete = ReceteBulVeyaOlustur(hedefTip, hedefKart);
             var yeniKalem = new JObject
@@ -2935,6 +3044,8 @@ namespace UretimOSKesim
                 ["miktar"] = miktar,
                 ["birim"] = "ADET"
             };
+            if (olcu != null) yeniKalem["olcu"] = olcu;
+            if (kenarBantlari != null && kenarBantlari.Count > 0) yeniKalem["kenarBantlari"] = kenarBantlari;
             ((JArray)recete["kalemler"]).Add(yeniKalem);
             AgaciYenidenCiz();
             _durumEtiketi.ForeColor = Color.DarkOrange;
@@ -2958,6 +3069,107 @@ namespace UretimOSKesim
                     NumberStyles.Any, CultureInfo.InvariantCulture, out double sonuc)
                     ? sonuc : 0;
             }
+        }
+
+        // Web'in "Kalem Ekle (Taslak)" → "Miktar Girin" ekranıyla AYNI alanlar
+        // (page_recete_agac.js) — bir yarımamül/paket/alt montaj/ürün
+        // reçetesine PLAKA eklenirken sadece miktar değil, kaba/net en-boy
+        // ve 4 kenardan hangisine hangi kenar bandının çekileceği de
+        // sorulur. İptal edilirse null döner.
+        private (double miktar, JObject olcu, JObject kenarBantlari)? PlakaMiktarOlcuKenarBandiSor(string birim)
+        {
+            double sonucMiktar = 0;
+            JObject sonucOlcu = null, sonucKenar = null;
+            bool tamamlandi = false;
+
+            using (var f = new Form { Text = "Miktar / Ölçü / Kenar Bandı", Width = 420, Height = 520, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            {
+                var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14), AutoScroll = true };
+                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+                void Satir(string etiket, Control kontrol)
+                {
+                    panel.RowCount++;
+                    panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                    var lbl = new Label { Text = etiket, AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 6, 0, 0) };
+                    kontrol.Dock = DockStyle.Fill;
+                    kontrol.Margin = new Padding(3, 3, 3, 8);
+                    panel.Controls.Add(lbl);
+                    panel.Controls.Add(kontrol);
+                }
+
+                var miktarKutu = new TextBox { Text = "1" };
+                Satir("Miktar", miktarKutu);
+                var birimKutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+                birimKutu.Items.AddRange(new object[] { "ADET", "M2", "METRE" });
+                birimKutu.SelectedItem = birimKutu.Items.Contains(birim) ? birim : "ADET";
+                Satir("Birim", birimKutu);
+
+                var kabaEnKutu = new TextBox();
+                Satir("Kaba En (mm)", kabaEnKutu);
+                var kabaBoyKutu = new TextBox();
+                Satir("Kaba Boy (mm)", kabaBoyKutu);
+                var netEnKutu = new TextBox();
+                Satir("Net En (mm)", netEnKutu);
+                var netBoyKutu = new TextBox();
+                Satir("Net Boy (mm)", netBoyKutu);
+
+                var kenarBandilari = _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(h => OgeyeHammadde(h, "Kenar Bandı")).ToList();
+                ComboBox KenarKutusuOlustur()
+                {
+                    var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+                    kutu.Items.Add("— Yok —");
+                    foreach (var kb in kenarBandilari) kutu.Items.Add(kb);
+                    kutu.SelectedIndex = 0;
+                    return kutu;
+                }
+                var onKutu = KenarKutusuOlustur();
+                Satir("Ön (Net Boy)", onKutu);
+                var arkaKutu = KenarKutusuOlustur();
+                Satir("Arka (Net Boy)", arkaKutu);
+                var sagKutu = KenarKutusuOlustur();
+                Satir("Sağ (Net En)", sagKutu);
+                var solKutu = KenarKutusuOlustur();
+                Satir("Sol (Net En)", solKutu);
+
+                var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
+                var tamamBtn = new Button { Text = "Taslağa Ekle", Dock = DockStyle.Right, Width = 120 };
+                var iptalBtn = new Button { Text = "Vazgeç", Dock = DockStyle.Right, Width = 90 };
+                altPanel.Controls.Add(tamamBtn);
+                altPanel.Controls.Add(iptalBtn);
+                f.CancelButton = iptalBtn;
+
+                double ParseOpsiyonel(TextBox t) => double.TryParse((t.Text ?? "").Trim().Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out double v) ? v : 0;
+
+                tamamBtn.Click += (s, e) =>
+                {
+                    if (!double.TryParse(miktarKutu.Text.Trim().Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out sonucMiktar) || sonucMiktar <= 0)
+                    {
+                        MessageBox.Show("Geçerli bir miktar girin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    sonucOlcu = new JObject
+                    {
+                        ["kabaEn"] = ParseOpsiyonel(kabaEnKutu),
+                        ["kabaBoy"] = ParseOpsiyonel(kabaBoyKutu),
+                        ["netEn"] = ParseOpsiyonel(netEnKutu),
+                        ["netBoy"] = ParseOpsiyonel(netBoyKutu)
+                    };
+                    sonucKenar = new JObject();
+                    if (onKutu.SelectedItem is PaletOgesi on) sonucKenar["on"] = on.Id;
+                    if (arkaKutu.SelectedItem is PaletOgesi arka) sonucKenar["arka"] = arka.Id;
+                    if (sagKutu.SelectedItem is PaletOgesi sag) sonucKenar["sag"] = sag.Id;
+                    if (solKutu.SelectedItem is PaletOgesi sol) sonucKenar["sol"] = sol.Id;
+                    tamamlandi = true;
+                    f.DialogResult = DialogResult.OK;
+                };
+                iptalBtn.Click += (s, e) => f.DialogResult = DialogResult.Cancel;
+
+                f.Controls.Add(panel);
+                f.Controls.Add(altPanel);
+                if (f.ShowDialog(this) != DialogResult.OK || !tamamlandi) return null;
+            }
+            return (sonucMiktar, sonucOlcu, sonucKenar);
         }
 
         // ── KAYDET (ÇOK KATMANLI — TÜM değişen reçeteler + paket ölçüleri TEK
