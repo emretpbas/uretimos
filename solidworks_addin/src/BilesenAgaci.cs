@@ -84,6 +84,7 @@ namespace UretimOSKesim
         {
             var sonuc = new List<BilesenDugumu>();
             if (kokBelge == null) return sonuc;
+            _tanisiYazilanlar.Clear();
 
             if (kokBelge.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
@@ -179,6 +180,7 @@ namespace UretimOSKesim
                         // boyut = boy, ortanca = en, en küçük = kalınlık. Bu bir
                         // KURALDIR (levha parçalarda doğru); sonuç panelde " bb"
                         // etiketiyle gösterilir ve Taslak* alanlarından düzeltilebilir.
+                        OlcuKaynagiTanisiYaz(modelDoc, bilesen, dugum.GosterimAdi);
                         var kutu = SinirKutusuOlcusu(modelDoc, dugum.GosterimAdi);
                         if (kutu.HasValue)
                         {
@@ -290,6 +292,61 @@ namespace UretimOSKesim
             {
                 Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku '" + parcaAdi + "' HATA: " + ex);
                 return null;
+            }
+        }
+
+        // TANI: Equations'ta Length/Width bulunamayan parçanın ölçüsünün
+        // NEREDE tutulduğunu bulmak için özel alanları (dosya + aktif
+        // konfigürasyon), sanal bileşen bilgisini ve ilk feature adlarını
+        // günlüğe yazar. Aynı belge yolu tek Cikar() çağrısında bir kez loglanır.
+        // Davranışı DEĞİŞTİRMEZ — yalnızca Tanilama.Kaydet çağırır.
+        private static readonly HashSet<string> _tanisiYazilanlar = new HashSet<string>();
+
+        private static void OlcuKaynagiTanisiYaz(ModelDoc2 modelDoc, Component2 bilesen, string parcaAdi)
+        {
+            try
+            {
+                string yol = modelDoc.GetPathName();
+                string anahtar = string.IsNullOrEmpty(yol) ? parcaAdi : yol;
+                if (!_tanisiYazilanlar.Add(anahtar)) return;
+
+                var sb = new System.Text.StringBuilder();
+                sb.Append("BilesenAgaci OlcuTanisi '").Append(parcaAdi).Append("': yol=").Append(string.IsNullOrEmpty(yol) ? "(yok/sanal)" : yol);
+                if (bilesen != null)
+                    sb.Append(" | IsVirtual=").Append(bilesen.IsVirtual).Append(" | Konf=").Append(bilesen.ReferencedConfiguration);
+
+                string aktifKonf = null;
+                try { aktifKonf = modelDoc.ConfigurationManager.ActiveConfiguration.Name; } catch { }
+                foreach (string konf in new[] { "", aktifKonf })
+                {
+                    if (konf == null) continue;
+                    var cpm = modelDoc.Extension.CustomPropertyManager[konf];
+                    string[] adlar = cpm.GetNames() as string[];
+                    sb.Append(" | OZEL[").Append(konf == "" ? "dosya" : konf).Append("]=");
+                    if (adlar == null || adlar.Length == 0) { sb.Append("(yok)"); continue; }
+                    var parcalar = new List<string>();
+                    foreach (string ad in adlar)
+                    {
+                        cpm.Get5(ad, false, out string deger, out string cozulmus, out _);
+                        parcalar.Add(ad + "=" + (string.IsNullOrWhiteSpace(cozulmus) ? deger : cozulmus));
+                    }
+                    sb.Append(string.Join("; ", parcalar));
+                }
+
+                var feature = new List<string>();
+                var f = (Feature)modelDoc.FirstFeature();
+                while (f != null && feature.Count < 25)
+                {
+                    feature.Add(f.Name + ":" + f.GetTypeName2());
+                    f = (Feature)f.GetNextFeature();
+                }
+                sb.Append(" | FEATURE=").Append(string.Join(", ", feature));
+
+                Tanilama.Kaydet(sb.ToString());
+            }
+            catch (System.Exception ex)
+            {
+                Tanilama.Kaydet("BilesenAgaci OlcuTanisi '" + parcaAdi + "' HATA: " + ex.Message);
             }
         }
 
