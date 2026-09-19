@@ -164,11 +164,17 @@ namespace UretimOSKesim
                     // Cikar()'ın başında TÜM montaj için tek seferde
                     // ResolveAllLightWeightComponents ile çözülüyor (bkz.
                     // yukarıdaki NOT) — burada tekrar bir şey yapmaya gerek yok.
-                    var denklemOlcusu = EquationsOlcuOku(modelDoc, dugum.GosterimAdi);
+                    // GERÇEK TANI KANITI (OlcuTanisi logu): SWOOD panelleri
+                    // ölçüyü Equations'ta DEĞİL, dosya seviyesindeki
+                    // Length/Width/Thickness ÖZEL ALANLARINDA tutuyor
+                    // (ör. "Sol Yan_1": Length=882; Width=470; Thickness=18).
+                    // Bu yüzden önce özel alanlar, sonra Equations denenir.
+                    var alanOlcusu = SwoodOzelAlanOlcusuOku(modelDoc);
+                    var denklemOlcusu = alanOlcusu ?? EquationsOlcuOku(modelDoc, dugum.GosterimAdi);
                     if (denklemOlcusu.HasValue)
                     {
                         dugum.OlcuVar = true;
-                        dugum.OlcuKaynagi = "equations";
+                        dugum.OlcuKaynagi = alanOlcusu.HasValue ? "ozelalan" : "equations";
                         dugum.BoyMm = denklemOlcusu.Value.boy; dugum.EnMm = denklemOlcusu.Value.en; dugum.KalinlikMm = denklemOlcusu.Value.kalinlik;
                         dugum.TaslakBoyMm = denklemOlcusu.Value.boy; dugum.TaslakEnMm = denklemOlcusu.Value.en; dugum.TaslakKalinlikMm = denklemOlcusu.Value.kalinlik;
                     }
@@ -293,6 +299,25 @@ namespace UretimOSKesim
                 Tanilama.Kaydet("BilesenAgaci EquationsOlcuOku '" + parcaAdi + "' HATA: " + ex);
                 return null;
             }
+        }
+
+        // Dosya seviyesindeki "Length"/"Width"/"Thickness" özel alanlarını
+        // (SWOOD'un yazdığı, mm) okur. Boy/En ikisi de sayı değilse null —
+        // TAHMİN YOK, çağıran Equations'a/sınır kutusuna düşer.
+        private static (double boy, double en, double kalinlik)? SwoodOzelAlanOlcusuOku(ModelDoc2 modelDoc)
+        {
+            double? Oku(string alan)
+            {
+                string s = KesimListesiCikarici.OzelAlanOku(modelDoc, alan);
+                if (string.IsNullOrWhiteSpace(s)) return null;
+                s = s.Trim().Replace(',', '.');
+                if (s.EndsWith("mm", System.StringComparison.OrdinalIgnoreCase)) s = s.Substring(0, s.Length - 2).Trim();
+                return double.TryParse(s, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double d) ? d : (double?)null;
+            }
+            var boy = Oku("Length"); var en = Oku("Width"); var kalinlik = Oku("Thickness");
+            if (!boy.HasValue || !en.HasValue) return null;
+            return (boy.Value, en.Value, kalinlik ?? 0);
         }
 
         // TANI: Equations'ta Length/Width bulunamayan parçanın ölçüsünün

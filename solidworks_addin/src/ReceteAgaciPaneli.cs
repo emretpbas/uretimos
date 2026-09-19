@@ -1085,7 +1085,7 @@ namespace UretimOSKesim
             string ekBilgi = "";
             if (dugum.OlcuVar)
             {
-                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : dugum.OlcuKaynagi == "bbox" ? " bb" : "";
+                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : dugum.OlcuKaynagi == "ozelalan" ? " oa" : dugum.OlcuKaynagi == "bbox" ? " bb" : "";
                 ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm{kaynakEtiket})";
             }
 
@@ -1756,19 +1756,23 @@ namespace UretimOSKesim
         {
             try
             {
-                object ustBilesenObj = dugum.Bilesen.GetParent();
-                AssemblyDoc sahipMontaj = (ustBilesenObj as Component2)?.GetModelDoc2() as AssemblyDoc ?? _hedefModel as AssemblyDoc;
-                if (sahipMontaj == null) return;
-
-                string mevcutAd = dugum.Bilesen.Name2;
+                // AssemblyDoc.RenameComponent2 bu interop sürümünde YOK (CS1061);
+                // IComponent2.Name2 ayarlanabilir (get/set) ve bileşen örneğini
+                // yeniden adlandırır. İç içe bileşenlerde Name2 "Alt-1/Parca-1"
+                // biçimindedir — yalnızca son parça (yaprak ad) değiştirilir.
+                string mevcutTam = dugum.Bilesen.Name2;
+                int bolme = mevcutTam.LastIndexOf('/');
+                string onEk = bolme >= 0 ? mevcutTam.Substring(0, bolme + 1) : "";
+                string mevcutAd = bolme >= 0 ? mevcutTam.Substring(bolme + 1) : mevcutTam;
                 var gecersizler = Path.GetInvalidFileNameChars();
                 string temizAd = new string(yeniAd.Select(c => gecersizler.Contains(c) ? '_' : c).ToArray()).Trim();
                 if (string.IsNullOrEmpty(temizAd) || string.Equals(mevcutAd, temizAd, StringComparison.OrdinalIgnoreCase)) return;
 
-                bool basarili = sahipMontaj.RenameComponent2(mevcutAd, temizAd);
+                dugum.Bilesen.Name2 = temizAd;
+                bool basarili = string.Equals(dugum.Bilesen.Name2, onEk + temizAd, StringComparison.OrdinalIgnoreCase);
                 if (!basarili)
                 {
-                    Tanilama.Kaydet($"SolidWorksBilesenAdiniDegistir: RenameComponent2 başarısız — '{mevcutAd}' -> '{temizAd}'");
+                    Tanilama.Kaydet($"SolidWorksBilesenAdiniDegistir: Name2 ataması başarısız — '{mevcutAd}' -> '{temizAd}'");
                     _durumEtiketi.ForeColor = Color.DarkOrange;
                     _durumEtiketi.Text = "Kart güncellendi ama SolidWorks bileşen adı değiştirilemedi (isim çakışması olabilir — log'a bakın).";
                 }
