@@ -7,6 +7,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
 
 namespace UretimOSKesim
 {
@@ -175,7 +176,7 @@ namespace UretimOSKesim
             _rotaPanel = new Panel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(10, 4, 10, 4), Visible = false };
             _rotaKutusu = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
             var rotaBtn = new Button { Text = "Rota Seç / Oluştur…", Dock = DockStyle.Right, Width = 150 };
-            rotaBtn.Click += async (s, e) => { if (_kokKart != null) { await RotaSecVeyaOlusturDialogAc(_kokKart); UstBilgiPanelleriGuncelle(); } };
+            rotaBtn.Click += async (s, e) => { if (_kokKart != null) { await RotaSecVeyaOlusturDialogAc("yarimamul", _kokKart); UstBilgiPanelleriGuncelle(); } };
             _rotaPanel.Controls.Add(_rotaKutusu);
             _rotaPanel.Controls.Add(rotaBtn);
 
@@ -310,6 +311,18 @@ namespace UretimOSKesim
             _durumEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DarkSlateGray };
             _kaydetBtn = new Button { Text = "✓ ÜretimOS'a Kaydet", Dock = DockStyle.Right, Width = 160, Enabled = false, Font = new Font(Font, FontStyle.Bold) };
             _kaydetBtn.Click += async (s, e) => await KaydetTikla();
+            // Kullanıcı isteği: "solidworkse kaydet dosyası ekleyelim ve buna
+            // basınca tüm dosya isimleri ilgili reçete bağlantıları ve tüm
+            // çalışmalar kaydedilsin, dosyayı açtığımda artık hazırlanan
+            // üretimos reçetesi gelsin" — URETIMOS_KOD yazma/bileşen adı
+            // değiştirme (EslesmeYazVeUygula, BilesenKartDuzenle,
+            // BilesenAgaciniReceteOlarakAktar) şu ana kadar SADECE AÇIK
+            // BELGENİN BELLEĞİNDE kalıyordu; dosya SolidWorks'te elle
+            // kaydedilmezse bu bilgiler kaybolur ve dosya tekrar açıldığında
+            // eşleşme görünmez. Bu buton, ağaçtaki TÜM parça/montaj
+            // belgelerini (ve kök montajı) tek seferde diske kaydeder.
+            var solidworksKaydetBtn = new Button { Text = "💾 SolidWorks'e Kaydet", Dock = DockStyle.Right, Width = 190 };
+            solidworksKaydetBtn.Click += (s, e) => TumBilesenleriSolidWorksKaydet();
             // Kullanıcı isteği: "Üretimostaki reçeteleri xml formatında
             // kaydedelim ve her satırın benzersiz unique id bilgiside olsun"
             // — ÜretimOS'un kendi veri deposu (JSON) DEĞİŞMİYOR, bu SADECE
@@ -320,6 +333,7 @@ namespace UretimOSKesim
             var xmlDisaAktarBtn = new Button { Text = "Reçeteyi XML Olarak Dışa Aktar…", Dock = DockStyle.Right, Width = 210 };
             xmlDisaAktarBtn.Click += (s, e) => ReceteyiXmlOlarakDisaAktar();
             altPanel.Controls.Add(_durumEtiketi);
+            altPanel.Controls.Add(solidworksKaydetBtn);
             altPanel.Controls.Add(_kaydetBtn);
             altPanel.Controls.Add(xmlDisaAktarBtn);
 
@@ -779,6 +793,17 @@ namespace UretimOSKesim
                 var duzenleBtn = new Button { Text = "✎ Düzenle", AutoSize = true, Margin = new Padding(3) };
                 duzenleBtn.Click += async (s, e) => await BilesenKartDuzenle(dugum);
                 satir.Controls.Add(duzenleBtn);
+
+                // Kullanıcı isteği: "rota ekranı ... her yarımamül ve paket
+                // satırına eklensin" — yalnızca zaten bir karta eşleşmiş
+                // yarımamül/paket satırlarında anlamlı (rota, KARTIN kendi
+                // alanıdır — henüz oluşmamış bir karta rota atanamaz).
+                if ((dugum.Sinif == "yarimamul" || dugum.Sinif == "paket") && KodileKartBul(dugum.MevcutKod).kart is JObject rotaKarti)
+                {
+                    var rotaBtnSatir = new Button { Text = "⚙ Rota", AutoSize = true, Margin = new Padding(3) };
+                    rotaBtnSatir.Click += async (s, e) => await RotaSecVeyaOlusturDialogAc(dugum.Sinif, rotaKarti);
+                    satir.Controls.Add(rotaBtnSatir);
+                }
 
                 // Kullanıcı isteği: "eklediğim kalemleri ve parçaları
                 // silebileyim" — bu, gerçek SolidWorks montaj yapısına
@@ -2002,34 +2027,44 @@ namespace UretimOSKesim
         // eklenen HER yarımamül KALEMİ için (sağ tık menüsü) AYNI şekilde
         // açılır — kartın kendisi parametre olarak verilir, ikisi de aynı
         // 'yarimamuller' koleksiyonundaki kaydı günceller.
-        private async System.Threading.Tasks.Task RotaSecVeyaOlusturDialogAc(JObject yarimamulKart)
+        // Kullanıcı isteği: "rota ekranı çok küçük ve okunmuyor ayrıca her
+        // yarımamül ve paket satırına eklensin" — (1) pencere büyütüldü ve
+        // her kontrole nefes payı (Margin/Padding) verildi, (2) kartTipi
+        // parametresi eklendi — önceden bu metot HER ZAMAN "yarimamuller"
+        // koleksiyonuna yazıyordu; bir paket/alt montaj/ürün kartı için
+        // çağrıldığında (bkz. AyarPaneliOlustur'un genel kullanımı) YANLIŞ
+        // koleksiyona PATCH göndermiş olurdu — artık kartTipi'ye göre doğru
+        // koleksiyon seçiliyor.
+        private async System.Threading.Tasks.Task RotaSecVeyaOlusturDialogAc(string kartTipi, JObject kart)
         {
-            using (var dlg = new Form { Text = "Rota Seç / Oluştur — " + yarimamulKart["kod"], Width = 420, Height = 200, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            string koleksiyon = kartTipi == "paket" ? "paketler" : kartTipi == "altmontaj" ? "altMontajlar" : kartTipi == "urun" ? "urunler" : "yarimamuller";
+            using (var dlg = new Form { Text = "Rota Seç / Oluştur — " + kart["kod"], Width = 520, Height = 380, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = new Font(Control.DefaultFont.FontFamily, 10f) })
             {
-                var mevcutRotaId = (string)yarimamulKart["rotaId"];
-                var kutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(10) };
+                var icPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
+                var mevcutRotaId = (string)kart["rotaId"];
+                var kutu = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Height = 30, Margin = new Padding(0, 0, 0, 12) };
                 var rotaListesi = _rotalar.OfType<JObject>().ToList();
                 kutu.Items.Add("— Seçilmedi —");
                 foreach (var r in rotaListesi) kutu.Items.Add($"{r["kod"]} — {r["ad"]}");
                 int mevcutIndex = rotaListesi.FindIndex(r => (string)r["id"] == mevcutRotaId);
                 kutu.SelectedIndex = mevcutIndex >= 0 ? mevcutIndex + 1 : 0;
 
-                var secBtn = new Button { Text = "Bu Rotayı Ata", Dock = DockStyle.Top };
-                var ayirici = new Label { Text = "— veya —", Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
-                var yeniKodKutu = new TextBox { Dock = DockStyle.Top };
-                var yeniKodEtiket = new Label { Text = "Yeni rota kodu:", Dock = DockStyle.Top, Height = 18 };
-                var yeniAdKutu = new TextBox { Dock = DockStyle.Top };
-                var yeniAdEtiket = new Label { Text = "Yeni rota adı:", Dock = DockStyle.Top, Height = 18 };
-                var yeniOlusturBtn = new Button { Text = "+ Yeni Rota Oluştur ve Ata", Dock = DockStyle.Top };
+                var secBtn = new Button { Text = "Bu Rotayı Ata", Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 0, 0, 16) };
+                var ayirici = new Label { Text = "— veya yeni bir rota oluştur —", Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 28, ForeColor = Color.DarkSlateGray };
+                var yeniKodEtiket = new Label { Text = "Yeni rota kodu:", Dock = DockStyle.Top, Height = 22, Padding = new Padding(0, 6, 0, 0) };
+                var yeniKodKutu = new TextBox { Dock = DockStyle.Top, Height = 28, Margin = new Padding(0, 0, 0, 10) };
+                var yeniAdEtiket = new Label { Text = "Yeni rota adı:", Dock = DockStyle.Top, Height = 22, Padding = new Padding(0, 6, 0, 0) };
+                var yeniAdKutu = new TextBox { Dock = DockStyle.Top, Height = 28, Margin = new Padding(0, 0, 0, 14) };
+                var yeniOlusturBtn = new Button { Text = "+ Yeni Rota Oluştur ve Ata", Dock = DockStyle.Top, Height = 34 };
 
                 bool degisti = false;
                 secBtn.Click += async (s, e) =>
                 {
                     string secilenId = kutu.SelectedIndex > 0 ? (string)rotaListesi[kutu.SelectedIndex - 1]["id"] : null;
-                    yarimamulKart["rotaId"] = secilenId;
+                    kart["rotaId"] = secilenId;
                     try
                     {
-                        await _istemci.ToplukaEkleGuncelle("yarimamuller", new List<object>(), new List<object> { yarimamulKart });
+                        await _istemci.ToplukaEkleGuncelle(koleksiyon, new List<object>(), new List<object> { kart });
                         degisti = true;
                         dlg.DialogResult = DialogResult.OK;
                     }
@@ -2053,11 +2088,11 @@ namespace UretimOSKesim
                     // bu panelin kapsamı dışında) — kullanıcı adımları ÜretimOS'un
                     // kendi Rota ekranından tamamlar, TAHMİN EDİLMEZ.
                     var yeniRota = new JObject { ["id"] = "RT-" + Guid.NewGuid().ToString("N").Substring(0, 10).ToUpperInvariant(), ["kod"] = kod, ["ad"] = ad, ["steps"] = new JArray() };
-                    yarimamulKart["rotaId"] = (string)yeniRota["id"];
+                    kart["rotaId"] = (string)yeniRota["id"];
                     try
                     {
                         await _istemci.ToplukaEkleGuncelle("rotalar", new List<object> { yeniRota }, new List<object>());
-                        await _istemci.ToplukaEkleGuncelle("yarimamuller", new List<object>(), new List<object> { yarimamulKart });
+                        await _istemci.ToplukaEkleGuncelle(koleksiyon, new List<object>(), new List<object> { kart });
                         _rotalar.Add(yeniRota);
                         degisti = true;
                         MessageBox.Show(
@@ -2072,16 +2107,17 @@ namespace UretimOSKesim
                     }
                 };
 
-                dlg.Controls.Add(yeniOlusturBtn);
-                dlg.Controls.Add(yeniAdKutu);
-                dlg.Controls.Add(yeniAdEtiket);
-                dlg.Controls.Add(yeniKodKutu);
-                dlg.Controls.Add(yeniKodEtiket);
-                dlg.Controls.Add(ayirici);
-                dlg.Controls.Add(secBtn);
-                dlg.Controls.Add(kutu);
+                icPanel.Controls.Add(yeniOlusturBtn);
+                icPanel.Controls.Add(yeniAdKutu);
+                icPanel.Controls.Add(yeniAdEtiket);
+                icPanel.Controls.Add(yeniKodKutu);
+                icPanel.Controls.Add(yeniKodEtiket);
+                icPanel.Controls.Add(ayirici);
+                icPanel.Controls.Add(secBtn);
+                icPanel.Controls.Add(kutu);
+                dlg.Controls.Add(icPanel);
                 dlg.ShowDialog(this);
-                if (degisti) _durumEtiketi.Text = "✓ Rota güncellendi: " + yarimamulKart["kod"];
+                if (degisti) _durumEtiketi.Text = "✓ Rota güncellendi: " + kart["kod"];
             }
         }
 
@@ -2459,7 +2495,7 @@ namespace UretimOSKesim
             satir.Controls.Add(rotaKutusu);
 
             var yeniRotaBtn = new Button { Text = "+ Yeni Rota", AutoSize = true, Margin = new Padding(3) };
-            yeniRotaBtn.Click += async (s, e) => { await RotaSecVeyaOlusturDialogAc(kart); AgaciYenidenCiz(); };
+            yeniRotaBtn.Click += async (s, e) => { await RotaSecVeyaOlusturDialogAc(tip, kart); AgaciYenidenCiz(); };
             satir.Controls.Add(yeniRotaBtn);
 
             satir.Controls.Add(new Label { Text = "Amortisman (₺):", AutoSize = true, ForeColor = Color.DarkSlateGray, Padding = new Padding(8, 6, 2, 0) });
@@ -2806,6 +2842,81 @@ namespace UretimOSKesim
 
         // ── KAYDET (ÇOK KATMANLI — TÜM değişen reçeteler + paket ölçüleri TEK
         // seferde, ÜretimOS'un kendi reçete sistemine AYNI şekilde aktarılır) ─
+        // "💾 SolidWorks'e Kaydet" — kullanıcı isteği: "buna basınca tüm
+        // dosya isimleri ilgili reçete bağlantıları ve tüm çalışmalar
+        // kaydedilsin dosyayı açtığımda artık hazırlanan üretimos reçetesi
+        // gelsin." Bileşen ağacındaki (kök montaj dahil) HER BENZERSİZ
+        // parça/montaj belgesi tek seferde diske kaydedilir — URETIMOS_KOD
+        // yazma (EslesmeYazVeUygula/BilesenKartDuzenle/toplu aktarım) ve
+        // bileşen adı değiştirme (SolidWorksBilesenAdiniDegistir) şimdiye
+        // kadar sadece BELLEKTE duruyordu; dosya kaydedilmeden kapatılırsa
+        // bu bilgiler kaybolur ve BilesenAgaci.Cikar bir sonraki açılışta
+        // eşleşmeleri GÖREMEZ. GERÇEK SolidWorks API: IModelDoc2.Save3 — bu
+        // makinede henüz canlı test edilmedi, başarısızlık sessizce
+        // yutulmuyor (Tanilama günlüğü + durum etiketinde uyarı).
+        private void TumBilesenleriSolidWorksKaydet()
+        {
+            if (_bilesenKokListesi == null || _bilesenKokListesi.Count == 0)
+            {
+                MessageBox.Show("Kaydedilecek bir bileşen ağacı yok.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var modeller = new List<ModelDoc2>();
+            void Topla(List<BilesenDugumu> liste)
+            {
+                foreach (var d in liste)
+                {
+                    if (d.Model != null && !modeller.Contains(d.Model)) modeller.Add(d.Model);
+                    Topla(d.Cocuklar);
+                }
+            }
+            Topla(_bilesenKokListesi);
+            if (_hedefModel != null && !modeller.Contains(_hedefModel)) modeller.Add(_hedefModel);
+
+            if (modeller.Count == 0)
+            {
+                MessageBox.Show("Kaydedilecek yüklü bir SolidWorks belgesi bulunamadı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (MessageBox.Show(
+                $"{modeller.Count} SolidWorks dosyası (parça/montaj) kaydedilecek — buradaki reçete eşleşmeleri (kod) ve bileşen adı değişiklikleri kalıcı olacak.\n\nDevam edilsin mi?",
+                "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            // Alt parçalar/montajlar ÖNCE, kök montaj (_hedefModel) EN SON
+            // kaydedilir — böylece kök, alttaki değişiklikleri (kod/isim)
+            // zaten güncellenmiş halde referanslar.
+            var siraliListe = modeller.Where(m => !ReferenceEquals(m, _hedefModel))
+                .Concat(_hedefModel != null ? new[] { _hedefModel } : new ModelDoc2[0]);
+
+            int basarili = 0, hatali = 0;
+            foreach (var model in siraliListe)
+            {
+                try
+                {
+                    int hata = 0, uyari = 0;
+                    bool sonuc = model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref hata, ref uyari);
+                    if (sonuc) basarili++;
+                    else
+                    {
+                        hatali++;
+                        Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet: kaydedilemedi '{model.GetPathName()}' hata={hata} uyari={uyari}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    hatali++;
+                    Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet HATA '{model?.GetPathName()}': " + ex);
+                }
+            }
+
+            _durumEtiketi.ForeColor = hatali == 0 ? Color.DarkGreen : Color.DarkOrange;
+            _durumEtiketi.Text = hatali == 0
+                ? $"✓ {basarili} SolidWorks dosyası kaydedildi."
+                : $"⚠ {basarili} dosya kaydedildi, {hatali} dosya kaydedilemedi — Masaüstündeki uretimos_addin_log.txt'ye bakın.";
+        }
+
         private async System.Threading.Tasks.Task KaydetTikla()
         {
             if (_kokKart == null)
