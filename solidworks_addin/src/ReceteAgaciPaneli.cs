@@ -594,14 +594,41 @@ namespace UretimOSKesim
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
 
             var kenarBandilari = _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(h => OgeyeHammadde(h, "Kenar Bandı")).ToList();
+            // Kullanıcı isteği: "kenar bantlarını da arayabileceğim bir arama
+            // ekle" — eski AutoCompleteMode.SuggestAppend, ToString()'in
+            // "[Kenar Bandı] " ön ekiyle BAŞLAMASI yüzünden kod/ada göre
+            // yazarak aramayı ÇALIŞTIRMIYORDU (SuggestAppend yalnızca baştan
+            // eşleşir). Bunun yerine her tuş vuruşunda kod/ad İÇİNDE arayıp
+            // listeyi CANLI filtreleyen bir kutu kullanılıyor (KokKartSeciciAc
+            // ile aynı "içeriyor" mantığı).
             void EkleKenarKutusu(string etiket, Func<string> al, Action<string> yaz)
             {
                 satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Color.DarkSlateGray });
-                var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 150, Margin = new Padding(3), AutoCompleteMode = AutoCompleteMode.SuggestAppend, AutoCompleteSource = AutoCompleteSource.ListItems };
-                kutu.Items.Add("— Yok —");
-                foreach (var kb in kenarBandilari) kutu.Items.Add(kb);
+                var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 170, Margin = new Padding(3), AutoCompleteMode = AutoCompleteMode.None };
+
+                void ListeyiDoldur(string arama)
+                {
+                    kutu.Items.Clear();
+                    kutu.Items.Add("— Yok —");
+                    string a = (arama ?? "").Trim().ToLowerInvariant();
+                    foreach (var kb in kenarBandilari.Where(kb => string.IsNullOrEmpty(a) || (kb.Kod ?? "").ToLowerInvariant().Contains(a) || (kb.Ad ?? "").ToLowerInvariant().Contains(a)))
+                        kutu.Items.Add(kb);
+                }
+                ListeyiDoldur(null);
                 var mevcut = kenarBandilari.FirstOrDefault(kb => kb.Id == al());
                 kutu.Text = mevcut?.ToString() ?? "— Yok —";
+
+                // TextChanged, YALNIZCA yukarıdaki başlangıç ataması BİTTİKTEN
+                // SONRA bağlanır — aksi halde ilk kutu.Text ataması listeyi
+                // (kendi tam etiketiyle eşleşmediği için) BOŞ filtreler.
+                kutu.TextChanged += (s, e) =>
+                {
+                    if (kutu.SelectedItem is PaletOgesi secili && secili.ToString() == kutu.Text) return;
+                    if (kutu.Text == "— Yok —") return;
+                    ListeyiDoldur(kutu.Text);
+                    kutu.DroppedDown = true;
+                    kutu.SelectionStart = kutu.Text.Length;
+                };
                 void Uygula()
                 {
                     var secilen = kutu.SelectedItem as PaletOgesi ?? kenarBandilari.FirstOrDefault(kb => kb.ToString() == kutu.Text);
