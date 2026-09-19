@@ -1642,6 +1642,8 @@ namespace UretimOSKesim
             // KENDİ 'tip' alanından (plaka/kenar_bandi/hirdavat/sarf) okunur.
             string kartTipi = bulunanTip == "hammadde" ? (string)bulunanKart["tip"] : bulunanTip;
 
+            string eskiAd = (string)bulunanKart["ad"];
+
             JObject guncellenmisKart;
             using (var dlg = new YeniKartDialog(kartTipi, _hammaddeler, null, bulunanKart))
             {
@@ -1655,14 +1657,62 @@ namespace UretimOSKesim
             // güncelleyip kalıcı kılıyoruz (EslesmeYazVeUygula'daki AYNI
             // gerekçe).
             string yeniKod = (string)(guncellenmisKart["kod"] ?? guncellenmisKart["stokKodu"]);
+            string yeniAd = (string)guncellenmisKart["ad"];
             dugum.MevcutKod = yeniKod;
-            dugum.GosterimAdi = (string)guncellenmisKart["ad"] ?? dugum.GosterimAdi;
+            dugum.GosterimAdi = yeniAd ?? dugum.GosterimAdi;
             if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniKod))
             {
                 try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniKod); }
                 catch (Exception ex) { Tanilama.Kaydet("BilesenKartDuzenle (URETIMOS_KOD yazılamadı) HATA: " + ex); }
             }
+
+            // Kullanıcı isteği: "burada yaptığım ürün ismi değişiklikleri
+            // solidworksteki part ve assembly component isimlerinide
+            // değiştirsin" — ad gerçekten değiştiyse VE bu gerçek bir
+            // SolidWorks bileşenine karşılık geliyorsa (sentetik "+ Ek
+            // Kalem"/ürün/paket düğümlerinde dugum.Bilesen hep null'dur),
+            // bileşenin FeatureManager ağacındaki adı da eşitlenir.
+            if (dugum.Bilesen != null && !string.IsNullOrWhiteSpace(yeniAd) && !string.Equals(eskiAd, yeniAd, StringComparison.Ordinal))
+            {
+                SolidWorksBilesenAdiniDegistir(dugum, yeniAd);
+            }
+
             BilesenAgaciniCiz();
+        }
+
+        // GERÇEK SolidWorks API: IAssemblyDoc::RenameComponent2(mevcutAd,
+        // yeniAd) — bileşenin FeatureManager ağacındaki adını (ve SolidWorks'ün
+        // kendi "Yeniden Adlandır" davranışıyla AYNI şekilde, bağlı dosyayı da)
+        // değiştirir. Bu, bu makinede HENÜZ CANLI test edilmedi — derleme/
+        // çalışma zamanı hatası çıkarsa TAHMİN EDİLMEDEN gerçek hataya göre
+        // düzeltilecek (bkz. Tanilama günlüğü, EquationsOlcuOku'da olduğu gibi).
+        private void SolidWorksBilesenAdiniDegistir(BilesenDugumu dugum, string yeniAd)
+        {
+            try
+            {
+                object ustBilesenObj = dugum.Bilesen.GetParent();
+                AssemblyDoc sahipMontaj = (ustBilesenObj as Component2)?.GetModelDoc2() as AssemblyDoc ?? _hedefModel as AssemblyDoc;
+                if (sahipMontaj == null) return;
+
+                string mevcutAd = dugum.Bilesen.Name2;
+                var gecersizler = Path.GetInvalidFileNameChars();
+                string temizAd = new string(yeniAd.Select(c => gecersizler.Contains(c) ? '_' : c).ToArray()).Trim();
+                if (string.IsNullOrEmpty(temizAd) || string.Equals(mevcutAd, temizAd, StringComparison.OrdinalIgnoreCase)) return;
+
+                bool basarili = sahipMontaj.RenameComponent2(mevcutAd, temizAd);
+                if (!basarili)
+                {
+                    Tanilama.Kaydet($"SolidWorksBilesenAdiniDegistir: RenameComponent2 başarısız — '{mevcutAd}' -> '{temizAd}'");
+                    _durumEtiketi.ForeColor = Color.DarkOrange;
+                    _durumEtiketi.Text = "Kart güncellendi ama SolidWorks bileşen adı değiştirilemedi (isim çakışması olabilir — log'a bakın).";
+                }
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("SolidWorksBilesenAdiniDegistir HATA: " + ex);
+                _durumEtiketi.ForeColor = Color.DarkOrange;
+                _durumEtiketi.Text = "Kart güncellendi ama SolidWorks bileşen adı değiştirilirken hata oluştu (log'a bakın).";
+            }
         }
 
         // ── YENİ KART OLUŞTUR ────────────────────────────────────────────────
