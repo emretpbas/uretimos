@@ -87,6 +87,18 @@ namespace UretimOSKesim
 
             if (kokBelge.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
+                // GERÇEK TANI KANITI (log): montaj içindeki TÜM bileşenlerde
+                // GetEquationMgr().GetCount() = 0 çıkıyordu — Equations
+                // klasöründe gözle Length/Width dolu görünen parçalarda BİLE.
+                // Sebep: montaj bileşenleri varsayılan "hafif" (lightweight)
+                // yüklenir; bu modda özel alanlar (OLE başlığından ayrı
+                // okunduğu için) çalışır ama feature/equation verisi diskten
+                // henüz tam okunmaz. Component2.ForceResolve DENENDİ, bu
+                // interop sürümünde YOK (CS1061) — bunun yerine TÜM montajı
+                // tek seferde çözümleyen belgelenmiş IModelDocExtension API'si
+                // kullanılıyor.
+                kokBelge.Extension.ResolveAllLightWeightComponents(false);
+
                 var asmDoc = (AssemblyDoc)kokBelge;
                 object[] enUstBilesenler = (object[])asmDoc.GetComponents(true /* TopLevelOnly */);
                 if (enUstBilesenler != null)
@@ -143,16 +155,10 @@ namespace UretimOSKesim
                     // Variables) listesindeki Length/Width/Thickness (ya da
                     // Boy/En/Kalınlık) adlı değişkenlerden dene.
                     //
-                    // GERÇEK TANI KANITI (log): montaj içindeki TÜM bileşenlerde
-                    // GetEquationMgr().GetCount() = 0 çıktı — Equations klasöründe
-                    // gözle Length/Width dolu görünen parçalarda BİLE. Sebep:
-                    // montaj bileşenleri VARSAYILAN "hafif" (lightweight) yüklenir;
-                    // bu modda özel alanlar (OLE başlığından ayrı okunduğu için)
-                    // çalışır ama feature/equation verisi diskten henüz tam
-                    // okunmamıştır. ForceResolve() bileşeni tam çözümlenmiş hâle
-                    // getirir — dogrudanModel (tek parça belgesi, bilesen==null)
-                    // durumunda zaten tam yüklü olduğu için gerekmez.
-                    bilesen?.ForceResolve();
+                    // NOT: montaj bileşenlerinin lightweight sorunu artık
+                    // Cikar()'ın başında TÜM montaj için tek seferde
+                    // ResolveAllLightWeightComponents ile çözülüyor (bkz.
+                    // yukarıdaki NOT) — burada tekrar bir şey yapmaya gerek yok.
                     var denklemOlcusu = EquationsOlcuOku(modelDoc, dugum.GosterimAdi);
                     if (denklemOlcusu.HasValue)
                     {
