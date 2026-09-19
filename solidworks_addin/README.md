@@ -175,11 +175,29 @@ ağacında TEK bir bileşen seçilmesini zorunlu kılıyordu. Artık:
 kaydını OTOMATİK yapan (ve kaldırırken OTOMATİK geri alan) bir kurulum
 betiği. Elle regasm çalıştırma adımını ORTADAN KALDIRIR — B) bölümündeki
 adım 5 (regasm) ve 6 (Add-Ins işaretleme SolidWorks tarafında hâlâ gerekli,
-ama kayıt otomatik) artık gerekmez. Ayrıntılı adımlar `kurulum/UretimOSKesim.iss`
-dosyasının başındaki yorumda: özetle (1) ücretsiz Inno Setup Compiler'ı
-kurun, (2) projeyi Release/x64 derleyin, (3) `.iss`'i Inno Setup'ta F9 ile
-derleyin, (4) çıkan `Output/UretimOSKesimSetup.exe`'i çift tıklatın.
-Başka bir bilgisayara dağıtmak için de aynı tek `.exe` yeterlidir.
+ama kayıt otomatik) artık gerekmez. **Ürün olarak dağıtılan `UretimOSKesimSetup.exe`,
+kurulacağı bilgisayarda HİÇBİR ek program/yazılım gerektirmez** (.NET
+Framework'ün RegAsm'ı Windows'ta zaten hazır gelir) — SWOOD'un kendi kurulum
+deneyimiyle aynı: tek dosya, çift tık, bitir.
+
+**Geliştirme makinesinde Setup.exe'yi üretmek** (kod her değiştiğinde) için
+iki yol var:
+
+- **Tek tık (önerilen):** `kurulum/paketle.bat` dosyasını çift tıklatın —
+  önce projeyi Release/x64 derler, sonra Inno Setup Compiler'ı (kurulu ise
+  otomatik bulur) çalıştırıp `kurulum/Output/UretimOSKesimSetup.exe`'i
+  üretir; bir sorun çıkarsa (derleme hatası, Inno Setup kurulu değil vb.)
+  ekranda AÇIKÇA hangi adımda ve neden durduğunu söyler.
+- **Elle:** (1) ücretsiz Inno Setup Compiler'ı kurun, (2) projeyi Release/x64
+  derleyin, (3) `.iss`'i Inno Setup'ta F9 ile derleyin, (4) çıkan
+  `Output/UretimOSKesimSetup.exe`'i çift tıklatın. Ayrıntılar
+  `kurulum/UretimOSKesim.iss` dosyasının başındaki yorumda.
+
+Her iki yolda da tek ön koşul, **yalnızca bu geliştirme makinesinde**,
+ücretsiz Inno Setup Compiler'ın kurulu olmasıdır (https://jrsoftware.org/isdl.php,
+~3 MB, 1 dakika) — kurulan/dağıtılan `Setup.exe`'yi ÇALIŞTIRAN bilgisayarda
+buna gerek YOKTUR. Başka bir bilgisayara dağıtmak için de aynı tek `.exe`
+yeterlidir.
 
 **Dürüstlük notu:** bu betik bu (Linux, Inno Setup'sız) ortamda
 DERLENEMEDİ/ÇALIŞTIRILAMADI — yalnızca Inno Setup'ın resmi söz dizimine

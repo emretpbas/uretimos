@@ -61,7 +61,7 @@
 ; ============================================================================
 
 #define MyAppName "ÜretimOS Kesim & Teknik Resim Eklentisi"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "ÜretimOS"
 #define MyAppDLL "UretimOSKesim.dll"
 ; Derleme çıktısının bulunduğu klasör (bu .iss dosyasına göre GÖRECELİ) —
