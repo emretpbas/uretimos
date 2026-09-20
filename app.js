@@ -2052,6 +2052,21 @@ const App = (() => {
         <button class="btn" id="btn-sistemi-sifirla" disabled style="background:#EF4444;color:#fff;opacity:0.5;cursor:not-allowed;border:none">🗑 Tüm Verileri Kalıcı Olarak Sil</button>
         <div id="sif-hata" style="color:#DC2626;font-size:11.5px;margin-top:8px;display:none"></div>
       </div>
+      <div class="hr" style="margin-top:20px;border-color:#F59E0B"></div>
+      <div style="background:#FFFBEB;border:1.5px solid #F59E0B;border-radius:10px;padding:16px 18px;margin-top:4px">
+        <div style="color:#92400E;font-weight:700;font-size:14px;margin-bottom:8px">⚠ KISMİ SIFIRLAMA — MÜŞTERİ / SEVKİYAT / HAT PLANLAMA</div>
+        <div style="color:#78350F;font-size:12px;margin-bottom:14px">Bu işlem yalnızca işaretlediğiniz kapsamı <b>KALICI OLARAK SİLER</b>. <b>Reçeteler, ürün/yarımamül/hammadde/paket/alt montaj kartları ve rota (hat/makine/süre) tanımları HER ZAMAN KORUNUR</b> — tam sistem sıfırlamanın aksine bunlara dokunulmaz. Geri alma yoktur.</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#78350F;cursor:pointer"><input type="checkbox" id="ksf-musteri" style="width:16px;height:16px;margin-top:2px"> <span><b>Müşteri / Sevkiyat / Mali Kayıtlar</b> — müşteriler, teklifler, siparişler, sipariş revizyonları, iade kalemleri, irsaliyeler, sevkiyat programı, CRM (fırsat, aktivite, kampanya, numune, proje), şikayet/servis talepleri, faturalar, e-faturalar, tahsilatlar, vade farkı ve müşteri çekleri silinsin</span></label>
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#78350F;cursor:pointer"><input type="checkbox" id="ksf-hat" style="width:16px;height:16px;margin-top:2px"> <span><b>Hat Planlama / Üretim Çalışma Verileri</b> — iş emirleri, kesim planları/ihtiyaçları, hammadde ihtiyaçları, istasyon takibi, gerçekleşen süre kayıtları, vardiyalar, duruşlar ve kapasite düzeltmeleri silinsin (rota TANIMLARI, hat operatör hesapları ve şifreleri korunur)</span></label>
+        </div>
+        <div class="fgroup" style="margin-bottom:12px">
+          <label class="flbl" style="color:#92400E">Sıfırlama Şifresi</label>
+          <input class="finput" id="ksf-sifre" type="password" placeholder="Şifreyi girin..." style="border-color:#F59E0B;max-width:280px">
+        </div>
+        <button class="btn" id="btn-kismi-sifirla" disabled style="background:#F59E0B;color:#fff;opacity:0.5;cursor:not-allowed;border:none">🗑 Seçili Verileri Kalıcı Olarak Sil</button>
+        <div id="ksf-hata" style="color:#B45309;font-size:11.5px;margin-top:8px;display:none"></div>
+      </div>
     `;
     const footer = `<button class="btn" id="btn-set-cancel">Vazgeç</button><button class="btn btn-blue" id="btn-set-save">Kaydet</button><button class="btn" id="btn-yedek" style="margin-left:8px">💾 Yedekleme</button>${state.role === 'yonetim' ? '<button class="btn" id="btn-sifre-yon" style="margin-left:8px">🔑 Şifre Yönetimi</button><button class="btn" id="btn-hesap-talep" style="margin-left:8px">👥 Hesap Talepleri</button>' : ''}${state.role === 'yonetim' && Store.sunucuModu ? '<button class="btn" id="btn-denetim" style="margin-left:8px">📋 Denetim Kaydı</button>' : ''}`;
     openModal({ title: 'Sistem Ayarları', sub: 'Genel maliyet ve fiyatlandırma parametreleri', body, footer, wide: true });
@@ -2108,6 +2123,40 @@ const App = (() => {
         sifHata.style.display = 'block';
         sifBtn.disabled = false;
         sifBtn.textContent = '🗑 Tüm Verileri Kalıcı Olarak Sil';
+      }
+    };
+
+    // ── Kısmi Sıfırlama: en az 1 kapsam + şifre doğrulanınca buton aktifleşir ──
+    const ksfBtn = document.getElementById('btn-kismi-sifirla');
+    const ksfHata = document.getElementById('ksf-hata');
+    function ksfKontrolEt() {
+      const kapsamSecili = document.getElementById('ksf-musteri').checked || document.getElementById('ksf-hat').checked;
+      const sifre = document.getElementById('ksf-sifre').value;
+      const tamam = kapsamSecili && sifre === SIF_SIFRE;
+      ksfBtn.disabled = !tamam;
+      ksfBtn.style.opacity = tamam ? '1' : '0.5';
+      ksfBtn.style.cursor = tamam ? 'pointer' : 'not-allowed';
+    }
+    ['ksf-musteri', 'ksf-hat'].forEach(id => document.getElementById(id).onchange = ksfKontrolEt);
+    document.getElementById('ksf-sifre').oninput = ksfKontrolEt;
+
+    ksfBtn.onclick = async () => {
+      const kapsam = { musteriSevkiyat: document.getElementById('ksf-musteri').checked, hatPlanlama: document.getElementById('ksf-hat').checked };
+      const sifre = document.getElementById('ksf-sifre').value;
+      if ((!kapsam.musteriSevkiyat && !kapsam.hatPlanlama) || sifre !== SIF_SIFRE) { ksfHata.textContent = 'En az bir kapsam işaretleyin ve doğru şifreyi girin.'; ksfHata.style.display = 'block'; return; }
+      ksfHata.style.display = 'none';
+      ksfBtn.disabled = true;
+      ksfBtn.textContent = '⏳ Sıfırlanıyor...';
+      try {
+        await Store.kismiSifirla(kapsam);
+        closeModal();
+        toast('🗑 Seçili veriler sıfırlandı', 'ok');
+        await goTo('dashboard');
+      } catch (e) {
+        ksfHata.textContent = 'Sıfırlama sırasında hata: ' + e.message;
+        ksfHata.style.display = 'block';
+        ksfBtn.disabled = false;
+        ksfBtn.textContent = '🗑 Seçili Verileri Kalıcı Olarak Sil';
       }
     };
 

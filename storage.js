@@ -1081,6 +1081,41 @@ const Store = (() => {
         await set(koleksiyonAdi, []);
       }
       return true;
+    },
+
+    // ── KISMİ SIFIRLAMA (MÜŞTERİ / SEVKİYAT / HAT PLANLAMA) ────────────────
+    // KULLANICI KARARI: sistemiSifirla'nın aksine reçeteler, ürün/yarımamül/
+    // hammadde/paket/alt montaj kartları ve rota (hat/makine/süre) tanımları
+    // HER ZAMAN KORUNUR — yalnızca çağıranın seçtiği kapsamdaki (müşteri/
+    // sevkiyat/mali ve/veya hat planlama-üretim çalışma verisi) koleksiyonlar
+    // sıfırlanır. Amaç: teknik altyapıyı (reçete/kart/rota) koruyarak yeni bir
+    // ticari/üretim dönemine "temiz" başlamak.
+    async kismiSifirla(kapsam) {
+      const MUSTERI_SEVKIYAT_KOLEKSIYONLARI = [
+        'musteriler', 'teklifler', 'siparisler', 'siparisRevizyonlari', 'iadeKalemleri',
+        'irsaliyeler', 'sevkiyatProgrami',
+        'firsatlar', 'crmAktiviteler', 'kampanyalar', 'numuneler', 'pazarlamaFiyatListeleri', 'projeler',
+        'sikayetler', 'servisTalepleri',
+        'faturalar', 'eFaturalar', 'tahsilatlar', 'tahsilatBeklenenler',
+        'tahsilatOnayBekleyenler', 'vadeFarkiKayitlari', 'musteriCekleri'
+      ];
+      // rota (hat/makine/süre) TANIMLARI bilerek dışarıda bırakılıyor — bunlar
+      // reçete gibi teknik/kurulum verisidir, hat ÇALIŞMASININ sonucu değil.
+      // Aynı gerekçeyle hatOperatorleri/hatSifreleri/hatSifreTalepleri de
+      // erişim/kurulum verisidir, "hat planlama" verisi değil.
+      const HAT_PLANLAMA_KOLEKSIYONLARI = [
+        'isemirleri', 'kesimPlanlari', 'kesimIhtiyaclari', 'uretimIsEmriIhtiyaclari',
+        'hammaddeIhtiyaclari', 'istasyonIsleri', 'gerceklesenSureKayitlari',
+        'vardiyalar', 'kapasiteDuzeltmeleri', 'hatDurumlari', 'duruslar'
+      ];
+      const hedef = [
+        ...((kapsam && kapsam.musteriSevkiyat) ? MUSTERI_SEVKIYAT_KOLEKSIYONLARI : []),
+        ...((kapsam && kapsam.hatPlanlama) ? HAT_PLANLAMA_KOLEKSIYONLARI : [])
+      ];
+      for (const koleksiyonAdi of hedef) {
+        await set(koleksiyonAdi, []);
+      }
+      return true;
     }
   };
 })();
