@@ -899,6 +899,23 @@ namespace UretimOSKesim
                     satir.Controls.Add(rotaBtnSatir);
                 }
 
+                // Kullanıcı isteği: "reçete oluşturduğumuz her kalemin teknik
+                // resmini de pdf ve dwg olarak üretimosa atabilelim ... her
+                // yarımamül, her plaka, her hırdavat, her alt montaj vb." —
+                // eşleşmiş HER sınıf için (KodileKartBul hammadde ailesinde
+                // hep "hammadde" tipini döner — plaka/hırdavat/kenar bandı/
+                // sarf FARK ETMEZ, aynı buton çalışır) ÜretimOS'un KENDİ
+                // "Teknik Dosyalar" deposuna (api.php: dosyaYukle — page_
+                // kartlar.js'in/QrDosya'nın kullandığı AYNI uç, qr_dosya.js)
+                // PDF/DWG/DXF/STEP yüklenebilir.
+                var (tdTip, tdKart) = KodileKartBul(dugum.MevcutKod);
+                if (tdKart != null)
+                {
+                    var teknikResimBtn = new Button { Text = "📎 Teknik Resim", AutoSize = true, Margin = new Padding(3) };
+                    teknikResimBtn.Click += async (s, e) => await TeknikDosyaYukleDialogAc(tdTip, tdKart, dugum.Model);
+                    satir.Controls.Add(teknikResimBtn);
+                }
+
                 // Kullanıcı isteği: "eklediğim kalemleri ve parçaları
                 // silebileyim" — bu, gerçek SolidWorks montaj yapısına
                 // DOKUNMAZ, yalnızca bu oturumun taslak ağacından düğümü (ve
@@ -959,6 +976,117 @@ namespace UretimOSKesim
 
             panel.Controls.Add(satir);
             return panel;
+        }
+
+        // ── TEKNİK RESİM YÜKLE (PDF/DWG/DXF/STEP) ────────────────────────────
+        // Kullanıcı isteği: "reçete oluşturduğumuz her kalemin teknik resmini
+        // de pdf ve dwg olarak üretimosa atabilelim." ÜretimOS'un KENDİ
+        // "Teknik Dosyalar" deposunu (api.php: qrKayit/dosyaYukle — page_
+        // kartlar.js ekranında kartların QR'lı dosya alanıyla AYNI depo,
+        // "teknikDosyalar" kv anahtarı) kullanır — YENİ bir sunucu ucu
+        // GEREKMEDİ. "qrKayit" ÖN ŞART DEĞİL: api.php'nin dosyaYukle işleyicisi
+        // kayıt yoksa kendisi oluşturuyor (bkz. UretimOSApiClient.DosyaYukle).
+        private async System.Threading.Tasks.Task TeknikDosyaYukleDialogAc(string tip, JObject kart, ModelDoc2 model)
+        {
+            if (_istemci == null)
+            {
+                MessageBox.Show("ÜretimOS bağlantısı yok — teknik dosya yüklenemez.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            string refId = (string)kart["id"];
+            string kod = (string)(kart["kod"] ?? kart["stokKodu"]);
+            string ad = (string)kart["ad"];
+
+            // Bu GERÇEK SolidWorks belgesi için daha önce "1) Teknik Resim
+            // Oluştur → elle düzenle → 2) Onayla" akışıyla (bkz.
+            // TeknikResimOlusturucu.cs) ONAYLANMIŞ bir DWG/PDF varsa
+            // (Manifest.cs), kullanıcıya doğrudan ONU yüklemesi TEKLİF
+            // edilir — burada yeni bir çizim TAHMİN/otomatik üretilmez,
+            // yalnızca zaten onaylanmış dosyalar sunulur.
+            ManifestGirdisi manifestGirdisi = null;
+            if (model != null)
+            {
+                try { manifestGirdisi = Manifest.Bul(model.GetPathName()); }
+                catch (Exception ex) { Tanilama.Kaydet("TeknikDosyaYukleDialogAc Manifest.Bul HATA: " + ex); }
+            }
+
+            var yuklenecekler = new List<string>();
+            using (var dlg = new Form { Text = "Teknik Resim Yükle — " + kod, Width = 540, Height = 300, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            {
+                var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
+                var baslikLbl = new Label
+                {
+                    Text = $"{kod} — {ad}\nÜretimOS'un 'Teknik Dosyalar' alanına yüklenecek (kart ekranındaki aynı depo).",
+                    Dock = DockStyle.Top, Height = 50
+                };
+
+                Button onayliBtn = null;
+                if (manifestGirdisi != null && (manifestGirdisi.DwgYolu != null || manifestGirdisi.PdfYolu != null))
+                {
+                    string ozet = string.Join(" + ", new[] { manifestGirdisi.DwgYolu != null ? "DWG" : null, manifestGirdisi.PdfYolu != null ? "PDF" : null }.Where(x => x != null));
+                    onayliBtn = new Button { Text = $"✓ Daha önce onaylanmış teknik resmi yükle ({ozet})", Dock = DockStyle.Top, Height = 44, Margin = new Padding(0, 0, 0, 10) };
+                    onayliBtn.Click += (s, e) =>
+                    {
+                        if (manifestGirdisi.DwgYolu != null) yuklenecekler.Add(manifestGirdisi.DwgYolu);
+                        if (manifestGirdisi.PdfYolu != null) yuklenecekler.Add(manifestGirdisi.PdfYolu);
+                        dlg.DialogResult = DialogResult.OK;
+                    };
+                }
+
+                var secBtn = new Button { Text = "Bilgisayardan Dosya Seç… (PDF/DWG/DXF/STEP)", Dock = DockStyle.Top, Height = 40 };
+                secBtn.Click += (s, e) =>
+                {
+                    using (var acDialog = new OpenFileDialog { Filter = "Teknik dosyalar|*.pdf;*.dwg;*.dxf;*.step;*.stp|Tüm dosyalar|*.*", Multiselect = true })
+                    {
+                        if (acDialog.ShowDialog(dlg) != DialogResult.OK) return;
+                        yuklenecekler.AddRange(acDialog.FileNames);
+                        dlg.DialogResult = DialogResult.OK;
+                    }
+                };
+
+                var vazgecBtn = new Button { Text = "Vazgeç", Dock = DockStyle.Bottom, Height = 34 };
+                vazgecBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
+                dlg.CancelButton = vazgecBtn;
+
+                panel.Controls.Add(secBtn);
+                if (onayliBtn != null) panel.Controls.Add(onayliBtn);
+                panel.Controls.Add(baslikLbl);
+                dlg.Controls.Add(panel);
+                dlg.Controls.Add(vazgecBtn);
+
+                if (dlg.ShowDialog(this) != DialogResult.OK || yuklenecekler.Count == 0) return;
+            }
+
+            int basarili = 0;
+            var hatalar = new List<string>();
+            foreach (var dosyaYolu in yuklenecekler)
+            {
+                try
+                {
+                    byte[] icerik = File.ReadAllBytes(dosyaYolu);
+                    string dosyaAdi = Path.GetFileName(dosyaYolu);
+                    var (yuklendi, hata) = await _istemci.DosyaYukle(tip, refId, dosyaAdi, icerik, kod, ad);
+                    if (yuklendi) basarili++;
+                    else hatalar.Add($"{dosyaAdi}: {hata}");
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("TeknikDosyaYukleDialogAc HATA: " + ex);
+                    hatalar.Add($"{Path.GetFileName(dosyaYolu)}: {ex.Message}");
+                }
+            }
+
+            if (hatalar.Count == 0)
+            {
+                _durumEtiketi.ForeColor = Color.DarkGreen;
+                _durumEtiketi.Text = $"✓ {basarili} teknik dosya '{kod}' kartına yüklendi.";
+            }
+            else
+            {
+                _durumEtiketi.ForeColor = Color.DarkOrange;
+                _durumEtiketi.Text = $"{basarili} dosya yüklendi, {hatalar.Count} dosya başarısız.";
+                MessageBox.Show("Bazı dosyalar yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         // "yarımamül seçince parçanın en boy yüksekliği gelsin" — Sinif ==

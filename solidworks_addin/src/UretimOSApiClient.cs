@@ -123,6 +123,43 @@ namespace UretimOSKesim
             var yanit = await _http.PostAsync(_tabanUrl + "?action=patch", icerik);
             return yanit.IsSuccessStatusCode;
         }
+
+        // action=dosyaYukle → { tip, refId, dosyaAdi, icerikB64, kod, ad } —
+        // ÜretimOS'un KENDİ "Teknik Dosyalar" deposuna (page_kartlar.js'in/
+        // qr_dosya.js'in kullandığı AYNI uç — kartın QR'lı dosya alanı,
+        // api.php'deki "teknikDosyalar" kv anahtarı) PDF/DWG/DXF/STEP vb.
+        // yükler. Kayıt (teknikDosyalar[tip:refId]) YOKSA sunucu KENDİSİ
+        // oluşturur (api.php'de "qrKayit" ön şart DEĞİL) — burada ayrı bir
+        // "kayıt oluştur" çağrısı YAPILMAZ. Kullanıcı isteği: "reçete
+        // oluşturduğumuz her kalemin teknik resmini de pdf ve dwg olarak
+        // üretimosa atabilelim."
+        public async Task<(bool basarili, string hata)> DosyaYukle(string tip, string refId, string dosyaAdi, byte[] icerik, string kod, string ad)
+        {
+            var govdeNesne = new Dictionary<string, object>
+            {
+                ["tip"] = tip,
+                ["refId"] = refId,
+                ["dosyaAdi"] = dosyaAdi,
+                ["icerikB64"] = Convert.ToBase64String(icerik),
+                ["kod"] = kod ?? "",
+                ["ad"] = ad ?? ""
+            };
+            var icerikGovde = new StringContent(
+                Newtonsoft.Json.JsonConvert.SerializeObject(govdeNesne),
+                Encoding.UTF8, "application/json");
+            var yanit = await _http.PostAsync(_tabanUrl + "?action=dosyaYukle", icerikGovde);
+            if (yanit.IsSuccessStatusCode) return (true, null);
+
+            string hataMesaji = "HTTP " + (int)yanit.StatusCode;
+            try
+            {
+                string govde = await yanit.Content.ReadAsStringAsync();
+                dynamic obj = Newtonsoft.Json.JsonConvert.DeserializeObject(govde);
+                if (obj?.error != null) hataMesaji = (string)obj.error;
+            }
+            catch { /* gövde JSON değilse yukarıdaki HTTP kodu kalır */ }
+            return (false, hataMesaji);
+        }
     }
 }
 
