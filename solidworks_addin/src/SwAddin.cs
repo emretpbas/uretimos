@@ -841,7 +841,11 @@ namespace UretimOSKesim
         // dinamik aramayı bulamazsa/hata verirse buraya düşülür). "2025" bu
         // yazının yazıldığı makinenin SolidWorks SÜRÜMÜNE göre SABİTLENMİŞTİR
         // — farklı bir sürüm/kurulumda (ör. 2017) klasör adı FARKLI olur.
-        private const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
+        // internal (private DEĞİL): ReceteAgaciPaneli.cs'teki "📐 Teknik Resim
+        // Oluştur ve Kaydet" (tek tıkla otomatik akış) da SwAddin.SablonYoluBul
+        // ile AYNI şablon aramasını kullanır — sabiti burada TEKRARLAMAK
+        // yerine tek yerden paylaşılır.
+        internal const string SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\uretimos.drwdot";
         public const string PART_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Part.prtdot";
         public const string ASSEMBLY_SABLON_YOLU = @"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\templates\Assembly.asmdot";
 
@@ -1235,7 +1239,7 @@ namespace UretimOSKesim
             ModelDoc2 hedefModel = (ModelDoc2)aktifBelge;
 
             Tanilama.Kaydet("ReceteAgaciAcCalistir: " + hedefModel.GetPathName());
-            using (var panel = new ReceteAgaciPaneli(hedefModel))
+            using (var panel = new ReceteAgaciPaneli(hedefModel, _app))
             {
                 panel.ShowDialog();
             }
