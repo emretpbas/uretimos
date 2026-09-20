@@ -918,16 +918,22 @@ namespace UretimOSKesim
         private static string SinifKarsilikBul(int index) => index >= 0 && index < SinifDegerleri.Length ? SinifDegerleri[index] : null;
 
         // "panel seçtiğimde muhakkak hammadde de seçmem gerekiyor aksi
-        // taktirde eşleşmemiş kalıyor" — hammadde ailesinden bir sınıf
-        // seçilince "Farklı Kart Seç…" dialogunun HANGİ tipten başlaması
-        // gerektiğini söyler (KokKartSeciciAc'in tipKutu listesindeki
-        // etiketlerle birebir aynı yazım).
-        private static readonly Dictionary<string, string> HammaddeSinifTipEtiketi = new Dictionary<string, string>
+        // taktirde eşleşmemiş kalıyor" + "yarımamül seçtiğimde otomatik ekle
+        // yada yarımamül seç sekmesi gelsin" — HERHANGİ bir sınıf seçilince
+        // (yalnızca hammadde ailesi DEĞİL, artık yarımamül/alt montaj/paket/
+        // ürün de dahil) "Ekle / Seç" seçim penceresinin HANGİ tipten
+        // başlaması gerektiğini söyler (KokKartSeciciAc'in tipKutu
+        // listesindeki etiketlerle birebir aynı yazım).
+        private static readonly Dictionary<string, string> SinifTipEtiketiTumu = new Dictionary<string, string>
         {
             ["hirdavat"] = "Hırdavat",
             ["plaka"] = "Plaka",
             ["kenar_bandi"] = "Kenar Bandı",
             ["sarf"] = "Sarf Malzeme",
+            ["yarimamul"] = "Yarı Mamül",
+            ["altmontaj"] = "Alt Montaj",
+            ["paket"] = "Paket",
+            ["urun"] = "Ürün",
         };
 
         // Bileşen ağacındaki bir düğümün ANA satırı — kod/ad + eşleşme durumu
@@ -977,20 +983,21 @@ namespace UretimOSKesim
                 var sinifKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130, Margin = new Padding(3) };
                 sinifKutusu.Items.AddRange(SinifEtiketleri);
                 sinifKutusu.SelectedIndex = SinifIndexBul(dugum.Sinif);
-                sinifKutusu.SelectedIndexChanged += (s, e) =>
+                sinifKutusu.SelectedIndexChanged += async (s, e) =>
                 {
                     dugum.Sinif = SinifKarsilikBul(sinifKutusu.SelectedIndex);
                     BilesenAgaciniCiz();
-                    // Kullanıcı isteği: "panel seçtiğimde muhakkak hammadde de
-                    // seçmem gerekiyor aksi taktirde eşleşmemiş kalıyor" —
-                    // hammadde ailesinden bir sınıf seçilince VE henüz bir
-                    // hammadde kartıyla eşleşmemişse, "Farklı Kart Seç…"
-                    // akışı O TİPTEN başlayarak HEMEN açılır (unutmayı önler).
-                    if (HammaddeSinifTipEtiketi.TryGetValue(dugum.Sinif ?? "", out string tipEtiketi)
-                        && KodileKartBul(dugum.MevcutKod).kart == null)
+                    // Kullanıcı isteği: "yarımamül seçtiğimde otomatik ekle
+                    // yada yarımamül seç sekmesi gelsin ekle'de yeni yarımamül
+                    // oluşturma ekranı açılsın ekle'de üretimostan yarımamül
+                    // seçme ekranı" — HERHANGİ bir sınıf seçilince (yalnızca
+                    // hammadde ailesi değil, artık yarımamül/alt montaj/paket/
+                    // ürün de dahil) VE henüz bir kartla eşleşmemişse, "+ Yeni
+                    // Kart Oluştur" / "🔍 Mevcut Karttan Seç" seçim penceresi
+                    // HEMEN açılır (unutmayı önler).
+                    if (!string.IsNullOrEmpty(dugum.Sinif) && KodileKartBul(dugum.MevcutKod).kart == null)
                     {
-                        _seciliBilesenDugumu = dugum;
-                        KokKartSeciciAc(tipEtiketi);
+                        await DugumEslestirmeSeciciAc(dugum);
                     }
                 };
                 satir.Controls.Add(sinifKutusu);
@@ -2488,25 +2495,7 @@ namespace UretimOSKesim
                         "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
-
-                string yeniKartTipi = dugum.Sinif;
-                JObject yeniKart;
-                using (var dlg = new YeniKartDialog(yeniKartTipi, _hammaddeler, dugum.GosterimAdi))
-                {
-                    if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return;
-                    yeniKart = dlg.SonucKart;
-                }
-                if (!await KartApiyaKaydet(yeniKartTipi, yeniKart)) return;
-
-                string yeniOlusanKod = (string)(yeniKart["kod"] ?? yeniKart["stokKodu"]);
-                dugum.MevcutKod = yeniOlusanKod;
-                dugum.GosterimAdi = (string)yeniKart["ad"] ?? dugum.GosterimAdi;
-                if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniOlusanKod))
-                {
-                    try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniOlusanKod); }
-                    catch (Exception ex) { Tanilama.Kaydet("BilesenKartDuzenle (yeni kart, URETIMOS_KOD yazılamadı) HATA: " + ex); }
-                }
-                BilesenAgaciniCiz();
+                await DugumeYeniKartOlusturVeEslestir(dugum);
                 return;
             }
             // KodileKartBul hammadde ailesinde genel "hammadde" döner —
@@ -2550,6 +2539,139 @@ namespace UretimOSKesim
             }
 
             BilesenAgaciniCiz();
+        }
+
+        // "sınıflandırılmış ama henüz eşleşmemiş" bir düğüm için YENİ kart
+        // oluşturup HEMEN bu düğümle eşleştirir. BilesenKartDuzenle'nin
+        // eski "kart yok" dalından ÇIKARILDI ki DugumEslestirmeSeciciAc'in
+        // "+ Yeni Kart Oluştur" seçeneği de AYNI kodu (kopyalamadan) kullansın.
+        private async System.Threading.Tasks.Task<bool> DugumeYeniKartOlusturVeEslestir(BilesenDugumu dugum)
+        {
+            if (string.IsNullOrEmpty(dugum.Sinif)) return false;
+            string yeniKartTipi = dugum.Sinif;
+            JObject yeniKart;
+            using (var dlg = new YeniKartDialog(yeniKartTipi, _hammaddeler, dugum.GosterimAdi))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return false;
+                yeniKart = dlg.SonucKart;
+            }
+            if (!await KartApiyaKaydet(yeniKartTipi, yeniKart)) return false;
+
+            string yeniOlusanKod = (string)(yeniKart["kod"] ?? yeniKart["stokKodu"]);
+            dugum.MevcutKod = yeniOlusanKod;
+            dugum.GosterimAdi = (string)yeniKart["ad"] ?? dugum.GosterimAdi;
+            if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniOlusanKod))
+            {
+                try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniOlusanKod); }
+                catch (Exception ex) { Tanilama.Kaydet("DugumeYeniKartOlusturVeEslestir (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+            }
+            BilesenAgaciniCiz();
+            return true;
+        }
+
+        // Sınıfa göre "mevcut kartlardan seç" listesinin kaynağı —
+        // KokKartSeciciAc'in Doldur()'ündeki AYNI eşleme, yalnızca dış
+        // görünüm etiketi yerine iç sınıf değerine göre anahtarlanmış.
+        private List<PaletOgesi> SinifKaynakListesi(string sinif)
+        {
+            IEnumerable<PaletOgesi> kaynak =
+                sinif == "urun" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
+                : sinif == "yarimamul" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
+                : sinif == "altmontaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
+                : sinif == "paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
+                : sinif == "plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
+                : sinif == "kenar_bandi" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
+                : sinif == "sarf" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
+                : sinif == "hirdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
+                : Enumerable.Empty<PaletOgesi>();
+            return kaynak.ToList();
+        }
+
+        // Bir düğümü, ÜretimOS'ta ZATEN VAR olan bir karttan arayıp seçerek
+        // eşleştirir. KokKartSeciciAc'ten BİLEREK AYRI: o, PANELİN KÖK
+        // kartını (_kokKart/_kokTip, "Kaydet" butonu, rota paneli) değiştirir
+        // — burada yalnızca BU düğümün kendi eşleşmesi değişir, panelin geri
+        // kalanı ETKİLENMEZ.
+        private void DugumeMevcutKartSecVeEslestir(BilesenDugumu dugum, string tipEtiketi)
+        {
+            using (var secici = new Form { Text = "Mevcut " + tipEtiketi + " Kartından Seç", Width = 420, Height = 480, StartPosition = FormStartPosition.CenterParent })
+            {
+                var aramaKutu = new TextBox { Dock = DockStyle.Top };
+                var liste = new ListBox { Dock = DockStyle.Fill };
+                var tamamBtn = new Button { Text = "Seç", Dock = DockStyle.Bottom };
+
+                var kaynakListe = SinifKaynakListesi(dugum.Sinif);
+                void Doldur()
+                {
+                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
+                    var eslesenler = kaynakListe.Where(o => string.IsNullOrEmpty(arama)
+                        || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
+                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    liste.Items.Clear();
+                    liste.Items.AddRange(eslesenler.ToArray());
+                }
+                aramaKutu.TextChanged += (s, e) => Doldur();
+
+                void SeciliyiUygula()
+                {
+                    if (!(liste.SelectedItem is PaletOgesi secilen)) return;
+                    dugum.MevcutKod = secilen.Kod;
+                    dugum.GosterimAdi = secilen.Ad;
+                    if (dugum.Model != null && !string.IsNullOrWhiteSpace(secilen.Kod))
+                    {
+                        try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, secilen.Kod); }
+                        catch (Exception ex) { Tanilama.Kaydet("DugumeMevcutKartSecVeEslestir (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                    }
+                    BilesenAgaciniCiz();
+                    secici.DialogResult = DialogResult.OK;
+                }
+                tamamBtn.Click += (s, e) => SeciliyiUygula();
+                liste.DoubleClick += (s, e) => SeciliyiUygula();
+
+                secici.Controls.Add(liste);
+                secici.Controls.Add(tamamBtn);
+                secici.Controls.Add(aramaKutu);
+                Doldur();
+                secici.ShowDialog(this);
+            }
+        }
+
+        // Sınıf seçilir seçilmez (henüz eşleşmemiş bir düğümde) HEMEN sorulan
+        // iki seçenekli küçük pencere: "+ Yeni Kart Oluştur" / "🔍 Mevcut
+        // Karttan Seç" — kullanıcı isteği: "yarımamül seçtiğimde otomatik
+        // ekle yada yarımamül seç sekmesi gelsin". Daha önce bu davranış
+        // yalnızca hammadde ailesinde (KokKartSeciciAc üzerinden) vardı;
+        // artık TÜM sınıflarda tutarlı çalışır.
+        private async System.Threading.Tasks.Task DugumEslestirmeSeciciAc(BilesenDugumu dugum)
+        {
+            if (!SinifTipEtiketiTumu.TryGetValue(dugum.Sinif ?? "", out string tipEtiketi)) return;
+
+            DialogResult secim;
+            using (var secimDlg = new Form { Text = "ÜretimOS — " + tipEtiketi, Width = 380, Height = 190, StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false })
+            {
+                var bilgi = new Label
+                {
+                    Text = $"'{dugum.GosterimAdi}' henüz bir ÜretimOS kartıyla eşleştirilmemiş.\nNe yapmak istersiniz?",
+                    Dock = DockStyle.Top, Height = 50, Padding = new Padding(12, 10, 12, 0)
+                };
+                var ortaPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12, 4, 12, 4) };
+                var olusturBtn = new Button { Text = "+ Yeni " + tipEtiketi + " Oluştur", Width = 330, Height = 34, Margin = new Padding(0, 4, 0, 4) };
+                var secBtn = new Button { Text = "🔍 Mevcut " + tipEtiketi + " Kartından Seç", Width = 330, Height = 34, Margin = new Padding(0, 4, 0, 4) };
+                var vazgecBtn = new Button { Text = "Sonra (Şimdilik Atla)", Dock = DockStyle.Bottom, Height = 30 };
+                olusturBtn.Click += (s, e) => { secimDlg.DialogResult = DialogResult.Yes; };
+                secBtn.Click += (s, e) => { secimDlg.DialogResult = DialogResult.No; };
+                vazgecBtn.Click += (s, e) => { secimDlg.DialogResult = DialogResult.Cancel; };
+                ortaPanel.Controls.Add(olusturBtn);
+                ortaPanel.Controls.Add(secBtn);
+
+                secimDlg.Controls.Add(ortaPanel);
+                secimDlg.Controls.Add(vazgecBtn);
+                secimDlg.Controls.Add(bilgi);
+                secim = secimDlg.ShowDialog(this);
+            }
+
+            if (secim == DialogResult.Yes) await DugumeYeniKartOlusturVeEslestir(dugum);
+            else if (secim == DialogResult.No) DugumeMevcutKartSecVeEslestir(dugum, tipEtiketi);
         }
 
         // GERÇEK SolidWorks API: IAssemblyDoc::RenameComponent2(mevcutAd,
