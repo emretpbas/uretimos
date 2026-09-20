@@ -556,6 +556,13 @@ PageModules.recete_agac = (() => {
       ${kalemBaglami ? `<div style="color:var(--text3)">Satır: <b>${kaynak === 'yok' ? '—' : App.fmtTL(satirToplami)}</b></div>` : ''}
     </div>`;
 
+    // ── TEKNİK RESİM ─────────────────────────────────────────────────────────
+    // Kullanıcı isteği: SolidWorks eklentisinden kalem başına oluşturulup
+    // ÜretimOS'a yüklenen PDF/DWG teknik resimlere, ağaçtaki satırdan da
+    // (uygulamaya hiç girmeden, QR'dan) ulaşılabilsin. Aynı "Teknik Dosyalar"
+    // deposunu (QrDosya.ac, bkz. qr_dosya.js) kullanır — TÜM kart tiplerinde
+    // (hammadde/plaka dahil) gösterilir.
+    html += `<button class="btn btn-sm btn-ghost ra-teknik-resim" data-tip="${tip}" data-id="${id}" data-kod="${App.escapeHtml(kart.kod || kart.stokKodu || '')}" data-ad="${App.escapeHtml(kart.ad || '')}" title="Bu kart için yüklenmiş teknik resim/dosyaları görüntüle, yükle veya sil">📎 Teknik Resim</button>`;
     if (tip !== 'hammadde') {
       html += `<button class="btn btn-sm btn-ghost ra-add-kalem" data-path="${nodeKey}" data-tip="${tip}" data-id="${id}" title="Bu satırın altına kalem ekle">+ Alt Kalem</button>`;
       html += `<button class="btn btn-sm btn-ghost ra-degistir" data-path="${nodeKey}" data-tip="${tip}" data-id="${id}" title="Bu kartın adını/kodunu değiştir veya farklı bir kartla değiştir">✏️ Değiştir</button>`;
@@ -687,6 +694,7 @@ PageModules.recete_agac = (() => {
         render();
       });
     });
+    wrap.querySelectorAll('.ra-teknik-resim').forEach(b => b.onclick = () => QrDosya.ac(b.dataset.tip, b.dataset.id, b.dataset.kod, b.dataset.ad));
     wrap.querySelectorAll('.ra-add-kalem').forEach(b => b.onclick = () => openAltKalemEkle(b.dataset.tip, b.dataset.id));
     wrap.querySelectorAll('.ra-degistir').forEach(b => b.onclick = () => openDegistirSecimModal(b.dataset.path, b.dataset.tip, b.dataset.id));
     wrap.querySelectorAll('.ra-olcu-ekle').forEach(b => b.onclick = () => openPaketOlcuDuzenle(b.dataset.id));
