@@ -4542,10 +4542,21 @@ namespace UretimOSKesim
                 }
             }
 
+            // KULLANICI RAPORU: "kapatıp açtığımda alt ek kalem ve pvc...
+            // görünmüyordu" — kök neden KOD DEĞİL, YANLIŞ BEKLENTİ: bu buton
+            // YALNIZCA SolidWorks dosyalarındaki özel alanları (kod/ad/sınıf/
+            // kenar bandı — ama YALNIZCA gerçek bir SolidWorks bileşenine
+            // karşılık gelen düğümlerde) diske yazar. "+ Ek Kalem" ile eklenen
+            // sentetik kalemlerin (gerçek bir SolidWorks dosyası YOK, yazacak
+            // yer yok) VE genel BOM/reçete yapısının ÜretimOS'ta kalıcı olması
+            // için AYRI, BAĞIMSIZ bir adım olan "📤 Reçete Olarak ÜretimOS'a
+            // Aktar" gerekir — bu buton onu YERİNE GEÇMEZ. Sessizce unutulmasın
+            // diye başarı mesajına AÇIKÇA eklendi.
             _durumEtiketi.ForeColor = hatali == 0 ? Color.DarkGreen : Color.DarkOrange;
-            _durumEtiketi.Text = hatali == 0
+            _durumEtiketi.Text = (hatali == 0
                 ? $"✓ {basarili} SolidWorks dosyası kaydedildi."
-                : $"⚠ {basarili} dosya kaydedildi, {hatali} dosya kaydedilemedi — Masaüstündeki uretimos_addin_log.txt'ye bakın.";
+                : $"⚠ {basarili} dosya kaydedildi, {hatali} dosya kaydedilemedi — Masaüstündeki uretimos_addin_log.txt'ye bakın.")
+                + " ÖNEMLİ: bu yalnızca SolidWorks dosyalarını kaydeder — \"+ Ek Kalem\" ile eklenenler ve genel BOM yapısının ÜretimOS'ta kalıcı olması için AYRICA \"📤 Reçete Olarak ÜretimOS'a Aktar\"a da basın.";
         }
 
         private async System.Threading.Tasks.Task KaydetTikla()
