@@ -1124,7 +1124,7 @@ namespace UretimOSKesim
             {
                 try
                 {
-                    byte[] icerik = File.ReadAllBytes(dosyaYolu);
+                    byte[] icerik = DosyaBaytlariniPaylasimliOku(dosyaYolu);
                     string dosyaAdi = Path.GetFileName(dosyaYolu);
                     var (yuklendi, hata) = await _istemci.DosyaYukle(tip, refId, dosyaAdi, icerik, kod, ad);
                     if (yuklendi) basarili++;
@@ -1147,6 +1147,32 @@ namespace UretimOSKesim
                 _durumEtiketi.ForeColor = Color.DarkOrange;
                 _durumEtiketi.Text = $"{basarili} dosya yüklendi, {hatalar.Count} dosya başarısız.";
                 MessageBox.Show("Bazı dosyalar yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        // Gerçek derleme/çalıştırma sonucu bulunan hata (yerel oturum
+        // log'u, 20 Eylül 20:41): "📎 Teknik Resim" yükleme akışında
+        // File.ReadAllBytes(yol), o dosya SolidWorks'te (veya başka bir
+        // programda) AÇIKKEN "The process cannot access the file because
+        // it is being used by another process" (IOException) ile ÇÖKÜYORDU
+        // — SolidWorks bir SLDPRT/SLDASM'ı EXCLUSIVE değil PAYLAŞIMLI
+        // (read/write share) kilitle açar, ama File.ReadAllBytes VARSAYILAN
+        // olarak paylaşım İZNİ istemeden okumaya çalışır. FileShare.ReadWrite
+        // İLE açmak, dosya başka bir işlemde açıkken bile okunabilmesini
+        // sağlar (Windows'un standart, belgelenmiş paylaşımlı okuma modeli
+        // — TAHMİN değil). Hem "📎 Teknik Resim" (elle seçilen herhangi bir
+        // dosya, SLDPRT/SLDASM dahil — kullanıcı 'Tüm dosyalar' filtresiyle
+        // açık bir 3B model dosyasını da seçebilir) hem "✓ Teknik Resmi
+        // Onayla ve ÜretimOS'a Yükle" (SaveAs3'ten hemen sonra kendi ürettiği
+        // DWG/PDF'i okur) AYNI riski taşıdığı için TEK bir paylaşımlı okuma
+        // yardımcısında birleştirildi.
+        private static byte[] DosyaBaytlariniPaylasimliOku(string yol)
+        {
+            using (var akis = new FileStream(yol, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var bellekAkisi = new MemoryStream())
+            {
+                akis.CopyTo(bellekAkisi);
+                return bellekAkisi.ToArray();
             }
         }
 
@@ -1381,7 +1407,7 @@ namespace UretimOSKesim
                 if (dosyaYolu == null) continue;
                 try
                 {
-                    byte[] icerik = File.ReadAllBytes(dosyaYolu);
+                    byte[] icerik = DosyaBaytlariniPaylasimliOku(dosyaYolu);
                     var (yuklendi, hata) = await _istemci.DosyaYukle(tip, refId, Path.GetFileName(dosyaYolu), icerik, kod, ad);
                     if (yuklendi) basariliSayisi++;
                     else hatalar.Add($"{Path.GetFileName(dosyaYolu)}: {hata}");
