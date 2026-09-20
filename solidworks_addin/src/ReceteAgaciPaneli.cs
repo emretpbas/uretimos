@@ -886,7 +886,7 @@ namespace UretimOSKesim
                 }
                 else if (e.Data.GetData(typeof(PaletOgesi)) is PaletOgesi secilen)
                 {
-                    var yeniDugum = BilesenSentetikCocukOlustur(secilen);
+                    var yeniDugum = BilesenSentetikCocukOlustur(secilen, dugum);
                     if (yeniDugum == null) return;
                     dugum.Cocuklar.Add(yeniDugum);
                     BilesenAgaciniCiz();
@@ -1019,7 +1019,11 @@ namespace UretimOSKesim
         // üretir — hem "+ Ek Kalem" dialogu hem de sol paletten doğrudan
         // sürükle-bırak (bkz. BilesenAnaSatiriOlustur'un DragDrop'u) AYNI
         // mantığı kullanır (kart bulunamazsa null döner).
-        private BilesenDugumu BilesenSentetikCocukOlustur(PaletOgesi secilen)
+        // ustDugum: bu sentetik kalemin EKLENDİĞİ üst düğüm — plaka için ölçü
+        // kaynağı olarak kullanılır (aşağıdaki nota bakın). null olabilir
+        // (ör. ileride kök seviyeye ekleme eklenirse) — bu durumda plaka
+        // ölçüsü TAHMİN EDİLMEZ, 0 kalır.
+        private BilesenDugumu BilesenSentetikCocukOlustur(PaletOgesi secilen, BilesenDugumu ustDugum)
         {
             var kart = FindKart(secilen.KalemTipi, secilen.Id);
             if (kart == null) return null;
@@ -1037,14 +1041,26 @@ namespace UretimOSKesim
 
             // Kullanıcı isteği: "solidworks bileşen ağacında alt kalem
             // ekleyince gelen boy en ve kalınlık ölçülerini otomatik olarak
-            // parça ölçüsünden doldur" — kartın KENDİ ölçü alanları varsa
-            // (plaka: en/boy/kalinlik — stok levha ölçüsü; yarımamül:
-            // netEn/netBoy/kalinlik) taslak alanlara ÖN DOLDURULUR; kartta
-            // hiç ölçü yoksa TAHMİN EDİLMEZ, taslak 0 kalır (elle girilir).
+            // parça ölçüsünden doldur." DÜZELTME (ekran görüntüsü ile bildirilen
+            // yanlış aktarım): plaka için kartın KENDİ en/boy alanları STOK
+            // LEVHA ölçüsüdür (ör. 3660×1830) — bir parçanın malzemesi olarak
+            // eklenen plakaya bu ölçüyü yazmak YANLIŞ (parça 800×400 iken
+            // "3660×1830" görünüyordu). Doğrusu: boy/en, bu plakadan kesilen
+            // GERÇEK PARÇANIN (=ustDugum, SolidWorks'ten bbox/equations ile
+            // zaten bilinen) kendi ölçüsüdür; kalınlık plakanın KENDİ malzeme
+            // kalınlığıdır (kart boşsa/0 ise üst düğümün kalınlığına düşülür).
+            // Yarımamül İÇİN bu sorun YOK: netEn/netBoy zaten O YARIMAMÜLE
+            // özel gerçek ölçüdür (bir stok levha değil), kartın kendisinden
+            // okunması doğru.
             double en = 0, boy = 0, kalinlik = 0;
+            string kaynak = "karttan";
             if (sinif == "plaka")
             {
-                en = (double?)kart["en"] ?? 0; boy = (double?)kart["boy"] ?? 0; kalinlik = (double?)kart["kalinlik"] ?? 0;
+                boy = ustDugum?.TaslakBoyMm ?? 0;
+                en = ustDugum?.TaslakEnMm ?? 0;
+                kalinlik = (double?)kart["kalinlik"] ?? 0;
+                if (kalinlik <= 0) kalinlik = ustDugum?.TaslakKalinlikMm ?? 0;
+                kaynak = "ustdugumden";
             }
             else if (sinif == "yarimamul")
             {
@@ -1054,7 +1070,7 @@ namespace UretimOSKesim
             {
                 yeniDugum.BoyMm = boy; yeniDugum.EnMm = en; yeniDugum.KalinlikMm = kalinlik;
                 yeniDugum.TaslakBoyMm = boy; yeniDugum.TaslakEnMm = en; yeniDugum.TaslakKalinlikMm = kalinlik;
-                yeniDugum.OlcuVar = true; yeniDugum.OlcuKaynagi = "karttan";
+                yeniDugum.OlcuVar = true; yeniDugum.OlcuKaynagi = kaynak;
             }
             return yeniDugum;
         }
@@ -1095,7 +1111,7 @@ namespace UretimOSKesim
                 ekleBtn.Click += (s, e) =>
                 {
                     if (!(liste.SelectedItem is PaletOgesi secilen)) return;
-                    var yeniDugum = BilesenSentetikCocukOlustur(secilen);
+                    var yeniDugum = BilesenSentetikCocukOlustur(secilen, ustDugum);
                     if (yeniDugum == null) return;
                     ustDugum.Cocuklar.Add(yeniDugum);
                     dlg.DialogResult = DialogResult.OK;
@@ -1127,7 +1143,7 @@ namespace UretimOSKesim
             string ekBilgi = "";
             if (dugum.OlcuVar)
             {
-                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : dugum.OlcuKaynagi == "ozelalan" ? " oa" : dugum.OlcuKaynagi == "bbox" ? " bb" : dugum.OlcuKaynagi == "karttan" ? " kt" : "";
+                string kaynakEtiket = dugum.OlcuKaynagi == "equations" ? " eq" : dugum.OlcuKaynagi == "ozelalan" ? " oa" : dugum.OlcuKaynagi == "bbox" ? " bb" : dugum.OlcuKaynagi == "karttan" ? " kt" : dugum.OlcuKaynagi == "ustdugumden" ? " üd" : "";
                 ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm{kaynakEtiket})";
             }
 
