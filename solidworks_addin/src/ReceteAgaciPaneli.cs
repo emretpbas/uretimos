@@ -8,6 +8,13 @@ using System.Windows.Forms;
 using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
+// CS0104 (gerçek derleme hatası, yerel oturum bildirdi): SolidWorks.Interop.
+// sldworks'ün KENDİ bir "Environment" tipi var — System.Environment ile
+// ÇAKIŞIYOR. SwAddin.cs'te AYNI çakışma AYNI şekilde çözülmüş (bkz. o
+// dosyanın "using Environment = System.Environment;" satırı) — burada da
+// AYNI çözüm uygulanıyor (tek tek System.Environment. ile niteleme yerine,
+// ileride eklenecek yeni Environment. kullanımlarını da kapsasın diye).
+using Environment = System.Environment;
 
 namespace UretimOSKesim
 {
@@ -119,6 +126,13 @@ namespace UretimOSKesim
         private List<PaletOgesi> _paletTumOgeler = new List<PaletOgesi>();
         private Button _kaydetBtn;
 
+        // "📐 Teknik Resim Oluştur" (ADIM 1, satır bazlı) ile "✓ Teknik
+        // Resmi Onayla ve ÜretimOS'a Yükle" (ADIM 2, global — bkz. altPanel)
+        // arasındaki durumu taşır: hangi kalem (tip/kart) için hangi
+        // SolidWorks model yolundan çizim açıldığı. null = bekleyen yok.
+        private (string tip, JObject kart, string modelYolu)? _bekleyenTeknikResim;
+        private Button _teknikResimOnaylaBtn;
+
         // Rota (yarı mamül) alanı — kullanıcı isteği: "rota seç ve oluştur da
         // var, her yarımamülde onu da ekleyelim". ÜretimOS'ta yarımamul
         // kartının kendi 'rotaId' alanı vardır (bkz. page_yarimamul.js) —
@@ -166,8 +180,8 @@ namespace UretimOSKesim
         // gerektirir; ModelDoc2'nin kendisinde buna erişim YOKTUR, bu yüzden
         // UretimOSAddin.cs'teki (SwAddin.cs dosyası) tek çağrı noktasından
         // elle geçirilir. null olabilir (eski/test amaçlı çağrılarda) —
-        // bu durumda "📐 Teknik Resim Oluştur ve Kaydet" nazikçe devre dışı
-        // kalır (TeknikResimOtomatikOlusturVeYukle içindeki kontrol).
+        // bu durumda "📐 Teknik Resim Oluştur" nazikçe devre dışı kalır
+        // (TeknikResimOlusturDialogAc içindeki kontrol).
         public ReceteAgaciPaneli(ModelDoc2 hedefModel, ISldWorks app = null)
         {
             _hedefModel = hedefModel;
@@ -376,8 +390,14 @@ namespace UretimOSKesim
             // (kalıcı olmayan) bir id üretilir, bkz. ReceteyiXmlOlarakDisaAktar.
             var xmlDisaAktarBtn = new Button { Text = "Reçeteyi XML Olarak Dışa Aktar…", Dock = DockStyle.Right, Width = 210 };
             xmlDisaAktarBtn.Click += (s, e) => ReceteyiXmlOlarakDisaAktar();
+            // ADIM 2 (bkz. TeknikResimOnaylaVeYukleCalistir) — reçete
+            // ağacındaki bir satırda "📐 Teknik Resim Oluştur"a (ADIM 1)
+            // basılıp SolidWorks'te çizim düzenlenene kadar DEVRE DIŞI.
+            _teknikResimOnaylaBtn = new Button { Text = "✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle", Dock = DockStyle.Right, Width = 260, Enabled = false };
+            _teknikResimOnaylaBtn.Click += async (s, e) => await TeknikResimOnaylaVeYukleCalistir();
             altPanel.Controls.Add(_durumEtiketi);
             altPanel.Controls.Add(solidworksKaydetBtn);
+            altPanel.Controls.Add(_teknikResimOnaylaBtn);
             altPanel.Controls.Add(_kaydetBtn);
             altPanel.Controls.Add(xmlDisaAktarBtn);
 
@@ -1126,28 +1146,27 @@ namespace UretimOSKesim
             return Ara(_bilesenKokListesi);
         }
 
-        // ── TEKNİK RESİM OLUŞTUR VE ÜRETİMOS'A YÜKLE (TEK TIK) ───────────────
+        // ── TEKNİK RESİM OLUŞTUR (ADIM 1) → ONAYLA VE ÜRETİMOS'A YÜKLE (ADIM 2) ──
         // Kullanıcı isteği: "teknik resim ekle sekmeleri ekle her satıra ve
         // bağlantılı ürünün teknik resmini oluşturup kaydedelim sekmeye
-        // basınca." SwAddin.cs'teki "1) Oluştur → elle düzenle → 2) Onayla"
-        // İKİ ADIMLI akışının (bkz. TeknikResimOlusturucu.cs üstteki notlar
-        // — otomatik görünüş yerleşimi antete taşabildiği için BİLİNÇLİ
-        // olarak elle düzenlemeye açık bırakılıyordu) AYNI, TEST EDİLMİŞ alt
-        // yapısını (InsertModelInPredefinedView + SaveAs3) kullanır, ama
-        // ARADA DURMADAN arka arkaya çalıştırıp çizimi kapatır — kullanıcı
-        // bunu HIZLI/otomatik bir kısayol olarak istedi. Ölçülendirme/
-        // yerleşim düzeltmesi gerekiyorsa SwAddin menüsündeki elle akış hâlâ
-        // kullanılabilir.
-        private async System.Threading.Tasks.Task TeknikResimOtomatikOlusturVeYukle(string tip, JObject kart)
+        // basınca" — SONRA netleştirme: "çizimi önce ben düzenleyeyim ve
+        // kontrol edeyim sonra onaylanıp kaydedilsin." İlk sürüm ARADA
+        // DURMADAN otomatik kaydediyordu; bu SwAddin.cs'teki "1) Oluştur →
+        // elle düzenle → 2) Onayla" ile AYNI, BİLEREK iki adımlı mimariye
+        // (bkz. TeknikResimOlusturucu.cs üstteki notlar — otomatik görünüş
+        // yerleşimi antete taşabildiği için elle kontrol GEREKİR) geri
+        // döndürüldü — yalnızca ADIM 2'de (SaveAs3'ten sonra) ekstra olarak
+        // ÜretimOS'a da yüklenir.
+        //
+        // ADIM 1 — çizimi oluşturur, SolidWorks'te AÇIK BIRAKIR (kaydetmez,
+        // kapatmaz); hangi kalem için oluşturulduğunu _bekleyenTeknikResim
+        // alanına yazar ki ADIM 2 (aşağıdaki global "✓ Teknik Resmi Onayla
+        // ve ÜretimOS'a Yükle" butonu) doğru karta yükleyebilsin.
+        private async System.Threading.Tasks.Task TeknikResimOlusturDialogAc(string tip, JObject kart)
         {
-            if (_istemci == null)
-            {
-                MessageBox.Show("ÜretimOS bağlantısı yok — teknik resim yüklenemez.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
             if (_app == null)
             {
-                MessageBox.Show("SolidWorks uygulama bağlantısı yok — otomatik teknik resim oluşturulamaz.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("SolidWorks uygulama bağlantısı yok — teknik resim oluşturulamaz.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1159,7 +1178,7 @@ namespace UretimOSKesim
                     "Bu kalem için, açık olan SolidWorks belgesinde eşleşmiş GERÇEK bir bileşen bulunamadı " +
                     "(bileşen ağacında bu kartla eşleşen bir bileşen görünmüyor olabilir, ya da bu kalem " +
                     "'+ Ek Kalem' ile elle eklenmiş bir referans olabilir).\n\n" +
-                    "Otomatik teknik resim oluşturulamıyor — bunun yerine '📎 Teknik Resim' ile elle bir " +
+                    "Teknik resim otomatik oluşturulamıyor — bunun yerine '📎 Teknik Resim' ile elle bir " +
                     "PDF/DWG dosyası yükleyebilirsiniz.",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -1175,11 +1194,13 @@ namespace UretimOSKesim
             }
 
             string kod = (string)(kart["kod"] ?? kart["stokKodu"]);
-            string ad = (string)kart["ad"];
-
             _durumEtiketi.ForeColor = Color.DarkSlateGray;
             _durumEtiketi.Text = $"📐 '{kod}' için teknik resim oluşturuluyor…";
 
+            // NOT: SolidWorks COM nesneleri STA (UI) iş parçacığına bağlıdır —
+            // diğer tüm SolidWorks API çağrıları gibi (bkz. SwAddin.cs'teki
+            // AYNI çağrı) burada da senkron/doğrudan çağrılır, Task.Run GİBİ
+            // arka plan iş parçacığına TAŞINMAZ (COM marshaling hatası riski).
             var resimUretici = new TeknikResimOlusturucu(_app);
             bool eklendi = resimUretici.TeknikResimAcVeDuzenlemeyeBirak(modelYolu, sablonYolu);
             if (!eklendi)
@@ -1190,12 +1211,44 @@ namespace UretimOSKesim
                 return;
             }
 
-            var cizimBelge = _app.ActiveDoc as IModelDoc2;
-            if (cizimBelge == null)
+            _bekleyenTeknikResim = (tip, kart, modelYolu);
+            if (_teknikResimOnaylaBtn != null) _teknikResimOnaylaBtn.Enabled = true;
+            _durumEtiketi.ForeColor = Color.DarkOrange;
+            _durumEtiketi.Text = $"'{kod}' için çizim oluşturuldu ve SolidWorks'te açık — düzenleyip/ölçülendirip kontrol edin, " +
+                "bitince alttaki '✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle' butonuna basın.";
+            if (resimUretici.Uyarilar.Count > 0)
+                MessageBox.Show(string.Join("\n", resimUretici.Uyarilar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        // ADIM 2 — global buton (altPanel): ŞU AN SolidWorks'te AÇIK olan
+        // (kullanıcının elle düzenlediği) çizimi hem .dwg hem .pdf olarak
+        // kaydeder (çizim İÇERİĞİNE dokunmaz, TeknikResimOnaylaCalistir'deki
+        // AYNI mantık) ve ADIM 1'de işaretlenen kalemin ÜretimOS kartına
+        // yükler. Çizim BİLEREK kapatılmaz (elle akışla AYNI davranış —
+        // kullanıcı isterse tekrar düzenleyip tekrar onaylayabilir).
+        private async System.Threading.Tasks.Task TeknikResimOnaylaVeYukleCalistir()
+        {
+            if (_bekleyenTeknikResim == null)
             {
-                _durumEtiketi.ForeColor = Color.DarkRed;
-                _durumEtiketi.Text = "Oluşturulan çizim bulunamadı.";
-                MessageBox.Show("Oluşturulan çizim belgesi bulunamadı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Önce bir satırda '📐 Teknik Resim Oluştur'a basıp çizimi hazırlayın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (_istemci == null)
+            {
+                MessageBox.Show("ÜretimOS bağlantısı yok — teknik resim yüklenemez.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            var (tip, kart, modelYolu) = _bekleyenTeknikResim.Value;
+            string refId = (string)kart["id"];
+            string kod = (string)(kart["kod"] ?? kart["stokKodu"]);
+            string ad = (string)kart["ad"];
+
+            var cizimBelge = _app.ActiveDoc as IModelDoc2;
+            if (cizimBelge == null || cizimBelge.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
+            {
+                MessageBox.Show(
+                    "Onaylamak için önce '📐 Teknik Resim Oluştur' ile açtığınız ÇİZİM (.slddrw) belgesini aktif hale getirin.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1205,17 +1258,12 @@ namespace UretimOSKesim
             foreach (char c in Path.GetInvalidFileNameChars()) dosyaAdOnEki = dosyaAdOnEki.Replace(c, '_');
             string dwgHedefYolu = Path.Combine(gecici, dosyaAdOnEki + ".dwg");
 
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = "Çizim kaydediliyor…";
+
+            var resimUretici = new TeknikResimOlusturucu(_app);
             bool kaydedildi = resimUretici.AcikCizimiKaydet(cizimBelge, dwgHedefYolu,
                 out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg);
-
-            // GERÇEK SolidWorks API: ISldWorks.CloseDoc(başlık) — resmi/
-            // belgelenmiş yol; IModelDoc2'de doğrudan bir Close() YOKTUR.
-            // Otomatik akışta (elle düzenleme adımı OLMADIĞI için) çizim
-            // kaydedildikten hemen sonra kapatılır — "1) Oluştur → 2)
-            // Onayla" elle akışının AKSİNE (orada BİLEREK açık bırakılır).
-            try { _app.CloseDoc(cizimBelge.GetTitle()); }
-            catch (Exception ex) { Tanilama.Kaydet("TeknikResimOtomatikOlusturVeYukle: cizim kapatilamadi: " + ex); }
-
             if (!kaydedildi)
             {
                 _durumEtiketi.ForeColor = Color.DarkRed;
@@ -1224,9 +1272,10 @@ namespace UretimOSKesim
                 return;
             }
 
-            // Manuel "2) Onayla" akışıyla AYNI manifest kaydı — böylece bu
-            // model için sonradan '📎 Teknik Resim' butonuna basılırsa da
-            // ("Daha önce onaylanmış teknik resmi yükle") aynı dosyalar önerilir.
+            // SwAddin.cs'teki elle "2) Onayla" akışıyla AYNI manifest kaydı —
+            // böylece bu model için sonradan '📎 Teknik Resim' butonuna
+            // basılırsa ("Daha önce onaylanmış teknik resmi yükle") aynı
+            // dosyalar önerilir.
             Manifest.Kaydet(modelYolu, kaydedilenDwg, kaydedilenPdf, kaydedilenJpg);
 
             int basariliSayisi = 0;
@@ -1243,24 +1292,26 @@ namespace UretimOSKesim
                 }
                 catch (Exception ex)
                 {
-                    Tanilama.Kaydet("TeknikResimOtomatikOlusturVeYukle (yükleme) HATA: " + ex);
+                    Tanilama.Kaydet("TeknikResimOnaylaVeYukleCalistir (yükleme) HATA: " + ex);
                     hatalar.Add($"{Path.GetFileName(dosyaYolu)}: {ex.Message}");
                 }
             }
 
             if (hatalar.Count == 0)
             {
+                _bekleyenTeknikResim = null;
+                if (_teknikResimOnaylaBtn != null) _teknikResimOnaylaBtn.Enabled = false;
                 _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ '{kod}' için teknik resim oluşturuldu ve {basariliSayisi} dosya (DWG+PDF) ÜretimOS'a yüklendi.";
+                _durumEtiketi.Text = $"✓ '{kod}' için teknik resim onaylandı ve {basariliSayisi} dosya (DWG+PDF) ÜretimOS'a yüklendi.";
             }
             else
             {
                 _durumEtiketi.ForeColor = Color.DarkOrange;
-                _durumEtiketi.Text = $"Teknik resim oluşturuldu ama {hatalar.Count} dosya ÜretimOS'a yüklenemedi.";
-                MessageBox.Show("Teknik resim oluşturuldu ama bazı dosyalar yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _durumEtiketi.Text = $"Çizim kaydedildi ama {hatalar.Count} dosya ÜretimOS'a yüklenemedi — düzeltip tekrar onaylayabilirsiniz.";
+                MessageBox.Show("Çizim kaydedildi ama bazı dosyalar ÜretimOS'a yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             if (resimUretici.Uyarilar.Count > 0)
-                Tanilama.Kaydet("TeknikResimOtomatikOlusturVeYukle uyarilari: " + string.Join(" | ", resimUretici.Uyarilar));
+                Tanilama.Kaydet("TeknikResimOnaylaVeYukleCalistir uyarilari: " + string.Join(" | ", resimUretici.Uyarilar));
         }
 
         // "yarımamül seçince parçanın en boy yüksekliği gelsin" — Sinif ==
@@ -2934,16 +2985,18 @@ namespace UretimOSKesim
 
             // Kullanıcı isteği: "teknik resim ekle sekmeleri ekle her satıra
             // ve bağlantılı ürünün teknik resmini oluşturup kaydedelim
-            // sekmeye basınca" — reçete ağacındaki HER satırda (paket/
-            // yarımamül/altmontaj/ürün/hammadde FARK ETMEZ) görünür; bkz.
-            // TeknikResimOtomatikOlusturVeYukle (tek tıkla, elle düzenleme
-            // ADIMI OLMADAN — mevcut "1) Oluştur → elle düzenle → 2) Onayla"
-            // akışının HIZLI/otomatik alternatifi, o akış hâlâ SwAddin
-            // menüsünden kullanılabilir).
+            // sekmeye basınca", sonra netleştirme: "çizimi önce ben
+            // düzenleyeyim ve kontrol edeyim sonra onaylanıp kaydedilsin" —
+            // reçete ağacındaki HER satırda (paket/yarımamül/altmontaj/
+            // ürün/hammadde FARK ETMEZ) görünür; bu ADIM 1'dir (çizimi
+            // oluşturup SolidWorks'te AÇIK bırakır) — ADIM 2 (kaydet+yükle)
+            // alttaki global "✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle"
+            // butonuyla yapılır (bkz. TeknikResimOlusturDialogAc/
+            // TeknikResimOnaylaVeYukleCalistir).
             if (kart != null)
             {
-                var teknikResimOlusturBtn = new Button { Text = "📐 Teknik Resim Oluştur ve Kaydet", AutoSize = true, Margin = new Padding(3) };
-                teknikResimOlusturBtn.Click += async (s, e) => await TeknikResimOtomatikOlusturVeYukle(tip, kart);
+                var teknikResimOlusturBtn = new Button { Text = "📐 Teknik Resim Oluştur", AutoSize = true, Margin = new Padding(3) };
+                teknikResimOlusturBtn.Click += async (s, e) => await TeknikResimOlusturDialogAc(tip, kart);
                 satir.Controls.Add(teknikResimOlusturBtn);
             }
 
