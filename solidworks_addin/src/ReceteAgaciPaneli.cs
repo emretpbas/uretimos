@@ -132,6 +132,13 @@ namespace UretimOSKesim
         // SolidWorks model yolundan çizim açıldığı. null = bekleyen yok.
         private (string tip, JObject kart, string modelYolu)? _bekleyenTeknikResim;
         private Button _teknikResimOnaylaBtn;
+        // Kullanıcı isteği: "seçilen dosyaların isimlerini ... seçtiğim
+        // satırda göster" — anahtar "tip|refId", değer o kart için sunucudan
+        // en son çekilen dosya adları listesi (bkz. TeknikDosyaYukleDialogAc'ın
+        // ListeyiYenile'i). Yalnızca kullanıcı o satırın "📎 Teknik Resim"
+        // diyaloğunu en az bir kez açtıktan SONRA doldurulur (tüm ağaç için
+        // önceden toplu sorgu YAPILMAZ — performans/gecikme riski).
+        private readonly Dictionary<string, List<string>> _teknikDosyaAdlariOnbellek = new Dictionary<string, List<string>>();
 
         // Rota (yarı mamül) alanı — kullanıcı isteği: "rota seç ve oluştur da
         // var, her yarımamülde onu da ekleyelim". ÜretimOS'ta yarımamul
@@ -941,7 +948,15 @@ namespace UretimOSKesim
                 var (tdTip, tdKart) = KodileKartBul(dugum.MevcutKod);
                 if (tdKart != null)
                 {
-                    var teknikResimBtn = new Button { Text = "📎 Teknik Resim", AutoSize = true, Margin = new Padding(3) };
+                    // Kullanıcı isteği: "seçilen dosyaların isimlerini ...
+                    // seçtiğim satırda göster" — bu oturumda en az bir kez
+                    // "📎 Teknik Resim" açıldıysa (TeknikDosyaYukleDialogAc'ın
+                    // ListeyiYenile'i doldurur), buton metnine dosya sayısı
+                    // eklenir; hiç açılmadıysa sunucuya SORULMAZ (etiket boş
+                    // kalır) — tüm ağaç için baştan toplu sorgu YOK.
+                    string tdOnbellekAnahtari = tdTip + "|" + (string)tdKart["id"];
+                    string tdSayiEtiketi = _teknikDosyaAdlariOnbellek.TryGetValue(tdOnbellekAnahtari, out var tdListe) && tdListe.Count > 0 ? $" ({tdListe.Count})" : "";
+                    var teknikResimBtn = new Button { Text = "📎 Teknik Resim" + tdSayiEtiketi, AutoSize = true, Margin = new Padding(3) };
                     teknikResimBtn.Click += async (s, e) => await TeknikDosyaYukleDialogAc(tdTip, tdKart, dugum.Model);
                     satir.Controls.Add(teknikResimBtn);
                 }
@@ -1016,6 +1031,13 @@ namespace UretimOSKesim
         // "teknikDosyalar" kv anahtarı) kullanır — YENİ bir sunucu ucu
         // GEREKMEDİ. "qrKayit" ÖN ŞART DEĞİL: api.php'nin dosyaYukle işleyicisi
         // kayıt yoksa kendisi oluşturuyor (bkz. UretimOSApiClient.DosyaYukle).
+        // Kullanıcı isteği: "seçilen dosyaların isimlerini teknik resim
+        // yükle ekranında ve seçtiğim satırda göster" — bu diyalog artık
+        // KAPANMADAN sunucudaki GÜNCEL dosya listesini gösterir (her
+        // yükleme/silmeden sonra kendini tazeler) ve "buna teknik resim
+        // sekmesine bastığımda silip yenisini ekleyip güncelleyebileyim"
+        // isteği için her dosyanın yanında 🗑 (sil) butonu vardır — TEK bir
+        // açılışta birden fazla ekle/sil yapılabilir, "Kapat"a kadar sürer.
         private async System.Threading.Tasks.Task TeknikDosyaYukleDialogAc(string tip, JObject kart, ModelDoc2 model)
         {
             if (_istemci == null)
@@ -1034,39 +1056,117 @@ namespace UretimOSKesim
             // edilir — burada yeni bir çizim TAHMİN/otomatik üretilmez,
             // yalnızca zaten onaylanmış dosyalar sunulur.
             ManifestGirdisi manifestGirdisi = null;
+            string varsayilanKlasor = null;
             if (model != null)
             {
-                try { manifestGirdisi = Manifest.Bul(model.GetPathName()); }
+                try
+                {
+                    manifestGirdisi = Manifest.Bul(model.GetPathName());
+                    string modelKlasoru = Path.GetDirectoryName(model.GetPathName());
+                    if (!string.IsNullOrEmpty(modelKlasoru) && Directory.Exists(modelKlasoru)) varsayilanKlasor = modelKlasoru;
+                }
                 catch (Exception ex) { Tanilama.Kaydet("TeknikDosyaYukleDialogAc Manifest.Bul HATA: " + ex); }
             }
 
-            var yuklenecekler = new List<string>();
-            // Kullanıcı isteği: "sldprt veya sldasm dosyasını aç ve düzenle
-            // sekmesi ekle burada bağlantılı dosyayı açıp teknik resim
-            // oluşturabileyim" — bu diyalogdan doğrudan (1) bağlantılı 3B
-            // modeli SolidWorks'te aç/aktif hale getir, ya da (2) doğrudan
-            // "Teknik Resim Oluştur" (ADIM 1) akışını başlat seçenekleri.
-            // İkisi de bu diyaloğu KAPATIR (dosya yükleme AKIŞIYLA karışmaz).
             bool acVeDuzenleIstendi = false, teknikResimOlusturIstendi = false;
-            using (var dlg = new Form { Text = "Teknik Resim Yükle — " + kod, Width = 540, Height = 380, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            using (var dlg = new Form { Text = "Teknik Resim Yükle — " + kod, Width = 560, Height = 540, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
             {
                 var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
                 var baslikLbl = new Label
                 {
-                    Text = $"{kod} — {ad}\nÜretimOS'un 'Teknik Dosyalar' alanına yüklenecek (kart ekranındaki aynı depo).",
-                    Dock = DockStyle.Top, Height = 50
+                    Text = $"{kod} — {ad}\nÜretimOS'un 'Teknik Dosyalar' alanı (kart ekranındaki aynı depo).",
+                    Dock = DockStyle.Top, Height = 40
                 };
+                var listeBaslikLbl = new Label { Text = "Mevcut Teknik Dosyalar:", Dock = DockStyle.Top, Height = 20, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(0, 6, 0, 0) };
+                var listePanel = new Panel { Dock = DockStyle.Top, Height = 130, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 10) };
+
+                async System.Threading.Tasks.Task ListeyiYenile()
+                {
+                    listePanel.Controls.Clear();
+                    List<JObject> dosyalar;
+                    try { dosyalar = (await _istemci.TeknikDosyalariGetir(tip, refId, kod, ad)).OfType<JObject>().ToList(); }
+                    catch (Exception ex) { Tanilama.Kaydet("TeknikDosyaYukleDialogAc ListeyiYenile HATA: " + ex); dosyalar = new List<JObject>(); }
+
+                    _teknikDosyaAdlariOnbellek[tip + "|" + refId] = dosyalar.Select(d => (string)d["ad"]).ToList();
+
+                    if (dosyalar.Count == 0)
+                    {
+                        listePanel.Controls.Add(new Label { Text = "(henüz dosya yok)", Dock = DockStyle.Top, Height = 22, ForeColor = Color.Gray, Padding = new Padding(4, 4, 0, 0) });
+                        return;
+                    }
+                    var siraliSatirlar = new List<Control>();
+                    foreach (var d in dosyalar)
+                    {
+                        var satirPanel = new Panel { Dock = DockStyle.Top, Height = 26 };
+                        var adLbl = new Label { Text = $"{d["ad"]}  ({d["tarih"]})", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0), AutoEllipsis = true };
+                        var silBtn2 = new Button { Text = "🗑", Dock = DockStyle.Right, Width = 32, ForeColor = Color.DarkRed };
+                        string dosyaId = (string)d["id"];
+                        string dosyaAdiLog = (string)d["ad"];
+                        silBtn2.Click += async (s, e) =>
+                        {
+                            if (MessageBox.Show($"'{dosyaAdiLog}' silinsin mi?", "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                            bool silindi = await _istemci.DosyaSil(tip, refId, dosyaId);
+                            if (!silindi)
+                            {
+                                MessageBox.Show("Dosya silinemedi.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                return;
+                            }
+                            await ListeyiYenile();
+                            BilesenAgaciniCiz();
+                        };
+                        satirPanel.Controls.Add(silBtn2);
+                        satirPanel.Controls.Add(adLbl);
+                        siraliSatirlar.Add(satirPanel);
+                    }
+                    for (int i = siraliSatirlar.Count - 1; i >= 0; i--) listePanel.Controls.Add(siraliSatirlar[i]);
+                }
+
+                async System.Threading.Tasks.Task YukleVeYenile(IEnumerable<string> dosyaYollari)
+                {
+                    int basariliSayisi = 0;
+                    var hatalar = new List<string>();
+                    foreach (var dosyaYolu in dosyaYollari)
+                    {
+                        try
+                        {
+                            byte[] icerik = DosyaBaytlariniPaylasimliOku(dosyaYolu);
+                            string dosyaAdi = Path.GetFileName(dosyaYolu);
+                            var (yuklendi, hata) = await _istemci.DosyaYukle(tip, refId, dosyaAdi, icerik, kod, ad);
+                            if (yuklendi) basariliSayisi++;
+                            else hatalar.Add($"{dosyaAdi}: {hata}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Tanilama.Kaydet("TeknikDosyaYukleDialogAc (yükleme) HATA: " + ex);
+                            hatalar.Add($"{Path.GetFileName(dosyaYolu)}: {ex.Message}");
+                        }
+                    }
+                    await ListeyiYenile();
+                    BilesenAgaciniCiz();
+                    if (hatalar.Count == 0)
+                    {
+                        _durumEtiketi.ForeColor = Color.DarkGreen;
+                        _durumEtiketi.Text = $"✓ {basariliSayisi} teknik dosya '{kod}' kartına yüklendi.";
+                    }
+                    else
+                    {
+                        _durumEtiketi.ForeColor = Color.DarkOrange;
+                        _durumEtiketi.Text = $"{basariliSayisi} dosya yüklendi, {hatalar.Count} dosya başarısız.";
+                        MessageBox.Show("Bazı dosyalar yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }
 
                 Button onayliBtn = null;
                 if (manifestGirdisi != null && (manifestGirdisi.DwgYolu != null || manifestGirdisi.PdfYolu != null))
                 {
                     string ozet = string.Join(" + ", new[] { manifestGirdisi.DwgYolu != null ? "DWG" : null, manifestGirdisi.PdfYolu != null ? "PDF" : null }.Where(x => x != null));
                     onayliBtn = new Button { Text = $"✓ Daha önce onaylanmış teknik resmi yükle ({ozet})", Dock = DockStyle.Top, Height = 44, Margin = new Padding(0, 0, 0, 10) };
-                    onayliBtn.Click += (s, e) =>
+                    onayliBtn.Click += async (s, e) =>
                     {
-                        if (manifestGirdisi.DwgYolu != null) yuklenecekler.Add(manifestGirdisi.DwgYolu);
-                        if (manifestGirdisi.PdfYolu != null) yuklenecekler.Add(manifestGirdisi.PdfYolu);
-                        dlg.DialogResult = DialogResult.OK;
+                        var dosyalar = new List<string>();
+                        if (manifestGirdisi.DwgYolu != null) dosyalar.Add(manifestGirdisi.DwgYolu);
+                        if (manifestGirdisi.PdfYolu != null) dosyalar.Add(manifestGirdisi.PdfYolu);
+                        await YukleVeYenile(dosyalar);
                     };
                 }
 
@@ -1081,73 +1181,35 @@ namespace UretimOSKesim
                 }
 
                 var secBtn = new Button { Text = "Bilgisayardan Dosya Seç… (PDF/DWG/DXF/STEP)", Dock = DockStyle.Top, Height = 40 };
-                secBtn.Click += (s, e) =>
+                secBtn.Click += async (s, e) =>
                 {
-                    using (var acDialog = new OpenFileDialog { Filter = "Teknik dosyalar|*.pdf;*.dwg;*.dxf;*.step;*.stp|Tüm dosyalar|*.*", Multiselect = true })
+                    using (var acDialog = new OpenFileDialog { Filter = "Teknik dosyalar|*.pdf;*.dwg;*.dxf;*.step;*.stp|Tüm dosyalar|*.*", Multiselect = true, InitialDirectory = varsayilanKlasor ?? "" })
                     {
                         if (acDialog.ShowDialog(dlg) != DialogResult.OK) return;
-                        yuklenecekler.AddRange(acDialog.FileNames);
-                        dlg.DialogResult = DialogResult.OK;
+                        await YukleVeYenile(acDialog.FileNames);
                     }
                 };
 
-                var vazgecBtn = new Button { Text = "Vazgeç", Dock = DockStyle.Bottom, Height = 34 };
-                vazgecBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
-                dlg.CancelButton = vazgecBtn;
+                var kapatBtn = new Button { Text = "Kapat", Dock = DockStyle.Bottom, Height = 34 };
+                kapatBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
+                dlg.CancelButton = kapatBtn;
 
                 panel.Controls.Add(secBtn);
                 if (olusturBtn != null) panel.Controls.Add(olusturBtn);
                 if (acVeDuzenleBtn != null) panel.Controls.Add(acVeDuzenleBtn);
                 if (onayliBtn != null) panel.Controls.Add(onayliBtn);
+                panel.Controls.Add(listePanel);
+                panel.Controls.Add(listeBaslikLbl);
                 panel.Controls.Add(baslikLbl);
                 dlg.Controls.Add(panel);
-                dlg.Controls.Add(vazgecBtn);
+                dlg.Controls.Add(kapatBtn);
 
+                await ListeyiYenile();
                 dlg.ShowDialog(this);
             }
 
-            if (acVeDuzenleIstendi)
-            {
-                ModelDosyasiniAcVeAktifYap(model?.GetPathName());
-                return;
-            }
-            if (teknikResimOlusturIstendi)
-            {
-                await TeknikResimOlusturDialogAc(tip, kart);
-                return;
-            }
-            if (yuklenecekler.Count == 0) return;
-
-            int basarili = 0;
-            var hatalar = new List<string>();
-            foreach (var dosyaYolu in yuklenecekler)
-            {
-                try
-                {
-                    byte[] icerik = DosyaBaytlariniPaylasimliOku(dosyaYolu);
-                    string dosyaAdi = Path.GetFileName(dosyaYolu);
-                    var (yuklendi, hata) = await _istemci.DosyaYukle(tip, refId, dosyaAdi, icerik, kod, ad);
-                    if (yuklendi) basarili++;
-                    else hatalar.Add($"{dosyaAdi}: {hata}");
-                }
-                catch (Exception ex)
-                {
-                    Tanilama.Kaydet("TeknikDosyaYukleDialogAc HATA: " + ex);
-                    hatalar.Add($"{Path.GetFileName(dosyaYolu)}: {ex.Message}");
-                }
-            }
-
-            if (hatalar.Count == 0)
-            {
-                _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ {basarili} teknik dosya '{kod}' kartına yüklendi.";
-            }
-            else
-            {
-                _durumEtiketi.ForeColor = Color.DarkOrange;
-                _durumEtiketi.Text = $"{basarili} dosya yüklendi, {hatalar.Count} dosya başarısız.";
-                MessageBox.Show("Bazı dosyalar yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
+            if (acVeDuzenleIstendi) ModelDosyasiniAcVeAktifYap(model?.GetPathName());
+            else if (teknikResimOlusturIstendi) await TeknikResimOlusturDialogAc(tip, kart);
         }
 
         // Gerçek derleme/çalıştırma sonucu bulunan hata (yerel oturum
@@ -1303,6 +1365,13 @@ namespace UretimOSKesim
                 return;
             }
 
+            // Kullanıcı isteği: "teknik resim sayfası açılıyor ama arkada
+            // kalıyor onu öne getir" — SolidWorks'ün ana penceresini,
+            // kendi (WinForms) panelimizin ARKASINDA kalmaması için ön
+            // plana getirir. Başarısız olsa bile çizim zaten oluşturuldu —
+            // bu yalnızca bir görünürlük iyileştirmesi, akışı ENGELLEMEZ.
+            SolidWorksPenceresiniOnePlanaGetir();
+
             _bekleyenTeknikResim = (tip, kart, modelYolu);
             if (_teknikResimOnaylaBtn != null) _teknikResimOnaylaBtn.Enabled = true;
             _durumEtiketi.ForeColor = Color.DarkOrange;
@@ -1310,6 +1379,31 @@ namespace UretimOSKesim
                 "bitince alttaki '✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle' butonuna basın.";
             if (resimUretici.Uyarilar.Count > 0)
                 MessageBox.Show(string.Join("\n", resimUretici.Uyarilar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        // GERÇEK, uzun süredir belgelenen/yaygın kullanılan SolidWorks API
+        // deseni (ISldWorks.Frame() → IFrame.GetHWnd()) — bu ortamda (SDK
+        // yok) CANLI test EDİLEMEDİ, ama RenameComponent2/Save3 sürecindeki
+        // AYNI dürüstlük ilkesiyle: try/catch içine alınmış, başarısızlığı
+        // SESSİZCE yutuyor (yalnızca log'a yazıyor) ve akışı ENGELLEMİYOR —
+        // yanlışsa gerçek derleme/çalıştırma geri bildirimiyle düzeltilir.
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        private void SolidWorksPenceresiniOnePlanaGetir()
+        {
+            try
+            {
+                if (_app == null) return;
+                _app.Visible = true;
+                var cerceve = _app.Frame() as IFrame;
+                IntPtr hwnd = cerceve != null ? (IntPtr)cerceve.GetHWnd() : IntPtr.Zero;
+                if (hwnd != IntPtr.Zero) SetForegroundWindow(hwnd);
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("SolidWorksPenceresiniOnePlanaGetir HATA: " + ex);
+            }
         }
 
         // ADIM 2 — global buton (altPanel): ŞU AN SolidWorks'te AÇIK olan

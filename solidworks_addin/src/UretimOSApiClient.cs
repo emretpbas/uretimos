@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 
 namespace UretimOSKesim
 {
@@ -159,6 +160,48 @@ namespace UretimOSKesim
             }
             catch { /* gövde JSON değilse yukarıdaki HTTP kodu kalır */ }
             return (false, hataMesaji);
+        }
+
+        // action=qrKayit → { tip, refId, kod, ad } — kartın QR'lı "Teknik
+        // Dosyalar" kaydını getirir/oluşturur, o kayıttaki dosya listesini
+        // döner. Kullanıcı isteği: "seçilen dosyaların isimlerini teknik
+        // resim yükle ekranında ve seçtiğim satırda göster" — bu, o listeyi
+        // ("dosyalar": [{id,ad,uzanti,boyut,diskAdi,tarih,yukleyen}]) okur.
+        public async Task<JArray> TeknikDosyalariGetir(string tip, string refId, string kod, string ad)
+        {
+            var govdeNesne = new Dictionary<string, object>
+            {
+                ["tip"] = tip,
+                ["refId"] = refId,
+                ["kod"] = kod ?? "",
+                ["ad"] = ad ?? ""
+            };
+            var icerik = new StringContent(
+                Newtonsoft.Json.JsonConvert.SerializeObject(govdeNesne),
+                Encoding.UTF8, "application/json");
+            var yanit = await _http.PostAsync(_tabanUrl + "?action=qrKayit", icerik);
+            if (!yanit.IsSuccessStatusCode) return new JArray();
+            string govde = await yanit.Content.ReadAsStringAsync();
+            var obj = JObject.Parse(govde);
+            return obj["dosyalar"] as JArray ?? new JArray();
+        }
+
+        // action=dosyaSil → { tip, refId, dosyaId } — kullanıcı isteği:
+        // "teknik resim sekmesine bastığımda silip yenisini ekleyip
+        // güncelleyeileyim."
+        public async Task<bool> DosyaSil(string tip, string refId, string dosyaId)
+        {
+            var govdeNesne = new Dictionary<string, object>
+            {
+                ["tip"] = tip,
+                ["refId"] = refId,
+                ["dosyaId"] = dosyaId
+            };
+            var icerik = new StringContent(
+                Newtonsoft.Json.JsonConvert.SerializeObject(govdeNesne),
+                Encoding.UTF8, "application/json");
+            var yanit = await _http.PostAsync(_tabanUrl + "?action=dosyaSil", icerik);
+            return yanit.IsSuccessStatusCode;
         }
     }
 }
