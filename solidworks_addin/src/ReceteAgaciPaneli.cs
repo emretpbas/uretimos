@@ -1041,7 +1041,14 @@ namespace UretimOSKesim
             }
 
             var yuklenecekler = new List<string>();
-            using (var dlg = new Form { Text = "Teknik Resim Yükle — " + kod, Width = 540, Height = 300, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            // Kullanıcı isteği: "sldprt veya sldasm dosyasını aç ve düzenle
+            // sekmesi ekle burada bağlantılı dosyayı açıp teknik resim
+            // oluşturabileyim" — bu diyalogdan doğrudan (1) bağlantılı 3B
+            // modeli SolidWorks'te aç/aktif hale getir, ya da (2) doğrudan
+            // "Teknik Resim Oluştur" (ADIM 1) akışını başlat seçenekleri.
+            // İkisi de bu diyaloğu KAPATIR (dosya yükleme AKIŞIYLA karışmaz).
+            bool acVeDuzenleIstendi = false, teknikResimOlusturIstendi = false;
+            using (var dlg = new Form { Text = "Teknik Resim Yükle — " + kod, Width = 540, Height = 380, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
             {
                 var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
                 var baslikLbl = new Label
@@ -1063,6 +1070,16 @@ namespace UretimOSKesim
                     };
                 }
 
+                Button acVeDuzenleBtn = null, olusturBtn = null;
+                if (model != null)
+                {
+                    acVeDuzenleBtn = new Button { Text = "📂 SLDPRT/SLDASM Dosyasını Aç ve Düzenle", Dock = DockStyle.Top, Height = 40, Margin = new Padding(0, 0, 0, 10) };
+                    acVeDuzenleBtn.Click += (s, e) => { acVeDuzenleIstendi = true; dlg.DialogResult = DialogResult.Cancel; };
+
+                    olusturBtn = new Button { Text = "📐 Teknik Resim Oluştur", Dock = DockStyle.Top, Height = 40, Margin = new Padding(0, 0, 0, 10) };
+                    olusturBtn.Click += (s, e) => { teknikResimOlusturIstendi = true; dlg.DialogResult = DialogResult.Cancel; };
+                }
+
                 var secBtn = new Button { Text = "Bilgisayardan Dosya Seç… (PDF/DWG/DXF/STEP)", Dock = DockStyle.Top, Height = 40 };
                 secBtn.Click += (s, e) =>
                 {
@@ -1079,13 +1096,27 @@ namespace UretimOSKesim
                 dlg.CancelButton = vazgecBtn;
 
                 panel.Controls.Add(secBtn);
+                if (olusturBtn != null) panel.Controls.Add(olusturBtn);
+                if (acVeDuzenleBtn != null) panel.Controls.Add(acVeDuzenleBtn);
                 if (onayliBtn != null) panel.Controls.Add(onayliBtn);
                 panel.Controls.Add(baslikLbl);
                 dlg.Controls.Add(panel);
                 dlg.Controls.Add(vazgecBtn);
 
-                if (dlg.ShowDialog(this) != DialogResult.OK || yuklenecekler.Count == 0) return;
+                dlg.ShowDialog(this);
             }
+
+            if (acVeDuzenleIstendi)
+            {
+                ModelDosyasiniAcVeAktifYap(model?.GetPathName());
+                return;
+            }
+            if (teknikResimOlusturIstendi)
+            {
+                await TeknikResimOlusturDialogAc(tip, kart);
+                return;
+            }
+            if (yuklenecekler.Count == 0) return;
 
             int basarili = 0;
             var hatalar = new List<string>();
@@ -1116,6 +1147,41 @@ namespace UretimOSKesim
                 _durumEtiketi.ForeColor = Color.DarkOrange;
                 _durumEtiketi.Text = $"{basarili} dosya yüklendi, {hatalar.Count} dosya başarısız.";
                 MessageBox.Show("Bazı dosyalar yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        // "📂 SLDPRT/SLDASM Dosyasını Aç ve Düzenle" — kullanıcı isteği:
+        // "burada bağlantılı dosyayı açıp teknik resim oluşturabileyim."
+        // GERÇEK, bu projede ZATEN kullanılan/doğrulanmış SolidWorks API
+        // (bkz. KutuYerlestirmeYoneticisi.cs'teki AYNI OpenDoc6 çağrısı) —
+        // belge zaten bellekte açıksa (bu montajın bir parçası olarak)
+        // SolidWorks onu YENİDEN OKUMADAN aktif pencereye getirir, bu
+        // TAHMİN değil SolidWorks'ün belgelenmiş standart davranışıdır.
+        private void ModelDosyasiniAcVeAktifYap(string modelYolu)
+        {
+            if (_app == null)
+            {
+                MessageBox.Show("SolidWorks uygulama bağlantısı yok.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (string.IsNullOrEmpty(modelYolu) || !File.Exists(modelYolu))
+            {
+                MessageBox.Show("Dosya bulunamadı: " + modelYolu, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            try
+            {
+                int docType = modelYolu.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase)
+                    ? (int)swDocumentTypes_e.swDocASSEMBLY : (int)swDocumentTypes_e.swDocPART;
+                int hata = 0, uyari = 0;
+                var acilan = _app.OpenDoc6(modelYolu, docType, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref hata, ref uyari);
+                if (acilan == null)
+                    MessageBox.Show($"Dosya açılamadı (hata kodu: {hata}).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("ModelDosyasiniAcVeAktifYap HATA: " + ex);
+                MessageBox.Show("Dosya açılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1252,11 +1318,41 @@ namespace UretimOSKesim
                 return;
             }
 
-            string gecici = Path.Combine(Path.GetTempPath(), "UretimOSKesim_TeknikResim");
-            Directory.CreateDirectory(gecici);
+            // Kullanıcı isteği: "hepsi çizim dosyasının uzantılı klasöründe
+            // oluşsun ancak daha önceden bağlantılı çizim varsa o
+            // oluşturulduğu klasörde kalabilir. daha önceden oluşturulan
+            // klasörleri otomatik getir." — varsayılan klasör: bu model
+            // için DAHA ÖNCE onaylanmış bir DWG varsa (Manifest.cs) O
+            // KLASÖR, yoksa modelin (SLDPRT/SLDASM) kendi klasörü. Kullanıcı
+            // "otomatik getirilen" bu klasörle açılan diyalogda isterse
+            // değiştirebilir/onaylayabilir.
+            var mevcutManifest = Manifest.Bul(modelYolu);
+            string varsayilanKlasor = null;
+            string manifestKlasoru = mevcutManifest?.DwgYolu != null ? Path.GetDirectoryName(mevcutManifest.DwgYolu) : null;
+            if (!string.IsNullOrEmpty(manifestKlasoru) && Directory.Exists(manifestKlasoru))
+                varsayilanKlasor = manifestKlasoru;
+            else
+            {
+                string modelKlasoru = Path.GetDirectoryName(modelYolu);
+                if (!string.IsNullOrEmpty(modelKlasoru) && Directory.Exists(modelKlasoru))
+                    varsayilanKlasor = modelKlasoru;
+            }
+
             string dosyaAdOnEki = kod ?? "teknik_resim";
             foreach (char c in Path.GetInvalidFileNameChars()) dosyaAdOnEki = dosyaAdOnEki.Replace(c, '_');
-            string dwgHedefYolu = Path.Combine(gecici, dosyaAdOnEki + ".dwg");
+
+            string dwgHedefYolu;
+            using (var kaydetDialog = new SaveFileDialog
+            {
+                Title = "Teknik Resmi Kaydet (DWG) — PDF de aynı klasöre aynı adla kaydedilecek",
+                Filter = "DWG dosyası|*.dwg",
+                FileName = dosyaAdOnEki + ".dwg",
+                InitialDirectory = varsayilanKlasor ?? ""
+            })
+            {
+                if (kaydetDialog.ShowDialog(this) != DialogResult.OK) return;
+                dwgHedefYolu = kaydetDialog.FileName;
+            }
 
             _durumEtiketi.ForeColor = Color.DarkSlateGray;
             _durumEtiketi.Text = "Çizim kaydediliyor…";
