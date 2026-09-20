@@ -1093,23 +1093,49 @@ try {
         respond(['ok' => true, 'anahtar' => $kayitlar[$ra]['anahtar'], 'dosyalar' => $kayitlar[$ra]['dosyalar']]);
     }
 
-    // dosyaYukle: base64 içerikle teknik dosya ekle (girişli personel).
+    // dosyaYukle: teknik dosya ekle (girişli personel). İki taşıma biçimi
+    // desteklenir:
+    //   1) multipart/form-data ("dosya" alanı) — SolidWorks eklentisi bunu
+    //      kullanır. Web sunucusu/ModSecurity bunu GERÇEK bir dosya yüklemesi
+    //      olarak tanıdığı için, base64+JSON'un tabi olduğu çok daha düşük
+    //      "dosyasız istek gövdesi" sınırına (ör. ModSecurity
+    //      SecRequestBodyNoFilesLimit) TAKILMAZ. Gerçek olay: 4,4 MB'lık bir
+    //      DWG, post_max_size (128M) ve upload_max_filesize (1G) zaten bol
+    //      yeterliyken HTTP 413 ile reddedildi — engel PHP değil, isteği base64
+    //      JSON gövdesi olarak "dosyasız" gören web sunucusu katmanıydı.
+    //   2) JSON gövdede base64 ("icerikB64") — web arayüzü (qr_dosya.js) hâlâ
+    //      bunu kullanıyor, GERİYE DÖNÜK UYUMLULUK için korunuyor.
     elseif ($action === 'dosyaYukle') {
         $oturum = oturumZorunlu($pdo);
         if (($oturum['rol'] ?? '') === 'hat_operator') respond(['error' => 'İzin yok'], 403);
-        $body = readJsonBody();
-        $tip = trim((string)($body['tip'] ?? ''));
-        $refId = trim((string)($body['refId'] ?? ''));
-        $dosyaAdi = trim((string)($body['dosyaAdi'] ?? ''));
-        $b64 = (string)($body['icerikB64'] ?? '');
-        if ($tip === '' || $refId === '' || $dosyaAdi === '' || $b64 === '') respond(['error' => 'Eksik alan'], 400);
+
+        if (isset($_FILES['dosya']) && ($_FILES['dosya']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $tip = trim((string)($_POST['tip'] ?? ''));
+            $refId = trim((string)($_POST['refId'] ?? ''));
+            $dosyaAdi = trim((string)($_POST['dosyaAdi'] ?? $_FILES['dosya']['name'] ?? ''));
+            $kod = (string)($_POST['kod'] ?? '');
+            $ad = (string)($_POST['ad'] ?? '');
+            if ($tip === '' || $refId === '' || $dosyaAdi === '') respond(['error' => 'Eksik alan'], 400);
+            $icerik = file_get_contents($_FILES['dosya']['tmp_name']);
+            if ($icerik === false) respond(['error' => 'Yüklenen dosya okunamadı'], 500);
+        } else {
+            $body = readJsonBody();
+            $tip = trim((string)($body['tip'] ?? ''));
+            $refId = trim((string)($body['refId'] ?? ''));
+            $dosyaAdi = trim((string)($body['dosyaAdi'] ?? ''));
+            $kod = (string)($body['kod'] ?? '');
+            $ad = (string)($body['ad'] ?? '');
+            $b64 = (string)($body['icerikB64'] ?? '');
+            if ($tip === '' || $refId === '' || $dosyaAdi === '' || $b64 === '') respond(['error' => 'Eksik alan'], 400);
+            $icerik = base64_decode($b64, true);
+            if ($icerik === false) respond(['error' => 'Bozuk dosya içeriği'], 400);
+        }
+
         global $TEKNIK_UZANTILAR;
         $uzanti = strtolower(pathinfo($dosyaAdi, PATHINFO_EXTENSION));
         if (!in_array($uzanti, $TEKNIK_UZANTILAR, true)) {
             respond(['error' => 'İzin verilmeyen dosya türü: .' . $uzanti . ' (izinli: ' . implode(', ', $TEKNIK_UZANTILAR) . ')'], 400);
         }
-        $icerik = base64_decode($b64, true);
-        if ($icerik === false) respond(['error' => 'Bozuk dosya içeriği'], 400);
         if (strlen($icerik) > TEKNIK_DOSYA_MAX_BAYT) respond(['error' => 'Dosya çok büyük (en fazla 15 MB)'], 400);
 
         $kayitlar = teknikKayitlar($pdo);
@@ -1117,7 +1143,7 @@ try {
         if (!isset($kayitlar[$ra])) {
             $kayitlar[$ra] = [
                 'anahtar' => bin2hex(random_bytes(8)), 'tip' => $tip, 'refId' => $refId,
-                'kod' => (string)($body['kod'] ?? ''), 'ad' => (string)($body['ad'] ?? ''), 'dosyalar' => []
+                'kod' => $kod, 'ad' => $ad, 'dosyalar' => []
             ];
         }
         dosyaDizinHazirla();

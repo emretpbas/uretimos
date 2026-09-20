@@ -136,54 +136,54 @@ namespace UretimOSKesim
         // üretimosa atabilelim."
         public async Task<(bool basarili, string hata)> DosyaYukle(string tip, string refId, string dosyaAdi, byte[] icerik, string kod, string ad)
         {
-            var govdeNesne = new Dictionary<string, object>
+            // GERÇEK OLAY: 4,4 MB'lık bir DWG, sunucudaki post_max_size (128M)
+            // ve upload_max_filesize (1G) zaten bol yeterliyken HTTP 413 ile
+            // reddedildi — yani PHP'nin kendi limitleri hiç suçlu değildi.
+            // Asıl engel: dosya base64'e çevrilip JSON gövdede gönderiliyordu,
+            // bu da hem boyutu ~%33 şişiriyor hem de web sunucusunun/
+            // ModSecurity'nin bunu "dosyasız" bir istek gövdesi sanıp KENDİ
+            // çok daha düşük sınırına (SecRequestBodyNoFilesLimit) tabi
+            // tutmasına yol açıyordu. Çözüm: gerçek multipart/form-data dosya
+            // alanı ("dosya") kullanmak — böylece sunucu bunu GERÇEK bir dosya
+            // yüklemesi olarak tanır ve normal (çok daha yüksek) dosya gövdesi
+            // sınırı uygulanır. api.php'nin dosyaYukle uç noktası hem bunu hem
+            // de eski base64+JSON biçimini (web arayüzü için) destekler.
+            using (var form = new MultipartFormDataContent())
             {
-                ["tip"] = tip,
-                ["refId"] = refId,
-                ["dosyaAdi"] = dosyaAdi,
-                ["icerikB64"] = Convert.ToBase64String(icerik),
-                ["kod"] = kod ?? "",
-                ["ad"] = ad ?? ""
-            };
-            var icerikGovde = new StringContent(
-                Newtonsoft.Json.JsonConvert.SerializeObject(govdeNesne),
-                Encoding.UTF8, "application/json");
-            var yanit = await _http.PostAsync(_tabanUrl + "?action=dosyaYukle", icerikGovde);
-            if (yanit.IsSuccessStatusCode) return (true, null);
+                form.Add(new StringContent(tip), "tip");
+                form.Add(new StringContent(refId), "refId");
+                form.Add(new StringContent(dosyaAdi), "dosyaAdi");
+                form.Add(new StringContent(kod ?? ""), "kod");
+                form.Add(new StringContent(ad ?? ""), "ad");
+                var dosyaIcerik = new ByteArrayContent(icerik);
+                dosyaIcerik.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+                form.Add(dosyaIcerik, "dosya", dosyaAdi);
 
-            // Gerçek kullanıcı geri bildirimi: bir DWG "HTTP 413" ile
-            // reddedildi ama AYNI kartın PDF'i sorunsuz yüklendi. 413
-            // (Request Entity Too Large), api.php'nin KENDİ 15 MB kontrolüne
-            // (TEKNIK_DOSYA_MAX_BAYT, bkz. api.php) HİÇ ULAŞILAMADAN — web
-            // sunucusu/PHP (post_max_size, upload_max_filesize veya
-            // LiteSpeed/Apache'nin kendi istek gövdesi sınırı) isteği PHP
-            // koduna hiç ulaştırmadan reddettiğinde oluşur; gövde çoğunlukla
-            // JSON DEĞİL (sunucunun kendi HTML hata sayfası), bu yüzden
-            // aşağıdaki genel "error" ayrıştırması SESSİZCE boş kalıp yalnızca
-            // "HTTP 413" derdi — kullanıcı NE YAPACAĞINI anlayamazdı. Gerçek
-            // sebep ve düzeltme yolu (cPanel > MultiPHP INI Editor) burada
-            // AÇIKÇA söyleniyor — bu bir TAHMİN değil, HTTP 413'ün standart/
-            // belgelenmiş anlamı.
-            if (yanit.StatusCode == HttpStatusCode.RequestEntityTooLarge)
-            {
-                double megabayt = icerik.Length / 1024.0 / 1024.0;
-                return (false,
-                    $"Sunucu bu dosyayı ({megabayt:0.0} MB) ÇOK BÜYÜK bulup reddetti (HTTP 413) — bu, " +
-                    "ÜretimOS'un kendi 15 MB sınırından ÖNCE, web sunucusunun/PHP'nin kendi post_max_size " +
-                    "ve upload_max_filesize ayarlarında oluyor. Düzeltmek için cPanel'de: Software > " +
-                    "'MultiPHP INI Editor' (ya da 'Select PHP Version' > Options) açıp bu iki değeri " +
-                    "(genelde varsayılan 8M/32M) yeterince büyük (ör. 64M) bir değere yükseltin.");
-            }
+                var yanit = await _http.PostAsync(_tabanUrl + "?action=dosyaYukle", form);
+                if (yanit.IsSuccessStatusCode) return (true, null);
 
-            string hataMesaji = "HTTP " + (int)yanit.StatusCode;
-            try
-            {
-                string govde = await yanit.Content.ReadAsStringAsync();
-                dynamic obj = Newtonsoft.Json.JsonConvert.DeserializeObject(govde);
-                if (obj?.error != null) hataMesaji = (string)obj.error;
+                if (yanit.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+                {
+                    double megabayt = icerik.Length / 1024.0 / 1024.0;
+                    return (false,
+                        $"Sunucu bu dosyayı ({megabayt:0.0} MB) ÇOK BÜYÜK bulup reddetti (HTTP 413). " +
+                        "Bu, sunucu tarafındaki post_max_size/upload_max_filesize'dan DEĞİL — çoğunlukla " +
+                        "web sunucusunun/ModSecurity'nin kendi istek gövdesi sınırından kaynaklanır. " +
+                        "cPanel > Security > 'ModSecurity' varsa bu alan adı için kapatıp deneyin; " +
+                        "yoksa barındırma desteğinden bu uç nokta için gövde boyutu sınırının " +
+                        "yükseltilmesini isteyin.");
+                }
+
+                string hataMesaji = "HTTP " + (int)yanit.StatusCode;
+                try
+                {
+                    string govde = await yanit.Content.ReadAsStringAsync();
+                    dynamic obj = Newtonsoft.Json.JsonConvert.DeserializeObject(govde);
+                    if (obj?.error != null) hataMesaji = (string)obj.error;
+                }
+                catch { /* gövde JSON değilse yukarıdaki HTTP kodu kalır */ }
+                return (false, hataMesaji);
             }
-            catch { /* gövde JSON değilse yukarıdaki HTTP kodu kalır */ }
-            return (false, hataMesaji);
         }
 
         // action=qrKayit → { tip, refId, kod, ad } — kartın QR'lı "Teknik
