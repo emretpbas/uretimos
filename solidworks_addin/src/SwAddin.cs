@@ -76,6 +76,16 @@ namespace UretimOSKesim
         // isteği: her parçanın onaylanan JPG'i, o parçanın kesim satırıyla
         // eşleşsin — bkz. RaporOlusturucu.cs / KesimSatiri.ModelYolu).
         private string _sonOlusturulanModelYolu;
+        // Kullanıcı isteği: "dosyayı kaydederken bu isimle dosya oluşsun
+        // ... uretimos tabsta ki onayla ve kaydete basınca" — ADIM 1'de
+        // (kullanıcı henüz bir kart matches akışı ile ilgisi olmayan bu
+        // düz SolidWorks ribbon komutunda) modelin KENDİ özel alanlarından
+        // (URETIMOS_KOD/URETIMOS_AD — bkz. OzelAlanlar.cs) okunan kod/ad,
+        // ADIM 2'nin varsayılan dosya adını "teknik_resim.dwg" (aynı
+        // klasöre kaydedilen FARKLI parçaların birbirinin ÜZERİNE
+        // YAZILMASINA da yol açan genel bir ad) yerine anlamlı/benzersiz
+        // yapmak için burada saklanır.
+        private string _sonOlusturulanKod, _sonOlusturulanAd;
 
         // Montaj Şeması Oluştur/Onayla için AYRI bir "son model yolu" alanı —
         // teknik resim ve montaj şeması akışları BAĞIMSIZ çalışabilsin diye
@@ -1137,7 +1147,22 @@ namespace UretimOSKesim
             Tanilama.Kaydet("TeknikResimOlusturCalistir: " + aktifYol);
             var resimUretici = new TeknikResimOlusturucu(_app);
             bool basarili = resimUretici.TeknikResimAcVeDuzenlemeyeBirak(aktifYol, sablonYolu);
-            if (basarili) _sonOlusturulanModelYolu = aktifYol;
+            if (basarili)
+            {
+                _sonOlusturulanModelYolu = aktifYol;
+                try
+                {
+                    var aktifModelDoc = (ModelDoc2)aktifBelge;
+                    _sonOlusturulanKod = KesimListesiCikarici.OzelAlanOku(aktifModelDoc, OzelAlanlar.KOD);
+                    _sonOlusturulanAd = KesimListesiCikarici.OzelAlanOku(aktifModelDoc, OzelAlanlar.AD);
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("TeknikResimOlusturCalistir (özel alan okuma) HATA: " + ex);
+                    _sonOlusturulanKod = null;
+                    _sonOlusturulanAd = null;
+                }
+            }
 
             string ozet = basarili
                 ? "Çizim oluşturuldu ve SolidWorks'te açık — yerleşimi/ölçeği elle düzenleyin, " +
@@ -1165,8 +1190,29 @@ namespace UretimOSKesim
                 return;
             }
 
+            // Kullanıcı isteği: "dosyayı kaydederken bu isimle dosya
+            // oluşsun" — ADIM 1'de okunan URETIMOS_KOD/URETIMOS_AD varsa
+            // "kod — ad" (kartın kendi görünen adıyla AYNI biçim, bkz.
+            // ReceteAgaciPaneli.cs'teki AYNI "{kod} — {ad}" deseni), ikisi
+            // de boşsa modelin kendi dosya adına düşülür — HER durumda
+            // sabit "teknik_resim" yerine ANLAMLI/BENZERSİZ bir ad (aksi
+            // halde aynı klasöre kaydedilen FARKLI parçalar birbirinin
+            // ÜZERİNE yazılabiliyordu).
+            string varsayilanAd;
+            if (!string.IsNullOrWhiteSpace(_sonOlusturulanKod) && !string.IsNullOrWhiteSpace(_sonOlusturulanAd))
+                varsayilanAd = $"{_sonOlusturulanKod} — {_sonOlusturulanAd}";
+            else if (!string.IsNullOrWhiteSpace(_sonOlusturulanKod))
+                varsayilanAd = _sonOlusturulanKod;
+            else if (!string.IsNullOrWhiteSpace(_sonOlusturulanAd))
+                varsayilanAd = _sonOlusturulanAd;
+            else if (!string.IsNullOrWhiteSpace(_sonOlusturulanModelYolu))
+                varsayilanAd = Path.GetFileNameWithoutExtension(_sonOlusturulanModelYolu);
+            else
+                varsayilanAd = "teknik_resim";
+            foreach (char c in Path.GetInvalidFileNameChars()) varsayilanAd = varsayilanAd.Replace(c, '_');
+
             string dwgYolu;
-            using (var kaydetDialog = new SaveFileDialog { Filter = "DWG dosyası|*.dwg", FileName = "teknik_resim.dwg" })
+            using (var kaydetDialog = new SaveFileDialog { Filter = "DWG dosyası|*.dwg", FileName = varsayilanAd + ".dwg" })
             {
                 if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
                 dwgYolu = kaydetDialog.FileName;

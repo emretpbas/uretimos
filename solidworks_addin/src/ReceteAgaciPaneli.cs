@@ -1458,7 +1458,10 @@ namespace UretimOSKesim
                     varsayilanKlasor = modelKlasoru;
             }
 
-            string dosyaAdOnEki = kod ?? "teknik_resim";
+            // Kullanıcı isteği: "dosyayı kaydederken bu isimle dosya
+            // oluşsun" — "📎 Teknik Resim" diyaloğundaki AYNI "{kod} — {ad}"
+            // biçimi (ör. "54.001.400.051.00 — KAVELA PLASTİK 8mm SİYAH").
+            string dosyaAdOnEki = !string.IsNullOrWhiteSpace(kod) && !string.IsNullOrWhiteSpace(ad) ? $"{kod} — {ad}" : (kod ?? ad ?? "teknik_resim");
             foreach (char c in Path.GetInvalidFileNameChars()) dosyaAdOnEki = dosyaAdOnEki.Replace(c, '_');
 
             string dwgHedefYolu;
