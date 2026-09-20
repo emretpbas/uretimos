@@ -151,6 +151,30 @@ namespace UretimOSKesim
             var yanit = await _http.PostAsync(_tabanUrl + "?action=dosyaYukle", icerikGovde);
             if (yanit.IsSuccessStatusCode) return (true, null);
 
+            // Gerçek kullanıcı geri bildirimi: bir DWG "HTTP 413" ile
+            // reddedildi ama AYNI kartın PDF'i sorunsuz yüklendi. 413
+            // (Request Entity Too Large), api.php'nin KENDİ 15 MB kontrolüne
+            // (TEKNIK_DOSYA_MAX_BAYT, bkz. api.php) HİÇ ULAŞILAMADAN — web
+            // sunucusu/PHP (post_max_size, upload_max_filesize veya
+            // LiteSpeed/Apache'nin kendi istek gövdesi sınırı) isteği PHP
+            // koduna hiç ulaştırmadan reddettiğinde oluşur; gövde çoğunlukla
+            // JSON DEĞİL (sunucunun kendi HTML hata sayfası), bu yüzden
+            // aşağıdaki genel "error" ayrıştırması SESSİZCE boş kalıp yalnızca
+            // "HTTP 413" derdi — kullanıcı NE YAPACAĞINI anlayamazdı. Gerçek
+            // sebep ve düzeltme yolu (cPanel > MultiPHP INI Editor) burada
+            // AÇIKÇA söyleniyor — bu bir TAHMİN değil, HTTP 413'ün standart/
+            // belgelenmiş anlamı.
+            if (yanit.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+            {
+                double megabayt = icerik.Length / 1024.0 / 1024.0;
+                return (false,
+                    $"Sunucu bu dosyayı ({megabayt:0.0} MB) ÇOK BÜYÜK bulup reddetti (HTTP 413) — bu, " +
+                    "ÜretimOS'un kendi 15 MB sınırından ÖNCE, web sunucusunun/PHP'nin kendi post_max_size " +
+                    "ve upload_max_filesize ayarlarında oluyor. Düzeltmek için cPanel'de: Software > " +
+                    "'MultiPHP INI Editor' (ya da 'Select PHP Version' > Options) açıp bu iki değeri " +
+                    "(genelde varsayılan 8M/32M) yeterince büyük (ör. 64M) bir değere yükseltin.");
+            }
+
             string hataMesaji = "HTTP " + (int)yanit.StatusCode;
             try
             {

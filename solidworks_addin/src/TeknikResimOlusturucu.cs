@@ -26,12 +26,23 @@ namespace UretimOSKesim
     // ile Ön/Üst/Sağ/İzometrik için doğru hizalı, antetten uzak 4 boş
     // görünüş yeri yerleştirip şablonu kaydedin). Bu API o boş yerlere
     // modeli otomatik doldurur — SİZİN yerleştirdiğiniz konumda kalır.
-    // Ölçülendirme BİLİNÇLİ olarak koda eklenmedi: resmi InsertModelAnnotations3
-    // API'sinin bitmask parametreleri (swInsertAnnotation_e) belgelerde net
-    // değil, yanlış bir bitmask ÇÖKME değil ama SESSİZ YANLIŞ/eksik ölçü
-    // riski taşır. Madem zaten elle düzenleme adımı var, ölçülendirmeyi
-    // SolidWorks'ün kendi "Insert > Annotations > Model Items" menüsünden
-    // elle yapın — daha güvenilir, tam kontrol sizde.
+    //
+    // ÖLÇÜLENDİRME (kullanıcı isteği: "teknik resim otomatik ölçülendirme
+    // ile gelsin resimdeki gibi" — önceki turda BİLİNÇLİ olarak dışarıda
+    // bırakılmıştı, artık AÇIKÇA istendiği için eklendi): SolidWorks'ün
+    // "Insert > Annotations > Model Items" menü komutuyla AYNI, resmi
+    // IModelDocExtension.InsertModelAnnotations3 API'si kullanılıyor.
+    // BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu): bu ortamda (SolidWorks
+    // SDK'sı yok) CANLI test EDİLEMEDİ — parametreler (swImportModelItemsSource_e/
+    // swInsertAnnotation_e enum değerleri VE parametre SAYISI) SolidWorks'ün
+    // resmi API örneklerinde EN YAYGIN görülen kombinasyona göre yazıldı.
+    // Yanlış çıkarsa İKİ olası sonuç var: (a) parametre SAYISI/tipi
+    // tutmuyorsa GÜVENLİ bir derleme hatası (CS1501/CS7036) — TAHMİN
+    // edilmez, gerçek derleme geri bildirimiyle düzeltilir; (b) enum
+    // DEĞERİ yanlışsa ÇÖKME olmaz, yalnızca ölçüler eksik/hiç gelmez —
+    // bu yüzden sonuç (bool + log) her zaman kontrol edilir ve elle
+    // düzenleme adımı (zaten var olan "1) Oluştur → düzenle → 2) Onayla"
+    // akışı) her durumda bir güvenlik ağı olarak kalır.
     // ════════════════════════════════════════════════════════════════════════
     public class TeknikResimOlusturucu
     {
@@ -74,6 +85,25 @@ namespace UretimOSKesim
                         "Şablonunuzda (.drwdot) Insert > Drawing View > Predefined ile " +
                         "Ön/Üst/Sağ/İzometrik görünüş yerleri tanımlanmış mı kontrol edin.");
                     return false;
+                }
+
+                // Kullanıcı isteği: "teknik resim otomatik ölçülendirme ile
+                // gelsin" — bkz. yukarıdaki sınıf başlığı notu (dürüstlük).
+                try
+                {
+                    var ext = (IModelDocExtension)cizimBelge.Extension;
+                    bool olculendirildi = ext.InsertModelAnnotations3(
+                        (int)swImportModelItemsSource_e.swImportModelItemsFromEntireModel,
+                        (int)swInsertAnnotation_e.swInsertDimensionsMarkedForDrawing,
+                        true, false, false);
+                    Tanilama.Kaydet("InsertModelAnnotations3 sonucu: " + olculendirildi);
+                    if (!olculendirildi)
+                        _uyarilar.Add("Otomatik ölçülendirme eklenemedi — Insert > Annotations > Model Items ile elle ekleyebilirsiniz.");
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("InsertModelAnnotations3 HATA: " + ex);
+                    _uyarilar.Add("Otomatik ölçülendirme denenirken hata oluştu — Insert > Annotations > Model Items ile elle ekleyebilirsiniz.");
                 }
 
                 Tanilama.Kaydet("ViewZoomtofit2 cagriliyor");
