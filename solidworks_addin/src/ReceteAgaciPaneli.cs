@@ -54,6 +54,15 @@ namespace UretimOSKesim
         private JObject _hatlar, _ayarlar;
         private bool _verilerYuklendi;
 
+        // BaglantiAyarlari.cs'teki AYNI klasör (%LocalAppData%\UretimOSKesim\)
+        // — ⬇ İndir butonuyla yazılan dosya buraya konur ki her SolidWorks
+        // açılışında OTOMATİK bulunsun (kullanıcı isteği: "indirdiğim
+        // dosyadan çalışsın ve tekrar üretimosa bağlanmasın"). Bkz.
+        // YerelOnbellektenYukle / MasterVeriyiYerelIndir.
+        private static readonly string YerelVeriOnbellekYolu = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "UretimOSKesim", "veri_onbellek.json");
+
         private string _kokTip;   // urun | yarimamul | altmontaj | paket
         private JObject _kokKart; // { id, kod, ad, ... }
 
@@ -392,25 +401,44 @@ namespace UretimOSKesim
             try
             {
                 _istemci = new UretimOSApiClient(ayar.SunucuUrl);
-                if (!await _istemci.GirisYap(ayar.KullaniciAdi, ayar.Sifre))
-                {
-                    _durumEtiketi.ForeColor = Color.DarkRed;
-                    _durumEtiketi.Text = "Giriş başarısız — " + BaglantiAyarlari.DosyaYoluGoster() + " içindeki bilgileri kontrol edin.";
-                    return;
-                }
+                // Kullanıcı isteği: "hammadde ve ürün kodlarını indirdikten
+                // sonra indirdiğim dosyadan çalışsın ve tekrar üretimosa
+                // bağlanmasın, ben tekrar indir butonuna basarsam indirilsin."
+                // Giriş (kaydetme/gönderme YAZMA işlemleri için gerekli)
+                // YİNE denenir, ama BAŞARISIZ olsa BİLE (ör. internet yok)
+                // yerel önbellek varsa onunla ÇALIŞMAYA DEVAM edilir — tam
+                // çevrimdışı görüntüleme/hazırlık mümkün olsun diye. Giriş
+                // başarısızsa yazma denemeleri (Kaydet vb.) zaten kendi
+                // try/catch'lerinde "kaydedilemedi" diyerek nazikçe başarısız
+                // olur (bkz. UrunKokuOlustur, KaydetTikla vb.) — burada ayrıca
+                // bir engelleme GEREKMEZ.
+                bool girisBasarili;
+                try { girisBasarili = await _istemci.GirisYap(ayar.KullaniciAdi, ayar.Sifre); }
+                catch (Exception ex) { Tanilama.Kaydet("VerileriYukleVeBaslat GirisYap HATA (çevrimdışı olabilir): " + ex); girisBasarili = false; }
 
-                _urunler = JArray.Parse(await _istemci.Getir("urunler") ?? "[]");
-                _yarimamuller = JArray.Parse(await _istemci.Getir("yarimamuller") ?? "[]");
-                _altMontajlar = JArray.Parse(await _istemci.Getir("altMontajlar") ?? "[]");
-                _paketler = JArray.Parse(await _istemci.Getir("paketler") ?? "[]");
-                _hammaddeler = JArray.Parse(await _istemci.Getir("hammaddeler") ?? "[]");
-                _receteler = JArray.Parse(await _istemci.Getir("receteler") ?? "[]");
-                _rotalar = JArray.Parse(await _istemci.Getir("rotalar") ?? "[]");
-                _hatlar = JObject.Parse(await _istemci.Getir("hatlar") ?? "{}");
-                // data.js'teki VARSAYILAN_AYARLAR.saatlikIscilikUcreti = 500 ile
-                // AYNI varsayılan — sunucuda "ayarlar" hiç yazılmamışsa (ilk
-                // kurulum) bu değere düşülür, TAHMİN değil web'in kendi varsayılanı.
-                _ayarlar = JObject.Parse(await _istemci.Getir("ayarlar") ?? "{}");
+                bool onbellektenMi = YerelOnbellektenYukle(out string onbellekKapsam, out string onbellekTarih);
+
+                if (!onbellektenMi)
+                {
+                    if (!girisBasarili)
+                    {
+                        _durumEtiketi.ForeColor = Color.DarkRed;
+                        _durumEtiketi.Text = "Giriş başarısız — " + BaglantiAyarlari.DosyaYoluGoster() + " içindeki bilgileri kontrol edin.";
+                        return;
+                    }
+                    _urunler = JArray.Parse(await _istemci.Getir("urunler") ?? "[]");
+                    _yarimamuller = JArray.Parse(await _istemci.Getir("yarimamuller") ?? "[]");
+                    _altMontajlar = JArray.Parse(await _istemci.Getir("altMontajlar") ?? "[]");
+                    _paketler = JArray.Parse(await _istemci.Getir("paketler") ?? "[]");
+                    _hammaddeler = JArray.Parse(await _istemci.Getir("hammaddeler") ?? "[]");
+                    _receteler = JArray.Parse(await _istemci.Getir("receteler") ?? "[]");
+                    _rotalar = JArray.Parse(await _istemci.Getir("rotalar") ?? "[]");
+                    _hatlar = JObject.Parse(await _istemci.Getir("hatlar") ?? "{}");
+                    // data.js'teki VARSAYILAN_AYARLAR.saatlikIscilikUcreti = 500 ile
+                    // AYNI varsayılan — sunucuda "ayarlar" hiç yazılmamışsa (ilk
+                    // kurulum) bu değere düşülür, TAHMİN değil web'in kendi varsayılanı.
+                    _ayarlar = JObject.Parse(await _istemci.Getir("ayarlar") ?? "{}");
+                }
                 _verilerYuklendi = true;
 
                 PaletiFiltrele();
@@ -474,14 +502,50 @@ namespace UretimOSKesim
                         ? "Yukarıdaki bileşen ağacından bir bileşen seçin — kartı otomatik eşleşirse burada görünür, eşleşmezse 'Farklı Kart Seç…' ile eşleştirin."
                         : "Aktif belgede bileşen bulunamadı.";
                 }
-                _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ Bağlandı — {toplamBilesen} bileşen listelendi, {_receteler.Count} reçete, {_hammaddeler.Count} hammadde yüklendi.";
+                string kaynakNotu = onbellektenMi
+                    ? $" — yerel önbellekten yüklendi ({(onbellekKapsam == "baglantili" ? "yalnızca önceki dosyaya bağlantılı" : "komple")}, {onbellekTarih}); güncellemek için ⬇ İndir'e basın."
+                    : "";
+                string baglantiNotu = girisBasarili ? "" : "  ⚠ ÜretimOS'a giriş yapılamadı — kaydetme/gönderme işlemleri şu an ÇALIŞMAYACAK, yalnızca görüntüleme/hazırlık yapabilirsiniz.";
+                _durumEtiketi.ForeColor = !girisBasarili || (onbellektenMi && onbellekKapsam == "baglantili") ? Color.DarkOrange : Color.DarkGreen;
+                _durumEtiketi.Text = $"✓ {toplamBilesen} bileşen listelendi, {_receteler.Count} reçete, {_hammaddeler.Count} hammadde yüklendi.{kaynakNotu}{baglantiNotu}";
             }
             catch (Exception ex)
             {
                 Tanilama.Kaydet("ReceteAgaciPaneli.VerileriYukleVeBaslat HATA: " + ex);
                 _durumEtiketi.ForeColor = Color.DarkRed;
                 _durumEtiketi.Text = "Veri çekilemedi: " + ex.Message;
+            }
+        }
+
+        // ⬇ İndir butonuyla (MasterVeriyiYerelIndir) daha önce yazılmış bir
+        // yerel önbellek dosyası varsa TÜM başlangıç verisini (hammaddeler,
+        // ürün/yarımamül/paket/altmontaj kartları, reçeteler, rotalar,
+        // hatlar, ayarlar) sunucuya HİÇ gitmeden bu dosyadan doldurur.
+        // Dosya yoksa/bozuksa false döner (çağıran canlı çekmeye düşer).
+        private bool YerelOnbellektenYukle(out string kapsam, out string tarih)
+        {
+            kapsam = null; tarih = null;
+            try
+            {
+                if (!File.Exists(YerelVeriOnbellekYolu)) return false;
+                var kok = JObject.Parse(File.ReadAllText(YerelVeriOnbellekYolu));
+                _hammaddeler = kok["hammaddeler"] as JArray ?? new JArray();
+                _urunler = kok["urunler"] as JArray ?? new JArray();
+                _yarimamuller = kok["yarimamuller"] as JArray ?? new JArray();
+                _paketler = kok["paketler"] as JArray ?? new JArray();
+                _altMontajlar = kok["altMontajlar"] as JArray ?? new JArray();
+                _receteler = kok["receteler"] as JArray ?? new JArray();
+                _rotalar = kok["rotalar"] as JArray ?? new JArray();
+                _hatlar = kok["hatlar"] as JObject ?? new JObject();
+                _ayarlar = kok["ayarlar"] as JObject ?? new JObject();
+                kapsam = (string)kok["kapsam"] ?? "komple";
+                tarih = (string)kok["indirmeTarihi"] ?? "?";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("YerelOnbellektenYukle HATA (canlı veriye düşülüyor): " + ex);
+                return false;
             }
         }
 
@@ -3095,14 +3159,56 @@ namespace UretimOSKesim
         // erişilebilen reçete ağacını (transitif kapanış) içerir.
         private async System.Threading.Tasks.Task MasterVeriyiYerelIndir()
         {
-            if (!_verilerYuklendi)
+            if (_istemci == null)
             {
                 MessageBox.Show("Önce ÜretimOS'a bağlanılması gerekiyor.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            // Kullanıcı isteği: "ben tekrar indir butonuna basarsam
+            // indirilsin" — bu buton HER TIKLANDIĞINDA (oturum daha önce
+            // yerel önbellekten açılmış, potansiyel olarak ESKİ veriyle
+            // çalışıyor olsa BİLE) sunucudan TAZE veri çeker; bellekteki
+            // kaydedilmemiş taslak değişiklikler varsa (henüz '✓ ÜretimOS'a
+            // Kaydet'e basılmadıysa) bu taze veriyle EZİLEBİLİR (görünmez
+            // hale gelebilir) — kullanıcı açıkça onaylamadan devam edilmez.
+            if (_degisenReceteler.Count > 0 || _degisenKartlar.Count > 0)
+            {
+                var uyariSonuc = MessageBox.Show(
+                    "Kaydedilmemiş değişiklikleriniz var.\n\n" +
+                    "ÜretimOS'tan yeniden indirmek, henüz '✓ ÜretimOS'a Kaydet' ile kaydetmediğiniz " +
+                    "değişikliklerin ekranda GÖRÜNMEZ hale gelmesine yol açabilir (sunucudaki veri asıl kaynak olur).\n\n" +
+                    "Yine de devam etmek istiyor musunuz?",
+                    "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (uyariSonuc != DialogResult.Yes) return;
+            }
 
             string kapsam = KapsamSecimiSor();
             if (kapsam == null) return;
+
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = "⬇ ÜretimOS'tan güncel veri indiriliyor…";
+            try
+            {
+                _urunler = JArray.Parse(await _istemci.Getir("urunler") ?? "[]");
+                _yarimamuller = JArray.Parse(await _istemci.Getir("yarimamuller") ?? "[]");
+                _altMontajlar = JArray.Parse(await _istemci.Getir("altMontajlar") ?? "[]");
+                _paketler = JArray.Parse(await _istemci.Getir("paketler") ?? "[]");
+                _hammaddeler = JArray.Parse(await _istemci.Getir("hammaddeler") ?? "[]");
+                _receteler = JArray.Parse(await _istemci.Getir("receteler") ?? "[]");
+                _rotalar = JArray.Parse(await _istemci.Getir("rotalar") ?? "[]");
+                _hatlar = JObject.Parse(await _istemci.Getir("hatlar") ?? "{}");
+                _ayarlar = JObject.Parse(await _istemci.Getir("ayarlar") ?? "{}");
+                _verilerYuklendi = true;
+                PaletiFiltrele();
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("MasterVeriyiYerelIndir (canlı çekme) HATA: " + ex);
+                _durumEtiketi.ForeColor = Color.DarkRed;
+                _durumEtiketi.Text = "ÜretimOS'a bağlanılamadı — indirme iptal edildi.";
+                MessageBox.Show("ÜretimOS'tan veri çekilemedi: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
             JArray urunlerDisa, yarimamullerDisa, paketlerDisa, altMontajlarDisa, receteleroDisa;
             if (kapsam == "komple")
@@ -3157,6 +3263,10 @@ namespace UretimOSKesim
                 }
             }
 
+            // rotalar/hatlar/ayarlar HER ZAMAN komple dahil edilir (hammaddeler
+            // ile AYNI gerekçe — küçük, ürün/yarımamül'e özel olmayan referans
+            // veriler) ki bir sonraki açılışta TÜM başlangıç verisi (bkz.
+            // YerelOnbellektenYukle) sunucuya hiç gitmeden bu dosyadan gelsin.
             var kokNesne = new JObject
             {
                 ["indirmeTarihi"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
@@ -3166,26 +3276,31 @@ namespace UretimOSKesim
                 ["yarimamuller"] = yarimamullerDisa,
                 ["paketler"] = paketlerDisa,
                 ["altMontajlar"] = altMontajlarDisa,
-                ["receteler"] = receteleroDisa
+                ["receteler"] = receteleroDisa,
+                ["rotalar"] = _rotalar,
+                ["hatlar"] = _hatlar,
+                ["ayarlar"] = _ayarlar
             };
 
-            string varsayilanAd = "uretimos_veri_" + kapsam + "_" + DateTime.Now.ToString("yyyyMMdd_HHmm") + ".json";
-            using (var kaydetDialog = new SaveFileDialog { Filter = "JSON dosyası|*.json", FileName = varsayilanAd })
+            // Kullanıcı isteği: "indirdiğim dosyadan çalışsın" — SABİT, iyi
+            // bilinen bir konuma yazılır (SaveFileDialog ile HER SEFERİNDE
+            // farklı bir yer/isim seçilseydi bir sonraki açılış onu
+            // OTOMATİK bulamazdı).
+            try
             {
-                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
-                try
-                {
-                    File.WriteAllText(kaydetDialog.FileName, kokNesne.ToString(Newtonsoft.Json.Formatting.Indented));
-                    _durumEtiketi.ForeColor = Color.DarkGreen;
-                    _durumEtiketi.Text = $"✓ Veri indirildi ({(kapsam == "komple" ? "komple" : "bağlantılı")}): {kaydetDialog.FileName} — " +
-                        $"{_hammaddeler.Count} hammadde, {urunlerDisa.Count} ürün, {yarimamullerDisa.Count} yarımamül, " +
-                        $"{paketlerDisa.Count} paket, {altMontajlarDisa.Count} alt montaj, {receteleroDisa.Count} reçete.";
-                }
-                catch (Exception ex)
-                {
-                    Tanilama.Kaydet("MasterVeriyiYerelIndir HATA: " + ex);
-                    MessageBox.Show("Dosya yazılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                string klasor = Path.GetDirectoryName(YerelVeriOnbellekYolu);
+                Directory.CreateDirectory(klasor);
+                File.WriteAllText(YerelVeriOnbellekYolu, kokNesne.ToString(Newtonsoft.Json.Formatting.Indented));
+                _durumEtiketi.ForeColor = Color.DarkGreen;
+                _durumEtiketi.Text = $"✓ Güncel veri indirildi ve yerel önbelleğe kaydedildi ({(kapsam == "komple" ? "komple" : "bağlantılı")}): {YerelVeriOnbellekYolu} — " +
+                    $"{_hammaddeler.Count} hammadde, {urunlerDisa.Count} ürün, {yarimamullerDisa.Count} yarımamül, " +
+                    $"{paketlerDisa.Count} paket, {altMontajlarDisa.Count} alt montaj, {receteleroDisa.Count} reçete. " +
+                    "Bir sonraki açılışta ÜretimOS'a tekrar bağlanıp bu veriler indirilmeden bu dosyadan çalışılacak.";
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("MasterVeriyiYerelIndir (dosya yazma) HATA: " + ex);
+                MessageBox.Show("Dosya yazılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
