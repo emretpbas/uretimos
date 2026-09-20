@@ -80,6 +80,29 @@ namespace UretimOSKesim
             return obj.value;
         }
 
+        // action=set → { key, value(JSON string) } — sürüm çakışma kontrolü
+        // İÇİN "beklenenSurum" BİLEREK gönderilmez: api.php bu alan yoksa
+        // (array_key_exists false) sürüm kontrolünü atlayıp doğrudan yazar
+        // (bkz. api.php action=set, storage.js'in kendi set()'i de AYNI
+        // deseni "beklenenSurum: null" ile kullanır). "hatlar" (obje, id'li
+        // kayıt DİZİSİ değil) gibi patch'e UYMAYAN anahtarlar için kullanılır
+        // — kullanıcı isteği: "hat ve makina galerisini... buraya kopyala,
+        // üretimosa buradan push edelim" (bkz. RotaEditoru.cs).
+        public async Task<bool> Kaydet(string anahtar, object deger)
+        {
+            var govdeNesne = new Dictionary<string, object>
+            {
+                ["key"] = anahtar,
+                ["value"] = Newtonsoft.Json.JsonConvert.SerializeObject(deger),
+                ["sayfa"] = "solidworks_addin"
+            };
+            var icerik = new StringContent(
+                Newtonsoft.Json.JsonConvert.SerializeObject(govdeNesne),
+                Encoding.UTF8, "application/json");
+            var yanit = await _http.PostAsync(_tabanUrl + "?action=set", icerik);
+            return yanit.IsSuccessStatusCode;
+        }
+
         // action=patch → { key, ekle:[...], guncelle:[...], sil:[...] }
         // Atomik, sürüm çakışması sunucuda otomatik çözülür (bkz. api.php
         // action=patch dokümantasyonu) — add-in'in "beklenenSurum" göndermesi

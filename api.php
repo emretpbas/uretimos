@@ -575,16 +575,30 @@ const HAT_OP_YAZILABILIR = ['istasyonIsleri', 'gerceklesenSureKayitlari', 'olcum
 // değiştirmez — kart düzenleme ÜretimOS'un kendi ekranında kalır).
 // rotalar OKUNABİLİR VE YAZILABİLİR: reçete ağacı panelindeki "Rota Seç /
 // Oluştur" özelliği bir yarı mamüle YENİ, BOŞ adımlı bir rota kaydı
-// oluşturabilir (istasyon/süre ADIMLARI kasıtlı olarak TAHMİN EDİLMEZ —
-// kullanıcı bunları ÜretimOS'un kendi Rota ekranından tamamlar); mevcut
-// rotaların silinmesi/adımlarının değiştirilmesi bu uçtan YAPILMAZ.
+// oluşturabilir. GÜNCELLEME (kullanıcı isteği: "rota oluşturma ekranı ...
+// üretimos.com.tr'ye bağlanıyor, bu ekranı indirelim ve burada yeni
+// rotaları oluşturalım ve üretimosa buradan push edelim, hat ve makina
+// galerisini süre ekleme ekranını aynen buraya kopyala"): eklentinin
+// SolidWorks içindeki (WinForms) Rota Editörü artık page_rota.js'in
+// hat/makine seçimi + süre girişi + maliyet özeti mantığını BİREBİR
+// (tahmin/yeniden icat DEĞİL, aynı veri modeliyle) yeniden üretir ve
+// MEVCUT bir rotanın adımlarını da değiştirebilir — bu YUKARIDAKİ eski
+// kısıtlamanın (adım değişikliği bu uçtan yapılmaz) BİLEREK kaldırılması,
+// artık bu uçtan geçerli.
+// hatlar OKUNABİLİR VE YAZILABİLİR (AYNI istek): Rota Editörü'nün sol
+// panelindeki hat/makine galerisi ÜretimOS'un KENDİ 'hatlar' anahtarından
+// (Store.hatlarGetir/hatlarKaydet ile AYNI basit obje, id'li kayıt dizisi
+// OLMADIĞI için patch değil action=set/Kaydet() kullanılır) okunur; "+
+// Yeni İstasyon/Hat Ekle" ile eklenen yeni makine/hat de buraya geri yazılır.
+// ayarlar YALNIZCA OKUNABİLİR: yalnızca saatlikIscilikUcreti (rota maliyet
+// özeti için) okunur, eklenti bu ayarı DEĞİŞTİRMEZ.
 // cncTakimlari YALNIZCA OKUNABİLİR (hammaddeler ile AYNI gerekçe): CNC
 // Operasyon Paneli bir freze takımını operasyona SEÇER, takım kütüphanesini
 // değiştirmez/oluşturmaz — takım tanımı ÜretimOS'un kendi ekranından yapılır.
 // 'delete' ucu bu role TAMAMEN KAPALI (aşağıda ayrıca engellenir) — delete
 // bir koleksiyonun TAMAMINI siler, otomasyon kimliğine bu güç verilmez.
-const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler', 'receteler', 'rotalar', 'cncTakimlari'];
-const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler', 'rotalar'];
+const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler', 'receteler', 'rotalar', 'cncTakimlari', 'hatlar', 'ayarlar'];
+const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler', 'rotalar', 'hatlar'];
 
 // ── ROL BAZLI ERİŞİM DENETİMİ ──────────────────────────────────────────────
 // GÜVENLİK DÜZELTMESİ (v39): Önceden get/set/patch/delete uçları yalnızca

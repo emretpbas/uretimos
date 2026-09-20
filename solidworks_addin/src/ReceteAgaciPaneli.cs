@@ -46,6 +46,12 @@ namespace UretimOSKesim
         private UretimOSApiClient _istemci;
 
         private JArray _urunler, _yarimamuller, _altMontajlar, _paketler, _hammaddeler, _receteler, _rotalar;
+        // "hatlar" (hat adı → makine listesi) VE "ayarlar" (saatlikIscilikUcreti
+        // dahil), storage.js'teki AYNI basit obje anahtarları — id'li kayıt
+        // DİZİSİ olmadıkları için _urunler vb. gibi JArray değil JObject.
+        // Kullanıcı isteği: "hat ve makina galerisini... buraya kopyala" —
+        // bkz. RotaEditoru.cs.
+        private JObject _hatlar, _ayarlar;
         private bool _verilerYuklendi;
 
         private string _kokTip;   // urun | yarimamul | altmontaj | paket
@@ -291,8 +297,16 @@ namespace UretimOSKesim
             // BİLEREK ayrı butonlar/dosyalardır, birbirini kapsamaz.
             var bilesenXmlBtn = new Button { Text = "Bileşen Ağacını XML Olarak Dışa Aktar…", Dock = DockStyle.Left, Width = 240 };
             bilesenXmlBtn.Click += (s, e) => BilesenAgaciniXmlOlarakDisaAktar();
+            // Kullanıcı isteği: "hammadde ve yarımamül bant plaka sarf ürün
+            // kodlarını ve ürün ağacı reçetelerini indir diye bir tuş koy ve
+            // bu tuşa basarak hammaddeleri komple indir ancak tüm ürün,
+            // yarımamül, paket ve altmontaj kodlarını komple mi yoksa sadece
+            // bağlantılı olanları mı indireceğini sor" — bkz. MasterVeriyiYerelIndir.
+            var veriIndirBtn = new Button { Text = "⬇ Hammadde/Ürün Kodları ve Reçeteleri İndir…", Dock = DockStyle.Left, Width = 290 };
+            veriIndirBtn.Click += async (s, e) => await MasterVeriyiYerelIndir();
             bilesenAraPanel.Controls.Add(receteOlarakAktarBtn);
             bilesenAraPanel.Controls.Add(bilesenXmlBtn);
+            bilesenAraPanel.Controls.Add(veriIndirBtn);
 
             // Kullanıcı isteği: "bu ekranla solidworksteki reçete ağaç
             // editörünü aynı esneklikte olsun" — TreeView'daki çift tık/sağ
@@ -392,6 +406,11 @@ namespace UretimOSKesim
                 _hammaddeler = JArray.Parse(await _istemci.Getir("hammaddeler") ?? "[]");
                 _receteler = JArray.Parse(await _istemci.Getir("receteler") ?? "[]");
                 _rotalar = JArray.Parse(await _istemci.Getir("rotalar") ?? "[]");
+                _hatlar = JObject.Parse(await _istemci.Getir("hatlar") ?? "{}");
+                // data.js'teki VARSAYILAN_AYARLAR.saatlikIscilikUcreti = 500 ile
+                // AYNI varsayılan — sunucuda "ayarlar" hiç yazılmamışsa (ilk
+                // kurulum) bu değere düşülür, TAHMİN değil web'in kendi varsayılanı.
+                _ayarlar = JObject.Parse(await _istemci.Getir("ayarlar") ?? "{}");
                 _verilerYuklendi = true;
 
                 PaletiFiltrele();
@@ -2076,7 +2095,10 @@ namespace UretimOSKesim
         private async System.Threading.Tasks.Task RotaSecVeyaOlusturDialogAc(string kartTipi, JObject kart)
         {
             string koleksiyon = kartTipi == "paket" ? "paketler" : kartTipi == "altmontaj" ? "altMontajlar" : kartTipi == "urun" ? "urunler" : "yarimamuller";
-            using (var dlg = new Form { Text = "Rota Seç / Oluştur — " + kart["kod"], Width = 520, Height = 440, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = new Font(Control.DefaultFont.FontFamily, 10f) })
+            // data.js'teki VARSAYILAN_AYARLAR.saatlikIscilikUcreti = 500 ile
+            // AYNI varsayılan (bkz. VerileriYukleVeBaslat'taki _ayarlar notu).
+            double dkUcreti = ((double?)_ayarlar?["saatlikIscilikUcreti"] ?? 500) / 60.0;
+            using (var dlg = new Form { Text = "Rota Seç / Oluştur — " + kart["kod"], Width = 520, Height = 480, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = new Font(Control.DefaultFont.FontFamily, 10f) })
             {
                 var icPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
                 var mevcutRotaId = (string)kart["rotaId"];
@@ -2087,15 +2109,59 @@ namespace UretimOSKesim
                 int mevcutIndex = rotaListesi.FindIndex(r => (string)r["id"] == mevcutRotaId);
                 kutu.SelectedIndex = mevcutIndex >= 0 ? mevcutIndex + 1 : 0;
 
-                var secBtn = new Button { Text = "Bu Rotayı Ata", Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 0, 0, 16) };
+                var secBtn = new Button { Text = "Bu Rotayı Ata", Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 0, 0, 10) };
+                // Kullanıcı isteği: "son yaptığın rota oluşturma ekranı
+                // üretimos.com.tr'ye bağlanıyor, bu ekranı indirelim ve
+                // burada yeni rotaları oluşturalım ve üretimosa buradan push
+                // edelim, hat ve makina galerisini süre ekleme ekranını
+                // aynen buraya kopyala, üretimos.com.tr'ye bağlanmaya gerek
+                // kalmasın" — RotaEditoru.cs artık page_rota.js'in hat/
+                // makine/süre/maliyet mantığını BİREBİR SolidWorks içinde
+                // (tarayıcıya geçmeden) çalıştırır; bkz. RotaEditoruAcVeKaydet.
+                var duzenleBtn = new Button { Text = "✎ Seçili Rotanın Hat/Makine/Süre Adımlarını Düzenle…", Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 0, 0, 16) };
                 var ayirici = new Label { Text = "— veya yeni bir rota oluştur —", Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 28, ForeColor = Color.DarkSlateGray };
                 var yeniKodEtiket = new Label { Text = "Yeni rota kodu:", Dock = DockStyle.Top, Height = 22, Padding = new Padding(0, 6, 0, 0) };
                 var yeniKodKutu = new TextBox { Dock = DockStyle.Top, Height = 28, Margin = new Padding(0, 0, 0, 10) };
                 var yeniAdEtiket = new Label { Text = "Yeni rota adı:", Dock = DockStyle.Top, Height = 22, Padding = new Padding(0, 6, 0, 0) };
                 var yeniAdKutu = new TextBox { Dock = DockStyle.Top, Height = 28, Margin = new Padding(0, 0, 0, 14) };
-                var yeniOlusturBtn = new Button { Text = "+ Yeni Rota Oluştur ve Ata", Dock = DockStyle.Top, Height = 34 };
+                var yeniOlusturBtn = new Button { Text = "+ Yeni Rota Oluştur (Hat/Makine/Süre Girerek)", Dock = DockStyle.Top, Height = 34 };
 
                 bool degisti = false;
+
+                // RotaEditoruDialog'u açar; "rota" parametresinde "id" varsa
+                // (mevcut bir rota düzenleniyor) sunucuya 'guncelle', yoksa
+                // (yeni rota, id BİLEREK boş bırakılır — editör kendisi
+                // üretir) 'ekle' olarak PATCH edilir. Kullanıcı hat/istasyon
+                // galerisine yeni bir makine eklediyse "hatlar" anahtarı da
+                // ayrıca Kaydet() ile sunucuya yazılır.
+                async System.Threading.Tasks.Task<JObject> RotaEditoruAcVeKaydet(JObject rota)
+                {
+                    bool yeniMi = string.IsNullOrEmpty((string)rota?["id"]);
+                    using (var editor = new RotaEditoruDialog(rota, _hatlar, dkUcreti))
+                    {
+                        if (editor.ShowDialog(dlg) != DialogResult.OK) return null;
+                        var sonuc = editor.SonucRota;
+                        try
+                        {
+                            if (yeniMi)
+                                await _istemci.ToplukaEkleGuncelle("rotalar", new List<object> { sonuc }, new List<object>());
+                            else
+                                await _istemci.ToplukaEkleGuncelle("rotalar", new List<object>(), new List<object> { sonuc });
+                            if (editor.HatlarDegisti)
+                            {
+                                _hatlar = editor.GuncelHatlar;
+                                await _istemci.Kaydet("hatlar", _hatlar);
+                            }
+                            return sonuc;
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show("Rota kaydedilemedi: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return null;
+                        }
+                    }
+                }
+
                 secBtn.Click += async (s, e) =>
                 {
                     string secilenId = kutu.SelectedIndex > 0 ? (string)rotaListesi[kutu.SelectedIndex - 1]["id"] : null;
@@ -2111,6 +2177,21 @@ namespace UretimOSKesim
                         MessageBox.Show("Kaydedilemedi: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 };
+                duzenleBtn.Click += async (s, e) =>
+                {
+                    if (kutu.SelectedIndex <= 0)
+                    {
+                        MessageBox.Show("Önce üstteki listeden bir rota seçin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+                    var hedefRota = rotaListesi[kutu.SelectedIndex - 1];
+                    var guncellenen = await RotaEditoruAcVeKaydet(hedefRota);
+                    if (guncellenen == null) return;
+                    var eskiKayit = _rotalar.FirstOrDefault(r => (string)r["id"] == (string)guncellenen["id"]);
+                    if (eskiKayit != null) _rotalar[_rotalar.IndexOf(eskiKayit)] = guncellenen;
+                    degisti = true;
+                    dlg.DialogResult = DialogResult.OK;
+                };
                 yeniOlusturBtn.Click += async (s, e) =>
                 {
                     string kod = yeniKodKutu.Text.Trim(), ad = yeniAdKutu.Text.Trim();
@@ -2119,78 +2200,30 @@ namespace UretimOSKesim
                         MessageBox.Show("Kod ve ad zorunlu.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return;
                     }
-                    // Rota adımları (istasyon/süre) BİLİNÇLİ olarak boş bırakılır —
-                    // ÜretimOS'un kendi Rota ekranındaki "hazır şablondan kur"
-                    // akışı (rota_sablon.js) burada YENİDEN İNŞA EDİLMEDİ (fabrikanın
-                    // gerçek hat/makine listesinden istasyon eşleştirmesi gerektirir,
-                    // bu panelin kapsamı dışında) — kullanıcı adımları ÜretimOS'un
-                    // kendi Rota ekranından tamamlar, TAHMİN EDİLMEZ.
-                    var yeniRota = new JObject { ["id"] = "RT-" + Guid.NewGuid().ToString("N").Substring(0, 10).ToUpperInvariant(), ["kod"] = kod, ["ad"] = ad, ["steps"] = new JArray() };
+                    var taslak = new JObject { ["kod"] = kod, ["ad"] = ad, ["steps"] = new JArray() };
+                    var yeniRota = await RotaEditoruAcVeKaydet(taslak);
+                    if (yeniRota == null) return;
                     kart["rotaId"] = (string)yeniRota["id"];
                     try
                     {
-                        await _istemci.ToplukaEkleGuncelle("rotalar", new List<object> { yeniRota }, new List<object>());
                         await _istemci.ToplukaEkleGuncelle(koleksiyon, new List<object>(), new List<object> { kart });
                         _rotalar.Add(yeniRota);
                         degisti = true;
-                        MessageBox.Show(
-                            "Rota oluşturuldu ve atandı. Adımları (istasyon/süre) ÜretimOS'un kendi " +
-                            "'Rota' ekranından tamamlayın — burada TAHMİN EDİLMEDİ.",
-                            "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         dlg.DialogResult = DialogResult.OK;
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show("Oluşturulamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show("Kart güncellenemedi: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 };
 
-                // Kullanıcı isteği: "yeni rota oluşturunca makina ve hatlar
-                // ayrıca süre düzenlemelerinde gelsin, üretimosun yeni rota
-                // oluştur ekranı gelsin" — hat/makine seçimi ve adım bazlı
-                // süre girişi ÜretimOS'un KENDİ 'Hat & Rota' ekranında,
-                // gerçek hat/makine kataloğu ve maliyet özetiyle birlikte
-                // yapılıyor; bunu burada (WinForms'ta) TAHMİN ederek/
-                // kopyalayarak YENİDEN İNŞA ETMİYORUZ (rota_sablon.js'in
-                // kapsamıyla AYNI gerekçe, yukarıdaki NOT) — bunun yerine
-                // doğrudan o ekrana açılır.
-                var webdeAcBtn = new Button { Text = "🌐 ÜretimOS'ta Hat/Makine/Süre Düzenle…", Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 14, 0, 0) };
-                webdeAcBtn.Click += (s, e) =>
-                {
-                    var ayar = BaglantiAyarlari.Yukle();
-                    string tabanUrl = null;
-                    if (ayar != null && !string.IsNullOrWhiteSpace(ayar.SunucuUrl))
-                    {
-                        int son = ayar.SunucuUrl.LastIndexOf('/');
-                        tabanUrl = son >= 0 ? ayar.SunucuUrl.Substring(0, son + 1) : ayar.SunucuUrl;
-                    }
-                    if (string.IsNullOrEmpty(tabanUrl))
-                    {
-                        MessageBox.Show("ÜretimOS sunucu adresi bulunamadı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-                    try
-                    {
-                        System.Diagnostics.Process.Start(tabanUrl);
-                        MessageBox.Show(
-                            "Açılan sayfada 'Hat & Rota' ekranından hat/makine seçip süre ve maliyet ayarlarını yapabilirsiniz.\n\n" +
-                            "Kaydettikten sonra bu pencereyi kapatıp tekrar açarsanız yeni/güncellenmiş rota listede görünür.",
-                            "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                    catch (Exception ex)
-                    {
-                        Tanilama.Kaydet("RotaSecVeyaOlusturDialogAc (tarayıcı açılamadı) HATA: " + ex);
-                        MessageBox.Show("Tarayıcı açılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
-                };
-
-                icPanel.Controls.Add(webdeAcBtn);
                 icPanel.Controls.Add(yeniOlusturBtn);
                 icPanel.Controls.Add(yeniAdKutu);
                 icPanel.Controls.Add(yeniAdEtiket);
                 icPanel.Controls.Add(yeniKodKutu);
                 icPanel.Controls.Add(yeniKodEtiket);
                 icPanel.Controls.Add(ayirici);
+                icPanel.Controls.Add(duzenleBtn);
                 icPanel.Controls.Add(secBtn);
                 icPanel.Controls.Add(kutu);
                 dlg.Controls.Add(icPanel);
@@ -3029,6 +3062,171 @@ namespace UretimOSKesim
                     Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar HATA: " + ex);
                     MessageBox.Show("XML dosyası yazılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+            }
+        }
+
+        // ── VERİYİ YEREL DOSYAYA İNDİR ─────────────────────────────────────
+        // Kullanıcı isteği: "hammadde ve yarımamül bant plaka sarf ürün
+        // kodlarını ve ürün ağacı reçetelerini indir diye bir tuş koy ve bu
+        // tuşa basarak hammaddeleri komple indir ancak tüm ürün, yarımamül,
+        // paket ve altmontaj kodlarını komple mi yoksa sadece bağlantılı
+        // olanları mı indireceğini sor." Hammadde ailesi (plaka/kenar
+        // bandı/sarf/hırdavat) zaten TEK bir koleksiyon (_hammaddeler) ve
+        // panel açılırken HER ZAMAN komple çekiliyor — burada olduğu gibi
+        // dışa yazılır. Ürün/yarımamül/paket/altmontaj İÇİN kapsam sorulur:
+        // "komple" tüm kayıtları, "bağlantılı" ise yalnızca bu SolidWorks
+        // dosyasındaki (kök kart + bileşen ağacında eşleşmiş) kartlardan
+        // erişilebilen reçete ağacını (transitif kapanış) içerir.
+        private async System.Threading.Tasks.Task MasterVeriyiYerelIndir()
+        {
+            if (!_verilerYuklendi)
+            {
+                MessageBox.Show("Önce ÜretimOS'a bağlanılması gerekiyor.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string kapsam = KapsamSecimiSor();
+            if (kapsam == null) return;
+
+            JArray urunlerDisa, yarimamullerDisa, paketlerDisa, altMontajlarDisa, receteleroDisa;
+            if (kapsam == "komple")
+            {
+                urunlerDisa = _urunler;
+                yarimamullerDisa = _yarimamuller;
+                paketlerDisa = _paketler;
+                altMontajlarDisa = _altMontajlar;
+                receteleroDisa = _receteler;
+            }
+            else
+            {
+                var ziyaretEdilen = new HashSet<string>();
+                var toplanan = new Dictionary<string, List<JObject>>();
+                if (_kokKart != null) BaglantiliKartlariTopla(_kokTip, _kokKart, ziyaretEdilen, toplanan);
+                void Gez(BilesenDugumu d)
+                {
+                    if (!string.IsNullOrEmpty(d.MevcutKod) && (d.Sinif == "urun" || d.Sinif == "yarimamul" || d.Sinif == "altmontaj" || d.Sinif == "paket"))
+                    {
+                        var (bulunanTip, bulunanKart) = KodileKartBul(d.MevcutKod);
+                        if (bulunanKart != null) BaglantiliKartlariTopla(bulunanTip, bulunanKart, ziyaretEdilen, toplanan);
+                    }
+                    foreach (var c in d.Cocuklar) Gez(c);
+                }
+                if (_bilesenKokListesi != null)
+                    foreach (var kok in _bilesenKokListesi) Gez(kok);
+
+                List<JObject> Al(string tip) => toplanan.TryGetValue(tip, out var liste) ? liste : new List<JObject>();
+                urunlerDisa = new JArray(Al("urun"));
+                yarimamullerDisa = new JArray(Al("yarimamul"));
+                paketlerDisa = new JArray(Al("paket"));
+                altMontajlarDisa = new JArray(Al("altmontaj"));
+
+                var receteSet = new List<JObject>();
+                var receteIdGorulen = new HashSet<string>();
+                foreach (var kv in toplanan)
+                    foreach (var kart in kv.Value)
+                    {
+                        var r = ReceteGetir(kv.Key, kart);
+                        if (r != null && receteIdGorulen.Add((string)r["id"]))
+                            receteSet.Add(r);
+                    }
+                receteleroDisa = new JArray(receteSet);
+
+                if (urunlerDisa.Count == 0 && yarimamullerDisa.Count == 0 && paketlerDisa.Count == 0 && altMontajlarDisa.Count == 0)
+                {
+                    MessageBox.Show(
+                        "Bu SolidWorks dosyasında bağlantılı (eşleşmiş) hiçbir ürün/yarımamül/paket/alt montaj kartı bulunamadı.\n\n" +
+                        "Önce bileşenleri sınıflandırıp bir ÜretimOS kartıyla eşleştirin, ya da 'TÜMÜNÜ İndir' seçeneğini kullanın.",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+
+            var kokNesne = new JObject
+            {
+                ["indirmeTarihi"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
+                ["kapsam"] = kapsam,
+                ["hammaddeler"] = _hammaddeler,
+                ["urunler"] = urunlerDisa,
+                ["yarimamuller"] = yarimamullerDisa,
+                ["paketler"] = paketlerDisa,
+                ["altMontajlar"] = altMontajlarDisa,
+                ["receteler"] = receteleroDisa
+            };
+
+            string varsayilanAd = "uretimos_veri_" + kapsam + "_" + DateTime.Now.ToString("yyyyMMdd_HHmm") + ".json";
+            using (var kaydetDialog = new SaveFileDialog { Filter = "JSON dosyası|*.json", FileName = varsayilanAd })
+            {
+                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                try
+                {
+                    File.WriteAllText(kaydetDialog.FileName, kokNesne.ToString(Newtonsoft.Json.Formatting.Indented));
+                    _durumEtiketi.ForeColor = Color.DarkGreen;
+                    _durumEtiketi.Text = $"✓ Veri indirildi ({(kapsam == "komple" ? "komple" : "bağlantılı")}): {kaydetDialog.FileName} — " +
+                        $"{_hammaddeler.Count} hammadde, {urunlerDisa.Count} ürün, {yarimamullerDisa.Count} yarımamül, " +
+                        $"{paketlerDisa.Count} paket, {altMontajlarDisa.Count} alt montaj, {receteleroDisa.Count} reçete.";
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("MasterVeriyiYerelIndir HATA: " + ex);
+                    MessageBox.Show("Dosya yazılamadı: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        // "Komple mi, bağlantılı mı?" seçimi — MessageBox'ın Yes/No/Cancel
+        // buton metinleri özelleştirilemediği için ("hiçbir şey bilmeyen bir
+        // insan" ilkesiyle net olsun diye) küçük özel bir diyalog kullanılır.
+        private string KapsamSecimiSor()
+        {
+            string sonuc = null;
+            using (var f = new Form { Text = "İndirme Kapsamı", Width = 540, Height = 300, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            {
+                var etiket = new Label
+                {
+                    Text = "Hammadde/bant/plaka/sarf kodları HER ZAMAN komple indirilecek.\n\n" +
+                           "Ürün, yarımamül, paket ve alt montaj kodları + reçeteleri için:",
+                    Dock = DockStyle.Top, Height = 90, Padding = new Padding(16, 16, 16, 0)
+                };
+                var baglantiliBtn = new Button { Text = "Yalnızca Bu SolidWorks Dosyasına BAĞLANTILI Olanları İndir", Dock = DockStyle.Top, Height = 44, Margin = new Padding(16, 6, 16, 6) };
+                var kompleBtn = new Button { Text = "TÜMÜNÜ (Komple Veritabanını) İndir", Dock = DockStyle.Top, Height = 44, Margin = new Padding(16, 6, 16, 6) };
+                var vazgecBtn = new Button { Text = "Vazgeç", Dock = DockStyle.Bottom, Height = 34 };
+                kompleBtn.Click += (s, e) => { sonuc = "komple"; f.DialogResult = DialogResult.OK; };
+                baglantiliBtn.Click += (s, e) => { sonuc = "baglantili"; f.DialogResult = DialogResult.OK; };
+                vazgecBtn.Click += (s, e) => f.DialogResult = DialogResult.Cancel;
+                f.CancelButton = vazgecBtn;
+                var icPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(4) };
+                icPanel.Controls.Add(kompleBtn);
+                icPanel.Controls.Add(baglantiliBtn);
+                f.Controls.Add(icPanel);
+                f.Controls.Add(vazgecBtn);
+                f.Controls.Add(etiket);
+                f.ShowDialog(this);
+            }
+            return sonuc;
+        }
+
+        // "Bağlantılı" kapsamı için: verilen kart kökünden başlayıp KENDİ
+        // reçetesindeki her ürün/yarımamül/paket/altmontaj referansını
+        // (hammadde HARİÇ — o zaten her zaman komple dahil) özyinelemeli
+        // olarak toplar. ziyaretEdilen seti döngüsel referanslara karşı
+        // MAKS_DERINLIK'ten BAĞIMSIZ, kesin bir güvenlik sağlar (her kart
+        // yalnızca bir kez ziyaret edilir).
+        private void BaglantiliKartlariTopla(string tip, JObject kart, HashSet<string> ziyaretEdilen, Dictionary<string, List<JObject>> sonuc)
+        {
+            if (kart == null || string.IsNullOrEmpty(tip)) return;
+            string anahtar = tip + "|" + (string)kart["id"];
+            if (!ziyaretEdilen.Add(anahtar)) return;
+            if (!sonuc.TryGetValue(tip, out var liste)) sonuc[tip] = liste = new List<JObject>();
+            liste.Add(kart);
+
+            var recete = ReceteGetir(tip, kart);
+            if (recete == null) return;
+            foreach (var kalem in ((JArray)recete["kalemler"])?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
+            {
+                string altTip = (string)kalem["tip"];
+                if (altTip == "hammadde") continue;
+                var altKart = FindKart(altTip, (string)kalem["refId"]);
+                if (altKart != null) BaglantiliKartlariTopla(altTip, altKart, ziyaretEdilen, sonuc);
             }
         }
 
