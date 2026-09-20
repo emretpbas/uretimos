@@ -110,10 +110,19 @@ namespace UretimOSKesim
                     if (aday == null) continue;
                     try
                     {
+                        // "swInsertDimensionsMarkedForDrawing" TEK BAŞINA yalnızca
+                        // modelde ELLE "mark for drawing" işaretlenmiş ölçüleri
+                        // getirir — kullanıcıların neredeyse hiçbiri bu işaretlemeyi
+                        // yapmaz, bu yüzden çağrı BAŞARILI dönüp GÖRÜNMEZ SIFIR ölçü
+                        // eklerdi (sessiz başarısızlık). "NotMarkedForDrawing" ile
+                        // BİRLİKTE (bit bayrağı OR'lanarak) verilince modeldeki TÜM
+                        // ölçüler gelir — "Insert > Annotations > Model Items"
+                        // menüsünde "Ölçüler" işaretliyken varsayılan davranış budur.
                         dynamic dinamikAday = aday;
                         olculendirildi = (bool)dinamikAday.InsertModelAnnotations3(
                             (int)swImportModelItemsSource_e.swImportModelItemsFromEntireModel,
-                            (int)swInsertAnnotation_e.swInsertDimensionsMarkedForDrawing,
+                            (int)swInsertAnnotation_e.swInsertDimensionsMarkedForDrawing
+                                | (int)swInsertAnnotation_e.swInsertDimensionsNotMarkedForDrawing,
                             true, false, false);
                         Tanilama.Kaydet($"InsertModelAnnotations3 basarili ({aday.GetType().Name}): {olculendirildi}");
                         break;
