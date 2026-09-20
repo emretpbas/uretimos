@@ -502,7 +502,7 @@ namespace UretimOSKesim
                 // bileşen ağacı burada çıkarılır ve doğrudan listelenir. Her
                 // düğümün ÜretimOS kart eşleşmesi (URETIMOS_KOD'a göre) ✓/⚠/—
                 // simgesiyle gösterilir; TAHMİN/otomatik kart OLUŞTURMA YOK.
-                var bilesenKokleri = BilesenAgaci.Cikar(_hedefModel);
+                var bilesenKokleri = BilesenAgaci.Cikar(_hedefModel, _hammaddeler.OfType<JObject>());
 
                 // Kullanıcı isteği: "ürün ağacı komutunu açınca dosyanın adı
                 // ile yeni ürün kartı ekranı çıksın ve bu tüm ürünün en üst
@@ -793,6 +793,26 @@ namespace UretimOSKesim
         private static int ToplamBilesenSayisi(List<BilesenDugumu> dugumler) =>
             dugumler.Sum(d => 1 + ToplamBilesenSayisi(d.Cocuklar));
 
+        // GERÇEK ÇÖKME (kullanıcı raporu, ekran görüntüsü): SwAddin.cs'e
+        // WindowsFormsSynchronizationContext KURULMASINA RAĞMEN, iç içe modal
+        // pencerelerden (ShowDialog) sonra gelen bir "await"in devamı BAZEN
+        // hâlâ yanlış iş parçacığında çalışıyor — hem "OLE... STA" hem
+        // "denetimler farklı iş parçacığında oluşturulmuş" hatasıyla
+        // SolidWorks'ü çökertti. Ambient SynchronizationContext'in bu
+        // barındırılmış (Application.Run olmayan) ortamda HER senaryoda
+        // güvenilir olmadığı KANITLANDI (tahmin değil, gerçek çökme). Bu
+        // yardımcı, riskli (SolidWorks COM çağrısı veya WinForms kontrolü
+        // oluşturan) kodu doğrudan BU Form'un — mesaj aldığı KANITLANMIŞ —
+        // kendi InvokeRequired/Invoke mekanizmasıyla çalıştırır; SolidWorks'ün
+        // mesaj döngüsünün otomatik marshaling ile nasıl etkileştiğine dair
+        // HİÇBİR varsayımda bulunmaz.
+        private void AnaPencerede(Action eylem)
+        {
+            if (IsDisposed) return;
+            if (InvokeRequired) Invoke(eylem);
+            else eylem();
+        }
+
         // "🔄 Ağacı Yenile" — bkz. buton tanımındaki NOT. SolidWorks'ü yeniden
         // tarar (yeni eklenen bileşenler görünür) ve eski ağaçtaki (kod veya
         // dosya yoluyla eşleşen) düğümlerin sınıf/kenar bandı/taslak ölçü/
@@ -819,7 +839,7 @@ namespace UretimOSKesim
             EskiTara(_bilesenKokListesi);
 
             List<BilesenDugumu> yeniBilesenler;
-            try { yeniBilesenler = BilesenAgaci.Cikar(_hedefModel); }
+            try { yeniBilesenler = BilesenAgaci.Cikar(_hedefModel, _hammaddeler.OfType<JObject>()); }
             catch (Exception ex)
             {
                 Tanilama.Kaydet("AgaciYenile HATA: " + ex);
@@ -986,6 +1006,17 @@ namespace UretimOSKesim
                 sinifKutusu.SelectedIndexChanged += async (s, e) =>
                 {
                     dugum.Sinif = SinifKarsilikBul(sinifKutusu.SelectedIndex);
+                    // Kullanıcı isteği: "tüm yaptığım değişiklikleri aynen
+                    // kaydettiğim gibi geri gelmesini sağla" — Sınıf artık
+                    // KOD/AD ile AYNI ilkeyle dosyanın kendisine de yazılır
+                    // (bkz. OzelAlanlar.SINIF/BilesenAgaci.DugumOlustur) —
+                    // 💾 SolidWorks'e Kaydet ile diske işlenince SolidWorks
+                    // kapanıp açılsa/Ağacı Yenile'de bile kaybolmaz.
+                    if (dugum.Model != null)
+                    {
+                        try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.SINIF, dugum.Sinif ?? ""); }
+                        catch (Exception ex) { Tanilama.Kaydet("Sinif ozel alani yazilamadi HATA: " + ex); }
+                    }
                     BilesenAgaciniCiz();
                     // Kullanıcı isteği: "yarımamül seçtiğimde otomatik ekle
                     // yada yarımamül seç sekmesi gelsin ekle'de yeni yarımamül
@@ -1671,7 +1702,7 @@ namespace UretimOSKesim
             // eşleşir). Bunun yerine her tuş vuruşunda kod/ad İÇİNDE arayıp
             // listeyi CANLI filtreleyen bir kutu kullanılıyor (KokKartSeciciAc
             // ile aynı "içeriyor" mantığı).
-            void EkleKenarKutusu(string etiket, Func<string> al, Action<string> yaz)
+            void EkleKenarKutusu(string etiket, string ozelAlanAdi, Func<string> al, Action<string> yaz)
             {
                 satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Color.DarkSlateGray });
                 // Kullanıcı isteği: "bant ararken okuyamıyorum, seçim
@@ -1707,15 +1738,25 @@ namespace UretimOSKesim
                 {
                     var secilen = kutu.SelectedItem as PaletOgesi ?? kenarBandilari.FirstOrDefault(kb => kb.ToString() == kutu.Text);
                     yaz(secilen?.Id);
+                    // Kullanıcı isteği: "tüm yaptığım değişiklikleri aynen
+                    // kaydettiğim gibi geri gelmesini sağla" — kenar bandı
+                    // ataması KOD olarak (KesimListesiCikarici ile AYNI kural)
+                    // SolidWorks dosyasının kendisine de yazılır ki 💾
+                    // SolidWorks'e Kaydet ile diske işlenince kalıcı olsun.
+                    if (dugum.Model != null)
+                    {
+                        try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, ozelAlanAdi, secilen?.Kod ?? ""); }
+                        catch (Exception ex) { Tanilama.Kaydet("Kenar bandi ozel alani yazilamadi HATA: " + ex); }
+                    }
                 }
                 kutu.SelectedIndexChanged += (s, e) => Uygula();
                 kutu.Leave += (s, e) => Uygula();
                 satir.Controls.Add(kutu);
             }
-            EkleKenarKutusu("Ön:", () => dugum.KenarOnId, v => dugum.KenarOnId = v);
-            EkleKenarKutusu("Arka:", () => dugum.KenarArkaId, v => dugum.KenarArkaId = v);
-            EkleKenarKutusu("Sol:", () => dugum.KenarSolId, v => dugum.KenarSolId = v);
-            EkleKenarKutusu("Sağ:", () => dugum.KenarSagId, v => dugum.KenarSagId = v);
+            EkleKenarKutusu("Ön:", OzelAlanlar.KENAR_ON, () => dugum.KenarOnId, v => dugum.KenarOnId = v);
+            EkleKenarKutusu("Arka:", OzelAlanlar.KENAR_ARKA, () => dugum.KenarArkaId, v => dugum.KenarArkaId = v);
+            EkleKenarKutusu("Sol:", OzelAlanlar.KENAR_SOL, () => dugum.KenarSolId, v => dugum.KenarSolId = v);
+            EkleKenarKutusu("Sağ:", OzelAlanlar.KENAR_SAG, () => dugum.KenarSagId, v => dugum.KenarSagId = v);
 
             panel.Controls.Add(satir);
             return panel;
@@ -2022,16 +2063,21 @@ namespace UretimOSKesim
                 }
 
                 // Her düğümün SolidWorks dosyasına eşleşen kodu yaz — kalıcılık
-                // (bkz. EslesmeYazVeUygula'daki AYNI gerekçe).
-                foreach (var d in tumDugumler)
+                // (bkz. EslesmeYazVeUygula'daki AYNI gerekçe). AnaPencerede:
+                // bkz. tanımındaki NOT — bu "await" sonrası COM çağrı döngüsü
+                // GERÇEKTE yanlış iş parçacığında çalışıp SolidWorks'ü çökertmişti.
+                AnaPencerede(() =>
                 {
-                    if (d.BelgeYuklenemedi || d.ElleEklendi || d.Model == null) continue;
-                    if (!kartCozumleri.TryGetValue(d, out var cozum) || cozum.kart == null) continue;
-                    string kod = (string)cozum.kart["kod"] ?? (string)cozum.kart["stokKodu"];
-                    if (string.IsNullOrWhiteSpace(kod)) continue;
-                    try { KesimListesiCikarici.OzelAlanYaz(d.Model, OzelAlanlar.KOD, kod); d.MevcutKod = kod; }
-                    catch (Exception ex) { Tanilama.Kaydet("BilesenAgaciniReceteOlarakAktar (URETIMOS_KOD yazılamadı) HATA: " + ex); }
-                }
+                    foreach (var d in tumDugumler)
+                    {
+                        if (d.BelgeYuklenemedi || d.ElleEklendi || d.Model == null) continue;
+                        if (!kartCozumleri.TryGetValue(d, out var cozum) || cozum.kart == null) continue;
+                        string kod = (string)cozum.kart["kod"] ?? (string)cozum.kart["stokKodu"];
+                        if (string.IsNullOrWhiteSpace(kod)) continue;
+                        try { KesimListesiCikarici.OzelAlanYaz(d.Model, OzelAlanlar.KOD, kod); d.MevcutKod = kod; }
+                        catch (Exception ex) { Tanilama.Kaydet("BilesenAgaciniReceteOlarakAktar (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                    }
+                });
 
                 // Reçete yapısını kur: reçete-taşıyan (hammadde OLMAYAN) her
                 // düğümün ÇOCUKLARINI kalem olarak ekle — AYNI karta çözülen
@@ -2121,17 +2167,27 @@ namespace UretimOSKesim
                 }
 
                 int yeniKartSayisi = yeniKartlar.Values.Sum(l => l.Count);
-                _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ Bileşen ağacı ÜretimOS'a aktarıldı — {yeniKartSayisi} yeni kart, {etkilenenReceteler.Count} reçete kaydedildi.";
                 Tanilama.Kaydet($"BilesenAgaciniReceteOlarakAktar: kart={yeniKartSayisi}, recete={etkilenenReceteler.Count}");
-                BilesenAgaciniCiz();
+                AnaPencerede(() =>
+                {
+                    _durumEtiketi.ForeColor = Color.DarkGreen;
+                    _durumEtiketi.Text = $"✓ Bileşen ağacı ÜretimOS'a aktarıldı — {yeniKartSayisi} yeni kart, {etkilenenReceteler.Count} reçete kaydedildi.";
+                    BilesenAgaciniCiz();
+                });
             }
             catch (Exception ex)
             {
                 Tanilama.Kaydet("BilesenAgaciniReceteOlarakAktar HATA: " + ex);
-                MessageBox.Show("Aktarım sırasında hata: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _durumEtiketi.ForeColor = Color.DarkRed;
-                _durumEtiketi.Text = "Aktarım başarısız: " + ex.Message;
+                // AnaPencerede: bu catch bloğu, "await" sonrası yanlış iş
+                // parçacığında oluşan bir istisnayı yakalıyor OLABİLİR — o
+                // durumda MessageBox.Show/Control özelliklerine dokunmak da
+                // AYNI şekilde çökebilirdi (bkz. tanımındaki NOT).
+                AnaPencerede(() =>
+                {
+                    MessageBox.Show("Aktarım sırasında hata: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _durumEtiketi.ForeColor = Color.DarkRed;
+                    _durumEtiketi.Text = "Aktarım başarısız: " + ex.Message;
+                });
             }
         }
 
@@ -2513,32 +2569,38 @@ namespace UretimOSKesim
             }
             if (!await KartApiyaGuncelle(kartTipi, guncellenmisKart)) return;
 
-            // Kod değişmiş olabilir — düğümün taslak bilgisini VE (gerçek
-            // bir SolidWorks bileşeniyse) dosyanın kendi özel alanını da
-            // güncelleyip kalıcı kılıyoruz (EslesmeYazVeUygula'daki AYNI
-            // gerekçe).
-            string yeniKod = (string)(guncellenmisKart["kod"] ?? guncellenmisKart["stokKodu"]);
-            string yeniAd = (string)guncellenmisKart["ad"];
-            dugum.MevcutKod = yeniKod;
-            dugum.GosterimAdi = yeniAd ?? dugum.GosterimAdi;
-            if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniKod))
+            // AnaPencerede: bkz. tanımındaki NOT — bu "await" sonrası kod
+            // (COM çağrısı + kontrol oluşturma) GERÇEKTE yanlış iş parçacığında
+            // çalışıp SolidWorks'ü çökertmişti.
+            AnaPencerede(() =>
             {
-                try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniKod); }
-                catch (Exception ex) { Tanilama.Kaydet("BilesenKartDuzenle (URETIMOS_KOD yazılamadı) HATA: " + ex); }
-            }
+                // Kod değişmiş olabilir — düğümün taslak bilgisini VE (gerçek
+                // bir SolidWorks bileşeniyse) dosyanın kendi özel alanını da
+                // güncelleyip kalıcı kılıyoruz (EslesmeYazVeUygula'daki AYNI
+                // gerekçe).
+                string yeniKod = (string)(guncellenmisKart["kod"] ?? guncellenmisKart["stokKodu"]);
+                string yeniAd = (string)guncellenmisKart["ad"];
+                dugum.MevcutKod = yeniKod;
+                dugum.GosterimAdi = yeniAd ?? dugum.GosterimAdi;
+                if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniKod))
+                {
+                    try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniKod); }
+                    catch (Exception ex) { Tanilama.Kaydet("BilesenKartDuzenle (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                }
 
-            // Kullanıcı isteği: "burada yaptığım ürün ismi değişiklikleri
-            // solidworksteki part ve assembly component isimlerinide
-            // değiştirsin" — ad gerçekten değiştiyse VE bu gerçek bir
-            // SolidWorks bileşenine karşılık geliyorsa (sentetik "+ Ek
-            // Kalem"/ürün/paket düğümlerinde dugum.Bilesen hep null'dur),
-            // bileşenin FeatureManager ağacındaki adı da eşitlenir.
-            if (dugum.Bilesen != null && !string.IsNullOrWhiteSpace(yeniAd) && !string.Equals(eskiAd, yeniAd, StringComparison.Ordinal))
-            {
-                SolidWorksBilesenAdiniDegistir(dugum, yeniAd);
-            }
+                // Kullanıcı isteği: "burada yaptığım ürün ismi değişiklikleri
+                // solidworksteki part ve assembly component isimlerinide
+                // değiştirsin" — ad gerçekten değiştiyse VE bu gerçek bir
+                // SolidWorks bileşenine karşılık geliyorsa (sentetik "+ Ek
+                // Kalem"/ürün/paket düğümlerinde dugum.Bilesen hep null'dur),
+                // bileşenin FeatureManager ağacındaki adı da eşitlenir.
+                if (dugum.Bilesen != null && !string.IsNullOrWhiteSpace(yeniAd) && !string.Equals(eskiAd, yeniAd, StringComparison.Ordinal))
+                {
+                    SolidWorksBilesenAdiniDegistir(dugum, yeniAd);
+                }
 
-            BilesenAgaciniCiz();
+                BilesenAgaciniCiz();
+            });
         }
 
         // "sınıflandırılmış ama henüz eşleşmemiş" bir düğüm için YENİ kart
@@ -2557,15 +2619,21 @@ namespace UretimOSKesim
             }
             if (!await KartApiyaKaydet(yeniKartTipi, yeniKart)) return false;
 
-            string yeniOlusanKod = (string)(yeniKart["kod"] ?? yeniKart["stokKodu"]);
-            dugum.MevcutKod = yeniOlusanKod;
-            dugum.GosterimAdi = (string)yeniKart["ad"] ?? dugum.GosterimAdi;
-            if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniOlusanKod))
+            // AnaPencerede: bkz. tanımındaki NOT — bu "await" sonrası kod
+            // (COM çağrısı + kontrol oluşturma) GERÇEKTE yanlış iş parçacığında
+            // çalışıp SolidWorks'ü çökertmişti.
+            AnaPencerede(() =>
             {
-                try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniOlusanKod); }
-                catch (Exception ex) { Tanilama.Kaydet("DugumeYeniKartOlusturVeEslestir (URETIMOS_KOD yazılamadı) HATA: " + ex); }
-            }
-            BilesenAgaciniCiz();
+                string yeniOlusanKod = (string)(yeniKart["kod"] ?? yeniKart["stokKodu"]);
+                dugum.MevcutKod = yeniOlusanKod;
+                dugum.GosterimAdi = (string)yeniKart["ad"] ?? dugum.GosterimAdi;
+                if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniOlusanKod))
+                {
+                    try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniOlusanKod); }
+                    catch (Exception ex) { Tanilama.Kaydet("DugumeYeniKartOlusturVeEslestir (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                }
+                BilesenAgaciniCiz();
+            });
             return true;
         }
 

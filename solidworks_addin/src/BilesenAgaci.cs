@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -88,7 +90,12 @@ namespace UretimOSKesim
         // kokBelge PARÇA ise: tek düğümlü liste (belgenin kendisi).
         // kokBelge MONTAJ ise: en üst seviye bileşenlerden başlayarak TÜM
         // (baskılanmamış) alt ağacı çıkarır.
-        public static List<BilesenDugumu> Cikar(ModelDoc2 kokBelge)
+        // hammaddeler: ÜretimOS'un hammaddeler koleksiyonu — YALNIZCA kenar
+        // bandı özel alanlarını (URETIMOS_KENAR_*, KOD olarak saklanır) okurken
+        // KOD'dan hammadde Id'sine çevirmek için kullanılır (dugum.KenarOnId
+        // vb. HER YERDE Id bekler — bkz. BilesenDugumu.KenarOnId). null
+        // verilirse kenar bandı özel alanları okunmaz (geriye dönük uyumlu).
+        public static List<BilesenDugumu> Cikar(ModelDoc2 kokBelge, IEnumerable<JObject> hammaddeler = null)
         {
             var sonuc = new List<BilesenDugumu>();
             if (kokBelge == null) return sonuc;
@@ -119,7 +126,7 @@ namespace UretimOSKesim
                     foreach (Component2 bilesen in enUstBilesenler.Cast<Component2>())
                     {
                         if (bilesen.IsSuppressed()) continue;
-                        sonuc.Add(DugumOlustur(bilesen, null));
+                        sonuc.Add(DugumOlustur(bilesen, null, hammaddeler));
                     }
                 }
             }
@@ -127,7 +134,7 @@ namespace UretimOSKesim
             {
                 // Tek parça belge — kendisini TEK düğüm olarak temsil eder,
                 // ağacın 'kökü' bileşen değil doğrudan belgenin kendisidir.
-                sonuc.Add(DugumOlustur(null, kokBelge));
+                sonuc.Add(DugumOlustur(null, kokBelge, hammaddeler));
             }
             AyniTanimliKardesleriBirlestir(sonuc);
             return sonuc;
@@ -178,7 +185,7 @@ namespace UretimOSKesim
             return string.IsNullOrWhiteSpace(yol) ? null : "yol:" + yol.ToLowerInvariant();
         }
 
-        private static BilesenDugumu DugumOlustur(Component2 bilesen, ModelDoc2 dogrudanModel)
+        private static BilesenDugumu DugumOlustur(Component2 bilesen, ModelDoc2 dogrudanModel, IEnumerable<JObject> hammaddeler = null)
         {
             var dugum = new BilesenDugumu { Bilesen = bilesen };
             ModelDoc2 modelDoc = dogrudanModel ?? (ModelDoc2)bilesen?.GetModelDoc2();
@@ -193,6 +200,36 @@ namespace UretimOSKesim
             dugum.MevcutKod = KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.KOD);
             string ad = KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.AD);
             dugum.GosterimAdi = !string.IsNullOrWhiteSpace(ad) ? ad : Path.GetFileNameWithoutExtension(modelDoc.GetPathName());
+
+            // KULLANICI RAPORU: "tüm yaptığım değişiklikleri aynen
+            // kaydettiğim gibi geri gelmesini sağla" — Sınıf ve kenar bandı
+            // ataması artık KOD/AD ile AYNI şekilde dosyanın kendisinden
+            // (URETIMOS_SINIF/URETIMOS_KENAR_* özel alanları) okunur; bunlar
+            // ReceteAgaciPaneli'de kullanıcı seçim yaptıkça YAZILIR (bkz.
+            // Sınıf açılır kutusu / kenar bandı kutuları) — dosya kaydedilip
+            // (💾 SolidWorks'e Kaydet) yeniden açıldığında ya da "Ağacı
+            // Yenile" ile taze bir tarama yapıldığında KAYBOLMAZ.
+            string sinifOku = KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.SINIF);
+            if (!string.IsNullOrWhiteSpace(sinifOku)) dugum.Sinif = sinifOku;
+
+            // Kenar bandı özel alanları KOD saklar (KesimListesiCikarici ile
+            // AYNI kural) — dugum.KenarOnId vb. ise HER YERDE hammadde Id'si
+            // bekler (bkz. BilesenDugumu.KenarOnId), bu yüzden burada KOD'dan
+            // Id'ye çevrilir. hammaddeler verilmemişse (geriye dönük uyumluluk)
+            // sessizce atlanır.
+            if (hammaddeler != null)
+            {
+                string IdFromKod(string kod)
+                {
+                    if (string.IsNullOrWhiteSpace(kod)) return null;
+                    return hammaddeler.FirstOrDefault(h =>
+                        string.Equals((string)h["stokKodu"], kod, StringComparison.OrdinalIgnoreCase))?["id"]?.ToString();
+                }
+                dugum.KenarOnId = IdFromKod(KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.KENAR_ON));
+                dugum.KenarArkaId = IdFromKod(KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.KENAR_ARKA));
+                dugum.KenarSolId = IdFromKod(KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.KENAR_SOL));
+                dugum.KenarSagId = IdFromKod(KesimListesiCikarici.OzelAlanOku(modelDoc, OzelAlanlar.KENAR_SAG));
+            }
 
             // Ölçü — yalnızca PARÇA (.sldprt) belgeleri için; montaj/alt montaj
             // düğümlerinde BOY_MM/EN_MM gibi alanlar hiç set edilmez.
@@ -261,7 +298,7 @@ namespace UretimOSKesim
                     foreach (Component2 cocukBilesen in cocuklar.Cast<Component2>())
                     {
                         if (cocukBilesen.IsSuppressed()) continue;
-                        dugum.Cocuklar.Add(DugumOlustur(cocukBilesen, null));
+                        dugum.Cocuklar.Add(DugumOlustur(cocukBilesen, null, hammaddeler));
                     }
                 }
             }

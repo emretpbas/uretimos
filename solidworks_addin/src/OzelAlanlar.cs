@@ -21,6 +21,17 @@ namespace UretimOSKesim
         public const string AD = "URETIMOS_AD";                   // görünen ad (boşsa SW dosya adı kullanılır)
         public const string UST_PAKET_KODU = "URETIMOS_UST_PAKET_KODU"; // bağlı olduğu bir üst alt_montaj/paket kodu
 
+        // SINIF: Reçete Ağacı panelinde bileşene atanan sınıf (hirdavat |
+        // plaka | kenar_bandi | sarf | yarimamul | altmontaj | paket | urun).
+        // KULLANICI RAPORU: "tüm yaptığım değişiklikleri aynen kaydettiğim
+        // gibi geri gelmesini sağla" — SolidWorks kapanıp açıldığında (ya da
+        // "Ağacı Yenile" ile) bu bilgi daha önce YALNIZCA oturum belleğinde
+        // tutuluyordu (BilesenDugumu.Sinif), dosya KAYDEDİLSE BİLE kaybolurdu.
+        // Artık KOD/AD ile AYNI ilkeyle dosyanın kendisine yazılır — "💾
+        // SolidWorks'e Kaydet" ile diske işlenince, dosya tekrar açıldığında/
+        // Ağacı Yenile'de KESİN olarak geri gelir.
+        public const string SINIF = "URETIMOS_SINIF";
+
         // ── Ölçü (v1: ELLE girilir — bkz. KesimListesiCikarici.OlcuHesapla
         // içindeki gerekçe: SolidWorks'ün geometri API'sinden otomatik ölçü
         // almak, resmi dokümantasyon olmadan güvenilir doğrulanamadı).
