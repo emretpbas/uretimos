@@ -130,7 +130,21 @@ namespace UretimOSKesim
         // Resmi Onayla ve ÜretimOS'a Yükle" (ADIM 2, global — bkz. altPanel)
         // arasındaki durumu taşır: hangi kalem (tip/kart) için hangi
         // SolidWorks model yolundan çizim açıldığı. null = bekleyen yok.
-        private (string tip, JObject kart, string modelYolu)? _bekleyenTeknikResim;
+        //
+        // GERÇEK ÇÖKME/HATA (kullanıcı raporu, ekran görüntüsü): bu TEK global
+        // alan olduğu için, kullanıcı bir satırda "Oluştur"a basıp ONAYLAMADAN
+        // BAŞKA bir satırda TEKRAR "Oluştur"a basınca bu alan SESSİZCE
+        // ÜZERİNE YAZILIYORDU — SolidWorks'te İKİ çizim açık kalıyor ama
+        // yalnızca SONUNCUSU izleniyordu. "Onayla" ise ActiveDoc'u (o an
+        // SolidWorks'te ODAKLANMIŞ HANGİ pencere ise) kullandığı için, eğer
+        // odak yanlışlıkla İLK çizimdeyse, İLK çizimin İÇERİĞİ SONUNCU
+        // kartın kimliğiyle (kod/ad/refId) yüklenip YANLIŞ karta karışıyordu —
+        // tam olarak "teknik resimler tüm yarımamüllerde görünüyor" bulgusu.
+        // Çözüm: hangi ÇİZİM BELGESİNİN (COM nesne referansı) oluşturulduğu
+        // da saklanır; Onayla, ActiveDoc'un TAM OLARAK bu nesne olduğunu
+        // doğrular — eşleşmezse SESSİZCE yanlış karta yüklemek yerine AÇIKÇA
+        // reddeder.
+        private (string tip, JObject kart, string modelYolu, IModelDoc2 cizimBelgesi)? _bekleyenTeknikResim;
         private Button _teknikResimOnaylaBtn;
         // Kullanıcı isteği: "seçilen dosyaların isimlerini ... seçtiğim
         // satırda göster" — anahtar "tip|refId", değer o kart için sunucudan
@@ -1449,6 +1463,29 @@ namespace UretimOSKesim
                 return;
             }
 
+            // GERÇEK BULGU: kullanıcı bir satırda "Oluştur"a basıp
+            // ONAYLAMADAN başka bir satırda tekrar "Oluştur"a basınca, ilk
+            // çizim SolidWorks'te açık kalırken _bekleyenTeknikResim SESSİZCE
+            // ikincinin kartına geçiyordu — sonra "Onayla" hangi pencere
+            // aktifse ONUN içeriğini YANLIŞ kartla yüklüyordu ("teknik
+            // resimler tüm yarımamüllerde görünüyor" bulgusunun kök nedeni).
+            // Farklı bir kart için hâlâ bekleyen (onaylanmamış) bir çizim
+            // varsa şimdi AÇIKÇA uyarılıyor.
+            if (_bekleyenTeknikResim != null && (string)_bekleyenTeknikResim.Value.kart["id"] != (string)kart["id"])
+            {
+                string bekleyenKod = (string)(_bekleyenTeknikResim.Value.kart["kod"] ?? _bekleyenTeknikResim.Value.kart["stokKodu"]);
+                if (MessageBox.Show(
+                    $"'{bekleyenKod}' için oluşturduğunuz teknik resim HENÜZ ONAYLANMADI. Onu tamamlamadan " +
+                    "yeni bir çizim oluşturursanız, hangi çiziminizin hangi karta yükleneceği KARIŞABİLİR " +
+                    "(SolidWorks'te iki çizim penceresi açık kalır, 'Onayla' o an odaklanmış olanı kullanır).\n\n" +
+                    "Yine de devam edip yeni bir çizim oluşturulsun mu? (Önceki çizimi kaybetmeden önce onu " +
+                    "onaylamanız/kaydetmeniz önerilir.)",
+                    "ÜretimOS — Bekleyen Onaylanmamış Çizim Var", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                {
+                    return;
+                }
+            }
+
             string refId = (string)kart["id"];
             var dugum = GercekBilesenDugumuBulKartId(tip, refId);
             if (dugum?.Model == null)
@@ -1490,6 +1527,13 @@ namespace UretimOSKesim
                 return;
             }
 
+            // Yeni çizim, TeknikResimAcVeDuzenlemeyeBirak içindeki NewDocument
+            // çağrısından beri hâlâ ActiveDoc olmalı — "Onayla" adımının
+            // (bkz. TeknikResimOnaylaVeYukleCalistir) YANLIŞ bir çizimi bu
+            // karta karıştırmaması için referansı BURADA, kesin doğru anda
+            // yakalıyoruz (öne getirmeden/başka pencereyle etkileşmeden ÖNCE).
+            var yeniCizimBelgesi = _app.ActiveDoc as IModelDoc2;
+
             // Kullanıcı isteği: "teknik resim sayfası açılıyor ama arkada
             // kalıyor onu öne getir" — SolidWorks'ün ana penceresini,
             // kendi (WinForms) panelimizin ARKASINDA kalmaması için ön
@@ -1497,7 +1541,7 @@ namespace UretimOSKesim
             // bu yalnızca bir görünürlük iyileştirmesi, akışı ENGELLEMEZ.
             SolidWorksPenceresiniOnePlanaGetir();
 
-            _bekleyenTeknikResim = (tip, kart, modelYolu);
+            _bekleyenTeknikResim = (tip, kart, modelYolu, yeniCizimBelgesi);
             if (_teknikResimOnaylaBtn != null) _teknikResimOnaylaBtn.Enabled = true;
             _durumEtiketi.ForeColor = Color.DarkOrange;
             _durumEtiketi.Text = $"'{kod}' için çizim oluşturuldu ve SolidWorks'te açık — düzenleyip/ölçülendirip kontrol edin, " +
@@ -1549,7 +1593,7 @@ namespace UretimOSKesim
                 MessageBox.Show("ÜretimOS bağlantısı yok — teknik resim yüklenemez.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            var (tip, kart, modelYolu) = _bekleyenTeknikResim.Value;
+            var (tip, kart, modelYolu, beklenenCizim) = _bekleyenTeknikResim.Value;
             string refId = (string)kart["id"];
             string kod = (string)(kart["kod"] ?? kart["stokKodu"]);
             string ad = (string)kart["ad"];
@@ -1560,6 +1604,25 @@ namespace UretimOSKesim
                 MessageBox.Show(
                     "Onaylamak için önce '📐 Teknik Resim Oluştur' ile açtığınız ÇİZİM (.slddrw) belgesini aktif hale getirin.",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // GERÇEK BULGU (bkz. _bekleyenTeknikResim tanımındaki NOT):
+            // "Onayla" YALNIZCA o an SolidWorks'te odaklanmış (ActiveDoc)
+            // çizimi kullanırdı — bu, '📐 Oluştur'un işaretlediği kartla
+            // AYNI çizim OLMAYABİLİR (ör. arada başka bir satırda ikinci bir
+            // çizim daha açıldıysa). Yanlış çizimi YANLIŞ karta SESSİZCE
+            // yüklemek yerine, aktif çizimin GERÇEKTEN bu kart için
+            // oluşturulan çizim olduğu (COM nesne kimliği) doğrulanır.
+            if (beklenenCizim != null && !ReferenceEquals(cizimBelge, beklenenCizim))
+            {
+                MessageBox.Show(
+                    $"Şu an SolidWorks'te AKTİF olan çizim, '{kod}' için oluşturduğunuz çizim DEĞİL — " +
+                    "büyük ihtimalle araya başka bir satırda '📐 Teknik Resim Oluştur' ile ikinci bir çizim açtınız.\n\n" +
+                    $"Lütfen '{kod} — {ad}' için oluşturduğunuz çizim penceresini SolidWorks'te aktif hale " +
+                    "getirip (pencereler arasından seçip) tekrar 'Onayla'ya basın — böylece yanlış karta " +
+                    "yükleme YAPILMAZ.",
+                    "ÜretimOS — Çizim/Kart Uyuşmuyor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -2106,36 +2169,60 @@ namespace UretimOSKesim
                     foreach (var grup in gruplar)
                     {
                         var (cocukTip, cocukKart) = grup.Key;
-                        bool zatenVar = kalemler.OfType<JObject>().Any(k => (string)k["tip"] == cocukTip && (string)k["refId"] == (string)cocukKart["id"]);
-                        if (zatenVar) continue;
-
                         var ilkCocuk = grup.First();
-                        var yeniKalem = new JObject
-                        {
-                            ["id"] = "RK-" + Guid.NewGuid().ToString("N").Substring(0, 10).ToUpperInvariant(),
-                            ["tip"] = cocukTip,
-                            ["refId"] = (string)cocukKart["id"],
-                            // grup.Count() değil grup.Sum(Miktar) — kardeşler
-                            // SolidWorks tarafında ZATEN Miktar'a birleştirilmiş
-                            // olabilir (bkz. BilesenAgaci.AyniTanimliKardesleriBirlestir);
-                            // gerçek toplam tekrar sayısı ancak Miktar'ların toplamıdır.
-                            ["miktar"] = grup.Sum(c => c.Miktar),
-                            ["birim"] = "ADET"
-                        };
+                        // grup.Count() değil grup.Sum(Miktar) — kardeşler
+                        // SolidWorks tarafında ZATEN Miktar'a birleştirilmiş
+                        // olabilir (bkz. BilesenAgaci.AyniTanimliKardesleriBirlestir);
+                        // gerçek toplam tekrar sayısı ancak Miktar'ların toplamıdır.
+                        int yeniMiktar = grup.Sum(c => c.Miktar);
+                        JObject yeniOlcu = null, yeniKenarlar = null;
                         // "kenar bandını 4 kenardan hangisine hangi tip
                         // eklediğimizi de çıkartalım" — web'in kalemBaglami.
                         // kenarBantlari/olcu ile AYNI şekilde kaleme yazılır,
                         // ÜretimOS'un kendi Reçete Ağaç Editörü'nde de görünür.
                         if (ilkCocuk.Sinif == "plaka")
                         {
-                            yeniKalem["olcu"] = new JObject { ["netEn"] = ilkCocuk.TaslakEnMm, ["netBoy"] = ilkCocuk.TaslakBoyMm, ["kabaEn"] = ilkCocuk.TaslakEnMm, ["kabaBoy"] = ilkCocuk.TaslakBoyMm };
+                            yeniOlcu = new JObject { ["netEn"] = ilkCocuk.TaslakEnMm, ["netBoy"] = ilkCocuk.TaslakBoyMm, ["kabaEn"] = ilkCocuk.TaslakEnMm, ["kabaBoy"] = ilkCocuk.TaslakBoyMm };
                             var kenarlar = new JObject();
                             if (!string.IsNullOrEmpty(ilkCocuk.KenarOnId)) kenarlar["on"] = ilkCocuk.KenarOnId;
                             if (!string.IsNullOrEmpty(ilkCocuk.KenarArkaId)) kenarlar["arka"] = ilkCocuk.KenarArkaId;
                             if (!string.IsNullOrEmpty(ilkCocuk.KenarSolId)) kenarlar["sol"] = ilkCocuk.KenarSolId;
                             if (!string.IsNullOrEmpty(ilkCocuk.KenarSagId)) kenarlar["sag"] = ilkCocuk.KenarSagId;
-                            if (kenarlar.Count > 0) yeniKalem["kenarBantlari"] = kenarlar;
+                            if (kenarlar.Count > 0) yeniKenarlar = kenarlar;
                         }
+
+                        var mevcutKalem = kalemler.OfType<JObject>().FirstOrDefault(k => (string)k["tip"] == cocukTip && (string)k["refId"] == (string)cocukKart["id"]);
+                        if (mevcutKalem != null)
+                        {
+                            // GERÇEK HATA (kullanıcı raporu: "üretimos reçetesi
+                            // güncellenmedi"): burası ÖNCEDEN kalem zaten varsa
+                            // TAMAMEN ATLIYORDU — bu yüzden kenar bandı/miktar
+                            // gibi SONRADAN yapılan değişiklikler "Reçete Olarak
+                            // Aktar" tekrar çalıştırılsa BİLE sunucuya HİÇ
+                            // yansımıyordu. Artık miktar/ölçü/kenar bandı
+                            // GÜNCELLENİR (yalnızca gerçekten değiştiyse).
+                            if ((int?)mevcutKalem["miktar"] != yeniMiktar) { mevcutKalem["miktar"] = yeniMiktar; receteDegisti = true; }
+                            if (!JToken.DeepEquals(mevcutKalem["olcu"], yeniOlcu)) { mevcutKalem["olcu"] = yeniOlcu; receteDegisti = true; }
+                            var eskiKenarlar = mevcutKalem["kenarBantlari"];
+                            if (!JToken.DeepEquals(eskiKenarlar, yeniKenarlar))
+                            {
+                                if (yeniKenarlar != null) mevcutKalem["kenarBantlari"] = yeniKenarlar;
+                                else ((JObject)mevcutKalem).Remove("kenarBantlari");
+                                receteDegisti = true;
+                            }
+                            continue;
+                        }
+
+                        var yeniKalem = new JObject
+                        {
+                            ["id"] = "RK-" + Guid.NewGuid().ToString("N").Substring(0, 10).ToUpperInvariant(),
+                            ["tip"] = cocukTip,
+                            ["refId"] = (string)cocukKart["id"],
+                            ["miktar"] = yeniMiktar,
+                            ["birim"] = "ADET"
+                        };
+                        if (yeniOlcu != null) yeniKalem["olcu"] = yeniOlcu;
+                        if (yeniKenarlar != null) yeniKalem["kenarBantlari"] = yeniKenarlar;
                         kalemler.Add(yeniKalem);
                         receteDegisti = true;
                     }
