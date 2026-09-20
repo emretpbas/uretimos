@@ -350,7 +350,7 @@ namespace UretimOSKesim
             // GERÇEK kaydedilmiş reçete ağacını dışa aktarır — ikisi
             // BİLEREK ayrı butonlar/dosyalardır, birbirini kapsamaz.
             var bilesenXmlBtn = new Button { Text = "Bileşen Ağacını XML Olarak Dışa Aktar…", Dock = DockStyle.Left, Width = 240 };
-            bilesenXmlBtn.Click += (s, e) => BilesenAgaciniXmlOlarakDisaAktar();
+            bilesenXmlBtn.Click += async (s, e) => await BilesenAgaciniXmlOlarakDisaAktar();
             // Kullanıcı isteği: "hammadde ve yarımamül bant plaka sarf ürün
             // kodlarını ve ürün ağacı reçetelerini indir diye bir tuş koy ve
             // bu tuşa basarak hammaddeleri komple indir ancak tüm ürün,
@@ -425,7 +425,7 @@ namespace UretimOSKesim
             // KalemEkle) — eski/id'siz kalemler için dışa aktarma ANINDA
             // (kalıcı olmayan) bir id üretilir, bkz. ReceteyiXmlOlarakDisaAktar.
             var xmlDisaAktarBtn = new Button { Text = "Reçeteyi XML Olarak Dışa Aktar…", Dock = DockStyle.Right, Width = 210 };
-            xmlDisaAktarBtn.Click += (s, e) => ReceteyiXmlOlarakDisaAktar();
+            xmlDisaAktarBtn.Click += async (s, e) => await ReceteyiXmlOlarakDisaAktar();
             // ADIM 2 (bkz. TeknikResimOnaylaVeYukleCalistir) — reçete
             // ağacındaki bir satırda "📐 Teknik Resim Oluştur"a (ADIM 1)
             // basılıp SolidWorks'te çizim düzenlenene kadar DEVRE DIŞI.
@@ -3845,7 +3845,7 @@ namespace UretimOSKesim
         // mantığı (aynı MAKS_DERINLIK güvenlik sınırı) — ama TreeNode yerine
         // XElement üretir. Sunucudaki (JSON) veri deposu HİÇ değişmiyor,
         // bu TAMAMEN yerel/isteğe bağlı bir dışa aktarma özelliğidir.
-        private void ReceteyiXmlOlarakDisaAktar()
+        private async System.Threading.Tasks.Task ReceteyiXmlOlarakDisaAktar()
         {
             if (_kokKart == null)
             {
@@ -3854,6 +3854,18 @@ namespace UretimOSKesim
             }
 
             var recete = ReceteGetir(_kokTip, _kokKart);
+
+            // Kullanıcı isteği: "tüm yüklenen plaka ve bantları, teknik
+            // resimleri ve teknik resimlerin yüklendiği dosya konumlarını
+            // xml olarak ... uretimos xml'ine işle" — XML kurulmadan ÖNCE,
+            // ağaçtaki HER kalem (ve kök kart) için ÜretimOS'un KENDİ Teknik
+            // Dosyalar deposundan (TeknikDosyaYukleDialogAc'ın kullandığı
+            // AYNI uç) GÜNCEL dosya listesi TOPLU çekilir — TAHMİN/yerel
+            // önbellek DEĞİL, dışa aktarma anındaki gerçek sunucu verisi.
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = "Teknik dosya bilgileri sunucudan toplanıyor…";
+            var teknikDosyaHaritasi = await TeknikDosyaHaritasiTopla(recete, _kokTip, _kokKart);
+
             var kokEleman = new System.Xml.Linq.XElement("Recete",
                 new System.Xml.Linq.XAttribute("kokTip", _kokTip),
                 new System.Xml.Linq.XAttribute("kokId", (string)_kokKart["id"] ?? ""),
@@ -3861,11 +3873,14 @@ namespace UretimOSKesim
                 new System.Xml.Linq.XAttribute("kokAd", (string)_kokKart["ad"] ?? ""),
                 new System.Xml.Linq.XAttribute("disaAktarmaTarihi", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")));
 
+            var kokTeknikEl = TeknikDosyalarElemaniOlustur(_kokTip, (string)_kokKart["id"], teknikDosyaHaritasi, GercekBilesenDugumuBulKartId(_kokTip, (string)_kokKart["id"])?.Model);
+            if (kokTeknikEl != null) kokEleman.Add(kokTeknikEl);
+
             if (recete != null)
             {
                 var kalemler = recete["kalemler"] as JArray ?? new JArray();
                 foreach (var kalem in kalemler.OfType<JObject>())
-                    kokEleman.Add(KalemElemaniOlustur(kalem, 0));
+                    kokEleman.Add(KalemElemaniOlustur(kalem, 0, teknikDosyaHaritasi));
             }
 
             string varsayilanAd = ((string)_kokKart["kod"] ?? (string)_kokKart["stokKodu"] ?? "recete")
@@ -3897,7 +3912,89 @@ namespace UretimOSKesim
             }
         }
 
-        private System.Xml.Linq.XElement KalemElemaniOlustur(JObject kalem, int derinlik)
+        // Reçete ağacını (kök + tüm alt kırılım) baştan tek tek dolaşıp,
+        // her benzersiz kalem için ÜretimOS'un Teknik Dosyalar deposundan
+        // dosya listesini TOPLU çeker — KalemElemaniOlustur'un kendisi
+        // (özyinelemeli, senkron çalışması gereken) her adımda ayrı ayrı
+        // "await" YAPMASIN diye bu ön-toplama AYRI bir adımdır.
+        private async System.Threading.Tasks.Task<Dictionary<string, JArray>> TeknikDosyaHaritasiTopla(JObject kokRecete, string kokTip, JObject kokKart)
+        {
+            var harita = new Dictionary<string, JArray>();
+            if (_istemci == null) return harita;
+
+            var toplanan = new List<(string tip, string refId, string kod, string ad)>();
+            if (kokKart != null)
+                toplanan.Add((kokTip, (string)kokKart["id"], (string)(kokKart["kod"] ?? kokKart["stokKodu"]), (string)kokKart["ad"]));
+
+            void Topla(JObject recete)
+            {
+                if (recete == null) return;
+                var kalemler = recete["kalemler"] as JArray ?? new JArray();
+                foreach (var k in kalemler.OfType<JObject>())
+                {
+                    string tip = (string)k["tip"], refId = (string)k["refId"];
+                    var kart = FindKart(tip == "hammadde" ? "hammadde" : tip, refId);
+                    if (kart == null) continue;
+                    toplanan.Add((tip, refId, (string)(kart["kod"] ?? kart["stokKodu"]), (string)kart["ad"]));
+                    if (tip != "hammadde") Topla(ReceteGetir(tip, kart));
+                }
+            }
+            Topla(kokRecete);
+
+            foreach (var (tip, refId, kod, ad) in toplanan.Distinct())
+            {
+                string anahtar = tip + "|" + refId;
+                if (harita.ContainsKey(anahtar)) continue;
+                try { harita[anahtar] = await _istemci.TeknikDosyalariGetir(tip, refId, kod, ad); }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("TeknikDosyaHaritasiTopla HATA (" + anahtar + "): " + ex);
+                    harita[anahtar] = new JArray();
+                }
+            }
+            return harita;
+        }
+
+        // Bir kalemin/bileşenin "TeknikDosyalar" XML bölümünü kurar: sunucudaki
+        // dosya listesi (ad/uzantı/boyut/tarih/yükleyen) VE — varsa — bu model
+        // için daha önce onaylanmış teknik resmin YEREL DİSK KONUMU (Manifest.cs
+        // — kullanıcı isteği: "teknik resimlerin yüklendiği dosya konumlarını
+        // da xml'e işle"). Hiçbir bilgi yoksa null döner (boş eleman eklenmez).
+        private System.Xml.Linq.XElement TeknikDosyalarElemaniOlustur(string tip, string refId, Dictionary<string, JArray> teknikDosyaHaritasi, ModelDoc2 modelAramaIcin)
+        {
+            var el = new System.Xml.Linq.XElement("TeknikDosyalar");
+            if (teknikDosyaHaritasi != null && teknikDosyaHaritasi.TryGetValue(tip + "|" + refId, out var dosyalar))
+            {
+                foreach (var d in dosyalar.OfType<JObject>())
+                {
+                    el.Add(new System.Xml.Linq.XElement("Dosya",
+                        new System.Xml.Linq.XAttribute("ad", (string)d["ad"] ?? ""),
+                        new System.Xml.Linq.XAttribute("uzanti", (string)d["uzanti"] ?? ""),
+                        new System.Xml.Linq.XAttribute("boyutBayt", d["boyut"]?.ToString() ?? ""),
+                        new System.Xml.Linq.XAttribute("tarih", (string)d["tarih"] ?? ""),
+                        new System.Xml.Linq.XAttribute("yukleyen", (string)d["yukleyen"] ?? "")));
+                }
+            }
+            if (modelAramaIcin != null)
+            {
+                try
+                {
+                    var girdi = Manifest.Bul(modelAramaIcin.GetPathName());
+                    if (girdi != null)
+                    {
+                        el.Add(new System.Xml.Linq.XElement("YerelOnayliDosyaKonumu",
+                            new System.Xml.Linq.XAttribute("dwgYolu", girdi.DwgYolu ?? ""),
+                            new System.Xml.Linq.XAttribute("pdfYolu", girdi.PdfYolu ?? ""),
+                            new System.Xml.Linq.XAttribute("jpgYolu", girdi.JpgYolu ?? ""),
+                            new System.Xml.Linq.XAttribute("onayZamani", girdi.OnayZamani.ToString("yyyy-MM-ddTHH:mm:ss"))));
+                    }
+                }
+                catch (Exception ex) { Tanilama.Kaydet("TeknikDosyalarElemaniOlustur Manifest HATA: " + ex); }
+            }
+            return el.HasElements ? el : null;
+        }
+
+        private System.Xml.Linq.XElement KalemElemaniOlustur(JObject kalem, int derinlik, Dictionary<string, JArray> teknikDosyaHaritasi)
         {
             string tip = (string)kalem["tip"];
             string refId = (string)kalem["refId"];
@@ -4019,6 +4116,9 @@ namespace UretimOSKesim
                 if (kenarEleman.HasElements) eleman.Add(kenarEleman);
             }
 
+            var teknikEl = TeknikDosyalarElemaniOlustur(tip, refId, teknikDosyaHaritasi, GercekBilesenDugumuBulKartId(tip, refId)?.Model);
+            if (teknikEl != null) eleman.Add(teknikEl);
+
             if (derinlik < MAKS_DERINLIK && tip != "hammadde" && kart != null)
             {
                 var altRecete = ReceteGetir(tip, kart);
@@ -4026,7 +4126,7 @@ namespace UretimOSKesim
                 {
                     var altKalemler = altRecete["kalemler"] as JArray ?? new JArray();
                     foreach (var altKalem in altKalemler.OfType<JObject>())
-                        eleman.Add(KalemElemaniOlustur(altKalem, derinlik + 1));
+                        eleman.Add(KalemElemaniOlustur(altKalem, derinlik + 1, teknikDosyaHaritasi));
                 }
             }
             return eleman;
@@ -4040,12 +4140,47 @@ namespace UretimOSKesim
         // çıktısıdır; ReceteyiXmlOlarakDisaAktar (aşağıda) ise sunucudaki
         // GERÇEK kaydedilmiş reçeteyi dışa aktarır — ikisi BİLEREK ayrı
         // butonlar/dosyalardır.
-        private void BilesenAgaciniXmlOlarakDisaAktar()
+        private async System.Threading.Tasks.Task BilesenAgaciniXmlOlarakDisaAktar()
         {
             if (_bilesenKokListesi == null || _bilesenKokListesi.Count == 0)
             {
                 MessageBox.Show("Dışa aktarılacak bir bileşen ağacı yok.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
+            }
+
+            // Kullanıcı isteği: "tüm yüklenen plaka ve bantları, teknik
+            // resimleri ve teknik resimlerin yüklendiği dosya konumlarını
+            // xml olarak hem solidworks xml'ine hem uretimos xml'ine işle" —
+            // ağaçtaki HER eşleşmiş düğüm için ÜretimOS'un Teknik Dosyalar
+            // deposundan (server) GÜNCEL dosya listesi TOPLU çekilir.
+            var teknikDosyaHaritasi = new Dictionary<string, JArray>();
+            if (_istemci != null)
+            {
+                _durumEtiketi.ForeColor = Color.DarkSlateGray;
+                _durumEtiketi.Text = "Teknik dosya bilgileri sunucudan toplanıyor…";
+                var toplanan = new List<(string tip, string refId, string kod, string ad)>();
+                void Topla(List<BilesenDugumu> liste)
+                {
+                    foreach (var d in liste)
+                    {
+                        var (bulunanTip, bulunanKart) = KodileKartBul(d.MevcutKod);
+                        if (bulunanKart != null)
+                            toplanan.Add((bulunanTip, (string)bulunanKart["id"], (string)(bulunanKart["kod"] ?? bulunanKart["stokKodu"]), (string)bulunanKart["ad"]));
+                        Topla(d.Cocuklar);
+                    }
+                }
+                Topla(_bilesenKokListesi);
+                foreach (var (tip, refId, kod, ad) in toplanan.Distinct())
+                {
+                    string anahtar = tip + "|" + refId;
+                    if (teknikDosyaHaritasi.ContainsKey(anahtar)) continue;
+                    try { teknikDosyaHaritasi[anahtar] = await _istemci.TeknikDosyalariGetir(tip, refId, kod, ad); }
+                    catch (Exception ex)
+                    {
+                        Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar (teknik dosya) HATA: " + ex);
+                        teknikDosyaHaritasi[anahtar] = new JArray();
+                    }
+                }
             }
 
             System.Xml.Linq.XElement BilesenElemaniOlustur(BilesenDugumu d)
@@ -4095,6 +4230,14 @@ namespace UretimOSKesim
                         if (kenarEl.HasElements) el.Add(kenarEl);
                     }
                 }
+
+                var (bulunanTip, bulunanKart) = KodileKartBul(d.MevcutKod);
+                if (bulunanKart != null)
+                {
+                    var teknikEl = TeknikDosyalarElemaniOlustur(bulunanTip, (string)bulunanKart["id"], teknikDosyaHaritasi, d.Model);
+                    if (teknikEl != null) el.Add(teknikEl);
+                }
+
                 foreach (var c in d.Cocuklar) el.Add(BilesenElemaniOlustur(c));
                 return el;
             }
