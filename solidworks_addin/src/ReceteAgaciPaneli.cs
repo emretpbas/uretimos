@@ -1903,6 +1903,23 @@ namespace UretimOSKesim
             {
                 if (!d.AktarimaDahil) return;
                 tumDugumler.Add(d);
+
+                // Kullanıcı isteği: "tekrar tekrar sınıf seçmem gerekiyor" —
+                // bir düğüm ZATEN mevcut bir ÜretimOS kartıyla eşleşmişse, o
+                // kart kendi yapısını ÜretimOS tarafında taşır; SolidWorks'teki
+                // İÇ geometrisini (ör. bir MiniFix bağlantı takımının içindeki
+                // vida/somun gibi münferit standart parçalar) HER aktarımda
+                // yeniden sınıflandırmaya ZORLAMAK gereksiz ve tekrarlayıcıydı.
+                // Eşleşmiş bir düğüm, ÇOCUKLARINDAN HİÇBİRİ kullanıcı tarafından
+                // AYRICA ele alınmadıysa (sınıflandırılmadı/eşleştirilmedi) bir
+                // "kara kutu" gibi ele alınır — alt kırılımı zorunlu DEĞİLDİR.
+                // Kullanıcı en az bir çocuğu bilinçli olarak sınıflandırmışsa
+                // (o alt kırılımla da ilgilenmek istediğinin işareti), eskisi
+                // gibi TÜM çocuklar için sınıflandırma aranmaya devam eder.
+                bool zatenEslesmis = !d.ElleEklendi && !string.IsNullOrWhiteSpace(d.MevcutKod) && KodileKartBul(d.MevcutKod).kart != null;
+                bool altKirilimlaIlgileniliyor = d.Cocuklar.Any(c => !string.IsNullOrEmpty(c.Sinif) || !string.IsNullOrWhiteSpace(c.MevcutKod));
+                if (zatenEslesmis && !altKirilimlaIlgileniliyor) return;
+
                 foreach (var c in d.Cocuklar) Topla(c);
             }
             foreach (var d in _bilesenKokListesi) Topla(d);
