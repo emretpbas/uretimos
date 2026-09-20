@@ -117,6 +117,33 @@ namespace UretimOSKesim
             Tanilama.Kaydet("=== ConnectToSW basladi ===");
             try
             {
+                // GERÇEK ÇÖKME (kullanıcı raporu, ekran görüntüsü): "OLE
+                // çağrıları yapılmadan önce geçerli iş parçacığının STA moduna
+                // ayarlanması gerekir" hatasıyla SolidWorks'ün TAMAMEN
+                // KAPANMASI. KÖK NEDEN: bu eklenti bir COM add-in olarak
+                // SolidWorks'ün KENDİ STA iş parçacığında barındırılıyor —
+                // normal bir WinForms .exe'nin aksine BURADA HİÇBİR ZAMAN
+                // Application.Run() çağrılmıyor, bu yüzden .NET'in
+                // WindowsFormsSynchronizationContext'i BU İŞ PARÇACIĞINA HİÇ
+                // KURULMUYOR. Sonuç: ReceteAgaciPaneli.cs (ve diğer Form'lar)
+                // içindeki HER "await" (ör. ÜretimOS'a kart kaydetme), ardından
+                // gelen kodu (ör. KesimListesiCikarici.OzelAlanYaz ile
+                // SolidWorks belgesine COM çağrısı) SynchronizationContext.
+                // Current NULL olduğu için VARSAYILAN threadpool zamanlayıcısında
+                // ÇALIŞTIRIYORDU — threadpool iş parçacıkları STA DEĞİL, COM
+                // nesnesine (IModelDoc2 vb.) buradan çağrı KESİN olarak bu
+                // hatayla çöküyordu. ÇÖZÜM: SolidWorks'ün bize verdiği BU STA
+                // iş parçacığına, add-in başlar başlamaz BİR KEZ elle bir
+                // WindowsFormsSynchronizationContext kur — böylece ondan sonraki
+                // HER "await" (bu dosyada ve ReceteAgaciPaneli.cs/diğer tüm
+                // Form'larda), continuation'ı OTOMATİK olarak AYNI STA iş
+                // parçacığına (SolidWorks'ün kendi mesaj döngüsü üzerinden)
+                // geri gönderir — TAHMİN değil, .NET'in belgelenmiş, standart
+                // "COM add-in içinde async/await" çözümüdür.
+                System.Threading.SynchronizationContext.SetSynchronizationContext(
+                    new System.Windows.Forms.WindowsFormsSynchronizationContext());
+                Tanilama.Kaydet("WindowsFormsSynchronizationContext kuruldu (STA cokme onlemi)");
+
                 // SolidWorks (SLDWORKS.exe) kendi .NET derleme arama yolunu
                 // kullanır — ClosedXML/PdfSharp'ın NuGet'ten gelen alt
                 // bağımlılıkları (ör. SixLabors.Fonts, DocumentFormat.OpenXml)
