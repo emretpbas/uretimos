@@ -2054,11 +2054,12 @@ const App = (() => {
       </div>
       <div class="hr" style="margin-top:20px;border-color:#F59E0B"></div>
       <div style="background:#FFFBEB;border:1.5px solid #F59E0B;border-radius:10px;padding:16px 18px;margin-top:4px">
-        <div style="color:#92400E;font-weight:700;font-size:14px;margin-bottom:8px">⚠ KISMİ SIFIRLAMA — MÜŞTERİ / SEVKİYAT / HAT PLANLAMA</div>
+        <div style="color:#92400E;font-weight:700;font-size:14px;margin-bottom:8px">⚠ KISMİ SIFIRLAMA — MÜŞTERİ / SEVKİYAT / HAT PLANLAMA / SATINALMA</div>
         <div style="color:#78350F;font-size:12px;margin-bottom:14px">Bu işlem yalnızca işaretlediğiniz kapsamı <b>KALICI OLARAK SİLER</b>. <b>Reçeteler, ürün/yarımamül/hammadde/paket/alt montaj kartları ve rota (hat/makine/süre) tanımları HER ZAMAN KORUNUR</b> — tam sistem sıfırlamanın aksine bunlara dokunulmaz. Geri alma yoktur.</div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
           <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#78350F;cursor:pointer"><input type="checkbox" id="ksf-musteri" style="width:16px;height:16px;margin-top:2px"> <span><b>Müşteri / Sevkiyat / Mali Kayıtlar</b> — müşteriler, teklifler, siparişler, sipariş revizyonları, iade kalemleri, irsaliyeler, sevkiyat programı, CRM (fırsat, aktivite, kampanya, numune, proje), şikayet/servis talepleri, faturalar, e-faturalar, tahsilatlar, vade farkı ve müşteri çekleri silinsin</span></label>
           <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#78350F;cursor:pointer"><input type="checkbox" id="ksf-hat" style="width:16px;height:16px;margin-top:2px"> <span><b>Hat Planlama / Üretim Çalışma Verileri</b> — iş emirleri, kesim planları/ihtiyaçları, hammadde ihtiyaçları, istasyon takibi, gerçekleşen süre kayıtları, vardiyalar, duruşlar ve kapasite düzeltmeleri silinsin (rota TANIMLARI, hat operatör hesapları ve şifreleri korunur)</span></label>
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#78350F;cursor:pointer"><input type="checkbox" id="ksf-satinalma" style="width:16px;height:16px;margin-top:2px"> <span><b>Satınalma Talepleri / Siparişleri / Stok Kayıtları</b> — Satınalma Paneli'ndeki üç sekmenin verileri silinsin: Gelen Talepler (üretimden gelen talepler + satınalma talepleri), Satınalma Siparişleri ve raf stok kayıtları (tedarikçi kartları ve kritik stok seviyesi ayarları korunur)</span></label>
         </div>
         <div class="fgroup" style="margin-bottom:12px">
           <label class="flbl" style="color:#92400E">Sıfırlama Şifresi</label>
@@ -2130,20 +2131,24 @@ const App = (() => {
     const ksfBtn = document.getElementById('btn-kismi-sifirla');
     const ksfHata = document.getElementById('ksf-hata');
     function ksfKontrolEt() {
-      const kapsamSecili = document.getElementById('ksf-musteri').checked || document.getElementById('ksf-hat').checked;
+      const kapsamSecili = document.getElementById('ksf-musteri').checked || document.getElementById('ksf-hat').checked || document.getElementById('ksf-satinalma').checked;
       const sifre = document.getElementById('ksf-sifre').value;
       const tamam = kapsamSecili && sifre === SIF_SIFRE;
       ksfBtn.disabled = !tamam;
       ksfBtn.style.opacity = tamam ? '1' : '0.5';
       ksfBtn.style.cursor = tamam ? 'pointer' : 'not-allowed';
     }
-    ['ksf-musteri', 'ksf-hat'].forEach(id => document.getElementById(id).onchange = ksfKontrolEt);
+    ['ksf-musteri', 'ksf-hat', 'ksf-satinalma'].forEach(id => document.getElementById(id).onchange = ksfKontrolEt);
     document.getElementById('ksf-sifre').oninput = ksfKontrolEt;
 
     ksfBtn.onclick = async () => {
-      const kapsam = { musteriSevkiyat: document.getElementById('ksf-musteri').checked, hatPlanlama: document.getElementById('ksf-hat').checked };
+      const kapsam = {
+        musteriSevkiyat: document.getElementById('ksf-musteri').checked,
+        hatPlanlama: document.getElementById('ksf-hat').checked,
+        satinalma: document.getElementById('ksf-satinalma').checked
+      };
       const sifre = document.getElementById('ksf-sifre').value;
-      if ((!kapsam.musteriSevkiyat && !kapsam.hatPlanlama) || sifre !== SIF_SIFRE) { ksfHata.textContent = 'En az bir kapsam işaretleyin ve doğru şifreyi girin.'; ksfHata.style.display = 'block'; return; }
+      if ((!kapsam.musteriSevkiyat && !kapsam.hatPlanlama && !kapsam.satinalma) || sifre !== SIF_SIFRE) { ksfHata.textContent = 'En az bir kapsam işaretleyin ve doğru şifreyi girin.'; ksfHata.style.display = 'block'; return; }
       ksfHata.style.display = 'none';
       ksfBtn.disabled = true;
       ksfBtn.textContent = '⏳ Sıfırlanıyor...';

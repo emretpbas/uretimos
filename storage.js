@@ -1108,9 +1108,19 @@ const Store = (() => {
         'hammaddeIhtiyaclari', 'istasyonIsleri', 'gerceklesenSureKayitlari',
         'vardiyalar', 'kapasiteDuzeltmeleri', 'hatDurumlari', 'duruslar'
       ];
+      // Satınalma Paneli'nin ÜÇ sekmesinin verisi: "Gelen Talepler" (talepler
+      // + satinalmaTalepleri), "Satınalma Siparişleri" (satinalmaSiparisleri),
+      // raf stok kayıtları (stokRaf). Tedarikçi kartları (tedarikciler),
+      // kritik stok seviyesi AYARI (kritikStokSeviyeleri) ve teklif
+      // karşılaştırmaları (teklifKarsilastirma) bilerek dışarıda bırakılıyor —
+      // bunlar kurulum/tanım verisidir, talep/sipariş/stok HAREKETİ değil.
+      const SATINALMA_KOLEKSIYONLARI = [
+        'talepler', 'satinalmaTalepleri', 'satinalmaSiparisleri', 'stokRaf'
+      ];
       const hedef = [
         ...((kapsam && kapsam.musteriSevkiyat) ? MUSTERI_SEVKIYAT_KOLEKSIYONLARI : []),
-        ...((kapsam && kapsam.hatPlanlama) ? HAT_PLANLAMA_KOLEKSIYONLARI : [])
+        ...((kapsam && kapsam.hatPlanlama) ? HAT_PLANLAMA_KOLEKSIYONLARI : []),
+        ...((kapsam && kapsam.satinalma) ? SATINALMA_KOLEKSIYONLARI : [])
       ];
       for (const koleksiyonAdi of hedef) {
         await set(koleksiyonAdi, []);
