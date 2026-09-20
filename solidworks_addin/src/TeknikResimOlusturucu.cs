@@ -89,21 +89,45 @@ namespace UretimOSKesim
 
                 // Kullanıcı isteği: "teknik resim otomatik ölçülendirme ile
                 // gelsin" — bkz. yukarıdaki sınıf başlığı notu (dürüstlük).
-                try
+                // GERÇEK DERLEME HATASI (CS1061, yerel oturum): bu interop
+                // sürümünde IModelDocExtension.InsertModelAnnotations3 YOK —
+                // RenameComponent2 ile YAŞANANIN AYNISI: üye adı doğru ama
+                // HANGİ arayüzde olduğu bu interop sürümünde belirsiz/farklı.
+                // O sorunu ORADA "gerçek üyeyi bul" ile çözmüştük; burada
+                // AYNI sınıf soruna KALICI bir çözüm: 'dynamic' ile GEÇ
+                // BAĞLAMA — derleme zamanında HANGİ .NET arayüzünün bu üyeyi
+                // deklare ettiğini ARAMAZ, ÇALIŞMA ZAMANINDA gerçek COM
+                // nesnesinin (IDispatch) üyesini adıyla bulur. Üç olası ev
+                // sahibi (Extension, IDrawingDoc, ModelDoc2'nin kendisi)
+                // sırayla denenir — hangisinde gerçekten varsa O çalışır;
+                // hiçbirinde yoksa (COMException/RuntimeBinderException)
+                // ÇÖKME olmaz, sessizce bir sonrakine geçilir, hepsi
+                // başarısızsa uyarı verilir.
+                bool olculendirildi = false;
+                string olculendirmeHata = null;
+                foreach (var aday in new object[] { cizimBelge.Extension, cizim, cizimBelge })
                 {
-                    var ext = (IModelDocExtension)cizimBelge.Extension;
-                    bool olculendirildi = ext.InsertModelAnnotations3(
-                        (int)swImportModelItemsSource_e.swImportModelItemsFromEntireModel,
-                        (int)swInsertAnnotation_e.swInsertDimensionsMarkedForDrawing,
-                        true, false, false);
-                    Tanilama.Kaydet("InsertModelAnnotations3 sonucu: " + olculendirildi);
-                    if (!olculendirildi)
-                        _uyarilar.Add("Otomatik ölçülendirme eklenemedi — Insert > Annotations > Model Items ile elle ekleyebilirsiniz.");
+                    if (aday == null) continue;
+                    try
+                    {
+                        dynamic dinamikAday = aday;
+                        olculendirildi = (bool)dinamikAday.InsertModelAnnotations3(
+                            (int)swImportModelItemsSource_e.swImportModelItemsFromEntireModel,
+                            (int)swInsertAnnotation_e.swInsertDimensionsMarkedForDrawing,
+                            true, false, false);
+                        Tanilama.Kaydet($"InsertModelAnnotations3 basarili ({aday.GetType().Name}): {olculendirildi}");
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        olculendirmeHata = ex.Message;
+                        Tanilama.Kaydet($"InsertModelAnnotations3 denemesi basarisiz ({aday.GetType().Name}): {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+                if (!olculendirildi)
                 {
-                    Tanilama.Kaydet("InsertModelAnnotations3 HATA: " + ex);
-                    _uyarilar.Add("Otomatik ölçülendirme denenirken hata oluştu — Insert > Annotations > Model Items ile elle ekleyebilirsiniz.");
+                    Tanilama.Kaydet("InsertModelAnnotations3 hicbir aday nesnede calismadi: " + olculendirmeHata);
+                    _uyarilar.Add("Otomatik ölçülendirme eklenemedi — Insert > Annotations > Model Items ile elle ekleyebilirsiniz.");
                 }
 
                 Tanilama.Kaydet("ViewZoomtofit2 cagriliyor");
