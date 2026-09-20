@@ -72,6 +72,14 @@ namespace UretimOSKesim
         // BilesenAgaciniReceteOlarakAktar tarafından tamamen yok sayılır.
         public bool AktarimaDahil = true;
 
+        // Kullanıcı isteği: "aynı tanımdan parçalar tekrar çağrılıyorsa adet
+        // sayısını yükselt ve aynı kalemde listele... tekrar tekrar gelmesin"
+        // — montajda AYNI parça/alt montaj (ör. her çekmecedeki AYNI MiniFix
+        // bağlantı takımı) birden çok kez kullanıldığında, KARDEŞLERİ arasında
+        // aynı kimliğe sahip olanlar Cikar() içinde TEK düğümde birleştirilir;
+        // kaç kez tekrarlandığı burada tutulur (bkz. AyniTanimliKardesleriBirlestir).
+        public int Miktar = 1;
+
         public readonly List<BilesenDugumu> Cocuklar = new List<BilesenDugumu>();
     }
 
@@ -121,7 +129,53 @@ namespace UretimOSKesim
                 // ağacın 'kökü' bileşen değil doğrudan belgenin kendisidir.
                 sonuc.Add(DugumOlustur(null, kokBelge));
             }
+            AyniTanimliKardesleriBirlestir(sonuc);
             return sonuc;
+        }
+
+        // Kullanıcı isteği: "aynı tanımdan parçalar tekrar çağrılıyorsa adet
+        // sayısını yükselt ve aynı kalemde listele. minifix takım ve alt
+        // kırılımı tekrar tekrar gelmesin." — AYNI ÜST düğümün KARDEŞLERİ
+        // arasında aynı kimliğe (eşleşmiş MevcutKod varsa o, yoksa referans
+        // aldığı SolidWorks dosya yolu) sahip olanlar TEK düğümde birleştirilir;
+        // hayatta kalan düğümün Miktar'ı kaç kez tekrarlandığını taşır. Alt ağaç
+        // zaten AYNI dosyaya işaret ettiği için (aynı komponent tanımı) tekinin
+        // alt kırılımı yeterlidir — önce ÇOCUKLAR (derinden dışa) birleştirilir
+        // ki hayatta kalan düğümün alt ağacı da kendi içinde temiz olsun.
+        private static void AyniTanimliKardesleriBirlestir(List<BilesenDugumu> dugumler)
+        {
+            foreach (var d in dugumler) AyniTanimliKardesleriBirlestir(d.Cocuklar);
+
+            var siraliGruplar = new List<List<BilesenDugumu>>();
+            foreach (var d in dugumler)
+            {
+                string kimlik = KimlikAnahtari(d);
+                List<BilesenDugumu> hedefGrup = null;
+                if (kimlik != null)
+                    hedefGrup = siraliGruplar.FirstOrDefault(g => KimlikAnahtari(g[0]) == kimlik);
+                if (hedefGrup != null) hedefGrup.Add(d);
+                else siraliGruplar.Add(new List<BilesenDugumu> { d });
+            }
+            if (siraliGruplar.Count == dugumler.Count) return;  // birleşecek bir şey yoktu
+
+            dugumler.Clear();
+            foreach (var grup in siraliGruplar)
+            {
+                var ilk = grup[0];
+                ilk.Miktar = grup.Sum(g => g.Miktar);
+                dugumler.Add(ilk);
+            }
+        }
+
+        // Elle eklenmiş (gerçek bir SolidWorks bileşeni olmayan) ya da belgesi
+        // yüklenemeyen düğümler birleştirmeye DAHİL edilmez (kimlikleri güvenilir
+        // değildir — birbirinden bağımsız, kasıtlı ayrı kalemlerdir).
+        private static string KimlikAnahtari(BilesenDugumu d)
+        {
+            if (d.ElleEklendi || d.BelgeYuklenemedi) return null;
+            if (!string.IsNullOrWhiteSpace(d.MevcutKod)) return "kod:" + d.MevcutKod;
+            string yol = d.Model?.GetPathName();
+            return string.IsNullOrWhiteSpace(yol) ? null : "yol:" + yol.ToLowerInvariant();
         }
 
         private static BilesenDugumu DugumOlustur(Component2 bilesen, ModelDoc2 dogrudanModel)

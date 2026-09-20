@@ -344,9 +344,24 @@ namespace UretimOSKesim
             // bağlantılı olanları mı indireceğini sor" — bkz. MasterVeriyiYerelIndir.
             var veriIndirBtn = new Button { Text = "⬇ Hammadde/Ürün Kodları ve Reçeteleri İndir…", Dock = DockStyle.Left, Width = 290 };
             veriIndirBtn.Click += async (s, e) => await MasterVeriyiYerelIndir();
+            // Kullanıcı isteği: "yeni parça ekledim teknik resim sekmesi bu
+            // satırda çıkmıyor... diğer sınıf seçimler ve teknik resim ve alt
+            // kalemler tamamen boş geldi" — panel açıldığında SolidWorks
+            // bileşen ağacı YALNIZCA BİR KEZ taranıyordu (VerileriYukleVeBaslat);
+            // montaja SONRADAN eklenen bir parçayı görmenin TEK yolu paneli
+            // kapatıp yeniden açmaktı, bu da o oturumda elle yapılmış TÜM
+            // sınıf/eşleştirme seçimlerini SIFIRLIYORDU (Sinif hiçbir yerde
+            // kalıcı tutulmaz — bkz. BilesenAgaci.cs'teki BilesenDugumu.Sinif
+            // yorumu). Bu buton paneli KAPATMADAN yeniden tarar VE eski
+            // ağaçtaki (kod/dosya yoluyla eşleşen) düğümlerin sınıf/kenar
+            // bandı/taslak ölçü/dahil-mi durumunu yeni ağaca AKTARIR — yalnızca
+            // GERÇEKTEN yeni olan bileşenler boş/varsayılan gelir.
+            var agaciYenileBtn = new Button { Text = "🔄 Ağacı Yenile (Yeni SolidWorks Bileşenlerini Getir)", Dock = DockStyle.Left, Width = 300 };
+            agaciYenileBtn.Click += (s, e) => AgaciYenile();
             bilesenAraPanel.Controls.Add(receteOlarakAktarBtn);
             bilesenAraPanel.Controls.Add(bilesenXmlBtn);
             bilesenAraPanel.Controls.Add(veriIndirBtn);
+            bilesenAraPanel.Controls.Add(agaciYenileBtn);
 
             // Kullanıcı isteği: "bu ekranla solidworksteki reçete ağaç
             // editörünü aynı esneklikte olsun" — TreeView'daki çift tık/sağ
@@ -777,6 +792,78 @@ namespace UretimOSKesim
         // ── SOLIDWORKS BİLEŞEN AĞACI (TÜM component/part/assembly'ler) ───────
         private static int ToplamBilesenSayisi(List<BilesenDugumu> dugumler) =>
             dugumler.Sum(d => 1 + ToplamBilesenSayisi(d.Cocuklar));
+
+        // "🔄 Ağacı Yenile" — bkz. buton tanımındaki NOT. SolidWorks'ü yeniden
+        // tarar (yeni eklenen bileşenler görünür) ve eski ağaçtaki (kod veya
+        // dosya yoluyla eşleşen) düğümlerin sınıf/kenar bandı/taslak ölçü/
+        // dahil-mi durumunu yeni düğümlere aktarır. "Ürün Kökü" ve "Paket"
+        // gibi SENTETİK düğümler (Model == null) dokunulmadan korunur —
+        // yalnızca GERÇEK (Model != null) SolidWorks bileşenleri değiştirilir.
+        private void AgaciYenile()
+        {
+            if (_hedefModel == null || _bilesenKokListesi == null) return;
+
+            string Kimlik(BilesenDugumu d) =>
+                !string.IsNullOrWhiteSpace(d.MevcutKod) ? "kod:" + d.MevcutKod
+                : "yol:" + (d.Model?.GetPathName() ?? "").ToLowerInvariant();
+
+            var eskiHarita = new Dictionary<string, BilesenDugumu>();
+            void EskiTara(List<BilesenDugumu> liste)
+            {
+                foreach (var d in liste)
+                {
+                    if (d.Model != null) eskiHarita[Kimlik(d)] = d;
+                    EskiTara(d.Cocuklar);
+                }
+            }
+            EskiTara(_bilesenKokListesi);
+
+            List<BilesenDugumu> yeniBilesenler;
+            try { yeniBilesenler = BilesenAgaci.Cikar(_hedefModel); }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("AgaciYenile HATA: " + ex);
+                MessageBox.Show("Ağaç yenilenirken hata: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            int korunanSayisi = 0, yeniSayisi = 0;
+            void Boya(List<BilesenDugumu> liste)
+            {
+                foreach (var d in liste)
+                {
+                    if (eskiHarita.TryGetValue(Kimlik(d), out var eski))
+                    {
+                        d.Sinif = eski.Sinif;
+                        d.KenarOnId = eski.KenarOnId; d.KenarArkaId = eski.KenarArkaId;
+                        d.KenarSolId = eski.KenarSolId; d.KenarSagId = eski.KenarSagId;
+                        d.TaslakBoyMm = eski.TaslakBoyMm; d.TaslakEnMm = eski.TaslakEnMm; d.TaslakKalinlikMm = eski.TaslakKalinlikMm;
+                        d.AktarimaDahil = eski.AktarimaDahil;
+                        korunanSayisi++;
+                    }
+                    else yeniSayisi++;
+                    Boya(d.Cocuklar);
+                }
+            }
+            Boya(yeniBilesenler);
+
+            void GercekleriDegistir(List<BilesenDugumu> liste)
+            {
+                var sentetikler = liste.Where(c => c.Model == null).ToList();
+                liste.Clear();
+                liste.AddRange(sentetikler);
+                liste.AddRange(yeniBilesenler);
+            }
+            if (_bilesenKokListesi.Count == 1 && _bilesenKokListesi[0].Model == null
+                && _bilesenKokListesi[0].ElleEklendi && _bilesenKokListesi[0].Sinif == "urun")
+                GercekleriDegistir(_bilesenKokListesi[0].Cocuklar);
+            else
+                GercekleriDegistir(_bilesenKokListesi);
+
+            BilesenAgaciniCiz();
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = $"🔄 Ağaç SolidWorks'ten yenilendi — {korunanSayisi} bileşenin sınıf/eşleşme durumu korundu, {yeniSayisi} yeni bileşen bulundu.";
+        }
 
         // kokDugumler verilirse (ilk yükleme) _bilesenKokListesi'ne KAYDEDİLİR;
         // sonraki çağrılarda (sınıf değişti / sürükle-bırak taşındı / +Ek Kalem
@@ -1783,9 +1870,13 @@ namespace UretimOSKesim
                 ekBilgi += $"  ({dugum.BoyMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.EnMm.ToString("0.#", CultureInfo.InvariantCulture)}×{dugum.KalinlikMm.ToString("0.#", CultureInfo.InvariantCulture)}mm{kaynakEtiket})";
             }
 
-            if (string.IsNullOrWhiteSpace(dugum.MevcutKod)) return "— (eşleşmemiş)  " + dugum.GosterimAdi + ekBilgi;
+            // Montajda aynı tanımdan (aynı kod/dosya) birden çok kalem birleştirildiyse
+            // (bkz. BilesenAgaci.AyniTanimliKardesleriBirlestir) burada "×N" gösterilir.
+            string adetEtiketi = dugum.Miktar > 1 ? $"  ×{dugum.Miktar}" : "";
+
+            if (string.IsNullOrWhiteSpace(dugum.MevcutKod)) return "— (eşleşmemiş)  " + dugum.GosterimAdi + ekBilgi + adetEtiketi;
             bool kartVar = KodileKartBul(dugum.MevcutKod).kart != null;
-            return (kartVar ? "✓ " : "⚠ (kart bulunamadı) ") + dugum.MevcutKod + " — " + dugum.GosterimAdi + ekBilgi;
+            return (kartVar ? "✓ " : "⚠ (kart bulunamadı) ") + dugum.MevcutKod + " — " + dugum.GosterimAdi + ekBilgi + adetEtiketi;
         }
 
         // ── BİLEŞEN AĞACINI TOPLU OLARAK REÇETE OLARAK AKTAR ─────────────────
@@ -1954,7 +2045,11 @@ namespace UretimOSKesim
                             ["id"] = "RK-" + Guid.NewGuid().ToString("N").Substring(0, 10).ToUpperInvariant(),
                             ["tip"] = cocukTip,
                             ["refId"] = (string)cocukKart["id"],
-                            ["miktar"] = grup.Count(),
+                            // grup.Count() değil grup.Sum(Miktar) — kardeşler
+                            // SolidWorks tarafında ZATEN Miktar'a birleştirilmiş
+                            // olabilir (bkz. BilesenAgaci.AyniTanimliKardesleriBirlestir);
+                            // gerçek toplam tekrar sayısı ancak Miktar'ların toplamıdır.
+                            ["miktar"] = grup.Sum(c => c.Miktar),
                             ["birim"] = "ADET"
                         };
                         // "kenar bandını 4 kenardan hangisine hangi tip
