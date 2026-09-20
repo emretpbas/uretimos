@@ -83,6 +83,13 @@ namespace UretimOSKesim
         // üzerinde çalışabilir, biri diğerinin durumunu EZMESIN).
         private string _sonMontajSemasiModelYolu;
 
+        // Kullanıcı isteği: "reçete ağacı ekranı açık olsa dahi teknik resim
+        // ağacını düzenleyebileyim" — ReceteAgaciPaneli artık ShowDialog
+        // (MODAL) DEĞİL, Show (modeless) ile açılıyor; bu referans, komut
+        // tekrar çalıştırıldığında YENİ bir pencere yerine MEVCUT açık
+        // paneli öne getirmek için tutulur (bkz. ReceteAgaciAcCalistir).
+        private ReceteAgaciPaneli _acikReceteAgaciPaneli;
+
         // ── SolidWorks YAŞAM DÖNGÜSÜ ─────────────────────────────────────────
         // GEÇMİŞ TANI: gerçek denemede SolidWorks'ün KENDİ native modülünde
         // (sldappu) tam çökme oluştu. KomutlariKur() önce tamamen devre dışı
@@ -1238,11 +1245,35 @@ namespace UretimOSKesim
             }
             ModelDoc2 hedefModel = (ModelDoc2)aktifBelge;
 
-            Tanilama.Kaydet("ReceteAgaciAcCalistir: " + hedefModel.GetPathName());
-            using (var panel = new ReceteAgaciPaneli(hedefModel, _app))
+            // Kullanıcı isteği: "teknik resimler arkada kalıyor üretimos
+            // reçete ağacı ekranını kapatmam gerekiyor onlara ulaşmam ve
+            // düzenlemem için, reçete ağacı ekranı açık olsa dahi teknik
+            // resim ağacını düzenleyebileyim." KÖK NEDEN: panel eskiden
+            // ShowDialog() (MODAL) ile açılıyordu — .NET WinForms'ta modal
+            // bir Form, AYNI İŞ PARÇACIĞINDAKİ (bu eklenti SolidWorks'ün
+            // KENDİ işlem/iş parçacığında çalışır) diğer TÜM pencereleri
+            // (SolidWorks'ün ana penceresi VE yeni açılan çizim penceresi
+            // DAHİL) devre dışı bırakır — bu yüzden "öne getirme" (bkz.
+            // SolidWorksPenceresiniOnePlanaGetir) çalışsa bile pencere
+            // TIKLANAMIYOR/düzenlenemiyordu, gerçek çözüm modal'ı KALDIRMAK.
+            // Show() (modeless) ile SolidWorks ve bu panel AYNI ANDA,
+            // birbirini engellemeden kullanılabilir. Komut tekrar
+            // çalıştırılırsa (aynı ya da farklı belgede) YENİ bir pencere
+            // yerine MEVCUT açık panel öne getirilir (yığılmayı önler).
+            if (_acikReceteAgaciPaneli != null && !_acikReceteAgaciPaneli.IsDisposed)
             {
-                panel.ShowDialog();
+                Tanilama.Kaydet("ReceteAgaciAcCalistir: zaten açık panel öne getiriliyor");
+                _acikReceteAgaciPaneli.Activate();
+                if (_acikReceteAgaciPaneli.WindowState == FormWindowState.Minimized)
+                    _acikReceteAgaciPaneli.WindowState = FormWindowState.Normal;
+                return;
             }
+
+            Tanilama.Kaydet("ReceteAgaciAcCalistir: " + hedefModel.GetPathName());
+            var panel = new ReceteAgaciPaneli(hedefModel, _app);
+            _acikReceteAgaciPaneli = panel;
+            panel.FormClosed += (s, e) => { if (ReferenceEquals(_acikReceteAgaciPaneli, panel)) _acikReceteAgaciPaneli = null; };
+            panel.Show();
         }
 
         // ── KOMUT: CNC YERLEŞİMİ (Biesse bSolid) ────────────────────────────
