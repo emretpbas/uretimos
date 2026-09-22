@@ -921,6 +921,24 @@ namespace UretimOSKesim
             var kaydirmaKonumu = _bilesenAgaciGorunumu.AutoScrollPosition;
 
             _bilesenAgaciGorunumu.SuspendLayout();
+
+            // KULLANICI RAPORU: "parçalar ve alt kırılımlar fazlalaşınca
+            // kilitlenip kapanıyor." GERÇEK KÖK NEDEN: Controls.Clear() eski
+            // kontrolleri koleksiyondan ÇIKARIR ama ASLA Dispose ETMEZ — her
+            // satır (ComboBox/Button/Label dolu bir Panel) kendi Win32
+            // pencere tanıtıcısını (HWND/GDI handle) canlı tutmaya devam
+            // eder. BilesenAgaciniCiz HER etkileşimde (sınıf seçimi, kenar
+            // bandı, ek kalem, vb.) TÜM ağacı SIFIRDAN yeniden çiziyor — bu
+            // yüzden büyük bir ağaçta (çok parça/alt kırılım) her tıklama
+            // YÜZLERCE/BİNLERCE tanıtıcı SIZDIRIYORDU. Windows'un işlem
+            // başına varsayılan USER/GDI tanıtıcı kotası (10.000) dolunca
+            // yeni pencere/kontrol oluşturma BAŞARISIZ olur — tam olarak
+            // gözlemlenen "kilitlenip kapanma" budur (küçük ağaçlarda fark
+            // edilmez, büyüdükçe daha hızlı dolar). Control.Dispose() KENDİ
+            // alt kontrollerini de özyinelemeli olarak Dispose ettiği için,
+            // Clear()'dan ÖNCE her üst satırı Dispose etmek YETERLİDİR.
+            foreach (Control eskiSatir in _bilesenAgaciGorunumu.Controls)
+                eskiSatir.Dispose();
             _bilesenAgaciGorunumu.Controls.Clear();
             // Dock=Top TERS sırada eklenir (bkz. KurulumYap'ın başındaki NOT).
             for (int i = satirlar.Count - 1; i >= 0; i--)
@@ -2374,6 +2392,8 @@ namespace UretimOSKesim
         {
             _kokTip = null; _kokKart = null;
             _kaydetBtn.Enabled = false;
+            foreach (Control eskiSatir in _agacGorunumu.Controls)
+                eskiSatir.Dispose();
             _agacGorunumu.Controls.Clear();
             _rotaPanel.Visible = false;
             _paketOlcuPanel.Visible = false;
@@ -3468,6 +3488,13 @@ namespace UretimOSKesim
                 KalemSatirlariEkle(satirlar, kalem, 0, _kokTip, _kokKart);
 
             _agacGorunumu.SuspendLayout();
+            // BilesenAgaciniCiz'deki AYNI gerçek kök neden/düzeltme (bkz. o
+            // fonksiyondaki NOT): Controls.Clear() eski kontrolleri Dispose
+            // ETMEDEN koleksiyondan çıkarır — büyük bir reçete ağacında her
+            // düzenleme (miktar/rota/kenar bandı) TÜM alt ağacı yeniden
+            // çizdiği için tanıtıcılar (HWND/GDI) hızla sızardı.
+            foreach (Control eskiSatir in _agacGorunumu.Controls)
+                eskiSatir.Dispose();
             _agacGorunumu.Controls.Clear();
             // Dock=Top koleksiyona EKLENME SIRASININ TERSİNE göre işler (son
             // eklenen en dıştaki/en üstteki olur) — bu yüzden mantıksal
