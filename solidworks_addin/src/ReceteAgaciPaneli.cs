@@ -1183,7 +1183,18 @@ namespace UretimOSKesim
             // edilmez, büyüdükçe daha hızlı dolar). Control.Dispose() KENDİ
             // alt kontrollerini de özyinelemeli olarak Dispose ettiği için,
             // Clear()'dan ÖNCE her üst satırı Dispose etmek YETERLİDİR.
-            foreach (Control eskiSatir in _bilesenAgaciGorunumu.Controls)
+            // KRİTİK, ÜÇÜNCÜ bir tanıtıcı sızıntısı kaynağı (bkz. GDI/USER
+            // sayacı günlüğü — USER nesneleri her çizimde SABİT kalması
+            // gerekirken sürekli artıyordu): Control.Dispose() kendini
+            // OTOMATİK olarak ebeveyninin Controls koleksiyonundan ÇIKARIR —
+            // bu koleksiyon ÜZERİNDE doğrudan foreach ile gezinirken ELEMAN
+            // SİLİNMESİ, WinForms'un ArrangedElementCollection'ında (List<T>
+            // gibi) numaralandırmayı BOZMADAN sessizce her İKİNCİ öğeyi
+            // ATLAR (indeks kayması) — istisna FIRLATILMADIĞI için bu fark
+            // edilmeden yaklaşık YARISI hiç Dispose edilmeden kalıyordu.
+            // Çözüm: koleksiyonu ÖNCE sabit bir diziye kopyalamak (foreach
+            // artık DEĞİŞEN değil SABİT bir diziyi geziyor).
+            foreach (Control eskiSatir in _bilesenAgaciGorunumu.Controls.Cast<Control>().ToArray())
                 eskiSatir.Dispose();
             _bilesenAgaciGorunumu.Controls.Clear();
             Tanilama.Kaydet($"BilesenAgaciniCiz: eski satirlar Dispose/Clear edildi, kaynak={KaynakSayaci()}, Controls.Add basliyor");
@@ -2679,7 +2690,10 @@ namespace UretimOSKesim
         {
             _kokTip = null; _kokKart = null;
             _kaydetBtn.Enabled = false;
-            foreach (Control eskiSatir in _agacGorunumu.Controls)
+            // BilesenAgaciniCiz'deki AYNI "foreach sırasında Dispose ile
+            // kendi kendini koleksiyondan çıkarma" tuzağı — ÖNCE diziye
+            // kopyala (bkz. o metottaki ayrıntılı NOT).
+            foreach (Control eskiSatir in _agacGorunumu.Controls.Cast<Control>().ToArray())
                 eskiSatir.Dispose();
             _agacGorunumu.Controls.Clear();
             _rotaPanel.Visible = false;
@@ -3822,7 +3836,10 @@ namespace UretimOSKesim
             // ETMEDEN koleksiyondan çıkarır — büyük bir reçete ağacında her
             // düzenleme (miktar/rota/kenar bandı) TÜM alt ağacı yeniden
             // çizdiği için tanıtıcılar (HWND/GDI) hızla sızardı.
-            foreach (Control eskiSatir in _agacGorunumu.Controls)
+            // BilesenAgaciniCiz'deki AYNI "foreach sırasında Dispose ile
+            // kendi kendini koleksiyondan çıkarma" tuzağı — ÖNCE diziye
+            // kopyala (bkz. o metottaki ayrıntılı NOT).
+            foreach (Control eskiSatir in _agacGorunumu.Controls.Cast<Control>().ToArray())
                 eskiSatir.Dispose();
             _agacGorunumu.Controls.Clear();
             // Dock=Top koleksiyona EKLENME SIRASININ TERSİNE göre işler (son
