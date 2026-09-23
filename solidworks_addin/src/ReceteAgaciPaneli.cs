@@ -2953,6 +2953,48 @@ namespace UretimOSKesim
             // KENDİ 'tip' alanından (plaka/kenar_bandi/hirdavat/sarf) okunur.
             string kartTipi = bulunanTip == "hammadde" ? (string)bulunanKart["tip"] : bulunanTip;
 
+            // KULLANICI İSTEĞİ: "satırlardaki düzenle tuşuna bastığımızda
+            // yeni kart seç veya manuel düzenle tuşu çıksın bir kart seçince
+            // başka bir kodlu kart seçemiyorum" — daha önce ✎ Düzenle, ZATEN
+            // eşleşmiş bir düğümde DOĞRUDAN aynı kartın alanlarını düzenleme
+            // ekranını açıyordu; kartı TAMAMEN FARKLI bir koda değiştirmenin
+            // (aynı satırdan) hiçbir yolu YOKTU — DugumEslestirmeSeciciAc'in
+            // (henüz eşleşmemiş düğümler için) sunduğu AYNI iki seçenekli
+            // soru artık burada da (zaten eşleşmiş düğümler için) sorulur.
+            SinifTipEtiketiTumu.TryGetValue(dugum.Sinif ?? "", out string tipEtiketi);
+            tipEtiketi = tipEtiketi ?? kartTipi;
+
+            DialogResult secim;
+            using (var secimDlg = new Form { Text = "ÜretimOS — " + tipEtiketi, Width = 380, Height = 190, StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false })
+            {
+                var bilgi = new Label
+                {
+                    Text = $"'{dugum.GosterimAdi}' şu an '{dugum.MevcutKod}' kartıyla eşleşmiş.\nNe yapmak istersiniz?",
+                    Dock = DockStyle.Top, Height = 50, Padding = new Padding(12, 10, 12, 0)
+                };
+                var ortaPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12, 4, 12, 4) };
+                var secBtn = new Button { Text = "🔍 Farklı " + tipEtiketi + " Kartı Seç", Width = 330, Height = 34, Margin = new Padding(0, 4, 0, 4) };
+                var manuelBtn = new Button { Text = "✎ Bu Kartı Manuel Düzenle", Width = 330, Height = 34, Margin = new Padding(0, 4, 0, 4) };
+                var vazgecBtn = new Button { Text = "Vazgeç", Dock = DockStyle.Bottom, Height = 30 };
+                secBtn.Click += (s, e) => { secimDlg.DialogResult = DialogResult.Yes; };
+                manuelBtn.Click += (s, e) => { secimDlg.DialogResult = DialogResult.No; };
+                vazgecBtn.Click += (s, e) => { secimDlg.DialogResult = DialogResult.Cancel; };
+                ortaPanel.Controls.Add(secBtn);
+                ortaPanel.Controls.Add(manuelBtn);
+
+                secimDlg.Controls.Add(ortaPanel);
+                secimDlg.Controls.Add(vazgecBtn);
+                secimDlg.Controls.Add(bilgi);
+                secim = secimDlg.ShowDialog(this);
+            }
+            if (secim == DialogResult.Cancel) return;
+            if (secim == DialogResult.Yes)
+            {
+                DugumeMevcutKartSecVeEslestir(dugum, tipEtiketi);
+                return;
+            }
+            // secim == DialogResult.No → aşağıdaki ESKİ davranış (mevcut kartın kendisini düzenle) AYNEN devam eder.
+
             string eskiAd = (string)bulunanKart["ad"];
 
             JObject guncellenmisKart;
