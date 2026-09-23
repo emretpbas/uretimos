@@ -1110,6 +1110,36 @@ namespace UretimOSKesim
             _durumEtiketi.Text = $"🔄 Ağaç SolidWorks'ten yenilendi — {korunanSayisi} bileşenin sınıf/eşleşme durumu korundu, {yeniSayisi} yeni bileşen bulundu.";
         }
 
+        // TANI: bir önceki çökme, "BilesenAgaciniCiz: eski satirlar Dispose/
+        // Clear edildi, Controls.Add basliyor" satırından SONRA hiçbir günlük
+        // satırı OLMADAN (yaklaşık 30 başarılı yeniden çizimden sonra, ~19
+        // dakika kullanımın ardından) sessizce gerçekleşti — Controls.Add
+        // döngüsünün/ResumeLayout'un TAM içinde. Daha önceki Dispose/Font
+        // düzeltmeleri çökmeyi ANINDAN ~19 dakikaya ERTELEDİ ama tamamen
+        // ORTADAN KALDIRMADI — bu, KÜÇÜK bir kalıntı tanıtıcı sızıntısının
+        // hâlâ var olabileceğini gösteriyor. TAHMİN ETMEK yerine, işlemin
+        // GERÇEK Windows USER/GDI tanıtıcı sayısını (GetGuiResources) her
+        // çizimde günlüğe yazıyoruz — bir sonraki çökmede bu sayıların
+        // zamanla GERÇEKTEN arttığını (sızıntı doğrulanır) mı yoksa sabit
+        // kaldığını (kök neden BAŞKA bir şey) mi gösterdiği KESİN olarak
+        // görülecek.
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetGuiResources(IntPtr hProcess, uint uiFlags);
+
+        private static string KaynakSayaci()
+        {
+            try
+            {
+                using (var proc = System.Diagnostics.Process.GetCurrentProcess())
+                {
+                    uint gdi = GetGuiResources(proc.Handle, 0);  // GR_GDIOBJECTS
+                    uint user = GetGuiResources(proc.Handle, 1); // GR_USEROBJECTS
+                    return $"GDI={gdi} USER={user}";
+                }
+            }
+            catch (Exception ex) { return "okunamadi:" + ex.Message; }
+        }
+
         // kokDugumler verilirse (ilk yükleme) _bilesenKokListesi'ne KAYDEDİLİR;
         // sonraki çağrılarda (sınıf değişti / sürükle-bırak taşındı / +Ek Kalem
         // eklendi) parametresiz çağrılır — SolidWorks'ten YENİDEN OKUMAZ,
@@ -1120,13 +1150,14 @@ namespace UretimOSKesim
             if (kokDugumler != null) _bilesenKokListesi = kokDugumler;
             if (_bilesenKokListesi == null) return;
 
+            Tanilama.Kaydet($"BilesenAgaciniCiz basladi, kaynak={KaynakSayaci()}");
             var satirlar = new List<Control>();
             foreach (var d in _bilesenKokListesi)
                 BilesenSatirlariTopla(satirlar, d, 0);
             // TANI: bir sonraki çökmede bu satırın günlükte GÖRÜNÜP
             // GÖRÜNMEDİĞİ, sorunun satır/kontrol OLUŞTURMA (yukarısı) mı yoksa
             // Dispose/Clear/Add (aşağısı) aşamasında mı olduğunu ayırt eder.
-            Tanilama.Kaydet($"BilesenAgaciniCiz: {satirlar.Count} satir kontrolu olusturuldu, Dispose/Clear basliyor");
+            Tanilama.Kaydet($"BilesenAgaciniCiz: {satirlar.Count} satir kontrolu olusturuldu, kaynak={KaynakSayaci()}, Dispose/Clear basliyor");
 
             // Kullanıcı isteği: "birşey seçince sıra kayıyor tekrar onu bulmam
             // gerekiyor" — Controls.Clear() kaydırma konumunu sıfırlar; her
@@ -1155,12 +1186,12 @@ namespace UretimOSKesim
             foreach (Control eskiSatir in _bilesenAgaciGorunumu.Controls)
                 eskiSatir.Dispose();
             _bilesenAgaciGorunumu.Controls.Clear();
-            Tanilama.Kaydet("BilesenAgaciniCiz: eski satirlar Dispose/Clear edildi, Controls.Add basliyor");
+            Tanilama.Kaydet($"BilesenAgaciniCiz: eski satirlar Dispose/Clear edildi, kaynak={KaynakSayaci()}, Controls.Add basliyor");
             // Dock=Top TERS sırada eklenir (bkz. KurulumYap'ın başındaki NOT).
             for (int i = satirlar.Count - 1; i >= 0; i--)
                 _bilesenAgaciGorunumu.Controls.Add(satirlar[i]);
             _bilesenAgaciGorunumu.ResumeLayout();
-            Tanilama.Kaydet("BilesenAgaciniCiz: Controls.Add + ResumeLayout bitti");
+            Tanilama.Kaydet($"BilesenAgaciniCiz: Controls.Add + ResumeLayout bitti, kaynak={KaynakSayaci()}");
 
             // AutoScrollPosition GETTER'ı zaten negatif döner — geri yazarken
             // TEKRAR negatiflemek gerekir (WinForms'un kendi tuhaf kuralı).
