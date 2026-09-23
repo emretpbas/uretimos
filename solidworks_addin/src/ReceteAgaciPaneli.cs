@@ -1198,9 +1198,20 @@ namespace UretimOSKesim
                 eskiSatir.Dispose();
             _bilesenAgaciGorunumu.Controls.Clear();
             Tanilama.Kaydet($"BilesenAgaciniCiz: eski satirlar Dispose/Clear edildi, kaynak={KaynakSayaci()}, Controls.Add basliyor");
+            // TANI: son çökme, GDI/USER sayıları TAMAMEN SAĞLIKLIYKEN (kaynak
+            // tükenmesi İHTİMAL DIŞI) yine BURADA (Controls.Add döngüsünde)
+            // oldu — üçüncü (foreach/Dispose) düzeltmesinden SONRA farklı bir
+            // neden olmalı. Hangi SATIRIN eklenmesi sırasında durduğunu
+            // KESİN olarak görmek için her ekleme öncesi satırın kimliğini
+            // (bkz. Tag ataması — BilesenAnaSatiriOlustur/BilesenOlcuSatiriOlustur/
+            // BilesenKenarBandiSatiriOlustur) günlüğe yazıyoruz.
             // Dock=Top TERS sırada eklenir (bkz. KurulumYap'ın başındaki NOT).
             for (int i = satirlar.Count - 1; i >= 0; i--)
+            {
+                Tanilama.Kaydet($"BilesenAgaciniCiz: satir ekleniyor [{i}/{satirlar.Count}] {satirlar[i].Tag}");
                 _bilesenAgaciGorunumu.Controls.Add(satirlar[i]);
+            }
+            Tanilama.Kaydet("BilesenAgaciniCiz: tum satirlar eklendi, ResumeLayout cagriliyor");
             _bilesenAgaciGorunumu.ResumeLayout();
             Tanilama.Kaydet($"BilesenAgaciniCiz: Controls.Add + ResumeLayout bitti, kaynak={KaynakSayaci()}");
 
@@ -1270,7 +1281,7 @@ namespace UretimOSKesim
         // (hırdavat, paket, hammadde, panel, kenar bandı, yarımamül vb.)".
         private Panel BilesenAnaSatiriOlustur(BilesenDugumu dugum, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = derinlik == 0 ? Color.AliceBlue : Color.White };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = derinlik == 0 ? Color.AliceBlue : Color.White, Tag = "ana:" + dugum.GosterimAdi };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
 
             satir.Controls.Add(new Panel { Width = 8 + derinlik * 22, Height = 1 });
@@ -2042,7 +2053,7 @@ namespace UretimOSKesim
         // (varsa) ön-doldurulmuş Taslak* alanlarını gösterir/düzenletir.
         private Panel BilesenOlcuSatiriOlustur(BilesenDugumu dugum, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 28 };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 28, Tag = "olcu:" + dugum.GosterimAdi };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
 
@@ -2069,7 +2080,7 @@ namespace UretimOSKesim
         // hammadde burada OLUŞTURULMAZ — bkz. eşleşme kontrolü aktarımda).
         private Panel BilesenKenarBandiSatiriOlustur(BilesenDugumu dugum, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 28 };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 28, Tag = "kenar:" + dugum.GosterimAdi };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
 
