@@ -126,6 +126,20 @@ namespace UretimOSKesim
         private List<PaletOgesi> _paletTumOgeler = new List<PaletOgesi>();
         private Button _kaydetBtn;
 
+        // KRİTİK, İKİNCİ bir GDI tanıtıcı sızıntısı kaynağı (Controls.Clear()
+        // Dispose düzeltmesinden BAĞIMSIZ): "new Font(Font, FontStyle.Bold)"
+        // her satır çiziminde (KalemSatirlariEkle — alttaki ÜretimOS reçete
+        // ağacının HER kalemi için, AgaciYenidenCiz HER değişiklikte tümünü
+        // yeniden çizdiği için) YENİ bir GDI font tanıtıcısı oluşturuyordu.
+        // Control.Dispose() bir Label'ın KENDİ Font'unu Dispose ETMEZ — bu
+        // yüzden bu belleği önceki Controls.Clear() düzeltmesi bile
+        // KAPSAMIYORDU. Tek bir paylaşılan/önbelleğe alınmış font kullanmak
+        // bu sızıntıyı tamamen ortadan kaldırır (kullanıcı raporu: "yine
+        // kilitlendi" — SolidWorks'ün kendisi native çöktü, sürecin PAYLAŞILAN
+        // GDI/USER tanıtıcı kotası tükendiğinde tam da böyle davranır).
+        private Font _kalinFontOnbellek;
+        private Font KalinFont => _kalinFontOnbellek ?? (_kalinFontOnbellek = new Font(Font, FontStyle.Bold));
+
         // "📐 Teknik Resim Oluştur" (ADIM 1, satır bazlı) ile "✓ Teknik
         // Resmi Onayla ve ÜretimOS'a Yükle" (ADIM 2, global — bkz. altPanel)
         // arasındaki durumu taşır: hangi kalem (tip/kart) için hangi
@@ -403,7 +417,7 @@ namespace UretimOSKesim
             // ── ALT: durum + kaydet ──────────────────────────────────────────
             var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 50, Padding = new Padding(8) };
             _durumEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DarkSlateGray };
-            _kaydetBtn = new Button { Text = "✓ ÜretimOS'a Kaydet", Dock = DockStyle.Right, Width = 160, Enabled = false, Font = new Font(Font, FontStyle.Bold) };
+            _kaydetBtn = new Button { Text = "✓ ÜretimOS'a Kaydet", Dock = DockStyle.Right, Width = 160, Enabled = false, Font = KalinFont };
             _kaydetBtn.Click += async (s, e) => await KaydetTikla();
             // Kullanıcı isteği: "solidworkse kaydet dosyası ekleyelim ve buna
             // basınca tüm dosya isimleri ilgili reçete bağlantıları ve tüm
@@ -1017,7 +1031,7 @@ namespace UretimOSKesim
                 var katlaBtn = new Label
                 {
                     Text = dugum.Genisletildi ? "▼" : "▶",
-                    AutoSize = true, Cursor = Cursors.Hand, Font = new Font(Font, FontStyle.Bold),
+                    AutoSize = true, Cursor = Cursors.Hand, Font = KalinFont,
                     Padding = new Padding(0, 6, 4, 0), ForeColor = Color.DimGray,
                     MinimumSize = new Size(16, 0)
                 };
@@ -1263,7 +1277,7 @@ namespace UretimOSKesim
                     Text = $"{kod} — {ad}\nÜretimOS'un 'Teknik Dosyalar' alanı (kart ekranındaki aynı depo).",
                     Dock = DockStyle.Top, Height = 40
                 };
-                var listeBaslikLbl = new Label { Text = "Mevcut Teknik Dosyalar:", Dock = DockStyle.Top, Height = 20, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(0, 6, 0, 0) };
+                var listeBaslikLbl = new Label { Text = "Mevcut Teknik Dosyalar:", Dock = DockStyle.Top, Height = 20, Font = KalinFont, Padding = new Padding(0, 6, 0, 0) };
                 var listePanel = new Panel { Dock = DockStyle.Top, Height = 130, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 10) };
 
                 async System.Threading.Tasks.Task ListeyiYenile()
@@ -3366,7 +3380,7 @@ namespace UretimOSKesim
 
                 var altPanel = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(10) };
                 var vazgecBtn = new Button { Text = "Vazgeç", DialogResult = DialogResult.Cancel, AutoSize = true };
-                var uygulaBtn = new Button { Text = "Uygula (Taslağa)", AutoSize = true, Font = new Font(Font, FontStyle.Bold) };
+                var uygulaBtn = new Button { Text = "Uygula (Taslağa)", AutoSize = true, Font = KalinFont };
                 altPanel.Controls.Add(vazgecBtn);
                 altPanel.Controls.Add(uygulaBtn);
 
@@ -3592,7 +3606,7 @@ namespace UretimOSKesim
 
             var etiketLbl = new Label
             {
-                Text = "[" + tipGosterim + "]", AutoSize = true, Font = new Font(Font, FontStyle.Bold),
+                Text = "[" + tipGosterim + "]", AutoSize = true, Font = KalinFont,
                 Padding = new Padding(0, 7, 4, 0), ForeColor = Color.DarkSlateBlue
             };
             satir.Controls.Add(etiketLbl);
