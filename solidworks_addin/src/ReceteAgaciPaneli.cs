@@ -542,6 +542,25 @@ namespace UretimOSKesim
                 // BilesenAgaciniCiz) kesin olarak gösterecek.
                 Tanilama.Kaydet($"VerileriYukleVeBaslat: Cikar() bitti, kok={bilesenKokleri.Count}, toplam={ToplamBilesenSayisi(bilesenKokleri)}");
 
+                // KULLANICI RAPORU: "her açtığımda alt kalemde olan satırlar
+                // (plaka ve kenar bandı) kayboluyor... bunu başka bir yöntemle
+                // kaydetsek ve tekrar açtığımda bunlar kaybolmasa" — panel
+                // İLK kez (bu SolidWorks oturumunda) açılıyor, yani bellekte
+                // (_bilesenKokListesi) henüz eski bir durum YOK; onun yerine
+                // bir önceki açılışta YerelAgacDurumunuKaydet ile diske
+                // yazılmış durum varsa (bu SolidWorks DOSYASINA özel) okunup
+                // AgaciYenile ile AYNI EskiDurumuUygula mantığıyla taze
+                // taramaya uygulanır — sınıf/kenar bandı/taslak ölçü VE
+                // "+ Ek Kalem" ile eklenmiş sentetik alt kalemler (ör. bir
+                // plakanın çekirdek hammaddesi) böylece SolidWorks kapatılıp
+                // açılsa BİLE kaybolmaz.
+                var eskiDiskDurumu = YerelAgacDurumundanYukle(_hedefModel.GetPathName());
+                if (eskiDiskDurumu != null)
+                {
+                    EskiDurumuUygula(eskiDiskDurumu, bilesenKokleri, out int diskKorunan, out int diskYeni);
+                    Tanilama.Kaydet($"VerileriYukleVeBaslat: yerel disk onbellegi uygulandi, korunan={diskKorunan}, yeni={diskYeni}");
+                }
+
                 // Kullanıcı isteği: "ürün ağacı komutunu açınca dosyanın adı
                 // ile yeni ürün kartı ekranı çıksın ve bu tüm ürünün en üst
                 // başlangıç kodu olsun, sonra yaptığım paket/yarımamül/
@@ -640,6 +659,134 @@ namespace UretimOSKesim
             {
                 Tanilama.Kaydet("YerelOnbellektenYukle HATA (canlı veriye düşülüyor): " + ex);
                 return false;
+            }
+        }
+
+        // KULLANICI RAPORU: "her açtığımda alt kalemde olan satırlar (plaka
+        // ve kenar bandı) kayboluyor... bunu başka bir yöntemle kaydetsek ve
+        // tekrar açtığımda bunlar kaybolmasa" — "+ Ek Kalem" ile eklenen
+        // sentetik alt kalemler (gerçek bir SolidWorks bileşenine karşılık
+        // GELMEDİKLERİ için) yalnızca BU panelin belleğinde (_bilesenKokListesi)
+        // yaşar; SolidWorks kapatılıp açılınca (yeni bir ReceteAgaciPaneli
+        // örneği) bu bellek sıfırlanır ve kaybolurlar. Çözüm: ağacın TAMAMI
+        // (sınıf/kenar bandı/taslak ölçü/sentetik alt kalemler dahil) HER
+        // çizimde (BilesenAgaciniCiz sonunda) SolidWorks DOSYA YOLUNA göre
+        // adlandırılmış küçük bir JSON dosyasına da yazılır; bir sonraki
+        // açılışta (VerileriYukleVeBaslat) bu dosya okunup EskiDurumuUygula
+        // ile taze SolidWorks taramasına AYNEN "Ağacı Yenile" gibi uygulanır.
+        // NOT: bu YALNIZCA bu makinedeki yerel bir önbellektir — ÜretimOS
+        // sunucusuna KAYIT DEĞİLDİR (o hâlâ "📤 Reçete Olarak Aktar"/"✓
+        // ÜretimOS'a Kaydet" gerektirir); yalnızca "her açtığımda baştan
+        // girmek zorunda kalma" sorununu çözer.
+        private static readonly string AgacDurumuKlasoru = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "UretimOSKesim", "agac_durumu");
+
+        private static string AgacDurumuDosyaYolu(string modelYolu)
+        {
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                byte[] hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(modelYolu.ToLowerInvariant()));
+                string hex = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                return Path.Combine(AgacDurumuKlasoru, hex + ".json");
+            }
+        }
+
+        // BilesenDugumu <-> JObject — Model bir COM nesnesi olduğu için
+        // SERİLEŞTİRİLEMEZ; bunun yerine yalnızca yol string'i (ModelYoluOnbellek
+        // üzerinden geri okunur) saklanır. Gerçek bileşenler diskten geri
+        // okunduğunda Model HER ZAMAN null kalır — bu kasıtlıdır: bu düğümler
+        // yalnızca EskiDurumuUygula'nın "eski" tarafı olarak, taze bir
+        // BilesenAgaci.Cikar() taramasıyla eşleştirilmek için kullanılır,
+        // doğrudan çizilmezler.
+        private static JObject DugumuJObjeYap(BilesenDugumu d)
+        {
+            return new JObject
+            {
+                ["sinif"] = d.Sinif,
+                ["mevcutKod"] = d.MevcutKod,
+                ["gosterimAdi"] = d.GosterimAdi,
+                ["modelYolu"] = d.Model?.GetPathName(),
+                ["elleEklendi"] = d.ElleEklendi,
+                ["miktar"] = d.Miktar,
+                ["kenarOnId"] = d.KenarOnId,
+                ["kenarArkaId"] = d.KenarArkaId,
+                ["kenarSolId"] = d.KenarSolId,
+                ["kenarSagId"] = d.KenarSagId,
+                ["taslakBoyMm"] = d.TaslakBoyMm,
+                ["taslakEnMm"] = d.TaslakEnMm,
+                ["taslakKalinlikMm"] = d.TaslakKalinlikMm,
+                ["aktarimaDahil"] = d.AktarimaDahil,
+                ["genisletildi"] = d.Genisletildi,
+                ["cocuklar"] = new JArray(d.Cocuklar.Select(DugumuJObjeYap)),
+            };
+        }
+
+        private static BilesenDugumu JObjeDenDugumOlustur(JObject o)
+        {
+            var d = new BilesenDugumu
+            {
+                Sinif = (string)o["sinif"],
+                MevcutKod = (string)o["mevcutKod"],
+                GosterimAdi = (string)o["gosterimAdi"],
+                ModelYoluOnbellek = (string)o["modelYolu"],
+                ElleEklendi = (bool?)o["elleEklendi"] ?? false,
+                Miktar = (int?)o["miktar"] ?? 1,
+                KenarOnId = (string)o["kenarOnId"],
+                KenarArkaId = (string)o["kenarArkaId"],
+                KenarSolId = (string)o["kenarSolId"],
+                KenarSagId = (string)o["kenarSagId"],
+                TaslakBoyMm = (double?)o["taslakBoyMm"] ?? 0,
+                TaslakEnMm = (double?)o["taslakEnMm"] ?? 0,
+                TaslakKalinlikMm = (double?)o["taslakKalinlikMm"] ?? 0,
+                AktarimaDahil = (bool?)o["aktarimaDahil"] ?? true,
+                Genisletildi = (bool?)o["genisletildi"] ?? true,
+            };
+            foreach (var c in (o["cocuklar"] as JArray) ?? new JArray())
+                d.Cocuklar.Add(JObjeDenDugumOlustur((JObject)c));
+            return d;
+        }
+
+        // Sessizce başarısız olur (Tanilama.Kaydet ile) — bu yalnızca bir
+        // KOLAYLIK önbelleğidir, yazma hatası ana işlevi ASLA engellememeli.
+        private void YerelAgacDurumunuKaydet()
+        {
+            try
+            {
+                if (_hedefModel == null || _bilesenKokListesi == null) return;
+                string modelYolu = _hedefModel.GetPathName();
+                if (string.IsNullOrWhiteSpace(modelYolu)) return;
+                Directory.CreateDirectory(AgacDurumuKlasoru);
+                var kok = new JObject
+                {
+                    ["modelYolu"] = modelYolu,
+                    ["kaydetmeZamani"] = DateTime.Now.ToString("O"),
+                    ["agac"] = new JArray(_bilesenKokListesi.Select(DugumuJObjeYap)),
+                };
+                File.WriteAllText(AgacDurumuDosyaYolu(modelYolu), kok.ToString(Newtonsoft.Json.Formatting.None));
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("YerelAgacDurumunuKaydet HATA (yok sayılıyor): " + ex);
+            }
+        }
+
+        // Dosya yoksa/bozuksa null döner (çağıran taze taramayı OLDUĞU GİBİ kullanır).
+        private List<BilesenDugumu> YerelAgacDurumundanYukle(string modelYolu)
+        {
+            try
+            {
+                string yol = AgacDurumuDosyaYolu(modelYolu);
+                if (!File.Exists(yol)) return null;
+                var kok = JObject.Parse(File.ReadAllText(yol));
+                var agac = kok["agac"] as JArray;
+                if (agac == null) return null;
+                return agac.OfType<JObject>().Select(JObjeDenDugumOlustur).ToList();
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("YerelAgacDurumundanYukle HATA (taze taramaya devam ediliyor): " + ex);
+                return null;
             }
         }
 
@@ -855,30 +1002,82 @@ namespace UretimOSKesim
             else eylem();
         }
 
-        // "🔄 Ağacı Yenile" — bkz. buton tanımındaki NOT. SolidWorks'ü yeniden
-        // tarar (yeni eklenen bileşenler görünür) ve eski ağaçtaki (kod veya
-        // dosya yoluyla eşleşen) düğümlerin sınıf/kenar bandı/taslak ölçü/
-        // dahil-mi durumunu yeni düğümlere aktarır. "Ürün Kökü" ve "Paket"
-        // gibi SENTETİK düğümler (Model == null) dokunulmadan korunur —
-        // yalnızca GERÇEK (Model != null) SolidWorks bileşenleri değiştirilir.
-        private void AgaciYenile()
+        // "Ağacı Yenile" VE disk önbelleğinden ilk açılışta yükleme (bkz.
+        // YerelAgacDurumunuKaydet/YerelAgacDurumundanYukle) TARAFINDAN ORTAK
+        // KULLANILIR: eskiKokListesi'ndeki (bellekten YA DA diskten gelen)
+        // sınıf/kenar bandı/taslak ölçü/dahil-mi durumunu, SolidWorks'ten
+        // TAZE taranmış yeniBilesenler ağacındaki (kod veya dosya yoluyla
+        // eşleşen) düğümlere aktarır.
+        //
+        // KULLANICI RAPORU: "her açtığımda alt kalemde olan satırlar (plaka
+        // ve kenar bandı) kayboluyor" — GERÇEK KÖK NEDEN: eşleşen bir düğümün
+        // SKALAR alanları (Sinif vb.) kopyalanıyordu ama "+ Ek Kalem" ile o
+        // düğümün ALTINA eklenmiş sentetik ÇOCUKLARI hiç taşınmıyordu; taze
+        // Cikar() taraması bu çocukları (gerçek bir SolidWorks bileşenine
+        // karşılık gelmedikleri için) ASLA yeniden oluşturamaz. Artık eşleşen
+        // her düğümün eski sentetik çocukları da yeni düğüme aktarılıyor.
+        //
+        // "Eligible" (eşleştirilebilir) düğüm = ElleEklendi/BelgeYuklenemedi
+        // OLMAYAN — Model!=null KONTROLÜ YERİNE bu kullanılıyor ki diskten
+        // deserileştirilmiş (Model her zaman null olan) "yer tutucu" düğümler
+        // de AYNI mantıkla eşleştirilebilsin (bkz. BilesenDugumu.ModelYoluOnbellek).
+        private void EskiDurumuUygula(List<BilesenDugumu> eskiKokListesi, List<BilesenDugumu> yeniBilesenler, out int korunanSayisi, out int yeniSayisi)
         {
-            if (_hedefModel == null || _bilesenKokListesi == null) return;
-
             string Kimlik(BilesenDugumu d) =>
                 !string.IsNullOrWhiteSpace(d.MevcutKod) ? "kod:" + d.MevcutKod
-                : "yol:" + (d.Model?.GetPathName() ?? "").ToLowerInvariant();
+                : "yol:" + (d.Model?.GetPathName() ?? d.ModelYoluOnbellek ?? "").ToLowerInvariant();
 
             var eskiHarita = new Dictionary<string, BilesenDugumu>();
             void EskiTara(List<BilesenDugumu> liste)
             {
                 foreach (var d in liste)
                 {
-                    if (d.Model != null) eskiHarita[Kimlik(d)] = d;
+                    if (!d.ElleEklendi && !d.BelgeYuklenemedi) eskiHarita[Kimlik(d)] = d;
                     EskiTara(d.Cocuklar);
                 }
             }
-            EskiTara(_bilesenKokListesi);
+            EskiTara(eskiKokListesi);
+
+            int korunan = 0, yeni = 0;
+            void Boya(List<BilesenDugumu> liste)
+            {
+                foreach (var d in liste)
+                {
+                    if (!d.ElleEklendi)
+                    {
+                        if (eskiHarita.TryGetValue(Kimlik(d), out var eski))
+                        {
+                            d.Sinif = eski.Sinif;
+                            d.KenarOnId = eski.KenarOnId; d.KenarArkaId = eski.KenarArkaId;
+                            d.KenarSolId = eski.KenarSolId; d.KenarSagId = eski.KenarSagId;
+                            d.TaslakBoyMm = eski.TaslakBoyMm; d.TaslakEnMm = eski.TaslakEnMm; d.TaslakKalinlikMm = eski.TaslakKalinlikMm;
+                            d.AktarimaDahil = eski.AktarimaDahil;
+                            d.Genisletildi = eski.Genisletildi;
+                            korunan++;
+
+                            // Eşleşen düğümün eski (sentetik) çocuklarını YENİ
+                            // düğüme taşı — bkz. yukarıdaki "GERÇEK KÖK NEDEN".
+                            var eskiSentetikCocuklar = eski.Cocuklar.Where(c => c.ElleEklendi).ToList();
+                            if (eskiSentetikCocuklar.Count > 0)
+                                d.Cocuklar.AddRange(eskiSentetikCocuklar);
+                        }
+                        else yeni++;
+                    }
+                    Boya(d.Cocuklar);
+                }
+            }
+            Boya(yeniBilesenler);
+            korunanSayisi = korunan; yeniSayisi = yeni;
+        }
+
+        // "🔄 Ağacı Yenile" — bkz. buton tanımındaki NOT. SolidWorks'ü yeniden
+        // tarar (yeni eklenen bileşenler görünür) ve eski ağaçtaki durumu
+        // EskiDurumuUygula ile yeni düğümlere aktarır. "Ürün Kökü" ve "Paket"
+        // gibi ÜST SEVİYE sentetik düğümler (Model == null) dokunulmadan
+        // korunur — yalnızca GERÇEK SolidWorks bileşenleri değiştirilir.
+        private void AgaciYenile()
+        {
+            if (_hedefModel == null || _bilesenKokListesi == null) return;
 
             List<BilesenDugumu> yeniBilesenler;
             try { yeniBilesenler = BilesenAgaci.Cikar(_hedefModel, _hammaddeler.OfType<JObject>()); }
@@ -889,25 +1088,7 @@ namespace UretimOSKesim
                 return;
             }
 
-            int korunanSayisi = 0, yeniSayisi = 0;
-            void Boya(List<BilesenDugumu> liste)
-            {
-                foreach (var d in liste)
-                {
-                    if (eskiHarita.TryGetValue(Kimlik(d), out var eski))
-                    {
-                        d.Sinif = eski.Sinif;
-                        d.KenarOnId = eski.KenarOnId; d.KenarArkaId = eski.KenarArkaId;
-                        d.KenarSolId = eski.KenarSolId; d.KenarSagId = eski.KenarSagId;
-                        d.TaslakBoyMm = eski.TaslakBoyMm; d.TaslakEnMm = eski.TaslakEnMm; d.TaslakKalinlikMm = eski.TaslakKalinlikMm;
-                        d.AktarimaDahil = eski.AktarimaDahil;
-                        korunanSayisi++;
-                    }
-                    else yeniSayisi++;
-                    Boya(d.Cocuklar);
-                }
-            }
-            Boya(yeniBilesenler);
+            EskiDurumuUygula(_bilesenKokListesi, yeniBilesenler, out int korunanSayisi, out int yeniSayisi);
 
             void GercekleriDegistir(List<BilesenDugumu> liste)
             {
@@ -984,6 +1165,16 @@ namespace UretimOSKesim
             // AutoScrollPosition GETTER'ı zaten negatif döner — geri yazarken
             // TEKRAR negatiflemek gerekir (WinForms'un kendi tuhaf kuralı).
             _bilesenAgaciGorunumu.AutoScrollPosition = new Point(-kaydirmaKonumu.X, -kaydirmaKonumu.Y);
+
+            // KULLANICI RAPORU: "her açtığımda alt kalemde olan satırlar
+            // (plaka ve kenar bandı) kayboluyor... bunu başka bir yöntemle
+            // kaydetsek" — ağaç HER değişiklikte (sınıf seçimi, kenar bandı,
+            // +Ek Kalem, sürükle-bırak) yeniden BilesenAgaciniCiz() ile
+            // çizildiği için, en güncel durumu diske yazmak için TAM burası
+            // (bir sonraki tam SolidWorks kapat/aç döngüsünde
+            // YerelAgacDurumundanYukle bu dosyayı okuyup taze taramaya
+            // uygular — bkz. VerileriYukleVeBaslat).
+            YerelAgacDurumunuKaydet();
         }
 
         private void BilesenSatirlariTopla(List<Control> hedefListe, BilesenDugumu dugum, int derinlik)

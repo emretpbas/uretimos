@@ -90,6 +90,22 @@ namespace UretimOSKesim
         // (her şeyin baştan görünmesi) BOZULMAZ, kullanıcı isteyerek katlar.
         public bool Genisletildi = true;
 
+        // KULLANICI RAPORU: "her açtığımda alt kalemde olan satırlar (plaka
+        // ve kenar bandı) kayboluyor... bunu başka bir yöntemle kaydetsek ve
+        // tekrar açtığımda bunlar kaybolmasa" — bir yarımamül/plaka düğümüne
+        // "+ Ek Kalem" ile eklenen sentetik alt kalemler (ör. çekirdek plaka
+        // hammaddesi) gerçek bir SolidWorks bileşenine karşılık GELMEDİĞİ
+        // için Cikar() onları asla yeniden oluşturamaz — SolidWorks kapatılıp
+        // açıldığında (ReceteAgaciPaneli'nin belleği sıfırlandığında) tek
+        // başına kaybolurlardı. ReceteAgaciPaneli artık TÜM ağacı (bu alanlar
+        // dahil) diske de yazıyor (bkz. YerelAgacDurumunuKaydet/Yukle) ve
+        // diskten geri okunan "yer tutucu" düğümlerde GERÇEK bir ModelDoc2
+        // COM nesnesi YENİDEN OLUŞTURULAMADIĞI için (Model her zaman null
+        // kalır), kimlik eşleştirmesi (AgaciYenile'deki Kimlik() ile AYNI
+        // mantık) bu alandan devam eder — Model!=null iken bu alan HİÇ
+        // kullanılmaz (Model.GetPathName() önceliklidir).
+        public string ModelYoluOnbellek;
+
         public readonly List<BilesenDugumu> Cocuklar = new List<BilesenDugumu>();
     }
 
