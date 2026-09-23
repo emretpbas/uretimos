@@ -531,6 +531,16 @@ namespace UretimOSKesim
                 // düğümün ÜretimOS kart eşleşmesi (URETIMOS_KOD'a göre) ✓/⚠/—
                 // simgesiyle gösterilir; TAHMİN/otomatik kart OLUŞTURMA YOK.
                 var bilesenKokleri = BilesenAgaci.Cikar(_hedefModel, _hammaddeler.OfType<JObject>());
+                // TANI (bkz. BilesenAgaci.cs'teki ölçüm önbelleği yorumu):
+                // Cikar()'ın kendisi artık temiz/hızlı çalıştığı doğrulandı
+                // (uretimos_addin_log.txt'de tekrar yok) ama çökme HÂLÂ
+                // devam ediyor ve Cikar() SONRASI hiçbir adımda günlük satırı
+                // yoktu — bu yüzden buradan itibaren HER adımdan sonra tek
+                // satırlık bir "nerede kaldık" izi bırakılıyor; bir sonraki
+                // çökmede günlüğün SON satırı sorunun TAM olarak hangi
+                // adımda olduğunu (UrunKokuOlustur / PaketleriOlustur /
+                // BilesenAgaciniCiz) kesin olarak gösterecek.
+                Tanilama.Kaydet($"VerileriYukleVeBaslat: Cikar() bitti, kok={bilesenKokleri.Count}, toplam={ToplamBilesenSayisi(bilesenKokleri)}");
 
                 // Kullanıcı isteği: "ürün ağacı komutunu açınca dosyanın adı
                 // ile yeni ürün kartı ekranı çıksın ve bu tüm ürünün en üst
@@ -541,6 +551,7 @@ namespace UretimOSKesim
                 // kökleri bu ürün düğümünün ÇOCUĞU olur (iptal edilirse ağaç
                 // eskisi gibi, ürün kökü olmadan çizilir).
                 var urunKoku = await UrunKokuOlustur();
+                Tanilama.Kaydet("VerileriYukleVeBaslat: UrunKokuOlustur() bitti, urunKoku null mu=" + (urunKoku == null));
 
                 // Kullanıcı isteği: "1 sonraki adıma geç dediğinde paket
                 // adedi ve paket kodlarını oluştur desin bunlarda oluşup
@@ -557,6 +568,7 @@ namespace UretimOSKesim
                     if (!paketleriVarMi)
                         paketKokleri = await PaketleriOlustur(_kokKart);
                 }
+                Tanilama.Kaydet($"VerileriYukleVeBaslat: PaketleriOlustur asamasi bitti, paket={paketKokleri.Count}");
 
                 int toplamBilesen = ToplamBilesenSayisi(bilesenKokleri);
                 if (urunKoku != null)
@@ -571,7 +583,9 @@ namespace UretimOSKesim
                     urunKoku.Cocuklar.AddRange(bilesenKokleri);
                     bilesenKokleri = new List<BilesenDugumu> { urunKoku };
                 }
+                Tanilama.Kaydet("VerileriYukleVeBaslat: BilesenAgaciniCiz() cagriliyor");
                 BilesenAgaciniCiz(bilesenKokleri);
+                Tanilama.Kaydet("VerileriYukleVeBaslat: BilesenAgaciniCiz() bitti");
 
                 // urunKoku kurulduysa KokKartAyarla (UrunKokuOlustur içinde)
                 // zaten _kokKartEtiketi'ni "[ÜRÜN] kod — ad" olarak ayarladı —
@@ -908,7 +922,9 @@ namespace UretimOSKesim
             else
                 GercekleriDegistir(_bilesenKokListesi);
 
+            Tanilama.Kaydet($"AgaciYenile: Cikar() bitti (korunan={korunanSayisi}, yeni={yeniSayisi}), BilesenAgaciniCiz() cagriliyor");
             BilesenAgaciniCiz();
+            Tanilama.Kaydet("AgaciYenile: BilesenAgaciniCiz() bitti");
             _durumEtiketi.ForeColor = Color.DarkSlateGray;
             _durumEtiketi.Text = $"🔄 Ağaç SolidWorks'ten yenilendi — {korunanSayisi} bileşenin sınıf/eşleşme durumu korundu, {yeniSayisi} yeni bileşen bulundu.";
         }
@@ -926,6 +942,10 @@ namespace UretimOSKesim
             var satirlar = new List<Control>();
             foreach (var d in _bilesenKokListesi)
                 BilesenSatirlariTopla(satirlar, d, 0);
+            // TANI: bir sonraki çökmede bu satırın günlükte GÖRÜNÜP
+            // GÖRÜNMEDİĞİ, sorunun satır/kontrol OLUŞTURMA (yukarısı) mı yoksa
+            // Dispose/Clear/Add (aşağısı) aşamasında mı olduğunu ayırt eder.
+            Tanilama.Kaydet($"BilesenAgaciniCiz: {satirlar.Count} satir kontrolu olusturuldu, Dispose/Clear basliyor");
 
             // Kullanıcı isteği: "birşey seçince sıra kayıyor tekrar onu bulmam
             // gerekiyor" — Controls.Clear() kaydırma konumunu sıfırlar; her
@@ -954,10 +974,12 @@ namespace UretimOSKesim
             foreach (Control eskiSatir in _bilesenAgaciGorunumu.Controls)
                 eskiSatir.Dispose();
             _bilesenAgaciGorunumu.Controls.Clear();
+            Tanilama.Kaydet("BilesenAgaciniCiz: eski satirlar Dispose/Clear edildi, Controls.Add basliyor");
             // Dock=Top TERS sırada eklenir (bkz. KurulumYap'ın başındaki NOT).
             for (int i = satirlar.Count - 1; i >= 0; i--)
                 _bilesenAgaciGorunumu.Controls.Add(satirlar[i]);
             _bilesenAgaciGorunumu.ResumeLayout();
+            Tanilama.Kaydet("BilesenAgaciniCiz: Controls.Add + ResumeLayout bitti");
 
             // AutoScrollPosition GETTER'ı zaten negatif döner — geri yazarken
             // TEKRAR negatiflemek gerekir (WinForms'un kendi tuhaf kuralı).
