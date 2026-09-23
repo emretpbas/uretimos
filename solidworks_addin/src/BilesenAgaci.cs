@@ -82,6 +82,14 @@ namespace UretimOSKesim
         // kaç kez tekrarlandığı burada tutulur (bkz. AyniTanimliKardesleriBirlestir).
         public int Miktar = 1;
 
+        // Kullanıcı isteği: "satır doluyor... alt kırılımı olan satırları
+        // akordion sekme gibi açıp kapatabileyim" — büyük ağaçlarda hem
+        // görsel kalabalığı azaltmak hem de uzak bir üst satıra sürükle-
+        // bırak yapabilmek (aradaki alt kırılımları katlayıp listeyi
+        // kısaltarak) için. Varsayılan AÇIK (true) — mevcut davranış
+        // (her şeyin baştan görünmesi) BOZULMAZ, kullanıcı isteyerek katlar.
+        public bool Genisletildi = true;
+
         public readonly List<BilesenDugumu> Cocuklar = new List<BilesenDugumu>();
     }
 

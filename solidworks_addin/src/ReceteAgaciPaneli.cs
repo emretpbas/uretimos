@@ -957,6 +957,12 @@ namespace UretimOSKesim
                 hedefListe.Add(BilesenOlcuSatiriOlustur(dugum, derinlik));
             if (!dugum.BelgeYuklenemedi && dugum.Sinif == "plaka")
                 hedefListe.Add(BilesenKenarBandiSatiriOlustur(dugum, derinlik));
+            // Kullanıcı isteği: "alt kırılımı olan satırları akordion sekme
+            // gibi açıp kapatabileyim" — düğüm KATLANMIŞSA (Genisletildi ==
+            // false) alt dalı HİÇ oluşturulmaz (yalnızca gizlenmez — büyük
+            // ağaçlarda hem görsel kalabalık hem de kontrol/tanıtıcı sayısı
+            // azalır, bkz. BilesenAgaciniCiz'deki Dispose notu).
+            if (!dugum.Genisletildi) return;
             foreach (var cocuk in dugum.Cocuklar.ToList())
                 BilesenSatirlariTopla(hedefListe, cocuk, derinlik + 1);
         }
@@ -999,6 +1005,29 @@ namespace UretimOSKesim
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
 
             satir.Controls.Add(new Panel { Width = 8 + derinlik * 22, Height = 1 });
+
+            // Kullanıcı isteği: "satır doluyor... alt kırılımı olan satırları
+            // akordion sekme gibi açıp kapatabileyim" — yalnızca GERÇEKTEN
+            // çocuğu olan düğümlerde katla/aç düğmesi gösterilir; katlanınca
+            // BilesenSatirlariTopla alt dalı hiç oluşturmaz (bkz. o metottaki
+            // NOT). Çocuğu olmayan satırlarda AYNI genişlikte boş alan
+            // bırakılır ki tüm satırların metin sütunu hizalı kalsın.
+            if (dugum.Cocuklar.Count > 0)
+            {
+                var katlaBtn = new Label
+                {
+                    Text = dugum.Genisletildi ? "▼" : "▶",
+                    AutoSize = true, Cursor = Cursors.Hand, Font = new Font(Font, FontStyle.Bold),
+                    Padding = new Padding(0, 6, 4, 0), ForeColor = Color.DimGray,
+                    MinimumSize = new Size(16, 0)
+                };
+                katlaBtn.Click += (s, e) => { dugum.Genisletildi = !dugum.Genisletildi; BilesenAgaciniCiz(); };
+                satir.Controls.Add(katlaBtn);
+            }
+            else
+            {
+                satir.Controls.Add(new Panel { Width = 16, Height = 1 });
+            }
 
             // Kullanıcı isteği: "üretimosa aktarılacak kalemleri bir kutucukla
             // seçeyim, sadece onlar aktarılsın" — işareti kaldırılan bir
