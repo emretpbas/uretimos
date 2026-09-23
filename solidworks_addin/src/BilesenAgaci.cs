@@ -108,6 +108,7 @@ namespace UretimOSKesim
             var sonuc = new List<BilesenDugumu>();
             if (kokBelge == null) return sonuc;
             _tanisiYazilanlar.Clear();
+            _olcuOnbellek.Clear();
 
             if (kokBelge.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
@@ -243,58 +244,99 @@ namespace UretimOSKesim
             // düğümlerinde BOY_MM/EN_MM gibi alanlar hiç set edilmez.
             if (modelDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
             {
-                var (boy, en, kalinlik, kaynak) = KesimListesiCikarici.OlcuHesapla(modelDoc);
-                if (kaynak == "elle")
+                // KRİTİK TANI KANITI (uretimos_addin_log.txt, "hiçbir uyarı
+                // vermeden tamamen kapandı" raporu): büyük bir montajda AYNI
+                // donanım parçası (ör. MİNİFİX GÖVDESİ/MİLİ, KAVELA, vida) her
+                // kapıda/çekmecede TEKRAR TEKRAR kullanılıyor; önceden HER
+                // TEKRAR için GetEquationMgr()/GetPartBox() gibi PAHALI, canlı
+                // SolidWorks COM çağrıları yeniden yapılıyordu — günlükte AYNI
+                // parçalar için onlarca kez üst üste ölçüldüğü görüldü (dosya
+                // yolu + konfigürasyon AYNI olduğu halde). AyniTanimliKardesleri
+                // Birlestir() zaten bunları TEK düğümde birleştiriyor ama bu
+                // yalnızca TÜM ağaç kurulduktan SONRA çalışıyor — ölçüm daha
+                // ÖNCE, her tekrarda ayrı ayrı yapılmış oluyordu. Büyük bir
+                // montajda bu, gereksiz binlerce COM çağrısına (ve olası COM/
+                // bellek baskısına) yol açabiliyordu — dosya yolu+konfigürasyon
+                // başına BİR KEZ ölçülüp önbelleklenerek kökten önleniyor.
+                string olcuAnahtari = modelDoc.GetPathName();
+                if (!string.IsNullOrEmpty(olcuAnahtari))
                 {
-                    dugum.OlcuVar = true;
-                    dugum.OlcuKaynagi = "elle";
-                    dugum.BoyMm = boy; dugum.EnMm = en; dugum.KalinlikMm = kalinlik;
-                    dugum.TaslakBoyMm = boy; dugum.TaslakEnMm = en; dugum.TaslakKalinlikMm = kalinlik;
+                    string konf = bilesen?.ReferencedConfiguration;
+                    if (string.IsNullOrEmpty(konf))
+                    {
+                        try { konf = modelDoc.ConfigurationManager.ActiveConfiguration.Name; } catch { konf = ""; }
+                    }
+                    olcuAnahtari = olcuAnahtari.ToLowerInvariant() + "||" + konf;
+                }
+
+                if (olcuAnahtari != null && _olcuOnbellek.TryGetValue(olcuAnahtari, out var onbellek))
+                {
+                    if (onbellek.olcuVar)
+                    {
+                        dugum.OlcuVar = true;
+                        dugum.OlcuKaynagi = onbellek.kaynak;
+                        dugum.BoyMm = onbellek.boy; dugum.EnMm = onbellek.en; dugum.KalinlikMm = onbellek.kalinlik;
+                        dugum.TaslakBoyMm = onbellek.boy; dugum.TaslakEnMm = onbellek.en; dugum.TaslakKalinlikMm = onbellek.kalinlik;
+                    }
                 }
                 else
                 {
-                    // Kullanıcı isteği: "equations yazanlar yarımamül ve panel
-                    // bunların ölçüleri direkt gelebilir" — BOY_MM/EN_MM özel
-                    // alanları BOŞSA, SolidWorks'ün kendi "Equations" (Global
-                    // Variables) listesindeki Length/Width/Thickness (ya da
-                    // Boy/En/Kalınlık) adlı değişkenlerden dene.
-                    //
-                    // NOT: montaj bileşenlerinin lightweight sorunu artık
-                    // Cikar()'ın başında TÜM montaj için tek seferde
-                    // ResolveAllLightWeightComponents ile çözülüyor (bkz.
-                    // yukarıdaki NOT) — burada tekrar bir şey yapmaya gerek yok.
-                    // GERÇEK TANI KANITI (OlcuTanisi logu): SWOOD panelleri
-                    // ölçüyü Equations'ta DEĞİL, dosya seviyesindeki
-                    // Length/Width/Thickness ÖZEL ALANLARINDA tutuyor
-                    // (ör. "Sol Yan_1": Length=882; Width=470; Thickness=18).
-                    // Bu yüzden önce özel alanlar, sonra Equations denenir.
-                    var alanOlcusu = SwoodOzelAlanOlcusuOku(modelDoc);
-                    var denklemOlcusu = alanOlcusu ?? EquationsOlcuOku(modelDoc, dugum.GosterimAdi);
-                    if (denklemOlcusu.HasValue)
+                    var (boy, en, kalinlik, kaynak) = KesimListesiCikarici.OlcuHesapla(modelDoc);
+                    if (kaynak == "elle")
                     {
                         dugum.OlcuVar = true;
-                        dugum.OlcuKaynagi = alanOlcusu.HasValue ? "ozelalan" : "equations";
-                        dugum.BoyMm = denklemOlcusu.Value.boy; dugum.EnMm = denklemOlcusu.Value.en; dugum.KalinlikMm = denklemOlcusu.Value.kalinlik;
-                        dugum.TaslakBoyMm = denklemOlcusu.Value.boy; dugum.TaslakEnMm = denklemOlcusu.Value.en; dugum.TaslakKalinlikMm = denklemOlcusu.Value.kalinlik;
+                        dugum.OlcuKaynagi = "elle";
+                        dugum.BoyMm = boy; dugum.EnMm = en; dugum.KalinlikMm = kalinlik;
+                        dugum.TaslakBoyMm = boy; dugum.TaslakEnMm = en; dugum.TaslakKalinlikMm = kalinlik;
                     }
                     else
                     {
-                        // Kullanıcı isteği: "swood'dan alma, solidworks kendi
-                        // ölçülerini al" — Equations da boşsa parçanın SolidWorks
-                        // sınır kutusu (IPartDoc.GetPartBox) kullanılır: en büyük
-                        // boyut = boy, ortanca = en, en küçük = kalınlık. Bu bir
-                        // KURALDIR (levha parçalarda doğru); sonuç panelde " bb"
-                        // etiketiyle gösterilir ve Taslak* alanlarından düzeltilebilir.
-                        OlcuKaynagiTanisiYaz(modelDoc, bilesen, dugum.GosterimAdi);
-                        var kutu = SinirKutusuOlcusu(modelDoc, dugum.GosterimAdi);
-                        if (kutu.HasValue)
+                        // Kullanıcı isteği: "equations yazanlar yarımamül ve panel
+                        // bunların ölçüleri direkt gelebilir" — BOY_MM/EN_MM özel
+                        // alanları BOŞSA, SolidWorks'ün kendi "Equations" (Global
+                        // Variables) listesindeki Length/Width/Thickness (ya da
+                        // Boy/En/Kalınlık) adlı değişkenlerden dene.
+                        //
+                        // NOT: montaj bileşenlerinin lightweight sorunu artık
+                        // Cikar()'ın başında TÜM montaj için tek seferde
+                        // ResolveAllLightWeightComponents ile çözülüyor (bkz.
+                        // yukarıdaki NOT) — burada tekrar bir şey yapmaya gerek yok.
+                        // GERÇEK TANI KANITI (OlcuTanisi logu): SWOOD panelleri
+                        // ölçüyü Equations'ta DEĞİL, dosya seviyesindeki
+                        // Length/Width/Thickness ÖZEL ALANLARINDA tutuyor
+                        // (ör. "Sol Yan_1": Length=882; Width=470; Thickness=18).
+                        // Bu yüzden önce özel alanlar, sonra Equations denenir.
+                        var alanOlcusu = SwoodOzelAlanOlcusuOku(modelDoc);
+                        var denklemOlcusu = alanOlcusu ?? EquationsOlcuOku(modelDoc, dugum.GosterimAdi);
+                        if (denklemOlcusu.HasValue)
                         {
                             dugum.OlcuVar = true;
-                            dugum.OlcuKaynagi = "bbox";
-                            dugum.BoyMm = kutu.Value.boy; dugum.EnMm = kutu.Value.en; dugum.KalinlikMm = kutu.Value.kalinlik;
-                            dugum.TaslakBoyMm = kutu.Value.boy; dugum.TaslakEnMm = kutu.Value.en; dugum.TaslakKalinlikMm = kutu.Value.kalinlik;
+                            dugum.OlcuKaynagi = alanOlcusu.HasValue ? "ozelalan" : "equations";
+                            dugum.BoyMm = denklemOlcusu.Value.boy; dugum.EnMm = denklemOlcusu.Value.en; dugum.KalinlikMm = denklemOlcusu.Value.kalinlik;
+                            dugum.TaslakBoyMm = denklemOlcusu.Value.boy; dugum.TaslakEnMm = denklemOlcusu.Value.en; dugum.TaslakKalinlikMm = denklemOlcusu.Value.kalinlik;
+                        }
+                        else
+                        {
+                            // Kullanıcı isteği: "swood'dan alma, solidworks kendi
+                            // ölçülerini al" — Equations da boşsa parçanın SolidWorks
+                            // sınır kutusu (IPartDoc.GetPartBox) kullanılır: en büyük
+                            // boyut = boy, ortanca = en, en küçük = kalınlık. Bu bir
+                            // KURALDIR (levha parçalarda doğru); sonuç panelde " bb"
+                            // etiketiyle gösterilir ve Taslak* alanlarından düzeltilebilir.
+                            OlcuKaynagiTanisiYaz(modelDoc, bilesen, dugum.GosterimAdi);
+                            var kutu = SinirKutusuOlcusu(modelDoc, dugum.GosterimAdi);
+                            if (kutu.HasValue)
+                            {
+                                dugum.OlcuVar = true;
+                                dugum.OlcuKaynagi = "bbox";
+                                dugum.BoyMm = kutu.Value.boy; dugum.EnMm = kutu.Value.en; dugum.KalinlikMm = kutu.Value.kalinlik;
+                                dugum.TaslakBoyMm = kutu.Value.boy; dugum.TaslakEnMm = kutu.Value.en; dugum.TaslakKalinlikMm = kutu.Value.kalinlik;
+                            }
                         }
                     }
+
+                    if (olcuAnahtari != null)
+                        _olcuOnbellek[olcuAnahtari] = (dugum.OlcuVar, dugum.OlcuKaynagi, dugum.BoyMm, dugum.EnMm, dugum.KalinlikMm);
                 }
             }
 
@@ -425,6 +467,13 @@ namespace UretimOSKesim
         // günlüğe yazar. Aynı belge yolu tek Cikar() çağrısında bir kez loglanır.
         // Davranışı DEĞİŞTİRMEZ — yalnızca Tanilama.Kaydet çağırır.
         private static readonly HashSet<string> _tanisiYazilanlar = new HashSet<string>();
+
+        // Ölçüm önbelleği (yol+konfigürasyon -> sonuç) — bkz. DugumOlustur
+        // içindeki "KRİTİK TANI KANITI" yorumu: aynı donanım parçası bir
+        // montajda onlarca kez tekrarlanınca pahalı COM ölçüm çağrılarının
+        // (EquationsOlcuOku/SinirKutusuOlcusu) TEK sefer yapılmasını sağlar.
+        private static readonly Dictionary<string, (bool olcuVar, string kaynak, double boy, double en, double kalinlik)> _olcuOnbellek =
+            new Dictionary<string, (bool, string, double, double, double)>();
 
         private static void OlcuKaynagiTanisiYaz(ModelDoc2 modelDoc, Component2 bilesen, string parcaAdi)
         {
