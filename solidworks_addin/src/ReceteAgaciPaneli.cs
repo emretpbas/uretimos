@@ -401,10 +401,24 @@ namespace UretimOSKesim
             // AyarPaneliOlustur). Sürükle-bırak da artık TreeView seviyesinde
             // DEĞİL, doğrudan HER SATIRIN kendi Panel'inde (o satırın kartı
             // hedef alınarak) çalışır.
-            var agacBaslik = new Label { Text = "Seçili bileşenin ÜretimOS reçetesi ve alt kırılımları — her satırda miktar/birim doğrudan düzenlenebilir", Dock = DockStyle.Top, Height = 24 };
+            var agacUstPanel = new Panel { Dock = DockStyle.Top, Height = 26 };
+            var agacBaslik = new Label { Text = "Seçili bileşenin ÜretimOS reçetesi ve alt kırılımları — her satırda miktar/birim doğrudan düzenlenebilir", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+            // Kullanıcı isteği: "üretimosta güncellenen reçeteleri
+            // solidworkste alt kırılımda düzenlenmiş olarak güncellemek için
+            // bir sekme daha oluştur" — "🔄 Ağacı Yenile" SolidWorks'ü yeniden
+            // TARARKEN (SolidWorks → ÜretimOS yönü), bu buton TAM TERSİNİ
+            // yapar: ÜretimOS web ekranında (page_recete_agac.js) DOĞRUDAN
+            // değiştirilmiş bir reçetenin (alt kırılım/miktar/kenar bandı
+            // vb.) güncel halini sunucudan çekip BU panelin altındaki ağacı
+            // (kaydedilmiş dosyayı KAPATIP AÇMAYA gerek KALMADAN) yeniden
+            // çizer — bkz. UretimostanReceteyiGuncelle.
+            var uretimostanGuncelleBtn = new Button { Text = "⬇ ÜretimOS'tan Güncelle", Dock = DockStyle.Right, Width = 170 };
+            uretimostanGuncelleBtn.Click += async (s, e) => await UretimostanReceteyiGuncelle();
+            agacUstPanel.Controls.Add(agacBaslik);
+            agacUstPanel.Controls.Add(uretimostanGuncelleBtn);
             _agacGorunumu = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BorderStyle = BorderStyle.FixedSingle };
             sagPanel.Controls.Add(_agacGorunumu);
-            sagPanel.Controls.Add(agacBaslik);
+            sagPanel.Controls.Add(agacUstPanel);
             // NOT: Splitter, kendisinden SONRA eklenen aynı-kenarlı kontrolü
             // (burada _bilesenAgaciGorunumu) yeniden boyutlandırır — bu yüzden
             // agacBaslik'tan SONRA, _bilesenAgaciGorunumu'ndan ÖNCE eklenmesi
@@ -3822,6 +3836,69 @@ namespace UretimOSKesim
 
         private static double ParseCift(string metin) =>
             double.TryParse((metin ?? "").Trim().Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out double v) ? v : 0;
+
+        // "⬇ ÜretimOS'tan Güncelle" — kullanıcı isteği: "üretimosta
+        // güncellenen reçeteleri solidworkste alt kırılımda düzenlenmiş
+        // olarak güncellemek için bir sekme daha oluştur". "🔄 Ağacı Yenile"
+        // SolidWorks'ü yeniden TARAR (SolidWorks → ÜretimOS yönü); bu buton
+        // TAM TERSİNİ yapar — ÜretimOS web ekranında DOĞRUDAN değiştirilmiş
+        // (alt kırılım eklenmiş/çıkarılmış, miktar/kenar bandı değişmiş vb.)
+        // bir reçetenin GÜNCEL halini sunucudan çekip aşağıdaki ağacı
+        // (paneli KAPATIP AÇMAYA gerek KALMADAN) yeniden çizer.
+        //
+        // NOT: MasterVeriyiYerelIndir'den BİLEREK AYRI — o, TÜM master veriyi
+        // (hammadde/ürün/yarımamül/paket/rota/hat/ayarlar) yerel bir dosyaya
+        // YAZMAK için var (kapsam sorar, dosyaya kaydeder) ve o dosyayı
+        // yazdıktan SONRA ekranı YENİDEN ÇİZMEZ — burası ise yalnızca
+        // reçeteleri çeker VE hemen görüntüyü günceller, hiçbir dosyaya
+        // yazmaz.
+        private async System.Threading.Tasks.Task UretimostanReceteyiGuncelle()
+        {
+            if (_kokTip == null || _kokKart == null)
+            {
+                MessageBox.Show("Önce üstteki bileşen ağacından bir bileşen seçip bir ÜretimOS kartıyla eşleştirin.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (_istemci == null)
+            {
+                MessageBox.Show("ÜretimOS'a bağlı değilsiniz — güncel reçete çekilemedi.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            // Bu panelde henüz '✓ ÜretimOS'a Kaydet' ile kaydedilmemiş yerel
+            // taslak değişiklikler varsa, sunucudan çekmek bunların ÜZERİNE
+            // YAZAR (MasterVeriyiYerelIndir'deki AYNI uyarı deseni) — geri
+            // alınamaz, bu yüzden AÇIKÇA onay alınmadan devam edilmez.
+            if (_degisenReceteler.Count > 0)
+            {
+                var uyariSonuc = MessageBox.Show(
+                    "Bu panelde henüz '✓ ÜretimOS'a Kaydet' ile kaydetmediğiniz yerel değişiklikleriniz var.\n\n" +
+                    "ÜretimOS'tan güncel reçeteyi çekmek bu KAYDEDİLMEMİŞ değişiklikleri KAYBEDECEK " +
+                    "(sunucudaki veri asıl kaynak olur).\n\nYine de devam edilsin mi?",
+                    "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (uyariSonuc != DialogResult.Yes) return;
+                _degisenReceteler.Clear();
+            }
+
+            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.Text = "⬇ ÜretimOS'tan güncel reçete çekiliyor…";
+            try
+            {
+                _receteler = JArray.Parse(await _istemci.Getir("receteler") ?? "[]");
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("UretimostanReceteyiGuncelle HATA: " + ex);
+                _durumEtiketi.ForeColor = Color.DarkRed;
+                _durumEtiketi.Text = "ÜretimOS'a bağlanılamadı — güncelleme iptal edildi.";
+                MessageBox.Show("Güncel reçete çekilemedi: " + ex.Message, "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            AgaciYenidenCiz();
+            _durumEtiketi.ForeColor = Color.DarkGreen;
+            _durumEtiketi.Text = "✓ ÜretimOS'taki güncel reçete (alt kırılımlar dahil) çekildi ve aşağıda gösteriliyor.";
+        }
 
         // ── AĞAÇ GÖSTERİMİ — ÇOK KATMANLI, page_recete_agac.js:renderNode ile
         // AYNI mantık VE AYNI ESNEKLİK: TreeView değil, her kalem KENDİ inline
