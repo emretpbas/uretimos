@@ -3523,6 +3523,11 @@ namespace UretimOSKesim
         // koleksiyon seçiliyor.
         private async System.Threading.Tasks.Task RotaSecVeyaOlusturDialogAc(string kartTipi, JObject kart)
         {
+            // TANI: "reçete kalemlerinde rota tuşlarına bakıyordum" sırasında
+            // günlükte hiçbir iz bırakmadan bir çökme oldu — bu fonksiyon
+            // (hem üstteki "⚙ Rota", hem alttaki "+ Yeni Rota" butonlarının
+            // AÇTIĞI AYNI dialog) daha önce HİÇ günlüklenmiyordu.
+            Tanilama.Kaydet("RotaSecVeyaOlusturDialogAc basladi: " + kartTipi + " " + kart?["kod"]);
             string koleksiyon = kartTipi == "paket" ? "paketler" : kartTipi == "altmontaj" ? "altMontajlar" : kartTipi == "urun" ? "urunler" : "yarimamuller";
             // data.js'teki VARSAYILAN_AYARLAR.saatlikIscilikUcreti = 500 ile
             // AYNI varsayılan (bkz. VerileriYukleVeBaslat'taki _ayarlar notu).
@@ -3659,6 +3664,7 @@ namespace UretimOSKesim
                 dlg.ShowDialog(this);
                 if (degisti) _durumEtiketi.Text = "✓ Rota güncellendi: " + kart["kod"];
             }
+            Tanilama.Kaydet("RotaSecVeyaOlusturDialogAc bitti: " + kartTipi + " " + kart?["kod"]);
         }
 
         // ── PAKET ÖLÇÜ / AĞIRLIK DÜZENLE ─────────────────────────────────────
@@ -3912,11 +3918,20 @@ namespace UretimOSKesim
         // ────────────────────────────────────────────────────────────────────
         private void AgaciYenidenCiz()
         {
+            // TANI: kullanıcı raporu "kaydede basmadım, reçete kalemlerinde
+            // rota tuşlarına bakıyordum" sırasında bir çökme oldu ama
+            // günlükte HİÇBİR İZ yoktu — çünkü bu fonksiyon (alttaki ÜretimOS
+            // reçete ağacını çizen, "+ Yeni Rota" gibi butonların tetiklediği
+            // AYNI fonksiyon), BilesenAgaciniCiz'in (üst SolidWorks ağacı)
+            // aksine HİÇ günlüklenmiyordu. Artık AYNI seviyede (kaynak
+            // sayacı + satır bazlı Controls.Add izi) günlükleniyor.
+            Tanilama.Kaydet($"AgaciYenidenCiz basladi, kaynak={KaynakSayaci()}");
             var satirlar = new List<Control>();
             var recete = ReceteGetir(_kokTip, _kokKart);
             var kalemler = recete?["kalemler"] as JArray ?? new JArray();
             foreach (var kalem in kalemler.OfType<JObject>())
                 KalemSatirlariEkle(satirlar, kalem, 0, _kokTip, _kokKart);
+            Tanilama.Kaydet($"AgaciYenidenCiz: {satirlar.Count} satir kontrolu olusturuldu, kaynak={KaynakSayaci()}, Dispose/Clear basliyor");
 
             _agacGorunumu.SuspendLayout();
             // BilesenAgaciniCiz'deki AYNI gerçek kök neden/düzeltme (bkz. o
@@ -3930,13 +3945,19 @@ namespace UretimOSKesim
             foreach (Control eskiSatir in _agacGorunumu.Controls.Cast<Control>().ToArray())
                 eskiSatir.Dispose();
             _agacGorunumu.Controls.Clear();
+            Tanilama.Kaydet($"AgaciYenidenCiz: eski satirlar Dispose/Clear edildi, kaynak={KaynakSayaci()}, Controls.Add basliyor");
             // Dock=Top koleksiyona EKLENME SIRASININ TERSİNE göre işler (son
             // eklenen en dıştaki/en üstteki olur) — bu yüzden mantıksal
             // yukarıdan-aşağıya sırayı korumak için TERS sırada ekliyoruz
             // (bkz. KurulumYap'ın başındaki aynı gerekçeli NOT).
             for (int i = satirlar.Count - 1; i >= 0; i--)
+            {
+                Tanilama.Kaydet($"AgaciYenidenCiz: satir ekleniyor [{i}/{satirlar.Count}] {satirlar[i].Tag}");
                 _agacGorunumu.Controls.Add(satirlar[i]);
+            }
+            Tanilama.Kaydet("AgaciYenidenCiz: tum satirlar eklendi, ResumeLayout cagriliyor");
             _agacGorunumu.ResumeLayout();
+            Tanilama.Kaydet($"AgaciYenidenCiz: Controls.Add + ResumeLayout bitti, kaynak={KaynakSayaci()}");
         }
 
         // hedefListe: sonuç DÜZ (derinlik sırasına göre) toplanır — ustTip/
@@ -3989,7 +4010,8 @@ namespace UretimOSKesim
                 Dock = DockStyle.Top,
                 Height = 30,
                 BackColor = derinlik == 0 ? Color.AliceBlue : Color.White,
-                Padding = new Padding(0)
+                Padding = new Padding(0),
+                Tag = "kalem:" + kod
             };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoScroll = false };
 
@@ -4104,7 +4126,7 @@ namespace UretimOSKesim
         // düzenler; değişiklik KartDegistiIsaretle ile Kaydet'e taşınır.
         private Panel AyarPaneliOlustur(string tip, JObject kart, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.White };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.White, Tag = "ayar:" + (string)kart["kod"] };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
 
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
