@@ -159,6 +159,32 @@ namespace UretimOSKesim
                 _adKutusu.Text = _baslangicAdi;
             }
 
+            // KULLANICI İSTEĞİ (Abdullah Çataklı/BT — LOGO/COST entegrasyonu
+            // maili): "Solid'de tasarımcı ERP'de henüz karşılığı olmayan yeni
+            // bir kart girdiğinde... aynı parçaya farklı tasarımcılar farklı
+            // kod verebilir, elle girilen kodlar COST'ta/ERP'de kontrolsüz
+            // çoğalır... bu geçici kartların TMP_ gibi bir ön ekle
+            // işaretlenip takip edilmesi elzemdir." — bu dialog YALNIZCA
+            // SolidWorks içinden (ERP'nin kendisi değil) yeni kart oluşturmak
+            // için kullanıldığından, YENİ kart oluştururken (düzenleme modu
+            // DEĞİL) varsayılan olarak İŞARETLİ gelir; kaydedince kod bu
+            // önekle ÜretimOS'a yazılır — ERP/COST tarafında bu kartların
+            // "henüz gerçek bir ERP karşılığı yok" olarak filtrelenip gerçek
+            // kartlarla değiştirilmesi (madde 3/4) buradan mümkün olur.
+            // Düzenleme modunda GÖSTERİLMEZ — zaten var olan bir kartın kod
+            // biçimini geriye dönük DEĞİŞTİRMEK bu formun işi değildir.
+            CheckBox geciciKodKutusu = null;
+            if (!duzenlemeModu)
+            {
+                geciciKodKutusu = new CheckBox
+                {
+                    Text = "Bu geçici bir kod (ERP'de henüz karşılığı yok) — kaydedince \"TMP_\" ile işaretlensin",
+                    Checked = true,
+                    AutoSize = true
+                };
+                Satir("", geciciKodKutusu);
+            }
+
             // ── HAMMADDE AİLESİ (plaka/kenar_bandi/hirdavat ORTAK alanları) ──
             TextBox kategoriKutusu = null, fireYuzdeKutusu = null, birimFiyatKutusu = null,
                 kdvKutusu = null, tedarikSuresiKutusu = null, minSiparisKutusu = null, emniyetStoguKutusu = null;
@@ -368,6 +394,15 @@ namespace UretimOSKesim
                 {
                     MessageBox.Show("Kod zorunludur.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
+                }
+                // Bkz. yukarıdaki geciciKodKutusu NOT'u — yalnızca YENİ kart
+                // oluştururken VE kutucuk işaretliyken uygulanır; kod zaten
+                // "TMP_" ile başlıyorsa (ör. daha önce bu ekrandan tekrar
+                // düzenleniyor gibi bir durumda) tekrar EKLENMEZ.
+                if (geciciKodKutusu != null && geciciKodKutusu.Checked && !string.IsNullOrEmpty(kod)
+                    && !kod.StartsWith("TMP_", StringComparison.OrdinalIgnoreCase))
+                {
+                    kod = "TMP_" + kod;
                 }
 
                 // Düzenleme modunda AYNI nesne mutasyona uğratılır (id VE bu
