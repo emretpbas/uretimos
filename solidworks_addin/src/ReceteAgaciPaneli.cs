@@ -1993,21 +1993,30 @@ namespace UretimOSKesim
             string dosyaAdOnEki = !string.IsNullOrWhiteSpace(kod) && !string.IsNullOrWhiteSpace(ad) ? $"{kod} — {ad}" : (kod ?? ad ?? "teknik_resim");
             foreach (char c in Path.GetInvalidFileNameChars()) dosyaAdOnEki = dosyaAdOnEki.Replace(c, '_');
 
-            string dwgHedefYolu;
-            using (var kaydetDialog = new SaveFileDialog
+            // KULLANICI İSTEĞİ: "teknik resim oluştururken direkt kod ve
+            // parça ismi ile dosya açılsın ve çizimin olduğu klasör açılsın
+            // ve oraya kaydolsun" — daha önce burada bir SaveFileDialog
+            // açılıp kullanıcının klasör/adı ELLE onaylaması/değiştirmesi
+            // gerekiyordu (varsayılan olarak zaten AYNI klasör/ad önerilse
+            // de). Artık o adım TAMAMEN ATLANIYOR — yukarıda hesaplanan
+            // varsayılanKlasor + "{kod} — {ad}.dwg" yoluna DOĞRUDAN, sormadan
+            // kaydediliyor (aynı dosya adı zaten varsa — ör. bu çizim daha
+            // önce onaylanıp şimdi güncelleniyorsa — ÜZERİNE YAZILIR, bu
+            // KASITLI: revize edilen bir teknik resmin AYNI konumda kalması
+            // istenen davranış).
+            if (string.IsNullOrEmpty(varsayilanKlasor))
             {
-                Title = "Teknik Resmi Kaydet (DWG) — PDF de aynı klasöre aynı adla kaydedilecek",
-                Filter = "DWG dosyası|*.dwg",
-                FileName = dosyaAdOnEki + ".dwg",
-                InitialDirectory = varsayilanKlasor ?? ""
-            })
-            {
-                if (kaydetDialog.ShowDialog(this) != DialogResult.OK) return;
-                dwgHedefYolu = kaydetDialog.FileName;
+                MessageBox.Show(
+                    "Çizimin/modelin klasörü belirlenemedi (model henüz diske kaydedilmemiş olabilir) — " +
+                    "teknik resim otomatik kaydedilemiyor. Önce SolidWorks'te ilgili SLDPRT/SLDASM dosyasını " +
+                    "bir klasöre kaydedin, sonra tekrar deneyin.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
+            string dwgHedefYolu = Path.Combine(varsayilanKlasor, dosyaAdOnEki + ".dwg");
 
             _durumEtiketi.ForeColor = Color.DarkSlateGray;
-            _durumEtiketi.Text = "Çizim kaydediliyor…";
+            _durumEtiketi.Text = $"Çizim '{dwgHedefYolu}' konumuna kaydediliyor…";
 
             var resimUretici = new TeknikResimOlusturucu(_app);
             bool kaydedildi = resimUretici.AcikCizimiKaydet(cizimBelge, dwgHedefYolu,
@@ -4465,10 +4474,20 @@ namespace UretimOSKesim
                     var girdi = Manifest.Bul(modelAramaIcin.GetPathName());
                     if (girdi != null)
                     {
+                        // KULLANICI İSTEĞİ: "xml'de teknik resimler ve klasör
+                        // konumu işlensin" — dwgYolu/pdfYolu zaten TAM yol
+                        // taşıyordu (klasör örtük olarak içindeydi) ama
+                        // XML'i tüketen tarafın (COST/ERP) her seferinde yolu
+                        // AYRIŞTIRMASINA gerek kalmasın diye klasör AYRICA,
+                        // açık bir "klasor" özniteliği olarak da ekleniyor.
+                        string klasor = !string.IsNullOrEmpty(girdi.DwgYolu) ? Path.GetDirectoryName(girdi.DwgYolu)
+                            : !string.IsNullOrEmpty(girdi.PdfYolu) ? Path.GetDirectoryName(girdi.PdfYolu)
+                            : !string.IsNullOrEmpty(girdi.JpgYolu) ? Path.GetDirectoryName(girdi.JpgYolu) : null;
                         el.Add(new System.Xml.Linq.XElement("YerelOnayliDosyaKonumu",
                             new System.Xml.Linq.XAttribute("dwgYolu", girdi.DwgYolu ?? ""),
                             new System.Xml.Linq.XAttribute("pdfYolu", girdi.PdfYolu ?? ""),
                             new System.Xml.Linq.XAttribute("jpgYolu", girdi.JpgYolu ?? ""),
+                            new System.Xml.Linq.XAttribute("klasor", klasor ?? ""),
                             new System.Xml.Linq.XAttribute("onayZamani", girdi.OnayZamani.ToString("yyyy-MM-ddTHH:mm:ss"))));
                     }
                 }
