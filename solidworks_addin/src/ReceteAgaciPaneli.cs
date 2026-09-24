@@ -1851,6 +1851,12 @@ namespace UretimOSKesim
             }
 
             string kod = (string)(kart["kod"] ?? kart["stokKodu"]);
+            // TANI: kullanıcı raporu "onayla ve kaydete basınca kod ve isim
+            // gelmiyor, ürün kodu hiç gelmedi" — dosya adı boş/"teknik_resim"
+            // çıkıyorsa bunun TAM olarak hangi karttan/hangi alanlardan
+            // kaynaklandığını (eski bir derleme mi, yoksa bu kartın gerçekten
+            // kod/ad'ı boş mu) görmek için kartın ham içeriği loglanıyor.
+            Tanilama.Kaydet($"TeknikResimOlusturDialogAc: tip={tip} kart.kod={kart["kod"]} kart.stokKodu={kart["stokKodu"]} kart.ad={kart["ad"]} kart.id={kart["id"]}");
             _durumEtiketi.ForeColor = Color.DarkSlateGray;
             _durumEtiketi.Text = $"📐 '{kod}' için teknik resim oluşturuluyor…";
 
@@ -1938,6 +1944,9 @@ namespace UretimOSKesim
             string refId = (string)kart["id"];
             string kod = (string)(kart["kod"] ?? kart["stokKodu"]);
             string ad = (string)kart["ad"];
+            // TANI: bkz. TeknikResimOlusturDialogAc'teki AYNI NOT — "kod ve
+            // isim gelmiyor" raporu sonrası eklendi.
+            Tanilama.Kaydet($"TeknikResimOnaylaVeYukleCalistir: tip={tip} refId={refId} kod={kod} ad={ad} modelYolu={modelYolu}");
 
             var cizimBelge = _app.ActiveDoc as IModelDoc2;
             if (cizimBelge == null || cizimBelge.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
