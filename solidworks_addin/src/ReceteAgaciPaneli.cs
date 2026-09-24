@@ -5210,28 +5210,44 @@ namespace UretimOSKesim
             // kaydedilir — böylece kök, alttaki değişiklikleri (kod/isim)
             // zaten güncellenmiş halde referanslar.
             var siraliListe = modeller.Where(m => !ReferenceEquals(m, _hedefModel))
-                .Concat(_hedefModel != null ? new[] { _hedefModel } : new ModelDoc2[0]);
+                .Concat(_hedefModel != null ? new[] { _hedefModel } : new ModelDoc2[0])
+                .ToList();
 
+            // TANI: bu, ~2 dakikalık BOŞLUKTAN SONRA hiçbir günlük satırı
+            // OLMADAN gerçekleşen bir çökmenin ardından eklendi — o çökmeden
+            // hemen önceki son işlem BURASI (SolidWorks'e Kaydet) OLABİLİR,
+            // ama önceden hiçbir başarı-yolu günlüğü yoktu (yalnızca hata
+            // durumunda loglanıyordu). model.Save3, bu makinede DAHA ÖNCE
+            // "henüz canlıda hiç denenmemiş" olarak işaretlenmiş SaveAs3
+            // ailesine (native COM) ait bir çağrı — her dosyadan ÖNCE/SONRA
+            // tek satırlık iz bırakılarak bir sonraki çökmede TAM olarak
+            // hangi dosyanın kaydı sırasında durduğu kesin görülecek.
+            Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet basladi, {siraliListe.Count} dosya kaydedilecek");
             int basarili = 0, hatali = 0;
             foreach (var model in siraliListe)
             {
+                string yol = null;
                 try
                 {
+                    yol = model.GetPathName();
+                    Tanilama.Kaydet("TumBilesenleriSolidWorksKaydet: kaydediliyor '" + yol + "'");
                     int hata = 0, uyari = 0;
                     bool sonuc = model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref hata, ref uyari);
+                    Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet: kaydedildi '{yol}' sonuc={sonuc} hata={hata} uyari={uyari}");
                     if (sonuc) basarili++;
                     else
                     {
                         hatali++;
-                        Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet: kaydedilemedi '{model.GetPathName()}' hata={hata} uyari={uyari}");
+                        Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet: kaydedilemedi '{yol}' hata={hata} uyari={uyari}");
                     }
                 }
                 catch (Exception ex)
                 {
                     hatali++;
-                    Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet HATA '{model?.GetPathName()}': " + ex);
+                    Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet HATA '{yol ?? model?.GetPathName()}': " + ex);
                 }
             }
+            Tanilama.Kaydet($"TumBilesenleriSolidWorksKaydet bitti: basarili={basarili} hatali={hatali}");
 
             // KULLANICI RAPORU: "kapatıp açtığımda alt ek kalem ve pvc...
             // görünmüyordu" — kök neden KOD DEĞİL, YANLIŞ BEKLENTİ: bu buton
