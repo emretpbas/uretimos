@@ -49,6 +49,57 @@ namespace UretimOSKesim
     // ════════════════════════════════════════════════════════════════════════
     public class ReceteAgaciPaneli : Form
     {
+        // ════════════════════════════════════════════════════════════════════
+        // GÖRSEL TEMA — kullanıcı isteği (planlamacı Özge Hn. geri bildirimi):
+        // "çok tekdüze buldu tasarımımızı biraz elit renkler olsun istiyor
+        // terracota kiremit rengi ve açılan renklerde ve kolay okunabilir
+        // font ve yazı yüksekliğinde olsa" — panel şimdiye kadar WinForms'un
+        // VARSAYILAN fontunu (Microsoft Sans Serif, ~8.25pt — küçük/soğuk)
+        // ve dağınık, adhoc Color.* isimlerini (AliceBlue/DarkSlateGray vb.)
+        // kullanıyordu. Bu sabitler TEK bir yerden, tutarlı bir kiremit/
+        // terracotta paleti + daha büyük/okunabilir bir taban font sağlar.
+        // Anlamsal renkler (DarkRed=hata/sil, DarkOrange=uyarı, DarkGreen=
+        // başarı) BİLEREK değiştirilmedi — kullanıcı yalnızca "tekdüze"
+        // genel görünümden ve fonttan şikayet etti, alışılmış hata/uyarı/
+        // başarı renk dilini bozmak KAFA KARIŞTIRICI olurdu.
+        private static class Tema
+        {
+            // Ana kiremit/terracotta rengi — vurgu (buton zemin rengi, sekme
+            // etiketleri, önemli başlıklar).
+            public static readonly Color Kiremit = Color.FromArgb(0xB5, 0x54, 0x33);
+            // Fare üzerine gelince/aktifken biraz daha koyu ton.
+            public static readonly Color KiremitKoyu = Color.FromArgb(0x96, 0x42, 0x27);
+            // "Açılan renkler" — ana kiremit tondan türetilmiş AÇIK tonlar,
+            // satır zeminlerinde/panel arka planlarında kullanılır (eski
+            // AliceBlue/White yerine).
+            public static readonly Color KiremitAcik = Color.FromArgb(0xFB, 0xEE, 0xE7);
+            public static readonly Color KiremitOrta = Color.FromArgb(0xF3, 0xD9, 0xC9);
+            // Sıcak koyu kahve — eski Color.DarkSlateGray'in (soğuk gri)
+            // yerine, genel etiket/durum metinlerinde kullanılır.
+            public static readonly Color MetinKoyu = Color.FromArgb(0x4A, 0x35, 0x2E);
+            // "Kolay okunabilir font ve yazı yüksekliği" — WinForms'un küçük
+            // varsayılanı yerine Segoe UI, biraz daha büyük punto. Form'un
+            // KENDİSİNE atanır (KurulumYap'ta) — açıkça kendi Font'unu
+            // ayarlamamış HER alt kontrol (ezici çoğunluk) bunu otomatik
+            // miras alır, tek tek her Label/Button'u değiştirmeye gerek
+            // KALMAZ (WinForms'un standart Font kalıtımı — TAHMİN değil).
+            public static readonly Font TabanFont = new Font("Segoe UI", 9.75f);
+            public static readonly Font BaslikFont = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+
+            // Üst düzey "birincil eylem" butonlarını (Kaydet/Aktar/Onayla gibi
+            // sürekli görünen araç çubuğu butonları) tek satırda tutarlı
+            // şekilde kiremit renkte, beyaz metinli düz (flat) stile çevirir.
+            public static void BirincilButon(Button b)
+            {
+                b.BackColor = Kiremit;
+                b.ForeColor = Color.White;
+                b.FlatStyle = FlatStyle.Flat;
+                b.FlatAppearance.BorderColor = KiremitKoyu;
+                b.FlatAppearance.MouseOverBackColor = KiremitKoyu;
+                b.Font = new Font(TabanFont, FontStyle.Bold);
+            }
+        }
+
         private readonly ModelDoc2 _hedefModel;
         private readonly ISldWorks _app;
         private UretimOSApiClient _istemci;
@@ -237,6 +288,13 @@ namespace UretimOSKesim
             Height = 820;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(760, 520);
+            // Bkz. Tema sınıfı yorumu — Font burada TEK bir yerden ayarlanır,
+            // kendi Font'unu açıkça belirtmeyen tüm alt kontroller (Label/
+            // Button/TextBox vb. — bu dosyadaki ezici çoğunluk) WinForms'un
+            // standart kalıtımıyla otomatik bu daha büyük/okunabilir fontu
+            // alır.
+            Font = Tema.TabanFont;
+            BackColor = Tema.KiremitAcik;
 
             // ── ÜST: kök kart bilgisi ────────────────────────────────────────
             var ustPanel = new Panel { Dock = DockStyle.Top, Height = 56, Padding = new Padding(10) };
@@ -258,7 +316,7 @@ namespace UretimOSKesim
             // Kullanıcı isteği: "paket ölçü ve ağırlığını yazalım" — ÜretimOS'un
             // page_recete_agac.js:openPaketOlcuDuzenle ile AYNI alanlar.
             _paketOlcuPanel = new Panel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(10, 4, 10, 4), Visible = false };
-            _paketOlcuEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DarkSlateGray };
+            _paketOlcuEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Tema.MetinKoyu };
             var paketOlcuBtn = new Button { Text = "Paket Ölçü/Ağırlık Düzenle…", Dock = DockStyle.Right, Width = 190 };
             paketOlcuBtn.Click += (s, e) => { if (_kokKart != null) { PaketOlcuAgirlikDuzenle(_kokKart); UstBilgiPanelleriGuncelle(); } };
             _paketOlcuPanel.Controls.Add(_paketOlcuEtiketi);
@@ -354,6 +412,7 @@ namespace UretimOSKesim
             // hepsini sunucuya yazar (bkz. BilesenAgaciniReceteOlarakAktar).
             var bilesenAraPanel = new Panel { Dock = DockStyle.Top, Height = 30 };
             var receteOlarakAktarBtn = new Button { Text = "📤 Reçete Olarak ÜretimOS'a Aktar…", Dock = DockStyle.Left, Width = 240 };
+            Tema.BirincilButon(receteOlarakAktarBtn);
             receteOlarakAktarBtn.Click += async (s, e) => await BilesenAgaciniReceteOlarakAktar();
             // Kullanıcı isteği: "solidworkste bileşen ağacı için ayrı xml
             // altta çıkan üretimos reçete ağacı için ayrı xml almak için
@@ -430,8 +489,9 @@ namespace UretimOSKesim
 
             // ── ALT: durum + kaydet ──────────────────────────────────────────
             var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 50, Padding = new Padding(8) };
-            _durumEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DarkSlateGray };
+            _durumEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Tema.MetinKoyu };
             _kaydetBtn = new Button { Text = "✓ ÜretimOS'a Kaydet", Dock = DockStyle.Right, Width = 160, Enabled = false, Font = KalinFont };
+            Tema.BirincilButon(_kaydetBtn);
             _kaydetBtn.Click += async (s, e) => await KaydetTikla();
             // Kullanıcı isteği: "solidworkse kaydet dosyası ekleyelim ve buna
             // basınca tüm dosya isimleri ilgili reçete bağlantıları ve tüm
@@ -444,6 +504,7 @@ namespace UretimOSKesim
             // eşleşme görünmez. Bu buton, ağaçtaki TÜM parça/montaj
             // belgelerini (ve kök montajı) tek seferde diske kaydeder.
             var solidworksKaydetBtn = new Button { Text = "💾 SolidWorks'e Kaydet", Dock = DockStyle.Right, Width = 190 };
+            Tema.BirincilButon(solidworksKaydetBtn);
             solidworksKaydetBtn.Click += (s, e) => TumBilesenleriSolidWorksKaydet();
             // Kullanıcı isteği: "Üretimostaki reçeteleri xml formatında
             // kaydedelim ve her satırın benzersiz unique id bilgiside olsun"
@@ -458,6 +519,7 @@ namespace UretimOSKesim
             // ağacındaki bir satırda "📐 Teknik Resim Oluştur"a (ADIM 1)
             // basılıp SolidWorks'te çizim düzenlenene kadar DEVRE DIŞI.
             _teknikResimOnaylaBtn = new Button { Text = "✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle", Dock = DockStyle.Right, Width = 260, Enabled = false };
+            Tema.BirincilButon(_teknikResimOnaylaBtn);
             _teknikResimOnaylaBtn.Click += async (s, e) => await TeknikResimOnaylaVeYukleCalistir();
             altPanel.Controls.Add(_durumEtiketi);
             altPanel.Controls.Add(solidworksKaydetBtn);
@@ -1120,7 +1182,7 @@ namespace UretimOSKesim
             Tanilama.Kaydet($"AgaciYenile: Cikar() bitti (korunan={korunanSayisi}, yeni={yeniSayisi}), BilesenAgaciniCiz() cagriliyor");
             BilesenAgaciniCiz();
             Tanilama.Kaydet("AgaciYenile: BilesenAgaciniCiz() bitti");
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = $"🔄 Ağaç SolidWorks'ten yenilendi — {korunanSayisi} bileşenin sınıf/eşleşme durumu korundu, {yeniSayisi} yeni bileşen bulundu.";
         }
 
@@ -1295,7 +1357,7 @@ namespace UretimOSKesim
         // (hırdavat, paket, hammadde, panel, kenar bandı, yarımamül vb.)".
         private Panel BilesenAnaSatiriOlustur(BilesenDugumu dugum, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = derinlik == 0 ? Color.AliceBlue : Color.White, Tag = "ana:" + dugum.GosterimAdi };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = derinlik == 0 ? Tema.KiremitAcik : Color.White, Tag = "ana:" + dugum.GosterimAdi };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
 
             satir.Controls.Add(new Panel { Width = 8 + derinlik * 22, Height = 1 });
@@ -1857,7 +1919,7 @@ namespace UretimOSKesim
             // kaynaklandığını (eski bir derleme mi, yoksa bu kartın gerçekten
             // kod/ad'ı boş mu) görmek için kartın ham içeriği loglanıyor.
             Tanilama.Kaydet($"TeknikResimOlusturDialogAc: tip={tip} kart.kod={kart["kod"]} kart.stokKodu={kart["stokKodu"]} kart.ad={kart["ad"]} kart.id={kart["id"]}");
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = $"📐 '{kod}' için teknik resim oluşturuluyor…";
 
             // NOT: SolidWorks COM nesneleri STA (UI) iş parçacığına bağlıdır —
@@ -2024,7 +2086,7 @@ namespace UretimOSKesim
             }
             string dwgHedefYolu = Path.Combine(varsayilanKlasor, dosyaAdOnEki + ".dwg");
 
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = $"Çizim '{dwgHedefYolu}' konumuna kaydediliyor…";
 
             var resimUretici = new TeknikResimOlusturucu(_app);
@@ -2091,7 +2153,7 @@ namespace UretimOSKesim
 
             void EkleOlcuKutusu(string etiket, Func<double> al, Action<double> yaz)
             {
-                satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Color.DarkSlateGray });
+                satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Tema.MetinKoyu });
                 var kutu = new TextBox { Width = 60, Text = al().ToString(CultureInfo.InvariantCulture), Margin = new Padding(3) };
                 kutu.Leave += (s, e) => yaz(ParseCift(kutu.Text));
                 satir.Controls.Add(kutu);
@@ -2126,7 +2188,7 @@ namespace UretimOSKesim
             // ile aynı "içeriyor" mantığı).
             void EkleKenarKutusu(string etiket, string ozelAlanAdi, Func<string> al, Action<string> yaz)
             {
-                satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Color.DarkSlateGray });
+                satir.Controls.Add(new Label { Text = etiket, AutoSize = true, Padding = new Padding(4, 6, 2, 0), ForeColor = Tema.MetinKoyu });
                 // Kullanıcı isteği: "bant ararken okuyamıyorum, seçim
                 // sütununu genişlet" — kapalıyken kutu dar kalsın (4'ü yan
                 // yana sığsın) ama AÇILAN liste çok daha geniş olsun ki uzun
@@ -2427,7 +2489,7 @@ namespace UretimOSKesim
                 $"{siniflandirilmisSayisi} bileşen taranacak; eşleşmeyen yarı mamül/alt montaj/paket/ürünler için YENİ KART OLUŞTURULACAK ve reçete yapısı ÜretimOS'a kaydedilecek. Devam edilsin mi?",
                 "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
 
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "Bileşen ağacı reçeteye dönüştürülüyor…";
             try
             {
@@ -2889,7 +2951,7 @@ namespace UretimOSKesim
                 : kartTipi == "urun" ? "urunler"
                 : "paketler";
 
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "Kart ÜretimOS'a kaydediliyor…";
 
             bool basarili;
@@ -2953,7 +3015,7 @@ namespace UretimOSKesim
                 : kartTipi == "urun" ? "urunler"
                 : "paketler";
 
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "Kart güncelleniyor…";
             bool basarili;
             try
@@ -3571,7 +3633,7 @@ namespace UretimOSKesim
                 // makine/süre/maliyet mantığını BİREBİR SolidWorks içinde
                 // (tarayıcıya geçmeden) çalıştırır; bkz. RotaEditoruAcVeKaydet.
                 var duzenleBtn = new Button { Text = "✎ Seçili Rotanın Hat/Makine/Süre Adımlarını Düzenle…", Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 0, 0, 16) };
-                var ayirici = new Label { Text = "— veya yeni bir rota oluştur —", Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 28, ForeColor = Color.DarkSlateGray };
+                var ayirici = new Label { Text = "— veya yeni bir rota oluştur —", Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 28, ForeColor = Tema.MetinKoyu };
                 var yeniKodEtiket = new Label { Text = "Yeni rota kodu:", Dock = DockStyle.Top, Height = 22, Padding = new Padding(0, 6, 0, 0) };
                 var yeniKodKutu = new TextBox { Dock = DockStyle.Top, Height = 28, Margin = new Padding(0, 0, 0, 10) };
                 var yeniAdEtiket = new Label { Text = "Yeni rota adı:", Dock = DockStyle.Top, Height = 22, Padding = new Padding(0, 6, 0, 0) };
@@ -3720,7 +3782,7 @@ namespace UretimOSKesim
 
                 var hint = new Label
                 {
-                    AutoSize = false, Height = 40, ForeColor = Color.DarkSlateGray,
+                    AutoSize = false, Height = 40, ForeColor = Tema.MetinKoyu,
                     Text = "Bu ölçüler ÜretimOS'ta çeki listesi ve sevkiyat hacim/ağırlık hesabının kaynağıdır."
                 };
                 tablo.Controls.Add(new Label());
@@ -3904,7 +3966,7 @@ namespace UretimOSKesim
                 _degisenReceteler.Clear();
             }
 
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "⬇ ÜretimOS'tan güncel reçete çekiliyor…";
             try
             {
@@ -4027,7 +4089,7 @@ namespace UretimOSKesim
             {
                 Dock = DockStyle.Top,
                 Height = 30,
-                BackColor = derinlik == 0 ? Color.AliceBlue : Color.White,
+                BackColor = derinlik == 0 ? Tema.KiremitAcik : Color.White,
                 Padding = new Padding(0),
                 Tag = "kalem:" + kod
             };
@@ -4038,7 +4100,7 @@ namespace UretimOSKesim
             var etiketLbl = new Label
             {
                 Text = "[" + tipGosterim + "]", AutoSize = true, Font = KalinFont,
-                Padding = new Padding(0, 7, 4, 0), ForeColor = Color.DarkSlateBlue
+                Padding = new Padding(0, 7, 4, 0), ForeColor = Tema.Kiremit
             };
             satir.Controls.Add(etiketLbl);
 
@@ -4149,7 +4211,7 @@ namespace UretimOSKesim
 
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
 
-            satir.Controls.Add(new Label { Text = "⚙ Rota:", AutoSize = true, ForeColor = Color.DarkSlateGray, Padding = new Padding(0, 6, 2, 0) });
+            satir.Controls.Add(new Label { Text = "⚙ Rota:", AutoSize = true, ForeColor = Tema.MetinKoyu, Padding = new Padding(0, 6, 2, 0) });
             var rotalarListe = _rotalar.OfType<JObject>().ToList();
             var rotaKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170, Margin = new Padding(3, 3, 8, 3) };
             rotaKutusu.Items.Add("— Rota Yok —");
@@ -4168,12 +4230,12 @@ namespace UretimOSKesim
             yeniRotaBtn.Click += async (s, e) => { await RotaSecVeyaOlusturDialogAc(tip, kart); AgaciYenidenCiz(); };
             satir.Controls.Add(yeniRotaBtn);
 
-            satir.Controls.Add(new Label { Text = "Amortisman (₺):", AutoSize = true, ForeColor = Color.DarkSlateGray, Padding = new Padding(8, 6, 2, 0) });
+            satir.Controls.Add(new Label { Text = "Amortisman (₺):", AutoSize = true, ForeColor = Tema.MetinKoyu, Padding = new Padding(8, 6, 2, 0) });
             var amortismanKutusu = new TextBox { Width = 60, Text = ((double?)kart["amortismanGideri"] ?? 0).ToString(CultureInfo.InvariantCulture), Margin = new Padding(3) };
             amortismanKutusu.Leave += (s, e) => { kart["amortismanGideri"] = ParseCift(amortismanKutusu.Text); KartDegistiIsaretle(tip, kart); };
             satir.Controls.Add(amortismanKutusu);
 
-            satir.Controls.Add(new Label { Text = "GYG (%):", AutoSize = true, ForeColor = Color.DarkSlateGray, Padding = new Padding(8, 6, 2, 0) });
+            satir.Controls.Add(new Label { Text = "GYG (%):", AutoSize = true, ForeColor = Tema.MetinKoyu, Padding = new Padding(8, 6, 2, 0) });
             var gygKutusu = new TextBox { Width = 50, Text = ((double?)kart["gygOraniYuzde"] ?? 0).ToString(CultureInfo.InvariantCulture), Margin = new Padding(3) };
             gygKutusu.Leave += (s, e) => { kart["gygOraniYuzde"] = ParseCift(gygKutusu.Text); KartDegistiIsaretle(tip, kart); };
             satir.Controls.Add(gygKutusu);
@@ -4363,7 +4425,7 @@ namespace UretimOSKesim
             // Dosyalar deposundan (TeknikDosyaYukleDialogAc'ın kullandığı
             // AYNI uç) GÜNCEL dosya listesi TOPLU çekilir — TAHMİN/yerel
             // önbellek DEĞİL, dışa aktarma anındaki gerçek sunucu verisi.
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "Teknik dosya bilgileri sunucudan toplanıyor…";
             var teknikDosyaHaritasi = await TeknikDosyaHaritasiTopla(recete, _kokTip, _kokKart);
 
@@ -4667,7 +4729,7 @@ namespace UretimOSKesim
             var teknikDosyaHaritasi = new Dictionary<string, JArray>();
             if (_istemci != null)
             {
-                _durumEtiketi.ForeColor = Color.DarkSlateGray;
+                _durumEtiketi.ForeColor = Tema.MetinKoyu;
                 _durumEtiketi.Text = "Teknik dosya bilgileri sunucudan toplanıyor…";
                 var toplanan = new List<(string tip, string refId, string kod, string ad)>();
                 void Topla(List<BilesenDugumu> liste)
@@ -4817,7 +4879,7 @@ namespace UretimOSKesim
             string kapsam = KapsamSecimiSor();
             if (kapsam == null) return;
 
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "⬇ ÜretimOS'tan güncel veri indiriliyor…";
             try
             {
@@ -5329,7 +5391,7 @@ namespace UretimOSKesim
                 return;
             }
             _kaydetBtn.Enabled = false;
-            _durumEtiketi.ForeColor = Color.DarkSlateGray;
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "Kaydediliyor…";
             try
             {
