@@ -64,19 +64,21 @@ namespace UretimOSKesim
         // başarı renk dilini bozmak KAFA KARIŞTIRICI olurdu.
         private static class Tema
         {
-            // Ana kiremit/terracotta rengi — vurgu (buton zemin rengi, sekme
-            // etiketleri, önemli başlıklar).
-            public static readonly Color Kiremit = Color.FromArgb(0xB5, 0x54, 0x33);
-            // Fare üzerine gelince/aktifken biraz daha koyu ton.
-            public static readonly Color KiremitKoyu = Color.FromArgb(0x96, 0x42, 0x27);
-            // "Açılan renkler" — ana kiremit tondan türetilmiş AÇIK tonlar,
-            // satır zeminlerinde/panel arka planlarında kullanılır (eski
-            // AliceBlue/White yerine).
-            public static readonly Color KiremitAcik = Color.FromArgb(0xFB, 0xEE, 0xE7);
-            public static readonly Color KiremitOrta = Color.FromArgb(0xF3, 0xD9, 0xC9);
+            // KULLANICI GERİ BİLDİRİMİ (2. tur): "biraz daha sofistike olsun
+            // ayrıca yazılar kutuların içine tam otursun" — ilk sürümdeki
+            // canlı/doygun turuncu-kiremit tonu çok "bağırıyordu"; burada
+            // DAHA az doygun, gri katkılı ("dusty"/mat) bir kil/terracotta
+            // tonuna çekildi — mobilya/iç mimari paletlerinde "sofistike"
+            // sayılan tam da bu düşük doygunluklu, toprak tonu yaklaşımı.
+            public static readonly Color Kiremit = Color.FromArgb(0x9C, 0x55, 0x3E);
+            public static readonly Color KiremitKoyu = Color.FromArgb(0x76, 0x3E, 0x2C);
+            // "Açılan renkler" — ana tondan türetilmiş AÇIK, sıcak fildişi/
+            // krem tonları (satır zeminleri — eski AliceBlue/White yerine).
+            public static readonly Color KiremitAcik = Color.FromArgb(0xF7, 0xEF, 0xE7);
+            public static readonly Color KiremitOrta = Color.FromArgb(0xEA, 0xDA, 0xCC);
             // Sıcak koyu kahve — eski Color.DarkSlateGray'in (soğuk gri)
             // yerine, genel etiket/durum metinlerinde kullanılır.
-            public static readonly Color MetinKoyu = Color.FromArgb(0x4A, 0x35, 0x2E);
+            public static readonly Color MetinKoyu = Color.FromArgb(0x3E, 0x2E, 0x28);
             // "Kolay okunabilir font ve yazı yüksekliği" — WinForms'un küçük
             // varsayılanı yerine Segoe UI, biraz daha büyük punto. Form'un
             // KENDİSİNE atanır (KurulumYap'ta) — açıkça kendi Font'unu
@@ -86,17 +88,49 @@ namespace UretimOSKesim
             public static readonly Font TabanFont = new Font("Segoe UI", 9.75f);
             public static readonly Font BaslikFont = new Font("Segoe UI", 10.5f, FontStyle.Bold);
 
-            // Üst düzey "birincil eylem" butonlarını (Kaydet/Aktar/Onayla gibi
-            // sürekli görünen araç çubuğu butonları) tek satırda tutarlı
-            // şekilde kiremit renkte, beyaz metinli düz (flat) stile çevirir.
+            // "yazılar kutuların içine tam otursun" — sabit piksel Width ile
+            // elle ayarlanmış butonlar, taban font büyüyünce (bkz. TabanFont)
+            // metni SIĞDIRAMAYIP satır kaydırıyor/taşıyordu (ör. "Ağacı
+            // Yenile (...)" iki satıra bölünüyordu). AutoSize + rahat bir
+            // Padding, buton her zaman KENDİ metnine göre genişler — bir
+            // daha asla kırpılmaz/taşmaz, font boyutu ileride değişse bile.
+            private static void KutuyaOturt(Button b)
+            {
+                b.AutoSize = true;
+                b.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                b.Padding = new Padding(14, 6, 14, 6);
+                b.Margin = new Padding(4, 3, 4, 3);
+                b.FlatStyle = FlatStyle.Flat;
+                b.FlatAppearance.BorderSize = 1;
+            }
+
+            // Üst düzey "birincil eylem" butonları (Kaydet/Aktar/Onayla gibi
+            // sürekli görünen, en önemli araç çubuğu butonları) — dolgu
+            // kiremit renk, beyaz metin. Kalın (Bold) DEĞİL — sofistike
+            // görünüm için "bağıran" kalın yazı yerine normal ağırlık +
+            // ferah iç boşluk tercih edildi.
             public static void BirincilButon(Button b)
             {
+                KutuyaOturt(b);
                 b.BackColor = Kiremit;
                 b.ForeColor = Color.White;
-                b.FlatStyle = FlatStyle.Flat;
                 b.FlatAppearance.BorderColor = KiremitKoyu;
                 b.FlatAppearance.MouseOverBackColor = KiremitKoyu;
-                b.Font = new Font(TabanFont, FontStyle.Bold);
+                b.Font = TabanFont;
+            }
+
+            // İkincil (yardımcı/gezinme) butonlar — Ağacı Yenile, İndir, XML
+            // Dışa Aktar gibi "sürekli görünen ama BİRİNCİL eylem olmayan"
+            // butonlar. Açık kiremit dolgu + ince kiremit çerçeve — dolgu
+            // kiremit ile aynı ekranda göz yormadan, yine de tekdüze
+            // varsayılan gri buton görünümünden çıkarır.
+            public static void IkincilButon(Button b)
+            {
+                KutuyaOturt(b);
+                b.BackColor = KiremitOrta;
+                b.ForeColor = MetinKoyu;
+                b.FlatAppearance.BorderColor = Kiremit;
+                b.FlatAppearance.MouseOverBackColor = KiremitAcik;
             }
         }
 
@@ -299,7 +333,8 @@ namespace UretimOSKesim
             // ── ÜST: kök kart bilgisi ────────────────────────────────────────
             var ustPanel = new Panel { Dock = DockStyle.Top, Height = 56, Padding = new Padding(10) };
             _kokKartEtiketi = new Label { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Text = "Kart eşleştiriliyor…" };
-            _kokKartSecBtn = new Button { Text = "Farklı Kart Seç…", Dock = DockStyle.Right, Width = 140, Enabled = false };
+            _kokKartSecBtn = new Button { Text = "Farklı Kart Seç…", Dock = DockStyle.Right, Enabled = false };
+            Tema.IkincilButon(_kokKartSecBtn);
             _kokKartSecBtn.Click += (s, e) => KokKartSeciciAc();
             ustPanel.Controls.Add(_kokKartEtiketi);
             ustPanel.Controls.Add(_kokKartSecBtn);
@@ -307,7 +342,8 @@ namespace UretimOSKesim
             // ── ROTA (yalnızca kök kart bir YARI MAMÜL ise görünür) ──────────
             _rotaPanel = new Panel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(10, 4, 10, 4), Visible = false };
             _rotaKutusu = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
-            var rotaBtn = new Button { Text = "Rota Seç / Oluştur…", Dock = DockStyle.Right, Width = 150 };
+            var rotaBtn = new Button { Text = "Rota Seç / Oluştur…", Dock = DockStyle.Right };
+            Tema.IkincilButon(rotaBtn);
             rotaBtn.Click += async (s, e) => { if (_kokKart != null) { await RotaSecVeyaOlusturDialogAc("yarimamul", _kokKart); UstBilgiPanelleriGuncelle(); } };
             _rotaPanel.Controls.Add(_rotaKutusu);
             _rotaPanel.Controls.Add(rotaBtn);
@@ -317,7 +353,8 @@ namespace UretimOSKesim
             // page_recete_agac.js:openPaketOlcuDuzenle ile AYNI alanlar.
             _paketOlcuPanel = new Panel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(10, 4, 10, 4), Visible = false };
             _paketOlcuEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Tema.MetinKoyu };
-            var paketOlcuBtn = new Button { Text = "Paket Ölçü/Ağırlık Düzenle…", Dock = DockStyle.Right, Width = 190 };
+            var paketOlcuBtn = new Button { Text = "Paket Ölçü/Ağırlık Düzenle…", Dock = DockStyle.Right };
+            Tema.IkincilButon(paketOlcuBtn);
             paketOlcuBtn.Click += (s, e) => { if (_kokKart != null) { PaketOlcuAgirlikDuzenle(_kokKart); UstBilgiPanelleriGuncelle(); } };
             _paketOlcuPanel.Controls.Add(_paketOlcuEtiketi);
             _paketOlcuPanel.Controls.Add(paketOlcuBtn);
@@ -410,8 +447,8 @@ namespace UretimOSKesim
             // TEK seferde tarayıp eşleşmeyen yarı mamül/alt montaj/paket/
             // ürünler için YENİ kart oluşturur, reçete yapısını kurar ve
             // hepsini sunucuya yazar (bkz. BilesenAgaciniReceteOlarakAktar).
-            var bilesenAraPanel = new Panel { Dock = DockStyle.Top, Height = 30 };
-            var receteOlarakAktarBtn = new Button { Text = "📤 Reçete Olarak ÜretimOS'a Aktar…", Dock = DockStyle.Left, Width = 240 };
+            var bilesenAraPanel = new Panel { Dock = DockStyle.Top, Height = 38 };
+            var receteOlarakAktarBtn = new Button { Text = "📤 Reçete Olarak ÜretimOS'a Aktar…", Dock = DockStyle.Left };
             Tema.BirincilButon(receteOlarakAktarBtn);
             receteOlarakAktarBtn.Click += async (s, e) => await BilesenAgaciniReceteOlarakAktar();
             // Kullanıcı isteği: "solidworkste bileşen ağacı için ayrı xml
@@ -422,14 +459,16 @@ namespace UretimOSKesim
             // alttaki "Reçeteyi XML Olarak Dışa Aktar…" ise sunucudaki
             // GERÇEK kaydedilmiş reçete ağacını dışa aktarır — ikisi
             // BİLEREK ayrı butonlar/dosyalardır, birbirini kapsamaz.
-            var bilesenXmlBtn = new Button { Text = "Bileşen Ağacını XML Olarak Dışa Aktar…", Dock = DockStyle.Left, Width = 240 };
+            var bilesenXmlBtn = new Button { Text = "Bileşen Ağacını XML Olarak Dışa Aktar…", Dock = DockStyle.Left };
+            Tema.IkincilButon(bilesenXmlBtn);
             bilesenXmlBtn.Click += async (s, e) => await BilesenAgaciniXmlOlarakDisaAktar();
             // Kullanıcı isteği: "hammadde ve yarımamül bant plaka sarf ürün
             // kodlarını ve ürün ağacı reçetelerini indir diye bir tuş koy ve
             // bu tuşa basarak hammaddeleri komple indir ancak tüm ürün,
             // yarımamül, paket ve altmontaj kodlarını komple mi yoksa sadece
             // bağlantılı olanları mı indireceğini sor" — bkz. MasterVeriyiYerelIndir.
-            var veriIndirBtn = new Button { Text = "⬇ Hammadde/Ürün Kodları ve Reçeteleri İndir…", Dock = DockStyle.Left, Width = 290 };
+            var veriIndirBtn = new Button { Text = "⬇ Hammadde/Ürün Kodları ve Reçeteleri İndir…", Dock = DockStyle.Left };
+            Tema.IkincilButon(veriIndirBtn);
             veriIndirBtn.Click += async (s, e) => await MasterVeriyiYerelIndir();
             // Kullanıcı isteği: "yeni parça ekledim teknik resim sekmesi bu
             // satırda çıkmıyor... diğer sınıf seçimler ve teknik resim ve alt
@@ -443,7 +482,8 @@ namespace UretimOSKesim
             // ağaçtaki (kod/dosya yoluyla eşleşen) düğümlerin sınıf/kenar
             // bandı/taslak ölçü/dahil-mi durumunu yeni ağaca AKTARIR — yalnızca
             // GERÇEKTEN yeni olan bileşenler boş/varsayılan gelir.
-            var agaciYenileBtn = new Button { Text = "🔄 Ağacı Yenile (Yeni SolidWorks Bileşenlerini Getir)", Dock = DockStyle.Left, Width = 300 };
+            var agaciYenileBtn = new Button { Text = "🔄 Ağacı Yenile (Yeni SolidWorks Bileşenlerini Getir)", Dock = DockStyle.Left };
+            Tema.IkincilButon(agaciYenileBtn);
             agaciYenileBtn.Click += (s, e) => AgaciYenile();
             bilesenAraPanel.Controls.Add(receteOlarakAktarBtn);
             bilesenAraPanel.Controls.Add(bilesenXmlBtn);
@@ -460,7 +500,7 @@ namespace UretimOSKesim
             // AyarPaneliOlustur). Sürükle-bırak da artık TreeView seviyesinde
             // DEĞİL, doğrudan HER SATIRIN kendi Panel'inde (o satırın kartı
             // hedef alınarak) çalışır.
-            var agacUstPanel = new Panel { Dock = DockStyle.Top, Height = 26 };
+            var agacUstPanel = new Panel { Dock = DockStyle.Top, Height = 34 };
             var agacBaslik = new Label { Text = "Seçili bileşenin ÜretimOS reçetesi ve alt kırılımları — her satırda miktar/birim doğrudan düzenlenebilir", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
             // Kullanıcı isteği: "üretimosta güncellenen reçeteleri
             // solidworkste alt kırılımda düzenlenmiş olarak güncellemek için
@@ -471,7 +511,8 @@ namespace UretimOSKesim
             // vb.) güncel halini sunucudan çekip BU panelin altındaki ağacı
             // (kaydedilmiş dosyayı KAPATIP AÇMAYA gerek KALMADAN) yeniden
             // çizer — bkz. UretimostanReceteyiGuncelle.
-            var uretimostanGuncelleBtn = new Button { Text = "⬇ ÜretimOS'tan Güncelle", Dock = DockStyle.Right, Width = 170 };
+            var uretimostanGuncelleBtn = new Button { Text = "⬇ ÜretimOS'tan Güncelle", Dock = DockStyle.Right };
+            Tema.IkincilButon(uretimostanGuncelleBtn);
             uretimostanGuncelleBtn.Click += async (s, e) => await UretimostanReceteyiGuncelle();
             agacUstPanel.Controls.Add(agacBaslik);
             agacUstPanel.Controls.Add(uretimostanGuncelleBtn);
@@ -488,9 +529,9 @@ namespace UretimOSKesim
             sagPanel.Controls.Add(bilesenBaslik);
 
             // ── ALT: durum + kaydet ──────────────────────────────────────────
-            var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 50, Padding = new Padding(8) };
+            var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 56, Padding = new Padding(8) };
             _durumEtiketi = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Tema.MetinKoyu };
-            _kaydetBtn = new Button { Text = "✓ ÜretimOS'a Kaydet", Dock = DockStyle.Right, Width = 160, Enabled = false, Font = KalinFont };
+            _kaydetBtn = new Button { Text = "✓ ÜretimOS'a Kaydet", Dock = DockStyle.Right, Enabled = false };
             Tema.BirincilButon(_kaydetBtn);
             _kaydetBtn.Click += async (s, e) => await KaydetTikla();
             // Kullanıcı isteği: "solidworkse kaydet dosyası ekleyelim ve buna
@@ -503,7 +544,7 @@ namespace UretimOSKesim
             // kaydedilmezse bu bilgiler kaybolur ve dosya tekrar açıldığında
             // eşleşme görünmez. Bu buton, ağaçtaki TÜM parça/montaj
             // belgelerini (ve kök montajı) tek seferde diske kaydeder.
-            var solidworksKaydetBtn = new Button { Text = "💾 SolidWorks'e Kaydet", Dock = DockStyle.Right, Width = 190 };
+            var solidworksKaydetBtn = new Button { Text = "💾 SolidWorks'e Kaydet", Dock = DockStyle.Right };
             Tema.BirincilButon(solidworksKaydetBtn);
             solidworksKaydetBtn.Click += (s, e) => TumBilesenleriSolidWorksKaydet();
             // Kullanıcı isteği: "Üretimostaki reçeteleri xml formatında
@@ -513,12 +554,13 @@ namespace UretimOSKesim
             // eklenirken atanan benzersiz "RK-..." id'yi taşır (bkz.
             // KalemEkle) — eski/id'siz kalemler için dışa aktarma ANINDA
             // (kalıcı olmayan) bir id üretilir, bkz. ReceteyiXmlOlarakDisaAktar.
-            var xmlDisaAktarBtn = new Button { Text = "Reçeteyi XML Olarak Dışa Aktar…", Dock = DockStyle.Right, Width = 210 };
+            var xmlDisaAktarBtn = new Button { Text = "Reçeteyi XML Olarak Dışa Aktar…", Dock = DockStyle.Right };
+            Tema.IkincilButon(xmlDisaAktarBtn);
             xmlDisaAktarBtn.Click += async (s, e) => await ReceteyiXmlOlarakDisaAktar();
             // ADIM 2 (bkz. TeknikResimOnaylaVeYukleCalistir) — reçete
             // ağacındaki bir satırda "📐 Teknik Resim Oluştur"a (ADIM 1)
             // basılıp SolidWorks'te çizim düzenlenene kadar DEVRE DIŞI.
-            _teknikResimOnaylaBtn = new Button { Text = "✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle", Dock = DockStyle.Right, Width = 260, Enabled = false };
+            _teknikResimOnaylaBtn = new Button { Text = "✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle", Dock = DockStyle.Right, Enabled = false };
             Tema.BirincilButon(_teknikResimOnaylaBtn);
             _teknikResimOnaylaBtn.Click += async (s, e) => await TeknikResimOnaylaVeYukleCalistir();
             altPanel.Controls.Add(_durumEtiketi);
@@ -1357,7 +1399,7 @@ namespace UretimOSKesim
         // (hırdavat, paket, hammadde, panel, kenar bandı, yarımamül vb.)".
         private Panel BilesenAnaSatiriOlustur(BilesenDugumu dugum, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = derinlik == 0 ? Tema.KiremitAcik : Color.White, Tag = "ana:" + dugum.GosterimAdi };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = derinlik == 0 ? Tema.KiremitAcik : Color.White, Tag = "ana:" + dugum.GosterimAdi };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
 
             satir.Controls.Add(new Panel { Width = 8 + derinlik * 22, Height = 1 });
@@ -2147,7 +2189,7 @@ namespace UretimOSKesim
         // (varsa) ön-doldurulmuş Taslak* alanlarını gösterir/düzenletir.
         private Panel BilesenOlcuSatiriOlustur(BilesenDugumu dugum, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 28, Tag = "olcu:" + dugum.GosterimAdi };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 32, Tag = "olcu:" + dugum.GosterimAdi };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
 
@@ -2174,7 +2216,7 @@ namespace UretimOSKesim
         // hammadde burada OLUŞTURULMAZ — bkz. eşleşme kontrolü aktarımda).
         private Panel BilesenKenarBandiSatiriOlustur(BilesenDugumu dugum, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 28, Tag = "kenar:" + dugum.GosterimAdi };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 32, Tag = "kenar:" + dugum.GosterimAdi };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
 
@@ -4088,7 +4130,7 @@ namespace UretimOSKesim
             var panel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 30,
+                Height = 34,
                 BackColor = derinlik == 0 ? Tema.KiremitAcik : Color.White,
                 Padding = new Padding(0),
                 Tag = "kalem:" + kod
@@ -4206,7 +4248,7 @@ namespace UretimOSKesim
         // düzenler; değişiklik KartDegistiIsaretle ile Kaydet'e taşınır.
         private Panel AyarPaneliOlustur(string tip, JObject kart, int derinlik)
         {
-            var panel = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.White, Tag = "ayar:" + (string)kart["kod"] };
+            var panel = new Panel { Dock = DockStyle.Top, Height = 32, BackColor = Color.White, Tag = "ayar:" + (string)kart["kod"] };
             var satir = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
 
             satir.Controls.Add(new Panel { Width = 8 + (derinlik + 1) * 22, Height = 1 });
