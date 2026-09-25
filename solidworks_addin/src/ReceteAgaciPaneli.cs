@@ -91,17 +91,33 @@ namespace UretimOSKesim
             // "yazılar kutuların içine tam otursun" — sabit piksel Width ile
             // elle ayarlanmış butonlar, taban font büyüyünce (bkz. TabanFont)
             // metni SIĞDIRAMAYIP satır kaydırıyor/taşıyordu (ör. "Ağacı
-            // Yenile (...)" iki satıra bölünüyordu). AutoSize + rahat bir
-            // Padding, buton her zaman KENDİ metnine göre genişler — bir
-            // daha asla kırpılmaz/taşmaz, font boyutu ileride değişse bile.
+            // Yenile (...)" iki satıra bölünüyordu).
+            //
+            // KULLANICI RAPORU: "kilitlendi" — bir önceki sürüm burada
+            // AutoSize=true KULLANIYORDU; ama bu butonların HEPSİ Dock=Left/
+            // Right olarak bir Panel'e ekleniyor, ve WinForms'ta AutoSize +
+            // Dock birlikte kullanmak İYİ BİLİNEN bir tuzaktır — panel
+            // yeniden boyutlanır, bu butonu yeniden boyutlandırır, bu da
+            // paneli tekrar yeniden boyutlandırır şeklinde bir düzen (layout)
+            // döngüsüne/aşırı yavaşlamaya yol açabilir (bazı WinForms
+            // sürümlerinde StackOverflowException'a kadar gidebilen,
+            // topluluk tarafından ÇOK KEZ raporlanmış bir davranış). Bu
+            // panel zaten (bkz. BilesenAgaciniCiz) TEKRARLI ve YOĞUN şekilde
+            // yeniden çiziliyor — AutoSize'ın getirdiği ekstra düzen
+            // hesaplaması, halihazırda hassas olan bu döngüde kilitlenmeye
+            // yol açmış olabilir. Bunun yerine AutoSize'sız, TextRenderer.
+            // MeasureText ile ÖNCEDEN hesaplanan SABİT bir Width kullanılıyor
+            // — Dock+AutoSize etkileşimine hiç girmeden AYNI "metne göre
+            // genişleme" sonucunu verir.
             private static void KutuyaOturt(Button b)
             {
-                b.AutoSize = true;
-                b.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                b.AutoSize = false;
                 b.Padding = new Padding(14, 6, 14, 6);
                 b.Margin = new Padding(4, 3, 4, 3);
                 b.FlatStyle = FlatStyle.Flat;
                 b.FlatAppearance.BorderSize = 1;
+                var metinBoyutu = TextRenderer.MeasureText(b.Text, TabanFont);
+                b.Width = metinBoyutu.Width + 28;
             }
 
             // Üst düzey "birincil eylem" butonları (Kaydet/Aktar/Onayla gibi
