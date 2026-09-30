@@ -453,14 +453,30 @@ PageModules.ag_entegrasyon = (() => {
       } else if (profil.hedefTip === 'urun_stok') {
         const [hammaddeler, stokRaf] = await Promise.all([Store.hammaddeler.all(), Store.stokRaf.all()]);
         const harita = new Map(hammaddeler.map(h => [String(h.stokKodu || h.kod || '').toUpperCase(), h]));
+        // page_tiger_aktarim.js'teki tipBelirle() ile AYNI kural: dış
+        // kaynaklar (LOGO, Tiger…) hammadde alt tipini (plaka/kenar_bandi/
+        // sarf/hirdavat) ayrı bir sütunda VERMEZ — ad/birimden çıkarılır.
+        // Sabit "hirdavat" yazmak, M2 birimli bir plakayı ya da adında
+        // "KENAR BANT" geçen bir kenar bandını YANLIŞ sınıfa sokardı.
+        const tipBelirle = (ad, birim) => {
+          const a = String(ad || '').toLocaleUpperCase('tr');
+          const b = String(birim || '').toLocaleUpperCase('tr');
+          if (a.includes('KENAR BANT') || a.includes('KENARBANT')) return 'kenar_bandi';
+          if (b === 'M2' || b === 'M²') return 'plaka';
+          if (['GRAM', 'KG', 'LITRE', 'LT', 'L'].includes(b)) return 'sarf';
+          return 'hirdavat';
+        };
         const yeniH = [], guncelH = [], yeniStok = [], guncelStok = [];
         kayitlar.forEach(k => {
           let h = harita.get(k.kod.toUpperCase());
           if (!h) {
-            h = { id: App.uid('HM'), stokKodu: k.kod, ad: k.ad, tip: 'hirdavat', birim: k.birim || 'ADET', kaynak: 'ag_entegrasyon' };
+            h = { id: App.uid('HM'), stokKodu: k.kod, ad: k.ad, tip: tipBelirle(k.ad, k.birim), birim: k.birim || 'ADET', kaynak: 'ag_entegrasyon' };
             if (k.fiyat) { h.birimFiyat = k.fiyat; h.dvz = 'TL'; }
             yeniH.push(h); yeni++;
           } else {
+            // Mevcut kartın tipi (plaka/kenar_bandi/sarf/hirdavat) BİLEREK
+            // değiştirilmiyor — bir kez elle/doğru sınıflandırılmış bir
+            // kartı senkron sırasında sessizce başka sınıfa TAŞIMAMAK için.
             h.ad = k.ad || h.ad;
             if (k.birim) h.birim = k.birim;
             if (k.fiyat) { h.birimFiyat = k.fiyat; h.dvz = h.dvz || 'TL'; }
