@@ -69,22 +69,28 @@ olduğunu söyler (ör. sürücü eksik, DSN bulunamadı, kullanıcı/şifre hat
 
 **Sayfalama:** gerçek aktif kayıt sayıları büyük (Mamul 20.581, Yarı Mamul
 63.792) — bu yüzden köprü tek istekte en fazla `adet` (varsayılan 2.000, üst
-sınır 5.000) kayıt döner. Tamamını çekmek için `sayfa` parametresiyle
-gezinin: `?tip=yarimamul&sayfa=1`, sonra `sayfa=2`, … `sonSayfaMi:true`
-gelene kadar. `page_ag_entegrasyon.js`'deki mevcut "Bağlantıyı Test Et" /
-tekil önizleme akışı yalnızca İLK sayfayı gösterir — toplu içe aktarım için
-tüm sayfaları gezen bir betik/uzantı gerekir (ayrı bir konu, henüz
-eklenmedi).
+sınır 5.000) kayıt döner, yanıtta `sayfa`/`toplam`/`sonSayfaMi` bulunur.
+ÜretimOS'un `ag_entegrasyon.js` motoru bu imzayı (`sonSayfaMi`) **otomatik
+tanır** — "Verileri Çek ve Önizle" dediğinizde tek sayfa değil, `sonSayfaMi:
+true` gelene kadar TÜM sayfalar arka planda gezilip tek bir listede birleşir;
+ayrıca bir betik/ayar gerekmez. Bir sayfa alınamazsa ya da 200 sayfalık
+güvenlik tavanına takılırsa (400.000 kayıt), önizleme ekranında turuncu bir
+uyarı olarak görünür — o durumda `logo_koprusu/ayarlar.php`'de `adet` değerini
+artırıp (üst sınır 5.000) tekrar deneyin.
 
 ## 4. ÜretimOS'a bağlayın
 
 ÜretimOS'ta **Entegrasyon Merkezi** (mevcut ekran, `page_ag_entegrasyon.js`)
-açın → **+ Yeni Bağlantı Profili** → Hedef Tipi: **Ürün / Stok** → Yön: **İçe
-Aktarım**:
+açın → **+ Yeni Bağlantı Profili**, LOGO'nun `tip=`'e göre ayrı koleksiyona
+yazdığı ÜÇ farklı hedefi seçerek üç AYRI profil ekleyin (Yön: **İçe Aktarım**):
 
-- **Adres:** `http://<köprü-bilgisayar-adı>:8090/?tip=urun` (ürünler için),
-  yarı mamüller için `...?tip=yarimamul`, hammaddeler için `...?tip=hammadde`
-  — her biri **ayrı bir profil** olarak eklenmeli (aynı adres, farklı `tip`).
+| Bridge adresi | Hedef Tipi (açılır listede) | ÜretimOS koleksiyonu |
+|---|---|---|
+| `...?tip=urun` | Ürün Kartı (Mamul) | `urunler` |
+| `...?tip=yarimamul` | Yarı Mamül Kartı | `yarimamuller` |
+| `...?tip=hammadde` | Ürün / Stok (Hammadde) | `hammaddeler` |
+
+Her profilde:
 - **Kimlik Doğrulama Tipi:** Başlık ile
 - **Başlık Adı:** `X-API-Key`
 - **Kimlik:** `ayarlar.php`'deki `apiAnahtari` değeriniz
@@ -92,6 +98,24 @@ Aktarım**:
   keşfedilir, ekrandan `kod`/`ad`/`birim`/`stok`/`fiyat` eşlemesini seçersiniz.
 - İçe aktarım her zaman önce **önizlenir**; siz onaylamadan hiçbir kayıt
   ÜretimOS'a yazılmaz (Entegrasyon Merkezi'nin mevcut, değişmeyen kuralı).
+- Kod zaten varsa yalnızca **ad/birim** güncellenir — fiyat, reçete, rota gibi
+  ÜretimOS'ta üretilmiş veriler asla ezilmez (`page_tiger_aktarim.js`'teki
+  "mükerrer koruması" ile aynı ilke). "Aynı" satırlar önizlemede varsayılan
+  olarak SEÇİLİ DEĞİLDİR.
+
+## Ölçek notu
+
+LOGO'daki aktif kayıt sayısı (~97.000, üç tip toplamı) `OLCEKLEME_PLANI.md`'de
+"küçük/sabit — sorun değil" sayılan sınırın (5.000–8.000) hayli üzerinde.
+Yazma zaten **parçalı** yapılıyor (`Store.topluEkle`/`topluGuncelle`, 200'lük
+gruplar — tek istekte 413 hatası almamak için), bu yüzden tek seferlik ilk
+aktarım muhtemelen sorunsuz tamamlanır. Ama bu kartlar kalıcı olarak
+`urunler`/`yarimamuller`/`hammaddeler` koleksiyonlarına eklendiği için,
+**aktarımdan SONRA** bu koleksiyonlara dokunan her ekran (kalem seçici,
+reçete ağacı, fiyat listesi, SolidWorks eklentisi) biraz daha yavaşlar —
+bu tek seferlik bir maliyet değil, kalıcı bir büyüme. İlk aktarımı düşük
+trafikli bir saatte yapmanız ve öncesinde `YEDEKLEME_KURULUM.md`'deki
+yönteme göre elle bir yedek almanız önerilir.
 
 ## Güvenlik notları
 

@@ -114,6 +114,16 @@ t('cari bos kod atlandi', cariEs.kayitlar.length===1 && cariEs.hatalar.length===
 t('cari vergiNo tasindi', cariEs.kayitlar[0].vergiNo==='1234567890');
 t('bilinmeyen hedefTip guvenli hata doner', A.kayitlariEsle([{}],{hedefTip:'yok_boyle_tip'}).kayitlar.length===0);
 
+const urunKartHam=[{StokKodu:'MM-001',StokAdi:'Masa Üstü',Urun_AnaBirim:'ADET'}];
+const urunKartEs=A.kayitlariEsle(urunKartHam,{hedefTip:'urun_kart',
+  eslesme:{kod:'StokKodu',ad:'StokAdi',birim:'Urun_AnaBirim'}});
+t('urun_kart (LOGO Mamul) eslendi', urunKartEs.kayitlar.length===1 && urunKartEs.kayitlar[0].kod==='MM-001');
+const ymKartHam=[{StokKodu:'YM-001',StokAdi:'Yan Panel',Urun_AnaBirim:'ADET'}];
+const ymKartEs=A.kayitlariEsle(ymKartHam,{hedefTip:'yarimamul_kart',
+  eslesme:{kod:'StokKodu',ad:'StokAdi',birim:'Urun_AnaBirim'}});
+t('yarimamul_kart (LOGO Yari Mamul) eslendi', ymKartEs.kayitlar.length===1 && ymKartEs.kayitlar[0].ad==='Yan Panel');
+t('urun_kart ve yarimamul_kart HEDEF_TIPLERI listesinde', A.HEDEF_TIPLERI.includes('urun_kart') && A.HEDEF_TIPLERI.includes('yarimamul_kart'));
+
 console.log('\n-- DISA AKTARIM (yazma — yalniz acik cagriyla) --');
 const disaCfg={hedefTip:'urun_stok', disaEslesme:{kod:'STOK_KODU',ad:'URUN_ADI',stok:'MIKTAR'}};
 const disaKayit=[{kod:'HRD-001',ad:'Menteşe',stok:150,birim:'ADET',fiyat:12.5}];
@@ -144,6 +154,50 @@ t('parcali yazma kullaniliyor (413 korumasi)', /topluEkle\('siparisler', eklenec
   console.log('\n-- DISA GONDER (async ag cagrisi) --');
   const r=await A.disaGonder({url:''},[]);
   t('bos adres disaGonder\'i agdan once reddediyor', r.ok===false);
+
+  console.log('\n-- SAYFALAMA (logo_koprusu gibi cok sayfali kaynaklar) --');
+  const sayfaliYanit = (sayfa, sonSayfaMi, adetKayit) => ({
+    kayitlar: Array.from({length: adetKayit}, (_, i) => ({ kod: 'K' + sayfa + '-' + i, ad: 'Ad ' + sayfa + '-' + i })),
+    sonSayfaMi
+  });
+  const sayfaNoCoz = (url) => { const m = /[?&]sayfa=(\d+)/.exec(url); return m ? +m[1] : 1; };
+
+  global.fetch = async (url) => ({
+    ok: true,
+    text: async () => JSON.stringify({ kayitlar: [{ kod: 'TEK1', ad: 'Tek Sayfa' }] })
+  });
+  {
+    const r1 = await A.cek({ url: 'http://kopru.local/?tip=urun' });
+    t('sayfalama imzasi yoksa TEK istek yapiliyor', r1.ok===true && r1.ham.length===1 && r1.sayfaSayisi===1 && !r1.hata);
+  }
+
+  global.fetch = async (url) => {
+    const s = sayfaNoCoz(url);
+    return { ok: true, text: async () => JSON.stringify(sayfaliYanit(s, s>=3, 3)) };
+  };
+  {
+    const r2 = await A.cek({ url: 'http://kopru.local/?tip=yarimamul' });
+    t('3 sayfa otomatik gezilip birlestiriliyor', r2.ok===true && r2.ham.length===9 && r2.sayfaSayisi===3 && !r2.hata);
+    t('ilk sayfada URL degismiyor (sayfa parametresi sonradan ekleniyor)', r2.ham[0].kod==='K1-0');
+    t('son sayfadaki kayitlar da geldi', r2.ham[8].kod==='K3-2');
+  }
+
+  global.fetch = async () => ({ ok: true, text: async () => JSON.stringify(sayfaliYanit(1, false, 2)) });
+  {
+    const r3 = await A.cek({ url: 'http://kopru.local/?tip=hammadde' });
+    t('sonSayfaMi hic true donmeyince guvenlik tavaninda duruyor', r3.ok===true && /Güvenlik sınırı/.test(r3.hata||''));
+    t('guvenlik tavaninda toplanan kayitlar kayip degil', r3.ham.length===400); // 200 sayfa x 2 kayit
+  }
+
+  global.fetch = async (url) => {
+    const s = sayfaNoCoz(url);
+    if (s===2) throw new Error('network down');
+    return { ok: true, text: async () => JSON.stringify(sayfaliYanit(s, false, 2)) };
+  };
+  {
+    const r4 = await A.cek({ url: 'http://kopru.local/?tip=urun' });
+    t('ara sayfa hata verince ONCEKI kayitlarla devam ediliyor (hepsi kaybolmuyor)', r4.ok===true && r4.ham.length===2 && /Sayfa 2/.test(r4.hata||''));
+  }
 
   console.log('\nSONUC: '+ok+' gecti, '+bad+' kaldi');
   process.exit(bad?1:0);

@@ -128,6 +128,8 @@ PageModules.ag_entegrasyon = (() => {
       const l = await Store.hammaddeler.all();
       return l.map(h => Object.assign({}, h, { kod: h.stokKodu || h.kod || h.id }));
     }
+    if (hedefTip === 'urun_kart') return Store.urunler.all();
+    if (hedefTip === 'yarimamul_kart') return Store.yarimamuller.all();
     if (hedefTip === 'cari') {
       const l = await Store.musteriler.all();
       return l.map(m => Object.assign({}, m, { kod: m.kod || m.vergiNo || m.id }));
@@ -338,7 +340,15 @@ PageModules.ag_entegrasyon = (() => {
 
     const tanim = AgEntegrasyon.HEDEF_ALANLAR[profil.hedefTip];
     const kolon2 = tanim.anaAlanlar[1] ? tanim.anaAlanlar[1][0] : null;
+    // Sayfalanmış bir kaynaktan (ör. logo_koprusu) veri çekilirken bir sayfa
+    // alınamadıysa ya da güvenlik tavanına takıldıysa AgEntegrasyon.cek()
+    // ok:true ile birlikte bir uyarı döner — burada gösterilmezse kullanıcı
+    // eksik veriyle tam veri sanıp devam eder.
+    const sayfalamaUyarisi = r.hata ? `<div style="border:1px solid var(--amber-text);background:var(--amber-bg);
+      border-radius:8px;padding:8px;font-size:12px;color:var(--amber-text);margin-bottom:8px">
+      ⚠ ${App.escapeHtml(r.hata)}</div>` : '';
     h.innerHTML = `
+      ${sayfalamaUyarisi}
       <div class="kpi-row" style="margin-bottom:8px">
         <div class="kpi-card"><div class="kpi-label">GELEN</div><div class="kpi-value">${e.kayitlar.length}</div></div>
         <div class="kpi-card"><div class="kpi-label">YENİ</div><div class="kpi-value" style="color:var(--green-text)">${fark.yeni.length}</div></div>
@@ -469,6 +479,49 @@ PageModules.ag_entegrasyon = (() => {
           if (guncelH.length) await Store.topluGuncelle('hammaddeler', guncelH, 200);
           if (yeniStok.length) await Store.topluEkle('stokRaf', yeniStok, 200);
           if (guncelStok.length) await Store.topluGuncelle('stokRaf', guncelStok, 200);
+        });
+      } else if (profil.hedefTip === 'urun_kart') {
+        const urunler = await Store.urunler.all();
+        const harita = new Map(urunler.map(u => [String(u.kod || '').toUpperCase(), u]));
+        const yeniU = [], guncelU = [];
+        kayitlar.forEach(k => {
+          let u = harita.get(k.kod.toUpperCase());
+          if (!u) {
+            u = { id: App.uid('UR'), kod: k.kod, ad: k.ad, tip: 'bitmis_urun', birim: k.birim || 'ADET', kaynak: 'ag_entegrasyon' };
+            yeniU.push(u); yeni++;
+          } else {
+            // Fiyat/reçete gibi ÜretimOS'ta üretilmiş veriler ASLA ezilmez —
+            // page_tiger_aktarim.js'teki "mükerrer koruması" ile AYNI ilke:
+            // dış kaynak yalnızca ad/birim günceller.
+            u.ad = k.ad || u.ad;
+            if (k.birim) u.birim = k.birim;
+            guncelU.push(u); guncel++;
+          }
+        });
+        await App.persist(async () => {
+          if (yeniU.length) await Store.topluEkle('urunler', yeniU, 200);
+          if (guncelU.length) await Store.topluGuncelle('urunler', guncelU, 200);
+        });
+      } else if (profil.hedefTip === 'yarimamul_kart') {
+        const yarimamuller = await Store.yarimamuller.all();
+        const harita = new Map(yarimamuller.map(y => [String(y.kod || '').toUpperCase(), y]));
+        const yeniY = [], guncelY = [];
+        kayitlar.forEach(k => {
+          let y = harita.get(k.kod.toUpperCase());
+          if (!y) {
+            y = { id: App.uid('YM'), kod: k.kod, ad: k.ad, birim: k.birim || 'ADET',
+              hammaddeId: null, rotaId: null, gorseller: [], kaynak: 'ag_entegrasyon',
+              olusturmaTarihi: new Date().toISOString().slice(0, 10) };
+            yeniY.push(y); yeni++;
+          } else {
+            y.ad = k.ad || y.ad;
+            if (k.birim) y.birim = k.birim;
+            guncelY.push(y); guncel++;
+          }
+        });
+        await App.persist(async () => {
+          if (yeniY.length) await Store.topluEkle('yarimamuller', yeniY, 200);
+          if (guncelY.length) await Store.topluGuncelle('yarimamuller', guncelY, 200);
         });
       } else if (profil.hedefTip === 'cari') {
         const musteriler = await Store.musteriler.all();

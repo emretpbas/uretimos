@@ -64,10 +64,28 @@ const AgEntegrasyon = (() => {
         ['miktar', 'Miktar'], ['birim', 'Birim']]
     },
     urun_stok: {
-      ad: 'Ürün / Stok',
+      ad: 'Ürün / Stok (Hammadde)',
       anaAlanlar: [['kod', 'Stok/Ürün Kodu', true], ['ad', 'Ad', true],
         ['birim', 'Birim', false], ['stok', 'Stok Miktarı', false], ['fiyat', 'Fiyat', false]],
-      kalemAlanlar: []   // düz kayıt — iç içe dizi yok
+      kalemAlanlar: []   // düz kayıt — iç içe dizi yok — hammaddeler'e yazar (bkz. page_ag_entegrasyon.js aktar())
+    },
+    // Aşağıdaki iki hedef, urun_stok ile AYNI düz alan şeklini kullanır ama
+    // farklı koleksiyona yazar (bkz. page_ag_entegrasyon.js aktar()) — LOGO
+    // gibi ürün/yarı mamül/hammaddeyi TEK tabloda bir TÜR sütunuyla ayıran
+    // kaynaklardan üç ayrı profil (üçü de logo_koprusu'nun farklı ?tip=
+    // adresine bağlı) ile üç ayrı ÜretimOS koleksiyonuna aktarım yapılabilsin
+    // diye eklendi.
+    urun_kart: {
+      ad: 'Ürün Kartı (Mamul)',
+      anaAlanlar: [['kod', 'Ürün Kodu', true], ['ad', 'Ad', true],
+        ['birim', 'Birim', false], ['fiyat', 'Fiyat', false]],
+      kalemAlanlar: []   // urunler'e yazar
+    },
+    yarimamul_kart: {
+      ad: 'Yarı Mamül Kartı',
+      anaAlanlar: [['kod', 'Yarı Mamül Kodu', true], ['ad', 'Ad', true],
+        ['birim', 'Birim', false]],
+      kalemAlanlar: []   // yarimamuller'e yazar
     },
     cari: {
       ad: 'Cari',
@@ -233,17 +251,56 @@ const AgEntegrasyon = (() => {
     return { alanlar, kayitSayisi: d.length, ilkKayit: ilk };
   }
 
+  // Adrese ?sayfa=N ekler/değiştirir — bağımlılıksız, hem tarayıcıda hem
+  // Node'da (testler/) aynı şekilde çalışır.
+  function urlSayfaAyarla(url, sayfa) {
+    if (/([?&])sayfa=\d+/.test(url)) return url.replace(/([?&]sayfa=)\d+/, '$1' + sayfa);
+    return url + (url.includes('?') ? '&' : '?') + 'sayfa=' + sayfa;
+  }
+
+  // Tek sayfada dönebilecek makul kayıt sayısının çok üstünde bir güvenlik
+  // tavanı — sonSayfaMi hiç true dönmeyen bozuk bir uç noktada sonsuz
+  // döngüye girmemek için (200 sayfa × varsayılan 2.000 = 400.000 kayıt).
+  const SAYFALAMA_MAKS_SAYFA = 200;
+
   // ── VERİ ÇEK (okuma) ─────────────────────────────────────────────────────
+  // Karşı uç nokta sayfalama İMZASI taşıyorsa (yanıt kökünde boolean bir
+  // sonSayfaMi alanı — bkz. logo_koprusu/index.php), TÜM sayfalar otomatik
+  // gezilir ve kayıtlar birleştirilir. Bu imza olmayan sıradan tek-sayfalık
+  // uç noktalarda (mevcut tüm profiller) davranış ÖNCEKİYLE BİREBİR AYNI —
+  // tek istek, tek yanıt.
   async function cek(cfg) {
-    const t = await baglantiTest(cfg);
-    if (!t.ok) return { ok: false, hata: t.hata };
-    let d = cfg.kokAlan ? yolOku(t.veri, cfg.kokAlan) : t.veri;
-    if (!Array.isArray(d) && d && typeof d === 'object') {
-      const anahtar = Object.keys(d).find(k => Array.isArray(d[k]));
-      if (anahtar) d = d[anahtar];
+    let tumKayitlar = [];
+    let sayfa = 1;
+    let sonSure = 0;
+    for (;;) {
+      const gecerliCfg = sayfa === 1 ? cfg : Object.assign({}, cfg, { url: urlSayfaAyarla(cfg.url, sayfa) });
+      const t = await baglantiTest(gecerliCfg);
+      if (!t.ok) {
+        return sayfa === 1
+          ? { ok: false, hata: t.hata }
+          : { ok: true, ham: tumKayitlar, sure: sonSure, sayfaSayisi: sayfa - 1,
+              hata: `Sayfa ${sayfa} alınamadı (${t.hata}) — önceki ${tumKayitlar.length} kayıtla devam edildi.` };
+      }
+      sonSure += t.sure || 0;
+      let d = cfg.kokAlan ? yolOku(t.veri, cfg.kokAlan) : t.veri;
+      if (!Array.isArray(d) && d && typeof d === 'object') {
+        const anahtar = Object.keys(d).find(k => Array.isArray(d[k]));
+        if (anahtar) d = d[anahtar];
+      }
+      if (!Array.isArray(d)) return { ok: false, hata: 'Yanıtta kayıt listesi bulunamadı. "Kök alan" ayarını kontrol edin.' };
+      tumKayitlar = tumKayitlar.concat(d);
+
+      const sayfalamaVarMi = t.veri && typeof t.veri === 'object' && typeof t.veri.sonSayfaMi === 'boolean';
+      if (!sayfalamaVarMi || t.veri.sonSayfaMi === true) {
+        return { ok: true, ham: tumKayitlar, sure: sonSure, sayfaSayisi: sayfa };
+      }
+      if (sayfa >= SAYFALAMA_MAKS_SAYFA) {
+        return { ok: true, ham: tumKayitlar, sure: sonSure, sayfaSayisi: sayfa,
+          hata: `Güvenlik sınırı: ${SAYFALAMA_MAKS_SAYFA} sayfadan sonra durduruldu (${tumKayitlar.length} kayıt alındı, kaynakta daha fazlası olabilir).` };
+      }
+      sayfa++;
     }
-    if (!Array.isArray(d)) return { ok: false, hata: 'Yanıtta kayıt listesi bulunamadı. "Kök alan" ayarını kontrol edin.' };
-    return { ok: true, ham: d, sure: t.sure };
   }
 
   const al = (kayit, alan) => (alan ? yolOku(kayit, alan) : undefined);
