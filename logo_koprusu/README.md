@@ -137,10 +137,44 @@ Her profilde:
   keşfedilir, ekrandan `kod`/`ad`/`birim`/`stok`/`fiyat` eşlemesini seçersiniz.
 - İçe aktarım her zaman önce **önizlenir**; siz onaylamadan hiçbir kayıt
   ÜretimOS'a yazılmaz (Entegrasyon Merkezi'nin mevcut, değişmeyen kuralı).
-- Kod zaten varsa yalnızca **ad/birim** güncellenir — fiyat, reçete, rota gibi
-  ÜretimOS'ta üretilmiş veriler asla ezilmez (`page_tiger_aktarim.js`'teki
-  "mükerrer koruması" ile aynı ilke). "Aynı" satırlar önizlemede varsayılan
-  olarak SEÇİLİ DEĞİLDİR.
+- Kod zaten varsa **ad/birim** güncellenir; **reçete/rota gibi ÜretimOS'ta
+  üretilmiş veriler asla ezilmez** (`page_tiger_aktarim.js`'teki "mükerrer
+  koruması" ile aynı ilke). **İstisna — hammadde fiyatı:** "Ürün / Stok
+  (Hammadde)" hedefinde, eşlemede "Fiyat" alanı seçiliyse gelen değer mevcut
+  kartın `birimFiyat`'ını GÜNCELLER (bu, aşağıdaki §4b'nin amacı — LOGO'daki
+  fiyatı ÜretimOS'a senkron tutmak). Fiyatı LOGO'dan senkronlamak
+  İSTEMİYORSANIZ o profilde "Fiyat" alanını eşlemeden bırakın. "Aynı" satırlar
+  önizlemede varsayılan olarak SEÇİLİ DEĞİLDİR.
+
+## 4b. Hammadde fiyatlarını çekmek (son alış / güncel fiyat listesi)
+
+Ana ürün tablosunda fiyat YOK — LOGO fiyatı iki AYRI kaynakta tutuyor, GERÇEK
+ÜRETİM VERİSİYLE (LogoRead ile SSMS'te doğrudan sorgulanarak) doğrulandı:
+
+| Bridge tipi | Kaynak | Ne döner |
+|---|---|---|
+| `?tip=son_alis` | Son satın alma fiyatı görünümü | Ürün başına TEK, en son gerçekleşen alış fiyatı |
+| `?tip=fiyat_alis` | LOGO güncel fiyat listesi, PTYPE=1 (satınalma) | Bugün geçerli (tarih aralığına düşen), TL'ye (CURRENCY=160) filtrelenmiş liste fiyatı |
+| `?tip=fiyat_satis` | Aynı liste, PTYPE=2 (satış) | Bugün geçerli satış fiyatı (henüz bir ÜretimOS hedefine bağlanmadı — ürün fiyatı ÜretimOS'ta genelde maliyetten HESAPLANIR, doğrudan yazılmaz) |
+
+**Nasıl bağlanır:** yeni bir profil daha ekleyin — **Hedef veri tipi: "Ürün /
+Stok (Hammadde)"** (aynı hedef, hammaddeler'e yazar), **Adres:**
+`.../?tip=fiyat_alis` (ya da `son_alis`), eşlemede **Stok/Ürün Kodu** →
+`StokKodu`, **Ad** → `StokAdi`, **Fiyat** → `FIYAT`. Kodlar zaten
+`?tip=hammadde` profiliyle oluşturulmuş olacağından bu profil normalde
+yalnızca **birimFiyat GÜNCELLER**, yeni kart açmaz.
+
+**`son_alis` mi `fiyat_alis` mi?** `fiyat_alis`'in açık bir `CURRENCY`
+sütunu var ve köprü bunu TL'ye (160) filtreliyor — daha güvenilir.
+`son_alis`'te döviz sütunu YOK, TL olduğu VARSAYILIYOR (teyit edilmedi) ama
+gerçekte GERÇEKLEŞEN son alışı yansıtır. Emin değilseniz `fiyat_alis` ile
+başlayın.
+
+**Bakım notu:** `fiyat_alis`/`fiyat_satis`'in okuduğu `LG_222_PRCLIST`
+tablosu, adı LOGO'da **firma dönemine göre değişebilen** ayrı bir
+veritabanında (bugün `DOXA_2022`) duruyor. Fiyat sorguları aniden
+"geçersiz veritabanı" hatası verirse `ayarlar.php`'deki
+`fiyatListesiVeritabani` değerini güncel dönem adıyla değiştirin.
 
 ## Ölçek notu
 

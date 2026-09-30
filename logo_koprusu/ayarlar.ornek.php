@@ -64,4 +64,27 @@ return [
         'https://www.uretimos.com.tr',
     ],
 
+    // ── FİYAT — GERÇEK ÜRETİM VERİSİYLE (LogoRead ile SSMS'te doğrudan
+    // sorgulanarak) DOĞRULANDI. Üç yeni tip: son_alis, fiyat_alis, fiyat_satis
+    // (bkz. index.php: fiyatSorgulari()). Varsayılanlara DOKUNMANIZA gerek
+    // yok — yalnızca aşağıdaki iki durumda değiştirin:
+
+    // 1) LOGO'nun "SonSatinalmaFiyati" görünümü farklı adlandırılmışsa.
+    'sonAlisTablo' => 'Doxa_Programs.dbo.ww_SonSatinalmaFiyati',
+
+    // 2) EN ÖNEMLİSİ: LG_222_PRCLIST (fiyat listesi) firma DÖNEMİNE göre
+    // isimlenen AYRI bir veritabanında (bugün DOXA_2022) — LOGO'da yeni
+    // dönem/yıl açıldığında bu veritabanı adı DEĞİŞEBİLİR. Fiyat sorguları
+    // aniden "geçersiz veritabanı" hatası vermeye başlarsa İLK bakılacak
+    // yer burasıdır.
+    'fiyatListesiVeritabani' => 'DOXA_2022',
+    'fiyatListesiTablo' => 'dbo.LG_222_PRCLIST',
+
+    // Fiyat listesinde TL dışında para birimleri de var (160=TL, 1=USD,
+    // 20=EUR — LOGO'nun kendi kodları). ÜretimOS tarafı bugün fiyatı döviz
+    // ayrımı yapmadan TL VARSAYARAK yazıyor; bu yüzden varsayılan olarak
+    // yalnızca TL (160) satırları döner — döviz dönüşümü ayrı bir iştir,
+    // buraya YABANCI PARA KODU yazıp o para biriminde bırakmayın.
+    'fiyatParaBirimiKodu' => 160,
+
 ];

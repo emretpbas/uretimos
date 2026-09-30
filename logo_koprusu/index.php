@@ -86,28 +86,102 @@ if (empty($ayar['apiAnahtari']) || !hash_equals((string)$ayar['apiAnahtari'], (s
 $tip = $_GET['tip'] ?? 'tumu';
 $sayfa = max(1, (int)($_GET['sayfa'] ?? 1));
 $adet = min(5000, max(1, (int)($_GET['adet'] ?? 2000)));
+$offset = ($sayfa - 1) * $adet;
 
 $tablo = $ayar['tablo'] ?? '';
 $siraSutunu = $ayar['siraSutunu'] ?? 'StokKodu';
-$ozelKosullar = $ayar['kosullar'] ?? [];
-$KOSULLAR = [
-    'urun'      => $ozelKosullar['urun']      ?? "Urun_Kart_Turu_Kodu = 12 AND URUN_AKTIF = 1",
-    'yarimamul' => $ozelKosullar['yarimamul'] ?? "Urun_Kart_Turu_Kodu = 11 AND URUN_AKTIF = 1",
-    'hammadde'  => $ozelKosullar['hammadde']  ?? "Urun_Kart_Turu_Kodu IN (10, 13) AND URUN_AKTIF = 1",
-    'tumu'      => $ozelKosullar['tumu']      ?? "URUN_AKTIF = 1",
-];
-if ($tablo === '' || !array_key_exists($tip, $KOSULLAR)) {
-    http_response_code(400);
-    echo json_encode(['hata' => "ayarlar.php'de 'tablo' boş ya da bilinmeyen tip: $tip. Geçerli tipler: " . implode(', ', array_keys($KOSULLAR))], JSON_UNESCAPED_UNICODE);
-    exit;
+
+// ── FİYAT SORGULARI — GERÇEK ÜRETİM VERİSİYLE (LogoRead ile doğrudan SSMS
+// sorgusuyla) DOĞRULANDI. Ana ürün tablosuna JOIN + (fiyat listesinde ürün
+// başına BİRDEN FAZLA tarih-aralıklı satır olabildiği için) ROW_NUMBER ile
+// tekilleştirme gerektirdiğinden basit WHERE-koşulu kalıbına (aşağıdaki
+// $KOSULLAR) SIĞMAZLAR; ayrı, tam SQL şablonları olarak tanımlandı.
+function fiyatSorgulari(array $ayar, string $urunTablo, int $offset, int $adet): array
+{
+    // "SonSatinalmaFiyati" GÖRÜNÜMÜ zaten ürün başına TEK satır üretiyor
+    // (11.176 satır ↔ 11.176 farklı ürün, doğrulandı) — ayrıca tekilleştirme
+    // gerekmiyor.
+    $sonAlisTablo = $ayar['sonAlisTablo'] ?? 'Doxa_Programs.dbo.ww_SonSatinalmaFiyati';
+    $sonAlisSql = "SELECT t.StokKodu, t.StokAdi, t.Urun_AnaBirim, s.SONFIYAT AS FIYAT, s.SAY
+        FROM $urunTablo t INNER JOIN $sonAlisTablo s ON s.STOCKREF = t.StokLogic
+        WHERE t.URUN_AKTIF = 1
+        ORDER BY t.StokKodu
+        OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY";
+    $sonAlisSayim = "SELECT COUNT(*) FROM $urunTablo t INNER JOIN $sonAlisTablo s ON s.STOCKREF = t.StokLogic
+        WHERE t.URUN_AKTIF = 1";
+
+    // LOGO fiyat listesi (LG_222_PRCLIST) AYRI BİR VERİTABANINDA (firma
+    // dönemine göre isimlenir, ör. DOXA_2022 — YIL DEĞİŞİNCE bu ayarı
+    // güncellemeniz gerekebilir, bkz. ayarlar.ornek.php). PTYPE: 1=satınalma,
+    // 2=satış. ACTIVE=0 GÜNCEL demektir (LOGO kuralı, ters gibi görünse de
+    // doğrulandı). Ürün başına birden fazla tarih-aralıklı satır olabildiği
+    // için GETDATE() aralığa düşen VE en yeni BEGDATE'e sahip TEK satır
+    // seçiliyor (ROW_NUMBER).
+    $fiyatDb = $ayar['fiyatListesiVeritabani'] ?? 'DOXA_2022';
+    $fiyatTablo = $ayar['fiyatListesiTablo'] ?? 'dbo.LG_222_PRCLIST';
+    // CURRENCY=160(TL) ile SINIRLI — GERÇEK VERİDE USD(1)/EUR(20) satırları
+    // da bulundu. ÜretimOS tarafı (ag_entegrasyon.js) bugün fiyatı DÖVİZ
+    // AYRIMI YAPMADAN doğrudan TL varsayarak yazıyor (`h.dvz = 'TL'`) — döviz
+    // satırını filtrelemeden bırakmak YANLIŞ TL fiyatı kaydına yol açardı.
+    // Döviz dönüşümü/çok para birimli akış ayrı bir iş — istenirse
+    // ayarlar.php'de bu koşulu değiştirin.
+    $paraBirimi = (int)($ayar['fiyatParaBirimiKodu'] ?? 160);
+    $fiyatListesi = function (int $ptype) use ($urunTablo, $fiyatDb, $fiyatTablo, $paraBirimi, $offset, $adet) {
+        return "WITH FiyatSirali AS (
+                SELECT p.CARDREF, p.PRICE, p.CURRENCY, p.BEGDATE, p.ENDDATE, p.CODE,
+                       ROW_NUMBER() OVER (PARTITION BY p.CARDREF ORDER BY p.BEGDATE DESC) AS sira
+                FROM $fiyatDb.$fiyatTablo p
+                WHERE p.PTYPE = $ptype AND p.ACTIVE = 0 AND p.CURRENCY = $paraBirimi
+                  AND GETDATE() BETWEEN p.BEGDATE AND p.ENDDATE
+            )
+            SELECT t.StokKodu, t.StokAdi, t.Urun_AnaBirim, f.PRICE AS FIYAT, f.CURRENCY, f.BEGDATE, f.ENDDATE, f.CODE
+            FROM $urunTablo t INNER JOIN FiyatSirali f ON f.CARDREF = t.StokLogic AND f.sira = 1
+            WHERE t.URUN_AKTIF = 1
+            ORDER BY t.StokKodu
+            OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY";
+    };
+    $fiyatListesiSayim = function (int $ptype) use ($urunTablo, $fiyatDb, $fiyatTablo, $paraBirimi) {
+        return "WITH FiyatSirali AS (
+                SELECT p.CARDREF,
+                       ROW_NUMBER() OVER (PARTITION BY p.CARDREF ORDER BY p.BEGDATE DESC) AS sira
+                FROM $fiyatDb.$fiyatTablo p
+                WHERE p.PTYPE = $ptype AND p.ACTIVE = 0 AND p.CURRENCY = $paraBirimi
+                  AND GETDATE() BETWEEN p.BEGDATE AND p.ENDDATE
+            )
+            SELECT COUNT(*) FROM $urunTablo t INNER JOIN FiyatSirali f ON f.CARDREF = t.StokLogic AND f.sira = 1
+            WHERE t.URUN_AKTIF = 1";
+    };
+
+    return [
+        'son_alis'    => ['sorgu' => $sonAlisSql, 'sayim' => $sonAlisSayim],
+        'fiyat_satis' => ['sorgu' => $fiyatListesi(2), 'sayim' => $fiyatListesiSayim(2)],
+        'fiyat_alis'  => ['sorgu' => $fiyatListesi(1), 'sayim' => $fiyatListesiSayim(1)],
+    ];
 }
-$kosul = $KOSULLAR[$tip];
-$offset = ($sayfa - 1) * $adet;
-// $offset/$adet (int)/(min/max) ile sabitlendi, $tablo/$siraSutunu/$kosul
-// yalnızca yerel ayarlar.php'den gelir (kullanıcı girdisi değil) — SQL
-// enjeksiyonu riski yok.
-$sql = "SELECT * FROM $tablo WHERE $kosul ORDER BY $siraSutunu OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY";
-$sayimSql = "SELECT COUNT(*) FROM $tablo WHERE $kosul";
+
+if ($tablo !== '' && array_key_exists($tip, $TAM_SORGULAR = fiyatSorgulari($ayar, $tablo, $offset, $adet))) {
+    $sql = $TAM_SORGULAR[$tip]['sorgu'];
+    $sayimSql = $TAM_SORGULAR[$tip]['sayim'];
+} else {
+    $ozelKosullar = $ayar['kosullar'] ?? [];
+    $KOSULLAR = [
+        'urun'      => $ozelKosullar['urun']      ?? "Urun_Kart_Turu_Kodu = 12 AND URUN_AKTIF = 1",
+        'yarimamul' => $ozelKosullar['yarimamul'] ?? "Urun_Kart_Turu_Kodu = 11 AND URUN_AKTIF = 1",
+        'hammadde'  => $ozelKosullar['hammadde']  ?? "Urun_Kart_Turu_Kodu IN (10, 13) AND URUN_AKTIF = 1",
+        'tumu'      => $ozelKosullar['tumu']      ?? "URUN_AKTIF = 1",
+    ];
+    if ($tablo === '' || !array_key_exists($tip, $KOSULLAR)) {
+        http_response_code(400);
+        echo json_encode(['hata' => "ayarlar.php'de 'tablo' boş ya da bilinmeyen tip: $tip. Geçerli tipler: " . implode(', ', array_merge(array_keys($KOSULLAR), ['son_alis', 'fiyat_satis', 'fiyat_alis']))], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $kosul = $KOSULLAR[$tip];
+    // $offset/$adet (int)/(min/max) ile sabitlendi, $tablo/$siraSutunu/$kosul
+    // yalnızca yerel ayarlar.php'den gelir (kullanıcı girdisi değil) — SQL
+    // enjeksiyonu riski yok.
+    $sql = "SELECT * FROM $tablo WHERE $kosul ORDER BY $siraSutunu OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY";
+    $sayimSql = "SELECT COUNT(*) FROM $tablo WHERE $kosul";
+}
 
 // ── BAĞLANTI ─────────────────────────────────────────────────────────────
 // Sırayla dener: 1) Windows ODBC DSN adıyla (en basit — DSN zaten Windows'ta
