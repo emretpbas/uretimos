@@ -48,18 +48,18 @@ if (empty($ayar['apiAnahtari']) || !hash_equals((string)$ayar['apiAnahtari'], (s
 }
 
 // ── SORGU SEÇİMİ ─────────────────────────────────────────────────────────
-// LOGO'nun malzeme kartları tek bir tabloda/görünümde, bir TÜR sütunuyla
-// (HM/YM/MM/TİM) ayrışıyor olabilir — page_tiger_aktarim.js'teki Excel
-// aktarımıyla AYNI sınıflandırma kuralı burada da varsayım olarak kullanıldı.
-// Gerçek tablo/görünüm ve sütun adları ayarlar.php'de DOĞRULANMALI/
-// DÜZENLENMELİDİR — buradaki adlar yalnızca makul bir varsayılandır.
+// Sınıflandırma sütunu bir "Kartlar" dökümüyle DOĞRULANDI: gerçek LOGO
+// şemasında kartın tipi Urun_Kart_Turu_Adi sütununda Türkçe metin olarak
+// tutuluyor ('Hammadde', 'Yarı Mamul', 'Mamul', 'Tüketim Malı', 'Ticari
+// Malzeme' — page_tiger_aktarim.js'teki HM/YM/MM ayrımıyla AYNI mantık).
+// Tablo/görünüm adının kendisi ayarlar.php'de DOĞRULANMALI/DÜZENLENMELİDİR.
 $tip = $_GET['tip'] ?? 'tumu';
 $tablo = $ayar['tablo'] ?? '';
 $ozelSorgular = $ayar['sorgular'] ?? [];
 $SORGULAR = [
-    'urun'      => $ozelSorgular['urun']      ?? ($tablo !== '' ? "SELECT TOP 1000 * FROM $tablo WHERE TURU = 'MM'" : null),
-    'yarimamul' => $ozelSorgular['yarimamul'] ?? ($tablo !== '' ? "SELECT TOP 1000 * FROM $tablo WHERE TURU = 'YM'" : null),
-    'hammadde'  => $ozelSorgular['hammadde']  ?? ($tablo !== '' ? "SELECT TOP 1000 * FROM $tablo WHERE TURU IN ('HM','TIM')" : null),
+    'urun'      => $ozelSorgular['urun']      ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo WHERE Urun_Kart_Turu_Adi = 'Mamul'" : null),
+    'yarimamul' => $ozelSorgular['yarimamul'] ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo WHERE Urun_Kart_Turu_Adi = 'Yarı Mamul'" : null),
+    'hammadde'  => $ozelSorgular['hammadde']  ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo WHERE Urun_Kart_Turu_Adi IN ('Hammadde','Tüketim Malı','Ticari Malzeme')" : null),
     'tumu'      => $ozelSorgular['tumu']      ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo" : null),
 ];
 if (!array_key_exists($tip, $SORGULAR) || $SORGULAR[$tip] === null) {

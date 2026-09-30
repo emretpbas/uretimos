@@ -27,20 +27,21 @@ return [
     'apiAnahtari' => 'BURAYA-UZUN-RASTGELE-BIR-ANAHTAR-YAZIN',
 
     // Ana malzeme kartı tablosu/görünümü — GERÇEK adla DEĞİŞTİRİN.
-    // (Ekran görüntüsündeki örnek bir "...tbl_Mal_Urunler_222" görünümüydü;
-    // gerçek adını ve TURU sütununun gerçekten olup olmadığını BT ile teyit
-    // edin — emin değilseniz önce sadece 'tumu' tipini kullanın, o TURU
-    // sütununa bakmadan tüm tabloyu TOP 2000 satırla çeker.)
+    // (Gerçek bir "Kartlar" dökümüyle DOĞRULANMIŞ sütun adları: StokKodu,
+    // StokAdi, Urun_AnaBirim, Urun_Kart_Turu_Adi — bkz. aşağıdaki 'sorgular'.
+    // Tablo/görünüm adının kendisi ekran görüntüsünde net okunamadı, BT ile
+    // teyit edin — emin değilseniz önce 'tumu' tipini kullanın.)
     'tablo' => 'dbo.tbl_Mal_Urunler_222',
 
-    // İsteğe bağlı: yukarıdaki otomatik TURU sütunu varsayımı sizin LOGO
-    // şemanıza uymuyorsa, aşağıdaki dört sorgudan istediğinizi TAMAMEN
-    // kendiniz yazarak 'tablo' varsayımını geçersiz kılabilirsiniz.
+    // DOĞRULANMIŞ sınıflandırma: Urun_Kart_Turu_Adi sütunu kartın tipini
+    // Türkçe metin olarak taşıyor (Urun_Kart_Turu_Kodu ise sayısal karşılığı
+    // — 10=Hammadde, 11=Yarı Mamul, 12=Mamul, 13=Tüketim Malı, 1=Ticari
+    // Malzeme). page_tiger_aktarim.js'teki HM/YM/MM ayrımıyla AYNI mantık:
     'sorgular' => [
-        // 'urun'      => "SELECT TOP 1000 * FROM dbo.LG_222_ITEMS WHERE CARDTYPE = 0",
-        // 'yarimamul' => "SELECT TOP 1000 * FROM dbo.LG_222_ITEMS WHERE CARDTYPE = 4",
-        // 'hammadde'  => "SELECT TOP 1000 * FROM dbo.LG_222_ITEMS WHERE CARDTYPE = 1",
-        // 'tumu'      => "SELECT TOP 2000 * FROM dbo.LG_222_ITEMS",
+        // 'urun'      => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222 WHERE Urun_Kart_Turu_Adi = 'Mamul'",
+        // 'yarimamul' => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222 WHERE Urun_Kart_Turu_Adi = 'Yarı Mamul'",
+        // 'hammadde'  => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222 WHERE Urun_Kart_Turu_Adi IN ('Hammadde','Tüketim Malı','Ticari Malzeme')",
+        // 'tumu'      => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222",
     ],
 
 ];
