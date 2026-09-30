@@ -10,6 +10,7 @@ anthropic_anahtari.php
 baidu_anahtari.php
 google_anahtari.php
 google_arama_anahtari.php
+logo_koprusu/ayarlar.php
 
 # Derleme çıktısı
 dist/

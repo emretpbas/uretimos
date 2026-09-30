@@ -312,6 +312,16 @@ riski — yetki yönetimi, anlık yük, lisans/kilitlenme). Onay verilirse:
   SolidWorks ↔ ÜretimOS entegrasyonu (§8) bugün ÇALIŞAN, bağımsız bir
   parçadır.
 
+**LOGO → ÜretimOS okuma köprüsü (`logo_koprusu/`):** yukarıdaki karar
+SolidWorks'ün LOGO'ya DOĞRUDAN bağlanmasını kapsar — ÜretimOS'un kendisi ile
+LOGO arasında, salt-okunur, ayrı bir yerel-ağ köprüsü mevcuttur. BT'nin
+oluşturduğu salt-okunur bir SQL girişiyle LOGO'nun SQL Server veritabanından
+ürün/yarı mamül/hammadde kartlarını okuyup ÜretimOS'un mevcut **Entegrasyon Merkezi**
+(§10, `page_ag_entegrasyon.js`) üzerinden içe aktarılabilir hale getirir.
+Ayrıntı ve kurulum için bkz. `logo_koprusu/README.md`. Bu köprü asla LOGO'ya
+YAZMAZ ve LOGO şifresi git'e ASLA eklenmez (`logo_koprusu/ayarlar.php`,
+`.gitignore`'da tanımlıdır).
+
 ## 10. Modül Haritası
 
 Aşağıdaki `page_*.js` dosyaları, dosya adından çıkarılabilen kısa
