@@ -44,12 +44,12 @@ logo_koprusu\ayarlar.ornek.php  →  logo_koprusu\ayarlar.php  (kopyala)
   kullanıcı adı/şifresi
 - `apiAnahtari`: rastgele, uzun bir metinle DEĞİŞTİRİN (bu köprüye dışarıdan
   rastgele erişimi engeller)
-- `tablo`: gerçek LOGO tablo/görünüm adı — ekran görüntüsündeki örnek bir
-  `tbl_Mal_Urunler_222` görünümüydü; gerçek adını ve `TURU` sütununun olup
-  olmadığını BT ile (Abdullah Bey) teyit edin. Emin değilseniz önce sadece
-  `tumu` tipini kullanın — bu, `TURU` sütununa hiç bakmadan tabloyu olduğu
-  gibi çeker, ÜretimOS tarafında hangi sütunların geldiğini görüp ona göre
-  eşleme yaparsınız.
+- `tablo`/`kosullar`/`kaynakKodlama` — GERÇEK ÜRETİM VERİSİYLE DOĞRULANDI,
+  varsayılanlara dokunmanıza gerek yok: tablo `Doxa_Programs..tbl_Mel_Urunler_222`,
+  sınıflandırma `Urun_Kart_Turu_Kodu` (10 Hammadde, 11 Yarı Mamul, 12 Mamul,
+  13 Tüketim Malı) + `URUN_AKTIF`, kaynak kodlama `Windows-1254` (LOGO'nun
+  ODBC sürücüsü Türkçe metni bu şekilde döndürüyor — köprü otomatik UTF-8'e
+  çevirir, elle bir şey yapmanız gerekmez).
 
 **`ayarlar.php` dosyası asla git'e eklenmez** (`.gitignore`'da tanımlı) —
 gerçek şifre yalnızca bu bilgisayarda yaşar.
@@ -62,9 +62,19 @@ Tarayıcıdan (aynı yerel ağdaki herhangi bir bilgisayardan):
 http://<köprü-bilgisayar-adı>:8090/?tip=tumu&anahtar=<apiAnahtari>
 ```
 
-Başarılıysa `{"kayitlar":[...], "adet": N, "tip":"tumu"}` görürsünüz. Hata
+Başarılıysa `{"kayitlar":[...], "adet":2000, "toplam":84373, "sayfa":1,
+"sayfaBoyutu":2000, "sonSayfaMi":false, "tip":"tumu"}` görürsünüz. Hata
 alırsanız mesaj Türkçe olarak hangi bağlantı yönteminin neden başarısız
 olduğunu söyler (ör. sürücü eksik, DSN bulunamadı, kullanıcı/şifre hatalı).
+
+**Sayfalama:** gerçek aktif kayıt sayıları büyük (Mamul 20.581, Yarı Mamul
+63.792) — bu yüzden köprü tek istekte en fazla `adet` (varsayılan 2.000, üst
+sınır 5.000) kayıt döner. Tamamını çekmek için `sayfa` parametresiyle
+gezinin: `?tip=yarimamul&sayfa=1`, sonra `sayfa=2`, … `sonSayfaMi:true`
+gelene kadar. `page_ag_entegrasyon.js`'deki mevcut "Bağlantıyı Test Et" /
+tekil önizleme akışı yalnızca İLK sayfayı gösterir — toplu içe aktarım için
+tüm sayfaları gezen bir betik/uzantı gerekir (ayrı bir konu, henüz
+eklenmedi).
 
 ## 4. ÜretimOS'a bağlayın
 

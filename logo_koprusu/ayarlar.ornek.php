@@ -26,22 +26,32 @@ return [
     // yöneticisiyle üretilmiş 32+ karakterlik rastgele bir metin).
     'apiAnahtari' => 'BURAYA-UZUN-RASTGELE-BIR-ANAHTAR-YAZIN',
 
-    // Ana malzeme kartı tablosu/görünümü — GERÇEK adla DEĞİŞTİRİN.
-    // (Gerçek bir "Kartlar" dökümüyle DOĞRULANMIŞ sütun adları: StokKodu,
-    // StokAdi, Urun_AnaBirim, Urun_Kart_Turu_Adi — bkz. aşağıdaki 'sorgular'.
-    // Tablo/görünüm adının kendisi ekran görüntüsünde net okunamadı, BT ile
-    // teyit edin — emin değilseniz önce 'tumu' tipini kullanın.)
-    'tablo' => 'dbo.tbl_Mal_Urunler_222',
+    // Ana malzeme kartı tablosu — GERÇEK ÜRETİM VERİSİYLE DOĞRULANDI.
+    'tablo' => 'Doxa_Programs..tbl_Mel_Urunler_222',
 
-    // DOĞRULANMIŞ sınıflandırma: Urun_Kart_Turu_Adi sütunu kartın tipini
-    // Türkçe metin olarak taşıyor (Urun_Kart_Turu_Kodu ise sayısal karşılığı
-    // — 10=Hammadde, 11=Yarı Mamul, 12=Mamul, 13=Tüketim Malı, 1=Ticari
-    // Malzeme). page_tiger_aktarim.js'teki HM/YM/MM ayrımıyla AYNI mantık:
-    'sorgular' => [
-        // 'urun'      => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222 WHERE Urun_Kart_Turu_Adi = 'Mamul'",
-        // 'yarimamul' => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222 WHERE Urun_Kart_Turu_Adi = 'Yarı Mamul'",
-        // 'hammadde'  => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222 WHERE Urun_Kart_Turu_Adi IN ('Hammadde','Tüketim Malı','Ticari Malzeme')",
-        // 'tumu'      => "SELECT TOP 2000 * FROM dbo.tbl_Mal_Urunler_222",
+    // OFFSET/FETCH sayfalaması için ORDER BY şart — bu sütun (tercihen
+    // indeksli/benzersiz) sayfalar arasında sabit bir sıralama sağlar.
+    'siraSutunu' => 'StokKodu',
+
+    // GERÇEK ÜRETİM VERİSİYLE DOĞRULANDI: sınıflandırma Urun_Kart_Turu_Adi
+    // METİN sütununda DEĞİL, Urun_Kart_Turu_Kodu SAYISAL sütununda —
+    // 10=Hammadde, 11=Yarı Mamul, 12=Mamul, 13=Tüketim Malı. Aktiflik
+    // URUN_AKTIF ile süzülüyor (pasif/silinmiş kartlar hariç tutulur).
+    // page_tiger_aktarim.js'teki HM/YM/MM ayrımıyla AYNI mantık, sadece
+    // gerçek LOGO şemasındaki karşılıklarıyla. Değiştirmeniz gerekmiyorsa
+    // dokunmayın — index.php bu WHERE koşullarını OFFSET/FETCH sayfalamayla
+    // otomatik birleştirir.
+    'kosullar' => [
+        // 'urun'      => "Urun_Kart_Turu_Kodu = 12 AND URUN_AKTIF = 1",
+        // 'yarimamul' => "Urun_Kart_Turu_Kodu = 11 AND URUN_AKTIF = 1",
+        // 'hammadde'  => "Urun_Kart_Turu_Kodu IN (10, 13) AND URUN_AKTIF = 1",
+        // 'tumu'      => "URUN_AKTIF = 1",
     ],
+
+    // GERÇEK ÜRETİM VERİSİYLE DOĞRULANDI: LOGO'nun ODBC sürücüsü Türkçe
+    // metni Windows-1254 (CP1254) döndürüyor, UTF-8 DEĞİL — çevrilmezse
+    // json_encode sessizce boş yanıt döner. Sürücünüz zaten UTF-8 dönüyorsa
+    // (nadir) 'UTF-8' yapıp çeviriyi kapatabilirsiniz.
+    'kaynakKodlama' => 'Windows-1254',
 
 ];

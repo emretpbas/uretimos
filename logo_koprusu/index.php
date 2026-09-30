@@ -48,26 +48,39 @@ if (empty($ayar['apiAnahtari']) || !hash_equals((string)$ayar['apiAnahtari'], (s
 }
 
 // ── SORGU SEÇİMİ ─────────────────────────────────────────────────────────
-// Sınıflandırma sütunu bir "Kartlar" dökümüyle DOĞRULANDI: gerçek LOGO
-// şemasında kartın tipi Urun_Kart_Turu_Adi sütununda Türkçe metin olarak
-// tutuluyor ('Hammadde', 'Yarı Mamul', 'Mamul', 'Tüketim Malı', 'Ticari
-// Malzeme' — page_tiger_aktarim.js'teki HM/YM/MM ayrımıyla AYNI mantık).
-// Tablo/görünüm adının kendisi ayarlar.php'de DOĞRULANMALI/DÜZENLENMELİDİR.
+// GERÇEK ÜRETİM VERİSİYLE DOĞRULANDI (bir önceki sürümdeki Urun_Kart_Turu_Adi
+// metin tahmini YANLIŞTI): sınıflandırma Urun_Kart_Turu_Kodu sayısal
+// sütununda — 10 Hammadde, 11 Yarı Mamul, 12 Mamul, 13 Tüketim Malı.
+// Aktiflik URUN_AKTIF sütunuyla süzülür. Gerçek aktif kayıt sayıları çok
+// büyük (Mamul 20.581, Yarı Mamul 63.792) — bu yüzden TOP N yerine
+// OFFSET/FETCH ile SAYFALAMA yapılıyor; çağıran taraf ?sayfa=1,2,3…
+// diyerek tüm kayıtları adım adım çeker, tek istekte hepsini çekmeye çalışıp
+// zaman aşımına/bellek hatasına girmez.
 $tip = $_GET['tip'] ?? 'tumu';
+$sayfa = max(1, (int)($_GET['sayfa'] ?? 1));
+$adet = min(5000, max(1, (int)($_GET['adet'] ?? 2000)));
+
 $tablo = $ayar['tablo'] ?? '';
-$ozelSorgular = $ayar['sorgular'] ?? [];
-$SORGULAR = [
-    'urun'      => $ozelSorgular['urun']      ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo WHERE Urun_Kart_Turu_Adi = 'Mamul'" : null),
-    'yarimamul' => $ozelSorgular['yarimamul'] ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo WHERE Urun_Kart_Turu_Adi = 'Yarı Mamul'" : null),
-    'hammadde'  => $ozelSorgular['hammadde']  ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo WHERE Urun_Kart_Turu_Adi IN ('Hammadde','Tüketim Malı','Ticari Malzeme')" : null),
-    'tumu'      => $ozelSorgular['tumu']      ?? ($tablo !== '' ? "SELECT TOP 2000 * FROM $tablo" : null),
+$siraSutunu = $ayar['siraSutunu'] ?? 'StokKodu';
+$ozelKosullar = $ayar['kosullar'] ?? [];
+$KOSULLAR = [
+    'urun'      => $ozelKosullar['urun']      ?? "Urun_Kart_Turu_Kodu = 12 AND URUN_AKTIF = 1",
+    'yarimamul' => $ozelKosullar['yarimamul'] ?? "Urun_Kart_Turu_Kodu = 11 AND URUN_AKTIF = 1",
+    'hammadde'  => $ozelKosullar['hammadde']  ?? "Urun_Kart_Turu_Kodu IN (10, 13) AND URUN_AKTIF = 1",
+    'tumu'      => $ozelKosullar['tumu']      ?? "URUN_AKTIF = 1",
 ];
-if (!array_key_exists($tip, $SORGULAR) || $SORGULAR[$tip] === null) {
+if ($tablo === '' || !array_key_exists($tip, $KOSULLAR)) {
     http_response_code(400);
-    echo json_encode(['hata' => "Bilinmeyen ya da yapılandırılmamış tip: $tip. ayarlar.php'de 'tablo' veya 'sorgular' ayarını kontrol edin. Geçerli tipler: " . implode(', ', array_keys($SORGULAR))], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['hata' => "ayarlar.php'de 'tablo' boş ya da bilinmeyen tip: $tip. Geçerli tipler: " . implode(', ', array_keys($KOSULLAR))], JSON_UNESCAPED_UNICODE);
     exit;
 }
-$sql = $SORGULAR[$tip];
+$kosul = $KOSULLAR[$tip];
+$offset = ($sayfa - 1) * $adet;
+// $offset/$adet (int)/(min/max) ile sabitlendi, $tablo/$siraSutunu/$kosul
+// yalnızca yerel ayarlar.php'den gelir (kullanıcı girdisi değil) — SQL
+// enjeksiyonu riski yok.
+$sql = "SELECT * FROM $tablo WHERE $kosul ORDER BY $siraSutunu OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY";
+$sayimSql = "SELECT COUNT(*) FROM $tablo WHERE $kosul";
 
 // ── BAĞLANTI ─────────────────────────────────────────────────────────────
 // Sırayla dener: 1) Windows ODBC DSN adıyla (en basit — DSN zaten Windows'ta
@@ -105,9 +118,50 @@ function logoyaBaglan(array $ayar): PDO
 try {
     $pdo = logoyaBaglan($ayar);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    $toplam = (int)$pdo->query($sayimSql)->fetchColumn();
+
     $stmt = $pdo->query($sql);
     $satirlar = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    echo json_encode(['kayitlar' => $satirlar, 'adet' => count($satirlar), 'tip' => $tip], JSON_UNESCAPED_UNICODE);
+
+    // ── KODLAMA DÜZELTMESİ ─────────────────────────────────────────────────
+    // GERÇEK TESTTE YAKALANDI: LOGO'nun SQL Server ODBC sürücüsü Türkçe
+    // metni genellikle Windows-1254 (CP1254) döndürür, UTF-8 DEĞİL.
+    // json_encode bunu UTF-8 sanıp "Malformed UTF-8 characters" hatasıyla
+    // false dönüyor ve yanıt sessizce BOŞ kalıyordu. Her string alan açıkça
+    // UTF-8'e çevriliyor; kaynak kodlama ayarlar.php'de değiştirilebilir
+    // (sürücü zaten UTF-8 dönüyorsa 'kaynakKodlama' => 'UTF-8' yapın, bu
+    // durumda çeviri atlanır).
+    $kaynakKodlama = $ayar['kaynakKodlama'] ?? 'Windows-1254';
+    if ($kaynakKodlama !== '' && strtoupper($kaynakKodlama) !== 'UTF-8') {
+        array_walk_recursive($satirlar, function (&$deger) use ($kaynakKodlama) {
+            if (is_string($deger)) {
+                $cevrilen = @mb_convert_encoding($deger, 'UTF-8', $kaynakKodlama);
+                if ($cevrilen !== false) $deger = $cevrilen;
+            }
+        });
+    }
+
+    $govde = [
+        'kayitlar' => $satirlar,
+        'adet' => count($satirlar),
+        'toplam' => $toplam,
+        'sayfa' => $sayfa,
+        'sayfaBoyutu' => $adet,
+        'sonSayfaMi' => ($offset + count($satirlar)) >= $toplam,
+        'tip' => $tip,
+    ];
+    // JSON_INVALID_UTF8_SUBSTITUTE: yukarıdaki çeviri atlanan/beklenmedik
+    // bir ikili değer kalırsa json_encode yine de false DÖNMEZ, o karakteri
+    // "�" ile değiştirir — sessiz boş yanıt yerine en kötü ihtimalle bozuk
+    // TEK bir karakter.
+    $json = json_encode($govde, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        http_response_code(500);
+        echo json_encode(['hata' => 'JSON kodlama hatası: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    echo $json;
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['hata' => 'LOGO bağlantı/sorgu hatası: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
