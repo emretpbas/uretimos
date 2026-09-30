@@ -50,6 +50,10 @@ logo_koprusu\ayarlar.ornek.php  →  logo_koprusu\ayarlar.php  (kopyala)
   13 Tüketim Malı) + `URUN_AKTIF`, kaynak kodlama `Windows-1254` (LOGO'nun
   ODBC sürücüsü Türkçe metni bu şekilde döndürüyor — köprü otomatik UTF-8'e
   çevirir, elle bir şey yapmanız gerekmez).
+- `izinliKaynaklar`: ÜretimOS'un GERÇEK adresi/adresleri (varsayılan
+  `https://uretimos.com.tr` + `www.` — `api.php`'deki listeyle aynı).
+  Tarayıcıdan bağlanabilmek için ŞART (bkz. aşağıdaki "Tarayıcıdan
+  bağlanırken" bölümü).
 
 **`ayarlar.php` dosyası asla git'e eklenmez** (`.gitignore`'da tanımlı) —
 gerçek şifre yalnızca bu bilgisayarda yaşar.
@@ -77,6 +81,41 @@ ayrıca bir betik/ayar gerekmez. Bir sayfa alınamazsa ya da 200 sayfalık
 güvenlik tavanına takılırsa (400.000 kayıt), önizleme ekranında turuncu bir
 uyarı olarak görünür — o durumda `logo_koprusu/ayarlar.php`'de `adet` değerini
 artırıp (üst sınır 5.000) tekrar deneyin.
+
+## 3b. Tarayıcıdan bağlanırken (ÜretimOS ekranından)
+
+CLI/curl testi (yukarıdaki §3) başarılı olsa bile, ÜretimOS'un kendi
+ekranından (tarayıcıdan) bağlanmak ÜÇ ayrı, birbirinden BAĞIMSIZ engele
+takılabilir — GERÇEK TESTTE hepsi yakalandı:
+
+1. **CORS / preflight** — köprü ÜretimOS'unkinden farklı bir origin'de
+   (host:port) olduğu için tarayıcı önce izinsiz bir `OPTIONS` isteği
+   gönderir. **Düzeltildi:** `index.php` artık `ayarlar.php`'deki
+   `izinliKaynaklar` listesindeki origin'lere `Access-Control-Allow-Origin`
+   + preflight için 204 dönüyor — API anahtarı kontrolünden ÖNCE, ona hiç
+   takılmadan. `ayarlar.php`'de `izinliKaynaklar`'ın ÜretimOS'un gerçek
+   adresiyle (`https://uretimos.com.tr` vb.) eşleştiğinden emin olun.
+2. **CSP portu** — `.htaccess`'teki `connect-src` kuralı `http://*.local`
+   yazıyordu; bu yalnızca 80 portunu kapsar, `:8090` gibi başka bir portu
+   KAPSAMAZ. **Düzeltildi:** `http://*.local:*` / `https://*.local:*` oldu
+   (bu değişikliğin GoDaddy'ye yayılması gerekir — bkz. commit sonrası not).
+3. **Karışık içerik (mixed content)** — ÜretimOS `https://` üzerinden
+   sunuluyor (`.htaccess`'teki HTTPS zorlaması) ve tarayıcılar, HTTPS bir
+   sayfadan `http://` bir adrese `fetch()` yapılmasını CSP'den BAĞIMSIZ,
+   AYRI bir kuralla her zaman engeller — yukarıdaki iki düzeltme bunu
+   ÇÖZMEZ. **Henüz çözülmedi, bir altyapı kararı gerekiyor:** köprünün
+   kendisi de `https://` üzerinden sunulmalı. İki pratik yol:
+   - **IIS + kendinden imzalı sertifika:** bu makinede zaten IIS varsa
+     (Windows Server/Pro), PHP'yi IIS üzerinden çalıştırıp `New-SelfSignedCertificate`
+     ile bir sertifika bağlayın; sertifikayı köprüye bağlanacak
+     bilgisayarların "Güvenilen Kök Sertifika Yetkilileri" deposuna bir kez
+     ekleyin.
+   - **Caddy (tek dosya, otomatik yerel HTTPS):** `php -S` önüne bir Caddy
+     örneği koyup `https://dpc145.canakcilar.local:8443 { reverse_proxy
+     127.0.0.1:8090 }` gibi yönlendirin; `caddy trust` komutu kendi kök
+     sertifikasını Windows deposuna bir kez kurar.
+   Köprüyü internete port yönlendirmeyin — bu sertifika adımı SADECE yerel
+   ağ içi HTTPS için, dışarıya açmak için DEĞİL.
 
 ## 4. ÜretimOS'a bağlayın
 

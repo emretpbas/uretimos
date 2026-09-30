@@ -54,4 +54,14 @@ return [
     // (nadir) 'UTF-8' yapıp çeviriyi kapatabilirsiniz.
     'kaynakKodlama' => 'Windows-1254',
 
+    // GERÇEK ÜRETİM TESTİNDE YAKALANDI: ÜretimOS'un tarayıcısı bu köprüye
+    // farklı bir origin'den (host/port farklı) bağlandığı için CORS izni
+    // ŞART — yoksa "Bağlantıyı Test Et" 401/CORS hatası verir. ÜretimOS'un
+    // GERÇEK adresini/adreslerini buraya AYNEN api.php'deki $IZINLI_KAYNAKLAR
+    // listesiyle yazın (protokol dahil, sonunda / OLMADAN).
+    'izinliKaynaklar' => [
+        'https://uretimos.com.tr',
+        'https://www.uretimos.com.tr',
+    ],
+
 ];

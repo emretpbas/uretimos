@@ -36,6 +36,33 @@ if (!file_exists($ayarYolu)) {
 }
 $ayar = require $ayarYolu;
 
+// ── CORS (tarayıcıdan çapraz-kaynak erişim) ──────────────────────────────
+// GERÇEK TESTTE YAKALANDI: bu köprünün adresi ÜretimOS'un kendi origininden
+// FARKLI (host/port farklı) olduğu için tarayıcı önce bir OPTIONS
+// "preflight" isteği gönderir. Preflight, X-API-Key başlığını TAŞIMAZ —
+// özel başlıklar yalnızca asıl istekte gönderilir — bu yüzden CORS/OPTIONS
+// yanıtı aşağıdaki API anahtarı kontrolünden ÖNCE ve o kontrole HİÇ
+// TAKILMADAN verilmelidir; aksi halde preflight 401 alır ve tarayıcı asıl
+// isteği hiç göndermez.
+$izinliKaynaklar = $ayar['izinliKaynaklar'] ?? [];
+$gelenKaynak = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($gelenKaynak !== '' && in_array($gelenKaynak, $izinliKaynaklar, true)) {
+    header('Access-Control-Allow-Origin: ' . $gelenKaynak);
+    header('Vary: Origin');
+    // Chrome'un "Private Network Access" politikası: herkese açık bir
+    // origin (ör. https://uretimos.com.tr) özel/yerel bir adrese (bu
+    // köprü) istek atınca ayrıca bu izni ister — yoksa preflight sessizce
+    // reddedilir, X-API-Key doğru olsa bile isteğe hiç sıra gelmez.
+    header('Access-Control-Allow-Private-Network: true');
+}
+header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Headers: X-API-Key');
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
 // ── ERİŞİM KONTROLÜ ──────────────────────────────────────────────────────
 // Bu köprüye rastgele/dışarıdan erişimi engelleyen paylaşımlı anahtar.
 // ÜretimOS'un Entegrasyon Merkezi'nde "Başlık ile" kimlik doğrulama seçilip
