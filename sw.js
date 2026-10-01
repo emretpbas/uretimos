@@ -8,7 +8,7 @@
 //     → hosting'e atılan güncellemeler anında herkese yansır
 //   - İnternet yoksa son başarılı kopya önbellekten sunulur (acil yedek)
 //   - api.php istekleri HİÇBİR ZAMAN önbelleğe alınmaz
-const CACHE_NAME = 'uretimos-v191'; // v191: nesting'e delik/form destegi (page_nesting.js DELIK/FORM DXF katmanlari, manuel delik girisi), Is Emri Formu'na "Kesime Aktar (Nesting)" koprusu, SolidWorks eklentisi tarafinda delik/form/CNC/cam alanlari (is_emri_uretici.js/swood_okuyucu.js), page_hammadde.js'e 'cam' hammadde tipi, YENI page_cnc_takimlari.js (CNC/CAM takim kutuphanesi) + cncTakimlari koleksiyonu, api.php CAD_ENT_OKUNABILIR'a altMontajlar/rotalar/cncTakimlari eklendi
+const CACHE_NAME = 'uretimos-v192'; // v192: GERÇEK TESTTE YAKALANDI — fetch dinleyicisi BAŞKA ORİJİNLERE (ör. logo_koprusu) giden istekleri de yakalayıp eski/kurulu SW'nin CSP'siyle engelliyordu; artık yalnızca kendi orijinine bakıyor. .catch dalı caches.match() undefined dönünce "Failed to convert value to 'Response'" hatası veriyordu, düzeltildi. Sürüm artışı, önceden yanlışlıkla önbelleğe alınmış çapraz-orijin (KVKK'lı cari verisi dahil) yanıtları activate'teki eski önbellek silme adımıyla temizler.
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
@@ -20,6 +20,16 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
+  // GERÇEK TESTTE YAKALANDI: bu SW yalnızca KENDİ ÜretimOS orijinini
+  // yönetmeli. Başka bir orijine (ör. LOGO köprüsü https://dpc145...:8443)
+  // giden istekler buraya düşerse, SW'nin KURULU OLDUĞU ANDAKİ CSP'si
+  // (sayfa sonradan .htaccess'ten güncellense bile SW güncellenene kadar
+  // DEĞİŞMEZ) isteği reddedip "connect-src" ihlali olarak engelliyordu —
+  // tarayıcı konsolunda görülen "violates ... connect-src" hatası buydu.
+  // Çapraz orijin isteklerini SW'ye HİÇ UĞRATMADAN tarayıcının normal
+  // fetch'ine bırakıyoruz; CSP kontrolünü zaten tarayıcı kendisi, GÜNCEL
+  // .htaccess politikasıyla yapar.
+  if (url.origin !== self.location.origin) return;
   // Veri istekleri: her zaman ağ, asla önbellek
   if (url.pathname.includes('api.php') || e.request.method !== 'GET') {
     e.respondWith(fetch(e.request));
@@ -33,6 +43,6 @@ self.addEventListener('fetch', e => {
         caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
       }
       return r;
-    }).catch(() => caches.match(e.request))
+    }).catch(() => caches.match(e.request).then(r => r || Response.error()))
   );
 });
