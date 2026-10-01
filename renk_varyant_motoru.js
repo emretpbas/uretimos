@@ -36,6 +36,17 @@
 // ════════════════════════════════════════════════════════════════════════════
 const RenkVaryantMotoru = (() => {
 
+  // Bir renkKisaltmalari kaydının TÜM geçerli kısaltmalarını döner. Yeni
+  // kayıtlar "kisaltmalar" dizisi tutar (AYNI renk, işleme göre BİRDEN FAZLA
+  // kod son eki kullanabiliyor — ör. Dafne: melamin parçalarda ".DAF",
+  // lake/boyalı kapak parçalarında ".LKDF", gerçek bir reçete dosyasıyla
+  // doğrulandı). "kisaltma" (tekil) ESKİ alan adı — geriye dönük uyumluluk
+  // için hâlâ okunur, üzerine YAZILMAZ.
+  function kisaltmaListesi(r) {
+    if (Array.isArray(r.kisaltmalar) && r.kisaltmalar.length) return r.kisaltmalar;
+    return r.kisaltma ? [r.kisaltma] : [];
+  }
+
   // Kaynak kodun son nokta-bölümü bilinen bir renk kısaltmasına eşitse o
   // renkKisaltmalari kaydını döner (kartın "şu an hangi renkte olduğu" bilgisi
   // SADECE bu şekilde, kod yapısından çıkarılır — ayrı bir alan TUTULMAZ).
@@ -43,7 +54,21 @@ const RenkVaryantMotoru = (() => {
     const parcalar = String(kod || '').split('.');
     if (parcalar.length < 2) return null;
     const son = parcalar[parcalar.length - 1].toUpperCase();
-    return (renkKisaltmalari || []).find(r => r.kisaltma && r.kisaltma.toUpperCase() === son) || null;
+    return (renkKisaltmalari || []).find(r => kisaltmaListesi(r).some(k => k.toUpperCase() === son)) || null;
+  }
+
+  // kisaltmaIleRenkBul'un TERSİ: kodun son eki bilinen bir kısaltmaya eşitse
+  // o eki ATARAK "temel kod"u döner (ör. "YM.D20LD080KPKML.3.DAF" -> renk
+  // eki ".DAF" ise "YM.D20LD080KPKML.3"). "Reçete Yapım Raporu"nun kardeş
+  // (diğer renklerdeki) yarı mamülleri bulmak için kullandığı eşleştirme
+  // anahtarı budur — eşleşme yoksa null (bu kart bir renk ailesine ait
+  // DEĞİLDİR, tahmin edilmez).
+  function temelKodCikar(kod, renkKisaltmalari) {
+    const kayit = kisaltmaIleRenkBul(kod, renkKisaltmalari);
+    if (!kayit) return null;
+    const parcalar = String(kod).split('.');
+    parcalar.pop();
+    return parcalar.join('.');
   }
 
   function varyantKoduUret(kaynakKod, kaynakKisaltmaKaydi, hedefKisaltma) {
@@ -102,7 +127,12 @@ const RenkVaryantMotoru = (() => {
     const yeniReceteler = [];
     const eksikEslesmeler = [];
     const hedefKisaltmaKaydi = (veri.renkKisaltmalari || []).find(r => r.renkKodu === hedefRenkKodu);
-    const hedefKisaltma = hedefKisaltmaKaydi ? hedefKisaltmaKaydi.kisaltma : hedefRenkKodu;
+    // Bir renge birden fazla kısaltma tanımlıysa (ör. Dafne: DAF + LKDF) kod
+    // ÜRETİMİNDE (klonlama) BİRİNCİSİ kullanılır — hangi kısaltmanın
+    // kullanılacağını seçmek (kaynağın hangi "aile"den olduğuna göre) "Reçete
+    // Yapım Raporu"nun etiket YAYMA akışında gerekmez, sadece burada (tekil
+    // kart klonlama) basit bir varsayılana ihtiyaç var.
+    const hedefKisaltma = hedefKisaltmaKaydi ? (kisaltmaListesi(hedefKisaltmaKaydi)[0] || hedefRenkKodu) : hedefRenkKodu;
 
     // Etiketli bir karta (hammadde VEYA yarı mamül — ör. "LK.50..." kodlu
     // boyalı yarı mamül kartları) karşılık gelen hedef renkteki eşleniğini
@@ -179,7 +209,7 @@ const RenkVaryantMotoru = (() => {
   }
 
   return {
-    kisaltmaIleRenkBul, varyantKoduUret, varyantAdUret, hammaddeEslesenBul,
+    kisaltmaIleRenkBul, temelKodCikar, varyantKoduUret, varyantAdUret, hammaddeEslesenBul,
     varyantPlaniOlustur
   };
 })();

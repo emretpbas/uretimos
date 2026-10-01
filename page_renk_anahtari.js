@@ -2,17 +2,23 @@
 // RENK EŞLEŞTİRME ANAHTARI — "🎨 Renk Varyantı Oluştur" motorunun kullandığı
 // eşleştirmeyi YÖNETMEK için ekran.
 // ────────────────────────────────────────────────────────────────────────────
-// GERÇEK KAYNAK VERİ kartların (hammadde VEYA — boya gibi hazır katalog
-// kalemi olan durumlarda — yarı mamül) KENDİSİNDEDİR (renkKartelaKodu +
+// GERÇEK KAYNAK VERİ kartların (hammadde — şimdilik tüm kategoriler
+// hammaddedir, bkz. not aşağıda) KENDİSİNDEDİR (renkKartelaKodu +
 // malzemeKategorisi + renkOlcuEtiketi alanları, bkz. page_hammadde.js /
 // page_yarimamul.js) — burada AYRI bir eşleştirme matrisi TUTULMAZ.
 //
 // Aynı (renk, kategori) içinde BİRDEN FAZLA ÖLÇÜ VARYANTI olabiliyor (ör.
 // sunta/mdf'te kalınlık 8/18/30mm, PVC kenar bandında kalınlık×genişlik
-// 0,40x22...2x54) — her biri AYRI bir satır olarak gösterilir. Boya
-// kategorisinde "hammadde" aslında kendi başına katalog kalemi olan bir YARI
-// MAMÜL kartıdır (ör. "LK.50..." kodlu lake boyalı parça) — bu yüzden bu
-// kategoride arama YARIMAMULLER listesinde, "LK." + renk kodu ön ekiyle yapılır.
+// 0,40x22...2x54) — her biri AYRI bir satır olarak gösterilir.
+//
+// NOT (gerçek bir reçete dosyasıyla doğrulandı): boya kalemleri "LK." ön ekli
+// HAMMADDE kartlarıdır (ör. "LK.50.025.01.015.00 — PÜ SONKAT MAT DAFNE/
+// LATTE..."); "LK." burada LOGO'nun boya kategorisi stok kodu ön ekidir,
+// Renk Kartelası renk kodu DEĞİLDİR — bu yüzden tip='sarf' hammaddeler
+// arasında, diğer kategoriler gibi isimle aranır (yarı mamül koleksiyonu
+// kullanılmaz). kartSecModal/kaynak='yarimamul' altyapısı yine de genel
+// amaçlı bırakıldı — ileride gerçekten yarı mamül olan bir kategori
+// (ör. hazır boyalı parça) çıkarsa kullanılabilir.
 // ════════════════════════════════════════════════════════════════════════════
 PageModules.renk_anahtari = (() => {
   const ROLLER = ['admin', 'arge', 'teknik_ofis', 'yonetim'];
@@ -23,7 +29,12 @@ PageModules.renk_anahtari = (() => {
     sunta: { etiket: 'Sunta (Melamin)', kaynak: 'hammadde', tipFiltre: 'plaka' },
     mdf: { etiket: 'MDF (Lam)', kaynak: 'hammadde', tipFiltre: 'plaka' },
     pvc_bant: { etiket: 'PVC Kenar Bandı', kaynak: 'hammadde', tipFiltre: 'kenar_bandi' },
-    boya: { etiket: 'Boya', kaynak: 'yarimamul', tipFiltre: null },
+    // DÜZELTME: boya kalemleri LOGO'da "LK." ön ekli (Lake boya kategorisi)
+    // HAMMADDE kartlarıdır (ör. "LK.50.025.01.015.00 — PÜ SONKAT MAT DAFNE/
+    // LATTE..."), "LK." + renk kartela kodu gibi yapılı YARI MAMÜL kodları
+    // DEĞİL — gerçek bir reçete dosyasıyla doğrulandı. page_hammadde.js'teki
+    // "Sarf Malzeme (boya, tutkal, kimyasal)" tipi (tip='sarf') ile eşleşir.
+    boya: { etiket: 'Boya', kaynak: 'hammadde', tipFiltre: 'sarf' },
     diger: { etiket: 'Diğer', kaynak: 'hammadde', tipFiltre: null }
   };
   const KATEGORI_SIRA = ['sunta', 'mdf', 'pvc_bant', 'boya', 'diger'];
@@ -46,7 +57,7 @@ PageModules.renk_anahtari = (() => {
       (olcu ? x.renkOlcuEtiketi === olcu : !x.renkOlcuEtiketi));
   }
 
-  async function render(main) {
+  async function render(main, params) {
     const rol = App.aktifRol();
     if (!ROLLER.includes(rol)) {
       main.innerHTML = `<div class="card"><div class="empty-state" style="padding:24px">
@@ -77,6 +88,13 @@ PageModules.renk_anahtari = (() => {
     `;
     document.getElementById('ra-yeni-renk').onclick = () => renkEkleModal(main, renkler);
     renkListesiCiz(main, renkler, hammaddeler, yarimamuller);
+
+    // Reçete Yapım Raporu'ndan "Bu Son Ek İçin Renk Tanımla →" ile
+    // gelindiyse, "+ Yeni Renk Tanımla" modalını kısaltma ÖN DOLDURULMUŞ
+    // olarak doğrudan aç — kullanıcı sadece hangi renk kodu olduğunu seçsin.
+    if (params && params.onerilenKisaltma) {
+      renkEkleModal(main, renkler, null, params.onerilenKisaltma);
+    }
   }
 
   function renkListesiCiz(main, renkler, hammaddeler, yarimamuller) {
@@ -116,7 +134,7 @@ PageModules.renk_anahtari = (() => {
       return `
         <div class="card" style="margin-bottom:12px">
           <div class="card-hdr">
-            <div class="card-title">${App.escapeHtml(r.renkKodu)} — ${App.escapeHtml(r.renkAdi || '')} <span class="muted" style="font-size:11px">(kısaltma: ${App.escapeHtml(r.kisaltma || '—')})</span></div>
+            <div class="card-title">${App.escapeHtml(r.renkKodu)} — ${App.escapeHtml(r.renkAdi || '')} <span class="muted" style="font-size:11px">(kısaltmalar: ${App.escapeHtml((r.kisaltmalar && r.kisaltmalar.length ? r.kisaltmalar : (r.kisaltma ? [r.kisaltma] : [])).join(', ') || '—')})</span></div>
             <div style="display:flex;gap:6px">
               <button class="btn btn-sm ra-duzenle" data-id="${r.id}">Düzenle</button>
               <button class="btn btn-sm btn-red ra-sil" data-id="${r.id}">Sil</button>
@@ -163,10 +181,7 @@ PageModules.renk_anahtari = (() => {
     const adaylar = kaynakListe.filter(x => !(x.renkKartelaKodu === renkKodu && x.malzemeKategorisi === kategori && (olcu ? x.renkOlcuEtiketi === olcu : !x.renkOlcuEtiketi)))
       .filter(x => !tanim.tipFiltre || x.tip === tanim.tipFiltre);
 
-    // Boya kategorisinde aranacak yarı mamüller genelde "LK." + renk koduyla
-    // başlar (ör. "LK.50..." gibi) — arama kutusu buna göre ÖN DOLDURULUR,
-    // kullanıcı isterse değiştirip serbest metinle de arayabilir.
-    const varsayilanArama = tanim.kaynak === 'yarimamul' ? ('LK.' + renkKodu) : '';
+    const varsayilanArama = '';
 
     const body = document.createElement('div');
     body.innerHTML = `
@@ -249,20 +264,22 @@ PageModules.renk_anahtari = (() => {
     };
   }
 
-  function renkEkleModal(main, renkler, mevcut) {
+  function renkEkleModal(main, renkler, mevcut, onerilenKisaltma) {
     const isEdit = !!mevcut;
-    const kullanilanlar = new Set(renkler.filter(r => r !== mevcut).map(r => r.renkKodu));
     const body = document.createElement('div');
     body.innerHTML = `
+      ${onerilenKisaltma ? `<div class="fhint" style="margin-bottom:10px;background:var(--amber-bg);border:1px solid var(--amber);padding:10px 12px;border-radius:8px">
+        Reçete Yapım Raporu'nda <b>".${App.escapeHtml(onerilenKisaltma)}"</b> son ekli parçalar bulundu ama bu ek hiçbir renge tanımlı değil.
+        Aşağıdan hangi renk olduğunu seçin — zaten tanımlı bir renk seçerseniz bu ek ONA EKLENİR, yeni bir renk seçerseniz
+        yeni bir tanım oluşturulur. Kısaltma alanı sizin için dolduruldu.</div>` : ''}
       <div class="fgroup"><label class="flbl">Renk Kartela Kodu</label>
         <select class="fselect" id="ra-renk-kod" ${isEdit ? 'disabled' : ''}>
-          ${RenkKartelasi.liste.filter(r => isEdit ? r.kod === mevcut.renkKodu : !kullanilanlar.has(r.kod))
-            .map(r => `<option value="${r.kod}" ${isEdit && mevcut.renkKodu === r.kod ? 'selected' : ''}>${r.kod} - ${App.escapeHtml(r.ad)} (${App.escapeHtml(r.kategori)})</option>`).join('')}
+          ${RenkKartelasi.liste.map(r => `<option value="${r.kod}" ${(isEdit ? mevcut.renkKodu === r.kod : false) ? 'selected' : ''}>${r.kod} - ${App.escapeHtml(r.ad)} (${App.escapeHtml(r.kategori)})${(!isEdit && renkler.some(x => x.renkKodu === r.kod)) ? ' — zaten tanımlı' : ''}</option>`).join('')}
         </select>
       </div>
-      <div class="fgroup"><label class="flbl">Kısaltma (kod üretiminde kullanılır — ör. "ANT", "BY")</label>
-        <input class="finput" id="ra-kisaltma" value="${App.escapeHtml(mevcut ? mevcut.kisaltma || '' : '')}" placeholder="örn. ANT" maxlength="8">
-        <div class="fhint">Mevcut kartlarınızda bu renk için kullandığınız kod son ekiyle AYNI olmalı (ör. "...1.ANT" kullanıyorsanız buraya "ANT" girin), aksi halde yeni varyant kartının kodu eski koda bu kısaltma EKLENEREK üretilir.</div>
+      <div class="fgroup"><label class="flbl">Kısaltmalar (kod üretiminde/tanımada kullanılır — ör. "ANT" veya "DAF, LKDF")</label>
+        <input class="finput" id="ra-kisaltma" value="${App.escapeHtml(mevcut ? (mevcut.kisaltmalar && mevcut.kisaltmalar.length ? mevcut.kisaltmalar : (mevcut.kisaltma ? [mevcut.kisaltma] : [])).join(', ') : (onerilenKisaltma || ''))}" placeholder="örn. ANT veya DAF, LKDF" maxlength="60">
+        <div class="fhint">Mevcut kartlarınızda bu renk için kullandığınız kod son ekiyle AYNI olmalı. Aynı renk BİRDEN FAZLA son ek kullanabiliyorsa (ör. Dafne: melamin parçalarda "DAF", lake/boyalı kapaklarda "LKDF") virgülle ayırarak hepsini girin — zaten tanımlı bir renk seçip yeni bir ek eklerseniz, mevcut ekler SİLİNMEZ, üzerine eklenir.</div>
       </div>
     `;
     const footer = `<button class="btn" id="ra-vazgec">Vazgeç</button><button class="btn btn-blue" id="ra-kaydet">${isEdit ? 'Güncelle' : 'Ekle'}</button>`;
@@ -270,15 +287,20 @@ PageModules.renk_anahtari = (() => {
     document.getElementById('ra-vazgec').onclick = App.closeModal;
     document.getElementById('ra-kaydet').onclick = async () => {
       const kod = document.getElementById('ra-renk-kod').value;
-      const kisaltma = document.getElementById('ra-kisaltma').value.trim().toUpperCase();
+      const girilenKisaltmalar = document.getElementById('ra-kisaltma').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
       if (!kod) { App.toast('Renk kodu seçin', 'err'); return; }
-      if (!kisaltma) { App.toast('Kısaltma zorunlu', 'err'); return; }
+      if (!girilenKisaltmalar.length) { App.toast('En az bir kısaltma zorunlu', 'err'); return; }
+      // Düzenleme DIŞINDA, seçilen renk ZATEN tanımlıysa (ör. Dafne'ye yeni
+      // bir son ek eklemek için) o kaydı GÜNCELLER — ikinci bir satır AÇMAZ.
+      const hedefKayit = isEdit ? mevcut : renkler.find(r => r.renkKodu === kod) || null;
+      const oncekiKisaltmalar = hedefKayit ? (hedefKayit.kisaltmalar && hedefKayit.kisaltmalar.length ? hedefKayit.kisaltmalar : (hedefKayit.kisaltma ? [hedefKayit.kisaltma] : [])) : [];
+      const kisaltmalar = isEdit ? girilenKisaltmalar : [...new Set([...oncekiKisaltmalar, ...girilenKisaltmalar])];
       const kayit = {
-        id: mevcut ? mevcut.id : App.uid('RKA'),
-        renkKodu: kod, renkAdi: RenkKartelasi.adGetir(kod), kisaltma
+        id: hedefKayit ? hedefKayit.id : App.uid('RKA'),
+        renkKodu: kod, renkAdi: RenkKartelasi.adGetir(kod), kisaltmalar
       };
       await App.persist(() => Store.renkKisaltmalari.upsert(kayit));
-      App.toast(isEdit ? 'Renk tanımı güncellendi' : 'Renk tanımlandı: ' + kod, 'ok');
+      App.toast(hedefKayit ? 'Renk tanımı güncellendi' : 'Renk tanımlandı: ' + kod, 'ok');
       App.closeModal();
       render(main);
     };

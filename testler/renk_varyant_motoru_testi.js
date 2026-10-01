@@ -21,6 +21,24 @@ t('".ANT" ile biten kod Antrasit olarak tanınıyor', RVM.kisaltmaIleRenkBul('YM
 t('tanınmayan son ek null döner (uydurma yapılmaz)', RVM.kisaltmaIleRenkBul('51.003.01.001.00', kisaltmalar) === null);
 t('nokta içermeyen kod null döner, çökmez', RVM.kisaltmaIleRenkBul('ABC', kisaltmalar) === null);
 
+console.log('\n-- kisaltmaIleRenkBul: BİRDEN FAZLA kısaltma AYNI renge bağlanabilir (ör. Dafne: DAF + LKDF) --');
+const cokluKisaltmalar = [
+  { renkKodu: '01', renkAdi: 'Dafne', kisaltmalar: ['DAF', 'LKDF'] },
+  { renkKodu: '24', renkAdi: 'Antrasit', kisaltma: 'ANT' } // ESKİ (tekil) alan adı — geriye dönük uyumluluk
+];
+t('melamin Dafne son eki (.DAF) tanınıyor', RVM.kisaltmaIleRenkBul('YM.X.1.DAF', cokluKisaltmalar).renkKodu === '01');
+t('lake/boyalı kapak Dafne son eki (.LKDF) DE AYNI renge bağlanıyor', RVM.kisaltmaIleRenkBul('YM.X.1.LKDF', cokluKisaltmalar).renkKodu === '01');
+t('ESKİ tekil "kisaltma" alanı hâlâ çalışıyor (geriye dönük uyumluluk — canlıda kayıtlı veri bozulmaz)',
+  RVM.kisaltmaIleRenkBul('YM.X.1.ANT', cokluKisaltmalar).renkKodu === '24');
+
+console.log('\n-- temelKodCikar: kisaltmaIleRenkBul\'un TERSİ — kardeş (diğer renk) arama anahtarı --');
+t('bilinen son ek ATILIR (temel kod üretilir)', RVM.temelKodCikar('YM.D20LD080KPKML.3.DAF', cokluKisaltmalar) === 'YM.D20LD080KPKML.3');
+t('AYNI ailenin DİĞER kısaltma varyantı (.LKDF) da AYNI temel koda indirgenir',
+  RVM.temelKodCikar('YM.D20LD080KPKLK.8.LKDF', cokluKisaltmalar) === 'YM.D20LD080KPKLK.8');
+t('tanınmayan son ek null döner (renk ailesine ait değil, tahmin edilmez)',
+  RVM.temelKodCikar('51.003.01.001.00', cokluKisaltmalar) === null);
+t('nokta içermeyen kod null döner, çökmez', RVM.temelKodCikar('ABC', cokluKisaltmalar) === null);
+
 console.log('\n-- varyantKoduUret: kod üretimi --');
 t('bilinen son ek DEĞİŞTİRİLİR (üzerine yazılmaz, yer değiştirir)',
   RVM.varyantKoduUret('YM.PARCA.1.BY', kisaltmalar[0], 'ANT') === 'YM.PARCA.1.ANT');

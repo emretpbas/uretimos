@@ -22,8 +22,12 @@ console.log('\n-- KOD KONTROLU: yeni alanlar/ekranlar tanımlı --');
 t('page_hammadde.js: ölçü alanı (f-renk-olcu) eklendi', fs.readFileSync(path.join(__dirname, '..', 'page_hammadde.js'), 'utf8').includes('f-renk-olcu'));
 t('page_hammadde.js: sunta/mdf seçilince SADECE plaka hammaddeleri önerilir (kartSecModal tipFiltre ile)', kaynak.includes("tipFiltre: 'plaka'"));
 t('page_yarimamul.js: renk etiketi alanları eklendi', fs.readFileSync(path.join(__dirname, '..', 'page_yarimamul.js'), 'utf8').includes('f-renk-kartela'));
-t('boya kategorisi YARIMAMUL koleksiyonundan aranıyor (hammadde DEĞİL)', kaynak.includes("boya: { etiket: 'Boya', kaynak: 'yarimamul'"));
+t('boya kategorisi HAMMADDE koleksiyonundan, tip=sarf ile aranıyor (gerçek dosyada "LK." öneki renk kodu DEĞİL, LOGO boya kategorisi kodu olduğu doğrulandı)',
+  kaynak.includes("boya: { etiket: 'Boya', kaynak: 'hammadde', tipFiltre: 'sarf'"));
 t('arama kutusu isimle/kodla filtreleme yapıyor (native select DEĞİL)', kaynak.includes("id=\"ra-ara\"") && !kaynak.includes('id="ra-hm-ara"'));
+t('zaten tanımlı bir renge YENİ bir kısaltma eklerken İKİNCİ bir kayıt AÇILMIYOR (var olan kayıt güncelleniyor)',
+  kaynak.includes('renkler.find(r => r.renkKodu === kod) || null'));
+t('Reçete Yapım Raporu\'ndan gelen önerilen kısaltma otomatik dolduruluyor', kaynak.includes('onerilenKisaltma'));
 
 const izoleKod = [
   "const RenkKartelasi = require('../renk_kartelasi.js');",
@@ -69,7 +73,8 @@ function kartlarEslesenSonuc(liste, renk, kat, olcu) { return izole.kartlarEsles
 
 console.log('\n-- KATEGORI_TANIM: her kategorinin DOĞRU kaynaktan arandığı --');
 t('sunta/mdf/pvc_bant/diğer -> hammadde koleksiyonundan', ['sunta', 'mdf', 'pvc_bant', 'diger'].every(k => izole.KATEGORI_TANIM[k].kaynak === 'hammadde'));
-t('boya -> yarımamül koleksiyonundan (LK. kodlu hazır parçalar)', izole.KATEGORI_TANIM.boya.kaynak === 'yarimamul');
+t('boya -> hammadde koleksiyonundan, SADECE sarf tipi (LK. öneki LOGO kategori kodu, renk kodu değil)',
+  izole.KATEGORI_TANIM.boya.kaynak === 'hammadde' && izole.KATEGORI_TANIM.boya.tipFiltre === 'sarf');
 t('sunta/mdf SADECE plaka tipi hammaddeyi önerir', izole.KATEGORI_TANIM.sunta.tipFiltre === 'plaka' && izole.KATEGORI_TANIM.mdf.tipFiltre === 'plaka');
 t('pvc_bant SADECE kenar_bandi tipi hammaddeyi önerir', izole.KATEGORI_TANIM.pvc_bant.tipFiltre === 'kenar_bandi');
 
