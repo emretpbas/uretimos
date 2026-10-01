@@ -1694,9 +1694,11 @@ PageModules.kartlar = (() => {
     const body = document.createElement('div');
     body.innerHTML = `
       <div class="fhint" style="margin-bottom:10px">
-        İki format desteklenir:<br>
-        <b>1) Hiyerarşik reçete/BOM</b> — LevelNo, PathKod, LineType, StokKod, Miktar, en, Boy sütunlu.<br>
-        <b>2) SolidWorks PVC'li BOM</b> — PARÇA KODU, PANEL/HAMMADDE KODU, PARÇA ADI, ADET, NET BOY/EN, PVC bant kolonlu.<br>
+        Üç format desteklenir:<br>
+        <b>1) LOGO düz reçete</b> — Mamul Kodu, Stok Kod, Stok Türü, Miktar, Birim sütunlu (birden fazla
+        ürün farklı sayfalarda olabilir, tüm sayfalar taranır).<br>
+        <b>2) Hiyerarşik reçete/BOM</b> — LevelNo, PathKod, LineType, StokKod, Miktar, en, Boy sütunlu.<br>
+        <b>3) SolidWorks PVC'li BOM</b> — PARÇA KODU, PANEL/HAMMADDE KODU, PARÇA ADI, ADET, NET BOY/EN, PVC bant kolonlu.<br>
         Sistem formatı otomatik algılar, kaydetmeden önce önizleme gösterir.
       </div>
       <input type="file" id="ei-file" accept=".xlsx,.xls" style="font-size:12px">
@@ -1713,6 +1715,22 @@ PageModules.kartlar = (() => {
       try {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
+
+        // FORMAT ALGILAMA 0: LOGO düz reçete (Mamul Kodu/Stok Kod/Stok Türü).
+        // Diğer iki formatın aksine TÜM sayfalar taranır — bu format birden
+        // fazla ürünü ayrı sayfalarda (Reçete1, Reçete2, ...) taşıyabilir.
+        const logoUrunleri = [];
+        wb.SheetNames.forEach(adi => {
+          const sayfaRows = XLSX.utils.sheet_to_json(wb.Sheets[adi], { header: 1, defval: '' });
+          const kolon = logoDuzReceteBasliklariBul(sayfaRows);
+          if (!kolon) return;
+          parseLogoDuzReceteSheet(sayfaRows, kolon).forEach(p => logoUrunleri.push(p));
+        });
+        if (logoUrunleri.length) {
+          renderLogoDuzReceteSecimi(main, logoUrunleri);
+          return;
+        }
+
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
@@ -1968,6 +1986,127 @@ PageModules.kartlar = (() => {
     const rootAd = fileName.replace(/\.(xlsx|xls)$/i, '').replace(/_/g, ' ');
 
     return { items, yarimamuller, hammaddeler, receteKalemleri, rootKod, rootAd, level0 };
+  }
+
+  // ── LOGO DÜZ REÇETE (Mamul Kodu/Stok Kod/Stok Türü sütunlu) ───────────────
+  // LOGO'dan "Reçete" raporu olarak dışa aktarılan DÜZ (hiyerarşisiz) format:
+  // her satır bir Mamul Kodu'nun DOĞRUDAN alt kalemidir (Yarı Mamul veya
+  // Hammadde/Tüketim Malı), T sütunu R(=Reçete/Yarı Mamul)/S(=Sarfiyat) ayrımını
+  // taşır. Bu formatta BİRDEN FAZLA ürün AYRI SAYFALARDA (Reçete1, Reçete2, ...)
+  // gelebilir — bu yüzden tüm sayfalar taranır (diğer iki formatın aksine,
+  // onlar her zaman TEK sayfa/TEK ürün varsayar).
+  function logoDuzReceteBasliklariBul(rows) {
+    if (!rows.length) return null;
+    const basliklar = rows[0];
+    const iMamulKodu = bomKolonBul(basliklar, ['MAMUL KODU']);
+    const iStokTuru = bomKolonBul(basliklar, ['STOK TÜRÜ', 'STOK TURU']);
+    const iStokKod = bomKolonBul(basliklar, ['STOK KOD']);
+    const iStokAd = bomKolonBul(basliklar, ['STOK AD']);
+    const iMiktar = bomKolonBul(basliklar, ['MIKTAR']);
+    const iBirim = bomKolonBul(basliklar, ['BIRIM']);
+    if (iMamulKodu < 0 || iStokTuru < 0 || iStokKod < 0 || iStokAd < 0 || iMiktar < 0 || iBirim < 0) return null;
+    return {
+      iMamulKodu, iStokTuru, iStokKod, iStokAd, iMiktar, iBirim,
+      iBoy: bomKolonBul(basliklar, ['BOY(MM)', 'BOY (MM)']),
+      iEn: bomKolonBul(basliklar, ['EN(MM)', 'EN (MM)']),
+      iBirimFiyat: bomKolonBul(basliklar, ['BIRIM FIYAT']),
+      iDoviz: bomKolonBul(basliklar, ['DOVIZ'])
+    };
+  }
+
+  // Bir sayfayı Mamul Kodu'na göre gruplar; her grup diğer iki formatla AYNI
+  // şekilde ({items, yarimamuller, hammaddeler, receteKalemleri, rootKod,
+  // rootAd, level0}) döner ki mevcut (test edilmiş) renderImportPreview/
+  // kaydetme akışı HİÇ değiştirilmeden tekrar kullanılabilsin. Bu formatta
+  // yarı mamüllerin KENDİ alt kırılımı yoktur (sadece mamülün altında hangi
+  // yarı mamül/hammaddelerin kaç adet geçtiği bilinir) — bu yüzden
+  // receteKalemleri'nde SADECE mamul kodu için bir girdi vardır; var olmayan
+  // veri UYDURULMAZ.
+  function parseLogoDuzReceteSheet(rows, kolon) {
+    const dataRows = rows.slice(1).filter(r =>
+      r[kolon.iStokKod] !== '' && r[kolon.iStokKod] != null &&
+      r[kolon.iMamulKodu] !== '' && r[kolon.iMamulKodu] != null);
+
+    const gruplar = new Map(); // mamulKod -> item[]
+    dataRows.forEach(r => {
+      const mamulKod = String(r[kolon.iMamulKodu]).trim();
+      const stokKod = String(r[kolon.iStokKod]).trim();
+      if (!mamulKod || !stokKod || stokKod === mamulKod) return; // kendine referans koruması
+      const item = {
+        stokKod, stokAd: String(r[kolon.iStokAd] || stokKod),
+        stokTuru: String(r[kolon.iStokTuru] || ''),
+        miktar: parseTRNumber(r[kolon.iMiktar]) || 1,
+        birim: String(r[kolon.iBirim] || 'ADET'),
+        birimFiyat: kolon.iBirimFiyat >= 0 ? parseTRNumber(r[kolon.iBirimFiyat]) : 0,
+        dvz: (kolon.iDoviz >= 0 ? String(r[kolon.iDoviz] || 'TL').trim() : '') || 'TL',
+        en: kolon.iEn >= 0 ? parseTRNumber(r[kolon.iEn]) : 0,
+        boy: kolon.iBoy >= 0 ? parseTRNumber(r[kolon.iBoy]) : 0
+      };
+      if (!gruplar.has(mamulKod)) gruplar.set(mamulKod, []);
+      gruplar.get(mamulKod).push(item);
+    });
+
+    const sonuc = [];
+    gruplar.forEach((groupItems, mamulKod) => {
+      const byStokKod = new Map();
+      groupItems.forEach(i => { if (!byStokKod.has(i.stokKod)) byStokKod.set(i.stokKod, i); });
+
+      const yarimamuller = [];
+      const hammaddeler = [];
+      byStokKod.forEach(item => {
+        if (item.stokTuru === 'Yarı Mamul') {
+          const kodUpper = item.stokKod.toUpperCase();
+          const adLower = (item.stokAd || '').toLowerCase();
+          item.onerilenTip = (kodUpper.includes('PKT') || adLower.includes('paket')) ? 'paket' : 'yarimamul';
+          yarimamuller.push(item);
+        } else hammaddeler.push(item);
+      });
+
+      const receteKalemleri = new Map([[mamulKod, groupItems]]);
+      sonuc.push({
+        items: groupItems, yarimamuller, hammaddeler, receteKalemleri,
+        rootKod: mamulKod, rootAd: mamulKod, level0: groupItems
+      });
+    });
+    return sonuc;
+  }
+
+  // Birden fazla ürün bulunduğunda (ör. Reçete1/Reçete2/Reçete3 sayfaları)
+  // hangisinin içe aktarılacağını seçtiren ara ekran. Her satır, mevcut
+  // (test edilmiş) renderImportPreview akışını DEĞİŞTİRMEDEN tek ürün için
+  // tekrar açar.
+  async function renderLogoDuzReceteSecimi(main, urunler) {
+    const mevcutUrunler = await Store.urunler.all();
+    urunler.forEach(p => {
+      const mevcut = mevcutUrunler.find(u => u.kod === p.rootKod);
+      if (mevcut) p.rootAd = mevcut.ad; // mevcut ad ezilmesin, kodu ad olarak göstermeyelim
+      p._mevcut = !!mevcut;
+    });
+
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:12px;background:#EEF2FF;border:1px solid #C7D2FE;padding:10px 12px;border-radius:8px">
+        LOGO düz reçete formatı algılandı. <b>${urunler.length} ürün</b> bulundu (her biri kendi sayfasında).
+        Her ürünü tek tek önizleyip içe aktarabilirsiniz; önizlemede yarı mamül/hammadde eşleşmelerini
+        ve tiplerini kontrol edip onaylarsınız.
+      </div>
+      <div class="tbl-wrap" style="max-height:320px;overflow:auto"><table class="dtable" style="font-size:11px">
+        <tr><th>Durum</th><th>Mamul Kodu</th><th class="r">Yarı Mamül</th><th class="r">Hammadde</th><th></th></tr>
+        ${urunler.map((p, i) => `<tr>
+          <td>${p._mevcut ? '<span class="pill pill-amber">Güncelle</span>' : '<span class="pill pill-green">Yeni</span>'}</td>
+          <td class="mono">${App.escapeHtml(p.rootKod)}</td>
+          <td class="r">${p.yarimamuller.length}</td>
+          <td class="r">${p.hammaddeler.length}</td>
+          <td class="r"><button class="btn btn-sm ldr-sec" data-i="${i}">Önizle ve İçe Aktar</button></td>
+        </tr>`).join('')}
+      </table></div>
+    `;
+    const footer = `<button class="btn" id="ei-back">Kapat</button>`;
+    App.openModal({ title: 'LOGO Düz Reçete — Ürün Seçimi', sub: urunler.length + ' ürün bulundu', body, footer, xwide: true });
+    document.getElementById('ei-back').onclick = App.closeModal;
+    body.querySelectorAll('.ldr-sec').forEach(btn => {
+      btn.onclick = () => renderImportPreview(main, urunler[parseInt(btn.dataset.i)]);
+    });
   }
 
   // ── SOLIDWORKS BOM: ÖNİZLEME + KAYDETME ───────────────────────────────────
