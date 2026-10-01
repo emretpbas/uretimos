@@ -22,6 +22,27 @@ PageModules.kalem_secici = (() => {
   let siralamaKolon = 'kod';
   let siralamaYon = 1;
 
+  // GERÇEK ÜRETİM TESTİNDE YAKALANDI: LOGO'dan toplu aktarım sonrası bazı
+  // çağıranlar (ör. page_siparis.js) 80.000+ kalemi her açılışta TEK TEK
+  // BOM maliyeti hesaplayıp buraya veriyordu — bu, sipariş/teklif formunu
+  // açarken uygulamayı kilitliyordu. Artık çağıran isterse yalnızca
+  // {grup,kod,ad,birim} ile HIZLI bir liste verip maliyet hesabını
+  // state.maliyetHesapla(secim)'e bırakabilir; biz bunu SADECE o an EKRANDA
+  // GÖSTERİLECEK (filtrelenmiş + sınırlı) birkaç satır için çağırırız,
+  // 80.000'in tamamı için DEĞİL. maliyetHesapla verilmeyen eski çağıranlar
+  // (netFiyat'ı zaten kendisi hesaplayıp secenekler'e koymuş olanlar) hiç
+  // etkilenmez — s._maliyetCozuldu zaten true sayılır.
+  //
+  // GERÇEK ÇÖKME (kullanıcı raporu: "Yeni Teklif" → "Kalem Seç" → "Cannot
+  // access 'b' before initialization"): bu sabit ÖNCEDEN render()'in İÇİNDE,
+  // renderFilterRow()'dan SONRA tanımlıydı — ama render() daha o satıra hiç
+  // gelmeden (satır 70'teki ilk renderTable() çağrısıyla) renderTbody() bunu
+  // kullanıyordu; const'ın "geçici ölü bölge"sinde (TDZ) olması
+  // ReferenceError'a yol açıyordu (terser sonrası isim kısaldığından hata
+  // "MAKS_GORUNEN" yerine tek harfle görünüyordu). Modül seviyesine
+  // taşınarak render() hiç çalışmadan ÖNCE hazır olması garanti edildi.
+  const MAKS_GORUNEN = 300;
+
   async function render(main, params) {
     if (params) {
       state = params;
@@ -147,18 +168,6 @@ PageModules.kalem_secici = (() => {
       row.querySelector('.ks-filter-ad').oninput = (e) => { filtreAd = e.target.value; renderTbody(); };
       row.querySelector('.ks-filter-birim').oninput = (e) => { filtreBirim = e.target.value; renderTbody(); };
     }
-
-    // GERÇEK ÜRETİM TESTİNDE YAKALANDI: LOGO'dan toplu aktarım sonrası bazı
-    // çağıranlar (ör. page_siparis.js) 80.000+ kalimi her açılışta TEK TEK
-    // BOM maliyeti hesaplayıp buraya veriyordu — bu, sipariş/teklif formunu
-    // açarken uygulamayı kilitliyordu. Artık çağıran isterse yalnızca
-    // {grup,kod,ad,birim} ile HIZLI bir liste verip maliyet hesabını
-    // state.maliyetHesapla(secim)'e bırakabilir; biz bunu SADECE o an EKRANDA
-    // GÖSTERİLECEK (filtrelenmiş + sınırlı) birkaç satır için çağırırız,
-    // 80.000'in tamamı için DEĞİL. maliyetHesapla verilmeyen eski çağıranlar
-    // (netFiyat'ı zaten kendisi hesaplayıp secenekler'e koymuş olanlar) hiç
-    // etkilenmez — s._maliyetCozuldu zaten true sayılır.
-    const MAKS_GORUNEN = 300;
 
     function maliyetCozumle(s) {
       if (!state.maliyetHesapla || s._maliyetCozuldu) return;
