@@ -28,20 +28,31 @@ namespace UretimOSKesim
     // modeli otomatik doldurur — SİZİN yerleştirdiğiniz konumda kalır.
     //
     // ÖLÇÜLENDİRME (kullanıcı isteği: "teknik resim otomatik ölçülendirme
-    // ile gelsin resimdeki gibi" — önceki turda BİLİNÇLİ olarak dışarıda
-    // bırakılmıştı, artık AÇIKÇA istendiği için eklendi): SolidWorks'ün
-    // "Insert > Annotations > Model Items" menü komutuyla AYNI, resmi
-    // IModelDocExtension.InsertModelAnnotations3 API'si kullanılıyor.
-    // BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu): bu ortamda (SolidWorks
-    // SDK'sı yok) CANLI test EDİLEMEDİ — parametreler (swImportModelItemsSource_e/
-    // swInsertAnnotation_e enum değerleri VE parametre SAYISI) SolidWorks'ün
-    // resmi API örneklerinde EN YAYGIN görülen kombinasyona göre yazıldı.
-    // Yanlış çıkarsa İKİ olası sonuç var: (a) parametre SAYISI/tipi
-    // tutmuyorsa GÜVENLİ bir derleme hatası (CS1501/CS7036) — TAHMİN
-    // edilmez, gerçek derleme geri bildirimiyle düzeltilir; (b) enum
-    // DEĞERİ yanlışsa ÇÖKME olmaz, yalnızca ölçüler eksik/hiç gelmez —
-    // bu yüzden sonuç (bool + log) her zaman kontrol edilir ve elle
-    // düzenleme adımı (zaten var olan "1) Oluştur → düzenle → 2) Onayla"
+    // ile gelsin resimdeki gibi"): SolidWorks'ün "Insert > Annotations >
+    // Model Items" menü komutuyla AYNI, resmi IDrawingDoc.InsertModelAnnotations3
+    // API'si kullanılıyor. İLK sürüm bu üyeyi 'dynamic' ile (hangi arayüzde
+    // olduğundan emin olunamadığı için) üç ayrı aday nesnede deneyip 5
+    // parametreyle çağırıyordu — GERÇEK ÇALIŞMA ZAMANI HATASI (yerel günlük:
+    // "__ComObject ... Geçersiz dizin 0x8002000B DISP_E_BADINDEX") bunun
+    // YANLIŞ olduğunu kanıtladı. Yerel interop DLL'inden YANSIMA (reflection)
+    // ile okunan GERÇEK imza artık doğrudan, TİPLİ çağrılıyor: üye yalnızca
+    // IDrawingDoc'ta var (Extension/ModelDoc2'de YOK), 6 parametre alıyor
+    // (5 değil) ve bool DEĞİL bir object (eklenen annotation DİZİSİ) döner —
+    // başarı artık dizinin boş olup olmamasına bakılarak değerlendirilir.
+    //
+    // YEDEK (kullanıcı isteği: "SWOOD panellerinde ölçüler çoğu zaman
+    // denklem/global değişkenle sürülüyor, model ölçüleri az/dağınık
+    // gelebilir"): InsertModelAnnotations3 hiç annotation eklemezse,
+    // IDrawingDoc.AutoDimension her görünüş AYRI AYRI seçilerek denenir —
+    // bu, dış ölçüleri (en/boy) model ölçülerinden bağımsız koyar.
+    // BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu): bu ikinci yolun parametre
+    // SAYISI/isimleri bildirildi ama enum DEĞERLERİ (EntitiesToDimension/
+    // HorizontalScheme/HorizontalPlacement/VerticalScheme/VerticalPlacement)
+    // bu ortamda (SDK yok) doğrulanamadı — en yaygın/varsayılan anlama gelen
+    // 0 kullanıldı. Yanlış çıkarsa ÇÖKME olmaz (try/catch, görünüş başına
+    // bağımsız), yalnızca o görünüşte dış ölçü eklenmez; gerçek SolidWorks'te
+    // doğrulanıp gerekirse güncellenmelidir. Her iki yol da başarısız olursa
+    // elle düzenleme adımı (zaten var olan "1) Oluştur → düzenle → 2) Onayla"
     // akışı) her durumda bir güvenlik ağı olarak kalır.
     // ════════════════════════════════════════════════════════════════════════
     public class TeknikResimOlusturucu
@@ -89,55 +100,89 @@ namespace UretimOSKesim
 
                 // Kullanıcı isteği: "teknik resim otomatik ölçülendirme ile
                 // gelsin" — bkz. yukarıdaki sınıf başlığı notu (dürüstlük).
-                // GERÇEK DERLEME HATASI (CS1061, yerel oturum): bu interop
-                // sürümünde IModelDocExtension.InsertModelAnnotations3 YOK —
-                // RenameComponent2 ile YAŞANANIN AYNISI: üye adı doğru ama
-                // HANGİ arayüzde olduğu bu interop sürümünde belirsiz/farklı.
-                // O sorunu ORADA "gerçek üyeyi bul" ile çözmüştük; burada
-                // AYNI sınıf soruna KALICI bir çözüm: 'dynamic' ile GEÇ
-                // BAĞLAMA — derleme zamanında HANGİ .NET arayüzünün bu üyeyi
-                // deklare ettiğini ARAMAZ, ÇALIŞMA ZAMANINDA gerçek COM
-                // nesnesinin (IDispatch) üyesini adıyla bulur. Üç olası ev
-                // sahibi (Extension, IDrawingDoc, ModelDoc2'nin kendisi)
-                // sırayla denenir — hangisinde gerçekten varsa O çalışır;
-                // hiçbirinde yoksa (COMException/RuntimeBinderException)
-                // ÇÖKME olmaz, sessizce bir sonrakine geçilir, hepsi
-                // başarısızsa uyarı verilir.
-                bool olculendirildi = false;
-                string olculendirmeHata = null;
-                foreach (var aday in new object[] { cizimBelge.Extension, cizim, cizimBelge })
+                // GERÇEK HATA (yerel günlük, 11:15/11:21): yukarıdaki 'dynamic'
+                // + 5-parametreli çağrı her denemede "__ComObject ... Geçersiz
+                // dizin (0x8002000B DISP_E_BADINDEX)" ile başarısız oluyordu.
+                // Yerel interop DLL'inden YANSIMA (reflection) ile okunan
+                // GERÇEK imza (TAHMİN değil): IDrawingDoc.InsertModelAnnotations3
+                // (Option, Types, AllViews, DuplicateDims, HiddenFeatureDims,
+                // UsePlacementInSketch) → object (eklenen annotation dizisi) —
+                // 5 DEĞİL 6 parametre alıyor VE bool DEĞİL object döndürüyor;
+                // ayrıca bu üye IModelDocExtension/IModelDoc2'de YOK, yalnızca
+                // IDrawingDoc'ta var. 'dynamic' ile üç aday nesneyi (Extension/
+                // IDrawingDoc/ModelDoc2) sırayla deneyip EN ÇOK Extension/
+                // ModelDoc2'de YANLIŞ üye arayan, DOĞRU tek ev sahibine
+                // (IDrawingDoc — zaten typed 'cizim' değişkeni) YANLIŞ sayıda
+                // argümanla seslenen bir kod buydu; artık doğrudan, TİPLİ
+                // olarak çağrılıyor — 'dynamic' GEÇ BAĞLAMAYA gerek kalmadı.
+                object olculendirmeSonucu = null;
+                try
                 {
-                    if (aday == null) continue;
-                    try
-                    {
-                        // "swInsertDimensionsMarkedForDrawing" TEK BAŞINA yalnızca
-                        // modelde ELLE "mark for drawing" işaretlenmiş ölçüleri
-                        // getirir — kullanıcıların neredeyse hiçbiri bu işaretlemeyi
-                        // yapmaz, bu yüzden çağrı BAŞARILI dönüp GÖRÜNMEZ SIFIR ölçü
-                        // eklerdi (sessiz başarısızlık). "NotMarkedForDrawing" ile
-                        // BİRLİKTE (bit bayrağı OR'lanarak) verilince modeldeki TÜM
-                        // ölçüler gelir — "Insert > Annotations > Model Items"
-                        // menüsünde "Ölçüler" işaretliyken varsayılan davranış budur.
-                        dynamic dinamikAday = aday;
-                        olculendirildi = (bool)dinamikAday.InsertModelAnnotations3(
-                            (int)swImportModelItemsSource_e.swImportModelItemsFromEntireModel,
-                            (int)swInsertAnnotation_e.swInsertDimensionsMarkedForDrawing
-                                | (int)swInsertAnnotation_e.swInsertDimensionsNotMarkedForDrawing,
-                            true, false, false);
-                        Tanilama.Kaydet($"InsertModelAnnotations3 basarili ({aday.GetType().Name}): {olculendirildi}");
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        olculendirmeHata = ex.Message;
-                        Tanilama.Kaydet($"InsertModelAnnotations3 denemesi basarisiz ({aday.GetType().Name}): {ex.Message}");
-                    }
+                    // "swInsertDimensionsMarkedForDrawing" TEK BAŞINA yalnızca
+                    // modelde ELLE "mark for drawing" işaretlenmiş ölçüleri
+                    // getirir — kullanıcıların neredeyse hiçbiri bu işaretlemeyi
+                    // yapmaz, bu yüzden çağrı BAŞARILI dönüp GÖRÜNMEZ SIFIR ölçü
+                    // eklerdi (sessiz başarısızlık). "NotMarkedForDrawing" ile
+                    // BİRLİKTE (bit bayrağı OR'lanarak) verilince modeldeki TÜM
+                    // ölçüler gelir — "Insert > Annotations > Model Items"
+                    // menüsünde "Ölçüler" işaretliyken varsayılan davranış budur.
+                    // UsePlacementInSketch=true: SWOOD gibi denklem/global
+                    // değişken sürümlü panellerde (bkz. EquationsOlcuOku) ölçü
+                    // yerleşimi skeçteki konumu esas alsın diye.
+                    olculendirmeSonucu = cizim.InsertModelAnnotations3(
+                        (int)swImportModelItemsSource_e.swImportModelItemsFromEntireModel,
+                        (int)swInsertAnnotation_e.swInsertDimensionsMarkedForDrawing
+                            | (int)swInsertAnnotation_e.swInsertDimensionsNotMarkedForDrawing,
+                        true, false, false, true);
                 }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("InsertModelAnnotations3 basarisiz: " + ex.Message);
+                }
+                var eklenenler = olculendirmeSonucu as object[];
+                bool olculendirildi = eklenenler != null && eklenenler.Length > 0;
+                Tanilama.Kaydet(olculendirildi
+                    ? $"InsertModelAnnotations3 basarili: {eklenenler.Length} annotation eklendi"
+                    : "InsertModelAnnotations3 hicbir annotation eklemedi (model ölçüleri boş/dağınık olabilir — bkz. AutoDimension yedeği)");
+
+                // YEDEK (kullanıcı isteği: "model ölçüleri az veya dağınık
+                // gelebilir... dönen dizi boşsa yedek olarak AutoDimension
+                // çağrılabilir, bu dış ölçüleri model ölçülerinden bağımsız
+                // koyar"). BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu, yukarıdaki
+                // sınıf başlığıyla AYNI ilke): IDrawingDoc.AutoDimension bu
+                // interop'ta VAR olduğu bildirildi, ama EntitiesToDimension/
+                // HorizontalScheme/HorizontalPlacement/VerticalScheme/
+                // VerticalPlacement parametrelerinin GERÇEK enum DEĞERLERİ bu
+                // ortamda (SDK yok) doğrulanamadı — en yaygın/varsayılan anlama
+                // gelen 0 kullanıldı. Yanlış çıkarsa ÇÖKME olmaz (try/catch,
+                // görünüş başına bağımsız), yalnızca o görünüşte dış ölçü
+                // eklenmez; gerçek SolidWorks'te doğrulanıp gerekirse
+                // güncellenmelidir.
                 if (!olculendirildi)
                 {
-                    Tanilama.Kaydet("InsertModelAnnotations3 hicbir aday nesnede calismadi: " + olculendirmeHata);
-                    _uyarilar.Add("Otomatik ölçülendirme eklenemedi — Insert > Annotations > Model Items ile elle ekleyebilirsiniz.");
+                    int otomatikOlculendirilenGorunus = 0;
+                    var sayfaGorunusu = cizim.GetFirstView() as IView;
+                    var v = sayfaGorunusu?.GetNextView() as IView;
+                    while (v != null)
+                    {
+                        try
+                        {
+                            bool secildi = cizimBelge.Extension.SelectByID2(v.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
+                            if (secildi && cizim.AutoDimension(0, 0, 0, 0, 0) != 0)
+                                otomatikOlculendirilenGorunus++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Tanilama.Kaydet($"AutoDimension denemesi basarisiz ({v.Name}): {ex.Message}");
+                        }
+                        v = v.GetNextView() as IView;
+                    }
+                    Tanilama.Kaydet($"AutoDimension yedegi: {otomatikOlculendirilenGorunus} gorunuste dis olcu denendi");
+                    olculendirildi = otomatikOlculendirilenGorunus > 0;
                 }
+
+                if (!olculendirildi)
+                    _uyarilar.Add("Otomatik ölçülendirme eklenemedi — Insert > Annotations > Model Items ile elle ekleyebilirsiniz.");
 
                 Tanilama.Kaydet("ViewZoomtofit2 cagriliyor");
                 cizimBelge.ViewZoomtofit2();
