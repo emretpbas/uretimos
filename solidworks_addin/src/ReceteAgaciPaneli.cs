@@ -736,25 +736,39 @@ namespace UretimOSKesim
                     urunKoku.Cocuklar.AddRange(bilesenKokleri);
                     bilesenKokleri = new List<BilesenDugumu> { urunKoku };
                 }
-                Tanilama.Kaydet("VerileriYukleVeBaslat: BilesenAgaciniCiz() cagriliyor");
-                BilesenAgaciniCiz(bilesenKokleri);
-                Tanilama.Kaydet("VerileriYukleVeBaslat: BilesenAgaciniCiz() bitti");
-
-                // urunKoku kurulduysa KokKartAyarla (UrunKokuOlustur içinde)
-                // zaten _kokKartEtiketi'ni "[ÜRÜN] kod — ad" olarak ayarladı —
-                // bunu genel mesajla EZMEYELİM.
-                if (urunKoku == null)
+                // GERÇEK ÇÖKME (kullanıcı raporu, 10:40:24 günlüğü, dünden beri
+                // 9 kez): "yeni montaj → üst tabla → ürün kodu → paket
+                // tanımla" sonrası — UrunKokuOlustur/PaketleriOlustur İÇ İÇE
+                // MODAL diyalog açan await'ler (bkz. AnaPencerede üstündeki
+                // NOT: tam bu senaryo için yazılmış) ve devamında ArgumentException
+                // ("bir iş parçacığında oluşturulan denetimler başka bir iş
+                // parçacığındaki denetimin üst öğesi yapılamaz") ile çöküyordu.
+                // Yalnızca BilesenAgaciniCiz'i (kontrol OLUŞTURAN kısım dahil,
+                // kendi içinde ayrıca marshal eder — bkz. o fonksiyon) değil,
+                // altındaki DOĞRUDAN Text/ForeColor atamalarını da aynı riske
+                // açık bırakmamak için TÜMÜ TEK bir AnaPencerede bloğuna alındı.
+                AnaPencerede(() =>
                 {
-                    _kokKartEtiketi.Text = toplamBilesen > 0
-                        ? "Yukarıdaki bileşen ağacından bir bileşen seçin — kartı otomatik eşleşirse burada görünür, eşleşmezse 'Farklı Kart Seç…' ile eşleştirin."
-                        : "Aktif belgede bileşen bulunamadı.";
-                }
-                string kaynakNotu = onbellektenMi
-                    ? $" — yerel önbellekten yüklendi ({(onbellekKapsam == "baglantili" ? "yalnızca önceki dosyaya bağlantılı" : "komple")}, {onbellekTarih}); güncellemek için ⬇ İndir'e basın."
-                    : "";
-                string baglantiNotu = girisBasarili ? "" : "  ⚠ ÜretimOS'a giriş yapılamadı — kaydetme/gönderme işlemleri şu an ÇALIŞMAYACAK, yalnızca görüntüleme/hazırlık yapabilirsiniz.";
-                _durumEtiketi.ForeColor = !girisBasarili || (onbellektenMi && onbellekKapsam == "baglantili") ? Color.DarkOrange : Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ {toplamBilesen} bileşen listelendi, {_receteler.Count} reçete, {_hammaddeler.Count} hammadde yüklendi.{kaynakNotu}{baglantiNotu}";
+                    Tanilama.Kaydet("VerileriYukleVeBaslat: BilesenAgaciniCiz() cagriliyor");
+                    BilesenAgaciniCiz(bilesenKokleri);
+                    Tanilama.Kaydet("VerileriYukleVeBaslat: BilesenAgaciniCiz() bitti");
+
+                    // urunKoku kurulduysa KokKartAyarla (UrunKokuOlustur içinde)
+                    // zaten _kokKartEtiketi'ni "[ÜRÜN] kod — ad" olarak ayarladı —
+                    // bunu genel mesajla EZMEYELİM.
+                    if (urunKoku == null)
+                    {
+                        _kokKartEtiketi.Text = toplamBilesen > 0
+                            ? "Yukarıdaki bileşen ağacından bir bileşen seçin — kartı otomatik eşleşirse burada görünür, eşleşmezse 'Farklı Kart Seç…' ile eşleştirin."
+                            : "Aktif belgede bileşen bulunamadı.";
+                    }
+                    string kaynakNotu = onbellektenMi
+                        ? $" — yerel önbellekten yüklendi ({(onbellekKapsam == "baglantili" ? "yalnızca önceki dosyaya bağlantılı" : "komple")}, {onbellekTarih}); güncellemek için ⬇ İndir'e basın."
+                        : "";
+                    string baglantiNotu = girisBasarili ? "" : "  ⚠ ÜretimOS'a giriş yapılamadı — kaydetme/gönderme işlemleri şu an ÇALIŞMAYACAK, yalnızca görüntüleme/hazırlık yapabilirsiniz.";
+                    _durumEtiketi.ForeColor = !girisBasarili || (onbellektenMi && onbellekKapsam == "baglantili") ? Color.DarkOrange : Color.DarkGreen;
+                    _durumEtiketi.Text = $"✓ {toplamBilesen} bileşen listelendi, {_receteler.Count} reçete, {_hammaddeler.Count} hammadde yüklendi.{kaynakNotu}{baglantiNotu}";
+                });
             }
             catch (Exception ex)
             {
@@ -1281,6 +1295,15 @@ namespace UretimOSKesim
         // yeniden çizer.
         private void BilesenAgaciniCiz(List<BilesenDugumu> kokDugumler = null)
         {
+            // GERÇEK ÇÖKME (bkz. AnaPencerede üstündeki NOT): bu fonksiyonun
+            // onlarca çağrı noktası var; her birinin await sonrası doğru iş
+            // parçacığında olduğunu ÇAĞIRAN TARAFA bırakmak yerine (biri
+            // unutulursa TAM OLARAK bu çökmeye yol açtığı kanıtlandı),
+            // kontrol OLUŞTURMA dahil TÜM gövde burada, fonksiyonun kendisinde
+            // UI iş parçacığına marshal edilir — tüm çağıranlar otomatik korunur.
+            if (InvokeRequired) { AnaPencerede(() => BilesenAgaciniCiz(kokDugumler)); return; }
+            if (IsDisposed) return;
+
             if (kokDugumler != null) _bilesenKokListesi = kokDugumler;
             if (_bilesenKokListesi == null) return;
 
@@ -2947,6 +2970,13 @@ namespace UretimOSKesim
         // ── PALET (SOLDAKİ LİSTE) ────────────────────────────────────────────
         private void PaletiFiltrele()
         {
+            // BilesenAgaciniCiz/AgaciYenidenCiz'deki AYNI gerekçe: bu fonksiyon
+            // da UrunKokuOlustur/PaketleriOlustur gibi modal-diyalog-sonrası
+            // await'lerin HEMEN ardından (bkz. UrunKokuOlustur satır ~982)
+            // doğrudan WinForms kontrollerine (_paletTipKutusu, _paletListesi
+            // vb.) erişiyor — AYNI riskin kapsamında.
+            if (InvokeRequired) { AnaPencerede(PaletiFiltrele); return; }
+            if (IsDisposed) return;
             if (!_verilerYuklendi) return;
             string secim = _paletTipKutusu.SelectedItem as string ?? "Paket";
             string arama = (_paletAramaKutusu.Text ?? "").Trim().ToLowerInvariant();
@@ -4056,6 +4086,13 @@ namespace UretimOSKesim
         // ────────────────────────────────────────────────────────────────────
         private void AgaciYenidenCiz()
         {
+            // BilesenAgaciniCiz'deki AYNI gerekçe/düzeltme (bkz. o fonksiyonun
+            // başındaki NOT ve AnaPencerede üstündeki NOT): kontrol OLUŞTURMA
+            // dahil TÜM gövde burada UI iş parçacığına marshal edilir, tüm
+            // çağıranlar (bazıları await sonrası) otomatik korunur.
+            if (InvokeRequired) { AnaPencerede(AgaciYenidenCiz); return; }
+            if (IsDisposed) return;
+
             // TANI: kullanıcı raporu "kaydede basmadım, reçete kalemlerinde
             // rota tuşlarına bakıyordum" sırasında bir çökme oldu ama
             // günlükte HİÇBİR İZ yoktu — çünkü bu fonksiyon (alttaki ÜretimOS
