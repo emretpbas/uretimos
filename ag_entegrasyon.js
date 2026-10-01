@@ -90,8 +90,9 @@ const AgEntegrasyon = (() => {
     cari: {
       ad: 'Cari',
       anaAlanlar: [['kod', 'Cari Kodu', true], ['unvan', 'Ünvan', true],
-        ['vergiNo', 'Vergi No / TCKN', false], ['adres', 'Adres', false],
-        ['telefon', 'Telefon', false], ['bakiye', 'Bakiye', false]],
+        ['vergiNo', 'Vergi No / TCKN', false], ['vergiDairesi', 'Vergi Dairesi', false],
+        ['adres', 'Adres', false], ['telefon', 'Telefon', false], ['email', 'E-posta', false],
+        ['bakiye', 'Bakiye (yalnızca YENİ kartta açılış bakiyesi olarak kullanılır)', false]],
       kalemAlanlar: []
     }
   };

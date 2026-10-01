@@ -577,12 +577,22 @@ PageModules.ag_entegrasyon = (() => {
           const anahtar = k.kod.toUpperCase();
           let m = harita.get(anahtar);
           if (!m) {
-            m = { id: App.uid('MUS'), kod: k.kod, unvan: k.unvan, vergiNo: k.vergiNo, adres: k.adres, telefon: k.telefon, kaynak: 'ag_entegrasyon' };
+            // "bakiye" YALNIZCA yeni kartta açılış bakiyesi olarak kullanılır
+            // (LOGO'dan ilk kez gelen bir cari için başlangıç durumu) —
+            // mevcut kartlarda DEĞİL, çünkü ÜretimOS bakiyeyi kendi fatura/
+            // tahsilat akışından CANLI olarak günceller; senkronda ezilirse
+            // ÜretimOS'ta işlenmiş ödemeler kaybolmuş gibi görünür.
+            m = { id: App.uid('MUS'), kod: k.kod, unvan: k.unvan, vergiNo: k.vergiNo,
+              vergiDairesi: k.vergiDairesi, adres: k.adres, telefon: k.telefon, email: k.email,
+              bakiye: k.bakiye || 0, kaynak: 'ag_entegrasyon' };
             yeniM.push(m); yeni++;
           } else {
             m.unvan = k.unvan || m.unvan;
+            if (k.vergiNo) m.vergiNo = k.vergiNo;
+            if (k.vergiDairesi) m.vergiDairesi = k.vergiDairesi;
             if (k.adres) m.adres = k.adres;
             if (k.telefon) m.telefon = k.telefon;
+            if (k.email) m.email = k.email;
             guncelM.push(m); guncel++;
           }
         });
