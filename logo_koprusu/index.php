@@ -26,6 +26,29 @@
 // LOGO veritabanına asla yazma/güncelleme yapmaz.
 // ════════════════════════════════════════════════════════════════════════════
 
+// ── ÖLÜMCÜL HATA YAKALAMA ─────────────────────────────────────────────────
+// GERÇEK TESTTE YAKALANDI: bir sorgu PHP'nin max_execution_time sınırını
+// aşınca (ör. kötü bir SQL Server sorgu planı), PHP varsayılan olarak HTTP
+// 200 ile düz metin/HTML bir hata sayfası basıyordu — ÜretimOS bunu JSON
+// sanıp sessizce "beklenmeyen biçim" diye bozuluyordu, gerçek sebep hiç
+// görünmüyordu. display_errors kapatılıp (üretimde zaten olması gereken),
+// register_shutdown_function ile her türlü ölümcül hata (zaman aşımı dahil)
+// yakalanıp düzgün bir 500 + JSON hata gövdesine çevriliyor.
+ini_set('display_errors', '0');
+register_shutdown_function(function () {
+    $hata = error_get_last();
+    if (!$hata || !in_array($hata['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) return;
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    echo json_encode([
+        'hata' => 'Sunucuda beklenmeyen/ölümcül bir hata oluştu: ' . $hata['message']
+            . ' (' . basename($hata['file']) . ':' . $hata['line'] . ')'
+            . ' — süre aşımıysa muhtemelen kötü bir SQL sorgu planı; ayarlar.php\'deki tablo adlarını ve varsa indeksleri kontrol edin.',
+    ], JSON_UNESCAPED_UNICODE);
+});
+
 header('Content-Type: application/json; charset=utf-8');
 
 $ayarYolu = __DIR__ . '/ayarlar.php';
@@ -309,8 +332,17 @@ function cariSorgulari(array $ayar, int $offset, int $adet): array
 
     $cariSorgu = function (string $ekKosul) use ($secim, $joinler, $clcardDb, $clcardTablo, $offset, $adet): array {
         $kosul = "cl.ACTIVE = 0" . ($ekKosul !== '' ? " AND $ekKosul" : '');
-        $sorgu = "SELECT $secim $joinler WHERE $kosul ORDER BY cl.CODE OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY";
-        $sayim = "SELECT COUNT(*) FROM $clcardDb.$clcardTablo cl WHERE $kosul";
+        // GERÇEK TESTTE ÖLÇÜLDÜ: EXISTS alt sorguları (cari_musteri/
+        // cari_tedarikci) ClientRef/cariRef üzerinde İNDEKS OLMADIĞI için
+        // SQL Server kötü bir plana düşüyor — adet=2000'de 92 sn, PHP'nin
+        // max_execution_time'ını (30 sn) aşıyordu. OPTION (HASH JOIN)
+        // zorlanınca 92 sn → 0,04 sn (sonuç DEĞİŞMEDİ, 993 kayıt). Düz
+        // 'cari' sorgusunda (EXISTS yok, zaten hızlı test edildi) bu ipucu
+        // GEREKSİZ VE TEST EDİLMEMİŞ bir değişiklik olacağından yalnızca
+        // EXISTS içeren varyantlara uygulanıyor.
+        $ipucu = $ekKosul !== '' ? ' OPTION (HASH JOIN)' : '';
+        $sorgu = "SELECT $secim $joinler WHERE $kosul ORDER BY cl.CODE OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY" . $ipucu;
+        $sayim = "SELECT COUNT(*) FROM $clcardDb.$clcardTablo cl WHERE $kosul" . $ipucu;
         return ['sorgu' => $sorgu, 'sayim' => $sayim];
     };
 
