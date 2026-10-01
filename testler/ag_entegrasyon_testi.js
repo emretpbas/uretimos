@@ -149,6 +149,10 @@ t('sartname teslim listesi iceriyor', /TESLİM EDİLECEKLER/.test(pg));
 t('CSP yerel aga acildi', /connect-src 'self' http:\/\/\*\.local/.test(ht));
 t('CIDR yazilamayacagi belgelenmis', /IP ARALIĞI \(192\.168\.0\.0\/16\) yazılamaz/.test(ht));
 t('parcali yazma kullaniliyor (413 korumasi)', /topluEkle\('siparisler', eklenecek, 200\)/.test(pg));
+t('tumunu sec kutusu var', /id="ae-sec-tumu"/.test(pg));
+t('100 ustu kayitta toplu aktarim butonu var', /id="ae-aktar-tumu"/.test(pg));
+t('toplu aktarim onizlemede GORUNMEYEN kayitlari da kapsiyor (fark.yeni+fark.degisen)', /fark\.yeni, \.\.\._onizleme\.fark\.degisen/.test(pg) || /_onizleme\.fark\.yeni, \.\.\._onizleme\.fark\.degisen/.test(pg));
+t('toplu aktarim once onay istiyor', /confirmDialog\(`\$\{fark\.yeni\.length \+ fark\.degisen\.length\}/.test(pg));
 
 (async () => {
   console.log('\n-- DISA GONDER (async ag cagrisi) --');

@@ -358,7 +358,8 @@ PageModules.ag_entegrasyon = (() => {
       ${e.hatalar.length ? `<div style="font-size:11.5px;color:var(--amber-text);margin-bottom:6px">
         ⚠ ${e.hatalar.length} satır atlandı: ${App.escapeHtml(e.hatalar.slice(0, 3).join(' · '))}</div>` : ''}
       <div class="tbl-wrap" style="max-height:300px"><table class="dtable">
-        <tr><th style="width:30px"></th><th>${App.escapeHtml(tanim.anaAlanlar[0][1])}</th>
+        <tr><th style="width:30px"><input type="checkbox" id="ae-sec-tumu" title="Görünenlerin tümünü seç/kaldır"></th>
+            <th>${App.escapeHtml(tanim.anaAlanlar[0][1])}</th>
             <th>${kolon2 ? App.escapeHtml(tanim.anaAlanlar[1][1]) : ''}</th><th>Durum</th></tr>
         ${e.kayitlar.slice(0, 100).map((k, i) => {
           const d = fark.yeni.includes(k) ? ['yeni', 'pill-green']
@@ -371,21 +372,49 @@ PageModules.ag_entegrasyon = (() => {
           </tr>`;
         }).join('')}
       </table></div>
-      <button class="btn btn-green" id="ae-aktar" style="margin-top:8px">
-        ✓ Seçilenleri ÜretimOS'a Aktar</button>
+      ${e.kayitlar.length > 100 ? `<div class="fhint" style="margin-top:6px;color:var(--amber-text)">
+        ⚠ Performans için yalnızca ilk 100 kayıt listede gösteriliyor (toplam ${e.kayitlar.length}).
+        Üstteki kutu ve aşağıdaki "Seçilenleri Aktar" yalnızca bu 100'ü kapsar.</div>` : ''}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-green" id="ae-aktar">✓ Seçilenleri ÜretimOS'a Aktar</button>
+        ${e.kayitlar.length > 100 && (fark.yeni.length + fark.degisen.length) > 0 ? `
+          <button class="btn btn-blue" id="ae-aktar-tumu">
+            ✓✓ TÜM Yeni + Değişmiş'i Aktar (${fark.yeni.length + fark.degisen.length} kayıt — listede görünmeyenler dahil)</button>
+        ` : ''}
+      </div>
       <div class="fhint" style="margin-top:6px">
         "Aynı" işaretliler varsayılan olarak seçili değildir — gereksiz yazma yapılmaz.
       </div>`;
     document.getElementById('ae-aktar').onclick = () => aktar(a, profil, main);
+    const tumuBtn = document.getElementById('ae-aktar-tumu');
+    if (tumuBtn) tumuBtn.onclick = () => {
+      App.confirmDialog(`${fark.yeni.length + fark.degisen.length} kayıt (listede görünmeyenler dahil) ÜretimOS'a aktarılacak. Onaylıyor musunuz?`,
+        () => aktar(a, profil, main, true));
+    };
+    const tumunuSecKutu = document.getElementById('ae-sec-tumu');
+    if (tumunuSecKutu) tumunuSecKutu.onchange = () => {
+      document.querySelectorAll('.ae-sec').forEach(c => { c.checked = tumunuSecKutu.checked; });
+    };
   }
 
   // ── İÇE AKTARIM: KAYDET ──────────────────────────────────────────────────
-  async function aktar(a, profil, main) {
+  // tumunuAktarMi: önizleme tablosu performans için yalnızca ilk 100 satırı
+  // GÖSTERİR (binlerce kayıtta DOM'u tıkamamak için) — ama checkbox'lar yalnızca
+  // o görünen 100'ü kapsar. Kullanıcı "TÜM YENİ+DEĞİŞMİŞ'i aktar" derse,
+  // görünmeyen kayıtlar da dahil TÜM fark.yeni + fark.degisen (farkCikar zaten
+  // kayıtların TAMAMI üzerinde çalışmıştı, slice'tan ETKİLENMEZ) işlenir.
+  async function aktar(a, profil, main, tumunuAktarMi) {
     try {
       if (!_onizleme || _onizleme.profilId !== profil.id) return;
-      const secili = [...document.querySelectorAll('.ae-sec:checked')].map(c => +c.dataset.i);
-      if (!secili.length) { App.toast('Hiç kayıt seçilmedi.', 'err'); return; }
-      const kayitlar = secili.map(i => _onizleme.kayitlar[i]);
+      let kayitlar;
+      if (tumunuAktarMi) {
+        kayitlar = [..._onizleme.fark.yeni, ..._onizleme.fark.degisen];
+        if (!kayitlar.length) { App.toast('Aktarılacak yeni/değişmiş kayıt yok.', 'err'); return; }
+      } else {
+        const secili = [...document.querySelectorAll('.ae-sec:checked')].map(c => +c.dataset.i);
+        if (!secili.length) { App.toast('Hiç kayıt seçilmedi.', 'err'); return; }
+        kayitlar = secili.map(i => _onizleme.kayitlar[i]);
+      }
       let yeni = 0, guncel = 0;
 
       if (profil.hedefTip === 'siparis') {
