@@ -134,6 +134,10 @@ PageModules.ag_entegrasyon = (() => {
       const l = await Store.musteriler.all();
       return l.map(m => Object.assign({}, m, { kod: m.kod || m.vergiNo || m.id }));
     }
+    if (hedefTip === 'cari_tedarikci') {
+      const l = await Store.tedarikciler.all();
+      return l.map(t => Object.assign({}, t, { kod: t.kod || t.vergiNo || t.id }));
+    }
     return [];
   }
 
@@ -599,6 +603,36 @@ PageModules.ag_entegrasyon = (() => {
         await App.persist(async () => {
           if (yeniM.length) await Store.topluEkle('musteriler', yeniM, 200);
           if (guncelM.length) await Store.topluGuncelle('musteriler', guncelM, 200);
+        });
+      } else if (profil.hedefTip === 'cari_tedarikci') {
+        const tedarikciler = await Store.tedarikciler.all();
+        const harita = new Map();
+        tedarikciler.forEach(t => { const k = String(t.kod || t.vergiNo || '').toUpperCase(); if (k) harita.set(k, t); });
+        const yeniT = [], guncelT = [];
+        kayitlar.forEach(k => {
+          const anahtar = k.kod.toUpperCase();
+          let t = harita.get(anahtar);
+          if (!t) {
+            // kategori (plaka/hırdavat/diğer) LOGO'da karşılığı olmayan,
+            // ÜretimOS'a özgü bir sınıflandırma — tahmin etmek yerine
+            // "diğer" ile açılır, kullanıcı gerekirse elle düzenler.
+            t = { id: App.uid('TED'), kod: k.kod, unvan: k.unvan, kategori: 'diger',
+              vergiNo: k.vergiNo, vergiDairesi: k.vergiDairesi, adres: k.adres,
+              telefon: k.telefon, email: k.email, kaynak: 'ag_entegrasyon' };
+            yeniT.push(t); yeni++;
+          } else {
+            t.unvan = k.unvan || t.unvan;
+            if (k.vergiNo) t.vergiNo = k.vergiNo;
+            if (k.vergiDairesi) t.vergiDairesi = k.vergiDairesi;
+            if (k.adres) t.adres = k.adres;
+            if (k.telefon) t.telefon = k.telefon;
+            if (k.email) t.email = k.email;
+            guncelT.push(t); guncel++;
+          }
+        });
+        await App.persist(async () => {
+          if (yeniT.length) await Store.topluEkle('tedarikciler', yeniT, 200);
+          if (guncelT.length) await Store.topluGuncelle('tedarikciler', guncelT, 200);
         });
       }
 

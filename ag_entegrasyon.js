@@ -88,12 +88,23 @@ const AgEntegrasyon = (() => {
       kalemAlanlar: []   // yarimamuller'e yazar
     },
     cari: {
-      ad: 'Cari',
+      ad: 'Cari (Müşteri)',
       anaAlanlar: [['kod', 'Cari Kodu', true], ['unvan', 'Ünvan', true],
         ['vergiNo', 'Vergi No / TCKN', false], ['vergiDairesi', 'Vergi Dairesi', false],
         ['adres', 'Adres', false], ['telefon', 'Telefon', false], ['email', 'E-posta', false],
         ['bakiye', 'Bakiye (yalnızca YENİ kartta açılış bakiyesi olarak kullanılır)', false]],
-      kalemAlanlar: []
+      kalemAlanlar: []   // musteriler'e yazar (bkz. page_ag_entegrasyon.js aktar())
+    },
+    // 'cari' ile AYNI düz alan şeklini kullanır ama tedarikciler'e yazar —
+    // LOGO gibi müşteri/tedarikçiyi tek tabloda tutan (CARDTYPE ayrımı
+    // güvenilir olmayan) kaynaklardan iki ayrı profille iki ayrı ÜretimOS
+    // koleksiyonuna aktarım yapılabilsin diye eklendi.
+    cari_tedarikci: {
+      ad: 'Cari (Tedarikçi)',
+      anaAlanlar: [['kod', 'Cari Kodu', true], ['unvan', 'Ünvan', true],
+        ['vergiNo', 'Vergi No / TCKN', false], ['vergiDairesi', 'Vergi Dairesi', false],
+        ['adres', 'Adres', false], ['telefon', 'Telefon', false], ['email', 'E-posta', false]],
+      kalemAlanlar: []   // tedarikciler'e yazar
     }
   };
   const HEDEF_TIPLERI = Object.keys(HEDEF_ALANLAR);

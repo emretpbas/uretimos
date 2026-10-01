@@ -210,6 +210,49 @@ gerektiren ayrı bir geliştirmedir.
 **Birim fiyat:** LOGO'da satırda ayrı bir sütun değil — `sipNetTutar /
 sipMiktar` ile köprü tarafından hesaplanır (doğrulandı).
 
+## 4d. Cari kartlarını (müşteri/tedarikçi) çekmek
+
+Ana kart tablosu (`LG_222_CLCARD`, LOGO'nun kendisi) **ayrı bir veritabanında**
+(fiyat listesiyle aynı dönemsel veritabanı). Adres tek bir alana sunucu
+tarafında birleştiriliyor, bakiye (cari başına birden fazla satırdan)
+toplanıyor, risk bilgisi ayrı bir tablodan ekleniyor — hepsi GERÇEK ÜRETİM
+VERİSİYLE (LogoRead ile SSMS'te doğrudan sorgulanarak) doğrulandı.
+
+**Müşteri/tedarikçi ayrımı LOGO'da YOK** (kartların %99'u "Alıcı+Satıcı") —
+köprü bunu satış/sipariş ile satınalma hareketlerinde o cariye ait kayıt
+olup olmadığından çıkarıyor. Bir cari her iki tarafta da (müşteri VE
+tedarikçi) çıkabilir — bu durumda iki ayrı profille iki ayrı koleksiyona
+(hem `musteriler` hem `tedarikciler`) eklenir, bu YANLIŞ değildir.
+
+| Bridge tipi | Kapsam | Hedef veri tipi | ÜretimOS koleksiyonu |
+|---|---|---|---|
+| `?tip=cari` | Tüm aktif kartlar (4.668, doğrulandı) | Cari (Müşteri) | `musteriler` |
+| `?tip=cari_musteri` | Satış/sipariş hareketi olanlar | Cari (Müşteri) | `musteriler` |
+| `?tip=cari_tedarikci` | Satınalma hareketi olanlar | Cari (Tedarikçi) | `tedarikciler` |
+
+**Nasıl bağlanır:** `?tip=cari_musteri` ve `?tip=cari_tedarikci` için iki ayrı
+profil ekleyin (ya da tek bir `?tip=cari` ile hepsini `musteriler`'e çekin —
+hangisi işinize geliyorsa). Eşlemede: Cari Kodu → `Cari`, Ünvan → `CariAdi`,
+Vergi No → `VergiNo`, Vergi Dairesi → `VergiDairesi`, Adres → `Adres`,
+Telefon → `Telefon`, E-posta → `Email`, (yalnızca "Cari (Müşteri)" hedefinde)
+Bakiye → `Bakiye`.
+
+**KVKK:** TC kimlik no, yetkili kişi adı ve IBAN'lar **varsayılan olarak
+köprüden hiç gelmiyor** — SQL sorgusuna bile girmiyor, sadece gizlenmiyor.
+Gerçekten ihtiyacınız varsa `ayarlar.php`'de `kvkkAlanlariDahilEt` değerini
+`true` yapın; bu alanlar o zaman `TcKimlikNo`/`YetkiliKisi`/`Iban1..3` olarak
+görünür.
+
+**Henüz bağlanmayan bir bulgu:** `Cari_OK1Adi` sütununda "KARA LİSTE",
+"KANUNİ TAKİP", "HAREKET GÖRMEYEN CARİLER" gibi LOGO sınıfları var; köprü
+bunu `OzelDurum` alanı olarak döndürüyor ama ÜretimOS'un müşteri/tedarikçi
+kartında buna karşılık gelen bir alan yok — isterseniz ayrı bir istek olarak
+(ör. "riskli cari uyarısı" rozeti) ekleyebiliriz.
+
+**Bakım notu:** `cariKartVeritabani` (LG_222_CLCARD'ın bulunduğu veritabanı)
+fiyat listesiyle aynı dönemsel isimlendirmeyi paylaşıyor (bugün `DOXA_2022`)
+— yıl değişince ikisini birlikte güncelleyin.
+
 ## Ölçek notu
 
 LOGO'daki aktif kayıt sayısı (~97.000, üç tip toplamı) `OLCEKLEME_PLANI.md`'de

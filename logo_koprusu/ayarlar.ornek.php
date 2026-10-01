@@ -95,4 +95,26 @@ return [
     'siparisTablo' => 'Doxa_Programs.dbo.tbl_Mel_Siparis_Tablosu_222_01',
     'cariTablo' => 'Doxa_Programs..tbl_Mel_Cariler_222',
 
+    // ── CARİ KARTLARI — GERÇEK ÜRETİM VERİSİYLE (LogoRead ile SSMS'te
+    // doğrudan sorgulanarak) DOĞRULANDI. Ana kart LG_222_CLCARD, fiyat
+    // listesiyle AYNI dönemsel veritabanında (varsayılan olarak
+    // 'fiyatListesiVeritabani' ile aynı değeri kullanır — ayrı tutmak
+    // isterseniz burada override edin).
+    'cariKartVeritabani' => 'DOXA_2022',
+    'cariKartTablo' => 'dbo.LG_222_CLCARD',
+    'cariBakiyeTablo' => 'Doxa_Programs..tbl_Mel_CariBakiye_222',
+    'cariRiskTablo' => 'Doxa_Programs..tbl_Mel_CariRiskBilgileri_222',
+
+    // Müşteri/tedarikçi ayrımı LOGO'da GÜVENİLİR DEĞİL (CARDTYPE kartların
+    // %99'unda "Alıcı+Satıcı") — bu yüzden ayrım hareket tablolarında o
+    // cariye ait EN AZ bir kayıt olup olmadığından çıkarılıyor.
+    'satisTablo' => 'Doxa_Programs.dbo.tbl_Mel_Satis_Tablosu_222_01',
+    'satinalmaAlimTablo' => 'Doxa_Programs.dbo.tbl_Mel_Satinalma_Tablosu_Alim_222_01',
+    'satinalmaSiparisTablo' => 'Doxa_Programs.dbo.tbl_Mel_Satinalma_Tablosu_Siparis_222_01',
+
+    // KVKK: TC kimlik no, yetkili kişi adı ve IBAN'lar KİŞİSEL VERİDİR.
+    // ÜretimOS'ta bu alanları kullanmayacaksanız false bırakın — köprü bu
+    // sütunları hiç SORGULAMAZ bile (yalnızca gizlemez, sorgudan ÇIKARIR).
+    'kvkkAlanlariDahilEt' => false,
+
 ];

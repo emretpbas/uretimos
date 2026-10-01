@@ -249,12 +249,88 @@ function satirlariSiparisOlarakGrupla(array $satirlar): array
     return array_values($siparisler);
 }
 
+// ── CARİ SORGULARI — GERÇEK ÜRETİM VERİSİYLE (LogoRead ile doğrudan SSMS
+// sorgusuyla) DOĞRULANDI. Ana kart LG_222_CLCARD'da (AYRI veritabanında,
+// fiyat listesiyle aynı DOXA_2022 — o da dönemsel, bkz. ayarlar.ornek.php).
+// Adres TEK bir alana (ADDR1+ADDR2+DISTRICT+TOWN+CITY) SUNUCU TARAFINDA
+// birleştiriliyor — ÜretimOS'un "Cari" hedefinde tek bir 'adres' alanı var,
+// altı ayrı LOGO sütununu birbirinden bağımsız eşleyecek bir mekanizma yok.
+// Bakiye CariBakiye tablosunda cari başına BİRDEN FAZLA satırda (bölüm/
+// işyeri kırılımı) durduğundan SUM ile tekilleştiriliyor (doğrulandı:
+// tbl_Mel_CariFinansalDurumlar_222 ile 880/880 birebir eşleşti).
+// KVKK: TC kimlik no, yetkili kişi adı ve IBAN'lar VARSAYILAN OLARAK
+// DÖNDÜRÜLMEZ — ayarlar.php'de 'kvkkAlanlariDahilEt' açıkça true
+// yapılmadıkça. Müşteri/tedarikçi LOGO'da ayrı bir alan DEĞİL (CARDTYPE
+// neredeyse hepsinde "Alıcı+Satıcı"); ayrım satış/sipariş ile satınalma
+// hareketlerinde o cariye ait EN AZ bir kayıt olup olmadığından çıkarılıyor.
+function cariSorgulari(array $ayar, int $offset, int $adet): array
+{
+    $clcardDb = $ayar['cariKartVeritabani'] ?? ($ayar['fiyatListesiVeritabani'] ?? 'DOXA_2022');
+    $clcardTablo = $ayar['cariKartTablo'] ?? 'dbo.LG_222_CLCARD';
+    $cariTablo = $ayar['cariTablo'] ?? 'Doxa_Programs..tbl_Mel_Cariler_222';
+    $bakiyeTablo = $ayar['cariBakiyeTablo'] ?? 'Doxa_Programs..tbl_Mel_CariBakiye_222';
+    $riskTablo = $ayar['cariRiskTablo'] ?? 'Doxa_Programs..tbl_Mel_CariRiskBilgileri_222';
+    $satisTablo = $ayar['satisTablo'] ?? 'Doxa_Programs.dbo.tbl_Mel_Satis_Tablosu_222_01';
+    $siparisTablo = $ayar['siparisTablo'] ?? 'Doxa_Programs.dbo.tbl_Mel_Siparis_Tablosu_222_01';
+    $satinalmaAlimTablo = $ayar['satinalmaAlimTablo'] ?? 'Doxa_Programs.dbo.tbl_Mel_Satinalma_Tablosu_Alim_222_01';
+    $satinalmaSiparisTablo = $ayar['satinalmaSiparisTablo'] ?? 'Doxa_Programs.dbo.tbl_Mel_Satinalma_Tablosu_Siparis_222_01';
+    $kvkkDahil = !empty($ayar['kvkkAlanlariDahilEt']);
+
+    $adresIfade = "LTRIM(RTRIM(
+            ISNULL(cl.ADDR1,'')
+            + (CASE WHEN ISNULL(cl.ADDR2,'') <> '' THEN ' ' + cl.ADDR2 ELSE '' END)
+            + (CASE WHEN ISNULL(cl.DISTRICT,'') <> '' THEN ' ' + cl.DISTRICT ELSE '' END)
+            + (CASE WHEN ISNULL(cl.TOWN,'') <> '' THEN '/' + cl.TOWN ELSE '' END)
+            + (CASE WHEN ISNULL(cl.CITY,'') <> '' THEN '/' + cl.CITY ELSE '' END)
+        ))";
+    $kvkkSutunlari = $kvkkDahil
+        ? ", cl.TCKNO AS TcKimlikNo, cl.INCHARGE AS YetkiliKisi,
+             cl.BANKIBANS1 AS Iban1, cl.BANKIBANS2 AS Iban2, cl.BANKIBANS3 AS Iban3"
+        : '';
+
+    $secim = "cl.CODE AS Cari, cl.DEFINITION_ AS CariAdi,
+        cl.TAXNR AS VergiNo, cl.TAXOFFICE AS VergiDairesi,
+        $adresIfade AS Adres,
+        cl.TELNRS1 AS Telefon, cl.EMAILADDR AS Email,
+        cl.CCURRENCY AS ParaBirimiKodu, cl.CARDTYPE AS KartTipi,
+        t.Cari_OK1Adi AS OzelDurum,
+        ISNULL(bk.Bakiye, 0) AS Bakiye,
+        rk.RISKI AS RiskLimiti
+        $kvkkSutunlari";
+    $joinler = "FROM $clcardDb.$clcardTablo cl
+        LEFT JOIN $cariTablo t ON t.CariLogic = cl.LOGICALREF
+        LEFT JOIN (SELECT CARILOGIC, SUM(BAKIYE) AS Bakiye FROM $bakiyeTablo GROUP BY CARILOGIC) bk ON bk.CARILOGIC = cl.LOGICALREF
+        LEFT JOIN $riskTablo rk ON rk.CARILOGIC = cl.LOGICALREF";
+
+    $musteriKosulu = "(EXISTS (SELECT 1 FROM $satisTablo st WHERE st.ClientRef = cl.LOGICALREF)
+        OR EXISTS (SELECT 1 FROM $siparisTablo sp WHERE sp.cariRef = cl.LOGICALREF))";
+    $tedarikciKosulu = "(EXISTS (SELECT 1 FROM $satinalmaAlimTablo sa WHERE sa.ClientRef = cl.LOGICALREF)
+        OR EXISTS (SELECT 1 FROM $satinalmaSiparisTablo ss WHERE ss.cariRef = cl.LOGICALREF))";
+
+    $cariSorgu = function (string $ekKosul) use ($secim, $joinler, $clcardDb, $clcardTablo, $offset, $adet): array {
+        $kosul = "cl.ACTIVE = 0" . ($ekKosul !== '' ? " AND $ekKosul" : '');
+        $sorgu = "SELECT $secim $joinler WHERE $kosul ORDER BY cl.CODE OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY";
+        $sayim = "SELECT COUNT(*) FROM $clcardDb.$clcardTablo cl WHERE $kosul";
+        return ['sorgu' => $sorgu, 'sayim' => $sayim];
+    };
+
+    return [
+        'cari'           => $cariSorgu(''),
+        'cari_musteri'   => $cariSorgu($musteriKosulu),
+        'cari_tedarikci' => $cariSorgu($tedarikciKosulu),
+    ];
+}
+
 $grupAlani = null;
 if ($tip === 'siparis' || $tip === 'siparis_tumu') {
     $TAM_SORGULAR = siparisSorgulari($ayar, $offset, $adet);
     $sql = $TAM_SORGULAR[$tip]['sorgu'];
     $sayimSql = $TAM_SORGULAR[$tip]['sayim'];
     $grupAlani = 'SipNo';
+} elseif (in_array($tip, ['cari', 'cari_musteri', 'cari_tedarikci'], true)) {
+    $TAM_SORGULAR = cariSorgulari($ayar, $offset, $adet);
+    $sql = $TAM_SORGULAR[$tip]['sorgu'];
+    $sayimSql = $TAM_SORGULAR[$tip]['sayim'];
 } elseif ($tablo !== '' && array_key_exists($tip, $TAM_SORGULAR = fiyatSorgulari($ayar, $tablo, $offset, $adet))) {
     $sql = $TAM_SORGULAR[$tip]['sorgu'];
     $sayimSql = $TAM_SORGULAR[$tip]['sayim'];
@@ -268,7 +344,7 @@ if ($tip === 'siparis' || $tip === 'siparis_tumu') {
     ];
     if ($tablo === '' || !array_key_exists($tip, $KOSULLAR)) {
         http_response_code(400);
-        echo json_encode(['hata' => "ayarlar.php'de 'tablo' boş ya da bilinmeyen tip: $tip. Geçerli tipler: " . implode(', ', array_merge(array_keys($KOSULLAR), ['son_alis', 'fiyat_satis', 'fiyat_alis', 'siparis', 'siparis_tumu']))], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['hata' => "ayarlar.php'de 'tablo' boş ya da bilinmeyen tip: $tip. Geçerli tipler: " . implode(', ', array_merge(array_keys($KOSULLAR), ['son_alis', 'fiyat_satis', 'fiyat_alis', 'siparis', 'siparis_tumu', 'cari', 'cari_musteri', 'cari_tedarikci']))], JSON_UNESCAPED_UNICODE);
         exit;
     }
     $kosul = $KOSULLAR[$tip];

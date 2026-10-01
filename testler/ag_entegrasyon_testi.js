@@ -123,6 +123,11 @@ const ymKartEs=A.kayitlariEsle(ymKartHam,{hedefTip:'yarimamul_kart',
   eslesme:{kod:'StokKodu',ad:'StokAdi',birim:'Urun_AnaBirim'}});
 t('yarimamul_kart (LOGO Yari Mamul) eslendi', ymKartEs.kayitlar.length===1 && ymKartEs.kayitlar[0].ad==='Yan Panel');
 t('urun_kart ve yarimamul_kart HEDEF_TIPLERI listesinde', A.HEDEF_TIPLERI.includes('urun_kart') && A.HEDEF_TIPLERI.includes('yarimamul_kart'));
+const cariTedHam=[{Cari:'120.01.001',CariAdi:'ACME Hırdavat Ltd.',VergiNo:'1234567890',Adres:'İstanbul/Kadıköy'}];
+const cariTedEs=A.kayitlariEsle(cariTedHam,{hedefTip:'cari_tedarikci',
+  eslesme:{kod:'Cari',unvan:'CariAdi',vergiNo:'VergiNo',adres:'Adres'}});
+t('cari_tedarikci (LOGO Cari -> tedarikci) eslendi', cariTedEs.kayitlar.length===1 && cariTedEs.kayitlar[0].unvan==='ACME Hırdavat Ltd.');
+t('cari_tedarikci HEDEF_TIPLERI listesinde', A.HEDEF_TIPLERI.includes('cari_tedarikci'));
 
 console.log('\n-- DISA AKTARIM (yazma — yalniz acik cagriyla) --');
 const disaCfg={hedefTip:'urun_stok', disaEslesme:{kod:'STOK_KODU',ad:'URUN_ADI',stok:'MIKTAR'}};
