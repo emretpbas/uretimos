@@ -295,11 +295,9 @@ PageModules.teklif = (() => {
     // GÖRÜNMEZ — müşteriye fiyatsız/hesaplanmamış kalem teklif edilmez.
     const fiyatGecerli = k => !k.eksikKalemVarMi && k.listeFiyati > 0;
     const katalogUrunKalemleri = sonListeKalemleri.filter(k => (!k.tip || k.tip === 'urun') && fiyatGecerli(k));
-    const katalogYmKalemleri = sonListeKalemleri.filter(k => k.tip === 'yarimamul' && fiyatGecerli(k));
 
     // Sadece fiyat listesindeki (yönetimin hesaplatıp gönderdiği) kalemler:
     const katalogUrunleri = katalogUrunKalemleri.map(k => ({ grup: 'urun', kod: k.kod, ad: k.ad, listeFiyati: k.listeFiyati, maliyetYok: false }));
-    const katalogYmleri = katalogYmKalemleri.map(k => ({ grup: 'yarimamul', kod: k.kod, ad: k.ad, listeFiyati: k.listeFiyati, maliyetYok: false }));
 
     // 2. KALİTE / DEFOLU / SERİ SONU — iade ambarında satışa sunulmuş kalemler.
     // Teklifte gösterilir ANCAK: iskonto yapılamaz, sadece KDV değişebilir,
@@ -318,8 +316,10 @@ PageModules.teklif = (() => {
         ikinciKalite: true, iadeKalemId: i.id, maxAdet: kullanilabilir, kaliteSinifi: i.kalite, dvz: i.dvz || 'TL'
       }));
 
-    // Hammadde/hırdavat teklifte gösterilmez.
-    const tumKalemSecenekleri = [...katalogUrunleri, ...katalogYmleri, ...ikinciKaliteler];
+    // Hammadde/hırdavat teklifte gösterilmez. Kullanıcı isteği: "buraya
+    // sadece bitmiş ürünler gelsin" — yarı mamül müşteriye satılacak bir
+    // SKU değil, üretim ARA aşaması; teklif/satış ekranında görünmemeli.
+    const tumKalemSecenekleri = [...katalogUrunleri, ...ikinciKaliteler];
 
     main.innerHTML = `
       <div class="page-hdr">
@@ -338,7 +338,7 @@ PageModules.teklif = (() => {
       </div>
 
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Kalem Ekle (Ürün, Yarı Mamül veya Hammadde)</div></div>
+        <div class="card-hdr"><div class="card-title">Kalem Ekle (Bitmiş Ürün)</div></div>
         <div id="tk-katalog-pick"></div>
       </div>
 
@@ -375,7 +375,7 @@ PageModules.teklif = (() => {
         App.goTo('kalem_secici', {
           baslik: 'Teklif için Kalem Seç',
           secenekler,
-          gruplar: { urun: 'Bitmiş Ürünler', yarimamul: 'Yarı Mamüller', ikinci_kalite: '2. Kalite / Defolu / Seri Sonu' },
+          gruplar: { urun: 'Bitmiş Ürünler', ikinci_kalite: '2. Kalite / Defolu / Seri Sonu' },
           geriDon: () => render(main),
           onSecildi: (secim) => {
             if (d.kalemler.some(x => x.kod === secim.kod && x.grup === secim.grup && x.iadeKalemId === secim.iadeKalemId)) { App.toast('Bu kalem zaten teklifte', 'err'); App.goTo('teklif'); render(main); return; }
