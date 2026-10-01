@@ -44,15 +44,17 @@ namespace UretimOSKesim
     // denklem/global değişkenle sürülüyor, model ölçüleri az/dağınık
     // gelebilir"): InsertModelAnnotations3 hiç annotation eklemezse,
     // IDrawingDoc.AutoDimension her görünüş AYRI AYRI seçilerek denenir —
-    // bu, dış ölçüleri (en/boy) model ölçülerinden bağımsız koyar.
-    // BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu): bu ikinci yolun parametre
-    // SAYISI/isimleri bildirildi ama enum DEĞERLERİ (EntitiesToDimension/
-    // HorizontalScheme/HorizontalPlacement/VerticalScheme/VerticalPlacement)
-    // bu ortamda (SDK yok) doğrulanamadı — en yaygın/varsayılan anlama gelen
-    // 0 kullanıldı. Yanlış çıkarsa ÇÖKME olmaz (try/catch, görünüş başına
-    // bağımsız), yalnızca o görünüşte dış ölçü eklenmez; gerçek SolidWorks'te
-    // doğrulanıp gerekirse güncellenmelidir. Her iki yol da başarısız olursa
-    // elle düzenleme adımı (zaten var olan "1) Oluştur → düzenle → 2) Onayla"
+    // bu, dış ölçüleri (en/boy) model ölçülerinden bağımsız koyar. İLK sürüm
+    // tüm parametreleri 0 ile çağırıyordu — yerel interop swconst'tan
+    // YANSIMA ile okunan GERÇEK enum değerleri bunun İKİ YÖNDEN yanlış
+    // olduğunu kanıtladı: Scheme/Placement 0 ilgili enum'larda (swAutodimScheme_e
+    // 1-4, swAutodimHorizontal/VerticalPlacement_e ±1) GEÇERSİZ olduğundan her
+    // çağrı swAutodimStatusBadOptionValue ile reddediliyordu, ÜSTÜNE ÜSTLÜK
+    // başarı kodu (swAutodimStatusSuccess=0) "!= 0" ile YANLIŞ yönde
+    // yorumlanıyordu. Artık gerçek enum değerleriyle çağrılıp dönen kod
+    // swAutodimStatusSuccess'e eşitlenerek değerlendiriliyor. Her iki yol da
+    // başarısız olursa elle düzenleme adımı (zaten var olan "1) Oluştur →
+    // düzenle → 2) Onayla"
     // akışı) her durumda bir güvenlik ağı olarak kalır.
     // ════════════════════════════════════════════════════════════════════════
     public class TeknikResimOlusturucu
@@ -148,18 +150,30 @@ namespace UretimOSKesim
                 // YEDEK (kullanıcı isteği: "model ölçüleri az veya dağınık
                 // gelebilir... dönen dizi boşsa yedek olarak AutoDimension
                 // çağrılabilir, bu dış ölçüleri model ölçülerinden bağımsız
-                // koyar"). BİLİNMEYEN/DOĞRULANAMAYAN (dürüstlük notu, yukarıdaki
-                // sınıf başlığıyla AYNI ilke): IDrawingDoc.AutoDimension bu
-                // interop'ta VAR olduğu bildirildi, ama EntitiesToDimension/
-                // HorizontalScheme/HorizontalPlacement/VerticalScheme/
-                // VerticalPlacement parametrelerinin GERÇEK enum DEĞERLERİ bu
-                // ortamda (SDK yok) doğrulanamadı — en yaygın/varsayılan anlama
-                // gelen 0 kullanıldı. Yanlış çıkarsa ÇÖKME olmaz (try/catch,
-                // görünüş başına bağımsız), yalnızca o görünüşte dış ölçü
-                // eklenmez; gerçek SolidWorks'te doğrulanıp gerekirse
-                // güncellenmelidir.
+                // koyar"). İLK sürüm tüm parametreleri 0 ile çağırıp sonucu
+                // "!= 0 ise başarılı" sayıyordu — yerel interop swconst'tan
+                // YANSIMA ile okunan GERÇEK enum değerleri bunun İKİ YÖNDEN
+                // yanlış olduğunu kanıtladı: Scheme 0 swAutodimScheme_e'de
+                // GEÇERSİZ (1-4 arası), Placement 0 swAutodimHorizontal/
+                // VerticalPlacement_e'de GEÇERSİZ (±1) — bu yüzden her çağrı
+                // swAutodimStatusBadOptionValue (=1) ile REDDEDİLİYORDU; ÜSTÜNE
+                // ÜSTLÜK başarı kodu swAutodimStatusSuccess=0 İKEN "!= 0"
+                // kontrolü bunu BAŞARISIZLIK sayıyordu (tam tersi). Artık
+                // gerçek enum değerleriyle çağrılıp dönen kod
+                // swAutodimStatusSuccess'e eşitlenerek değerlendiriliyor.
                 if (!olculendirildi)
                 {
+                    // GERÇEK HATA (yerel interop swconst'tan reflection ile
+                    // okundu): 0,0,0,0,0 İKİ YÖNDEN yanlıştı — (1) Scheme 0
+                    // swAutodimScheme_e'de GEÇERSİZ (1-4 arası), Placement 0
+                    // swAutodimHorizontalPlacement_e/Vertical'da GEÇERSİZ
+                    // (±1) olduğundan her çağrı swAutodimStatusBadOptionValue
+                    // (=1) ile reddediliyordu; (2) başarı kodu 0
+                    // (swAutodimStatusSuccess) iken "!= 0" kontrolü bunu
+                    // BAŞARISIZLIK sayıyordu — tam tersi. Artık gerçek enum
+                    // değerleriyle çağrılıp dönen kod swAutodimStatusSuccess'e
+                    // eşitlenerek değerlendiriliyor; başarısızsa durum kodu
+                    // loglanıyor.
                     int otomatikOlculendirilenGorunus = 0;
                     var sayfaGorunusu = cizim.GetFirstView() as IView;
                     var v = sayfaGorunusu?.GetNextView() as IView;
@@ -168,8 +182,17 @@ namespace UretimOSKesim
                         try
                         {
                             bool secildi = cizimBelge.Extension.SelectByID2(v.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
-                            if (secildi && cizim.AutoDimension(0, 0, 0, 0, 0) != 0)
+                            int durum = secildi ? cizim.AutoDimension(
+                                (int)swAutodimEntities_e.swAutodimEntitiesAll,
+                                (int)swAutodimScheme_e.swAutodimSchemeBaseline,
+                                (int)swAutodimHorizontalPlacement_e.swAutodimHorizontalPlacementBelow,
+                                (int)swAutodimScheme_e.swAutodimSchemeBaseline,
+                                (int)swAutodimVerticalPlacement_e.swAutodimVerticalPlacementLeft)
+                                : (int)swAutodimStatus_e.swAutodimStatusBadOptionValue;
+                            if (durum == (int)swAutodimStatus_e.swAutodimStatusSuccess)
                                 otomatikOlculendirilenGorunus++;
+                            else
+                                Tanilama.Kaydet($"AutoDimension basarisiz ({v.Name}): durum={durum}, secildi={secildi}");
                         }
                         catch (Exception ex)
                         {
@@ -177,7 +200,7 @@ namespace UretimOSKesim
                         }
                         v = v.GetNextView() as IView;
                     }
-                    Tanilama.Kaydet($"AutoDimension yedegi: {otomatikOlculendirilenGorunus} gorunuste dis olcu denendi");
+                    Tanilama.Kaydet($"AutoDimension yedegi: {otomatikOlculendirilenGorunus} gorunuste dis olcu basarili");
                     olculendirildi = otomatikOlculendirilenGorunus > 0;
                 }
 
