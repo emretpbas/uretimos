@@ -358,6 +358,8 @@ PageModules.hammadde = (() => {
     if (!isEdit && onDeger && onDeger.ad) d.ad = onDeger.ad;
     if (!isEdit && onDeger && onDeger.renkKartelaKodu) d.renkKartelaKodu = onDeger.renkKartelaKodu;
     if (!isEdit && onDeger && onDeger.malzemeKategorisi) d.malzemeKategorisi = onDeger.malzemeKategorisi;
+    if (!isEdit && onDeger && onDeger.renkOlcuEtiketi) d.renkOlcuEtiketi = onDeger.renkOlcuEtiketi;
+    if (!isEdit && onDeger && onDeger.tip) d.tip = onDeger.tip;
     const kategoriler = await Store.hammaddeKategorileriGetir();
     const body = document.createElement('div');
     body.innerHTML = `
@@ -405,10 +407,14 @@ PageModules.hammadde = (() => {
             <option value="diger" ${d.malzemeKategorisi === 'diger' ? 'selected' : ''}>Diğer</option>
           </select>
         </div>
+        <div class="fgroup" style="flex:1" id="f-renk-olcu-wrap"><label class="flbl">Ölçü (Kalınlık / Kenar Bandı Ölçüsü)</label>
+          <select class="fselect" id="f-renk-olcu"></select>
+        </div>
       </div>
       <div class="fhint" style="margin-top:-6px">Bu ikisi birlikte doldurulursa, "🎨 Renk Varyantı Oluştur" bu hammaddeyi
-        hedef renk + AYNI malzeme kategorisine etiketli başka bir hammadde ile OTOMATİK takas eder (ör. Beyaz Sunta ↔ Antrasit
-        Sunta; MDF'ler kendi aralarında, Sunta'lar kendi aralarında — birbirine karışmaz). Boş bırakılırsa bu hammaddeye
+        hedef renk + AYNI malzeme kategorisine (+ varsa AYNI ölçüye) etiketli başka bir hammadde ile OTOMATİK takas eder
+        (ör. 18mm Beyaz Sunta ↔ 18mm Antrasit Sunta; MDF'ler kendi aralarında, Sunta'lar kendi aralarında — birbirine
+        karışmaz). Boş bırakılırsa bu hammaddeye
         renk varyantı oluşturulurken HİÇ dokunulmaz.</div>
 
       <div id="f-plaka-fields">
@@ -514,6 +520,21 @@ PageModules.hammadde = (() => {
       }
     };
 
+    // Malzeme kategorisine göre ölçü seçenekleri değişir (sunta/mdf: kalınlık
+    // 8/18/30mm; PVC kenar bandı: kalınlık×genişlik; boya/diğer: ölçü yok).
+    function olcuSecenekleriniDoldur() {
+      const kategori = document.getElementById('f-malzeme-kategori').value;
+      const secenekler = RenkKartelasi.olcuEtiketleri[kategori] || [];
+      const wrap = document.getElementById('f-renk-olcu-wrap');
+      const sel = document.getElementById('f-renk-olcu');
+      if (!secenekler.length) { wrap.style.display = 'none'; sel.innerHTML = ''; return; }
+      wrap.style.display = '';
+      sel.innerHTML = `<option value="">— Seçin —</option>` +
+        secenekler.map(o => `<option value="${o}" ${d.renkOlcuEtiketi === o ? 'selected' : ''}>${o}</option>`).join('');
+    }
+    document.getElementById('f-malzeme-kategori').onchange = olcuSecenekleriniDoldur;
+    olcuSecenekleriniDoldur();
+
     document.getElementById('f-yeni-kategori').onclick = () => {
       const yeniAd = window.prompt('Yeni kategori adı (örn. Yedek Parça, Boya Malzemesi):');
       if (!yeniAd || !yeniAd.trim()) return;
@@ -570,7 +591,8 @@ PageModules.hammadde = (() => {
         minSiparisMiktari: document.getElementById('f-minsiparis').value,
         emniyetStogu: document.getElementById('f-emniyet').value,
         renkKartelaKodu: document.getElementById('f-renk-kartela').value,
-        malzemeKategorisi: document.getElementById('f-malzeme-kategori').value
+        malzemeKategorisi: document.getElementById('f-malzeme-kategori').value,
+        renkOlcuEtiketi: document.getElementById('f-renk-olcu').value
       };
     }
 
@@ -618,7 +640,8 @@ PageModules.hammadde = (() => {
         varsayilanTedarikciId: document.getElementById('f-varsayilan-tedarikci-id').value || null,
         varsayilanTedarikciAdi: document.getElementById('f-varsayilan-tedarikci-ad').value || null,
         renkKartelaKodu: document.getElementById('f-renk-kartela').value || null,
-        malzemeKategorisi: document.getElementById('f-malzeme-kategori').value || null
+        malzemeKategorisi: document.getElementById('f-malzeme-kategori').value || null,
+        renkOlcuEtiketi: document.getElementById('f-renk-olcu').value || null
       };
       await App.persist(() => Store.hammaddeler.upsert(next));
       App.toast(isEdit ? 'Hammadde güncellendi' : 'Hammadde tanımlandı', 'ok');

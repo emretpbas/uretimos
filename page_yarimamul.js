@@ -119,9 +119,13 @@ PageModules.yarimamul = (() => {
     win.document.close();
   }
 
-  function openForm(main, item, hammaddeler, rotalar, onSaved) {
+  function openForm(main, item, hammaddeler, rotalar, onSaved, onDeger) {
     const isEdit = !!item;
     const d = item || { gorseller: [] };
+    if (!isEdit && onDeger && onDeger.ad) d.ad = onDeger.ad;
+    if (!isEdit && onDeger && onDeger.renkKartelaKodu) d.renkKartelaKodu = onDeger.renkKartelaKodu;
+    if (!isEdit && onDeger && onDeger.malzemeKategorisi) d.malzemeKategorisi = onDeger.malzemeKategorisi;
+    if (!isEdit && onDeger && onDeger.renkOlcuEtiketi) d.renkOlcuEtiketi = onDeger.renkOlcuEtiketi;
     let gorseller = [...(d.gorseller || [])];
 
     const body = document.createElement('div');
@@ -143,6 +147,32 @@ PageModules.yarimamul = (() => {
       <div class="frow">
         <div class="fgroup"><label class="flbl">Renk</label><input class="finput" id="f-renk" value="${App.escapeHtml(d.renk || '')}"></div>
       </div>
+      <div class="frow">
+        <div class="fgroup" style="flex:1"><label class="flbl">Renk Kartela Kodu (Renk Varyantı Oluştur için — ör. "LK.50..." gibi boyalı hazır parçalar)</label>
+          <select class="fselect" id="f-renk-kartela">
+            <option value="">— Renk bağımlı değil —</option>
+            ${Object.entries(RenkKartelasi.liste.reduce((g, r) => { (g[r.kategori] = g[r.kategori] || []).push(r); return g; }, {}))
+              .map(([kategori, kayitlar]) => `<optgroup label="${App.escapeHtml(kategori)}">
+                ${kayitlar.map(r => `<option value="${r.kod}" ${d.renkKartelaKodu === r.kod ? 'selected' : ''}>${r.kod} - ${App.escapeHtml(r.ad)}</option>`).join('')}
+              </optgroup>`).join('')}
+          </select>
+        </div>
+        <div class="fgroup" style="flex:1"><label class="flbl">Malzeme Kategorisi</label>
+          <select class="fselect" id="f-malzeme-kategori">
+            <option value="">—</option>
+            <option value="sunta" ${d.malzemeKategorisi === 'sunta' ? 'selected' : ''}>Sunta (Melamin)</option>
+            <option value="mdf" ${d.malzemeKategorisi === 'mdf' ? 'selected' : ''}>MDF (Lam)</option>
+            <option value="pvc_bant" ${d.malzemeKategorisi === 'pvc_bant' ? 'selected' : ''}>PVC Kenar Bandı</option>
+            <option value="boya" ${d.malzemeKategorisi === 'boya' ? 'selected' : ''}>Boya</option>
+            <option value="diger" ${d.malzemeKategorisi === 'diger' ? 'selected' : ''}>Diğer</option>
+          </select>
+        </div>
+        <div class="fgroup" style="flex:1" id="f-renk-olcu-wrap"><label class="flbl">Ölçü</label>
+          <select class="fselect" id="f-renk-olcu"></select>
+        </div>
+      </div>
+      <div class="fhint" style="margin-top:-6px">Doldurulursa, "🎨 Renk Varyantı Oluştur" bu yarı mamülü yeniden ÜRETMEK yerine
+        hedef rengin AYNI kategoride etiketli hazır karşılığıyla TAKAS eder (ör. boyalı parçalar için).</div>
 
       <div class="hr"></div>
       <div class="flbl" style="margin-bottom:8px">Referans Fiyat (opsiyonel — Excel'den veya manuel)</div>
@@ -216,6 +246,19 @@ PageModules.yarimamul = (() => {
       App.closeModal();
       PageModules.recete_agac.ac(main, d, 'yarimamul', () => render(main));
     };
+
+    function olcuSecenekleriniDoldur() {
+      const kategori = document.getElementById('f-malzeme-kategori').value;
+      const secenekler = RenkKartelasi.olcuEtiketleri[kategori] || [];
+      const wrap = document.getElementById('f-renk-olcu-wrap');
+      const sel = document.getElementById('f-renk-olcu');
+      if (!secenekler.length) { wrap.style.display = 'none'; sel.innerHTML = ''; return; }
+      wrap.style.display = '';
+      sel.innerHTML = `<option value="">— Seçin —</option>` +
+        secenekler.map(o => `<option value="${o}" ${d.renkOlcuEtiketi === o ? 'selected' : ''}>${o}</option>`).join('');
+    }
+    document.getElementById('f-malzeme-kategori').onchange = olcuSecenekleriniDoldur;
+    olcuSecenekleriniDoldur();
 
     function renderGorselList() {
       const wrap = document.getElementById('f-gorsel-list');
@@ -295,6 +338,9 @@ PageModules.yarimamul = (() => {
         kapasiteHaftalikMax: parseFloat(document.getElementById('f-kap-haftalik').value) || 0,
         kapasiteAylikMax: parseFloat(document.getElementById('f-kap-aylik').value) || 0,
         aciklama: document.getElementById('f-aciklama').value.trim(),
+        renkKartelaKodu: document.getElementById('f-renk-kartela').value || null,
+        malzemeKategorisi: document.getElementById('f-malzeme-kategori').value || null,
+        renkOlcuEtiketi: document.getElementById('f-renk-olcu').value || null,
         gorseller
       };
       await App.persist(() => Store.yarimamuller.upsert(next));

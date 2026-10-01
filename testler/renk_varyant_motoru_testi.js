@@ -34,7 +34,7 @@ t('eşleşme yoksa ad DOKUNULMADAN kalır (uydurma yapılmaz)', RVM.varyantAdUre
 t('bileşik kelime içindeki YANLIŞ eşleşme engellenir ("Beyazköy" bozulmaz)',
   RVM.varyantAdUret('Beyazköy Parçası', 'Beyaz', 'Antrasit') === 'Beyazköy Parçası');
 
-console.log('\n-- hammaddeEslesenBul: (renk, malzeme kategorisi) ile TEK hammadde arama --');
+console.log('\n-- hammaddeEslesenBul: (renk, malzeme kategorisi[, ölçü etiketi]) ile TEK kart arama --');
 const hmTest = [
   { id: 'H1', renkKartelaKodu: '15', malzemeKategorisi: 'sunta' },
   { id: 'H2', renkKartelaKodu: '24', malzemeKategorisi: 'sunta' },
@@ -45,6 +45,19 @@ t('kategori farklıysa eşleşme bulunamaz (sunta/mdf AYRI tutulur)', RVM.hammad
 t('hiç eşleşme yoksa null (tahmin edilmez)', RVM.hammaddeEslesenBul(hmTest, '99', 'sunta') === null);
 t('BİRDEN FAZLA eşleşme varsa da null (belirsiz, tahmin edilmez)',
   RVM.hammaddeEslesenBul([...hmTest, { id: 'H4', renkKartelaKodu: '24', malzemeKategorisi: 'sunta' }], '24', 'sunta') === null);
+
+console.log('\n-- hammaddeEslesenBul: ÖLÇÜ ETİKETİ (sunta/mdf kalınlık, PVC bant kalınlık×genişlik) AYRI ANAHTAR --');
+const olculuTest = [
+  { id: 'O1', renkKartelaKodu: '24', malzemeKategorisi: 'sunta', renkOlcuEtiketi: '8mm' },
+  { id: 'O2', renkKartelaKodu: '24', malzemeKategorisi: 'sunta', renkOlcuEtiketi: '18mm' },
+  { id: 'O3', renkKartelaKodu: '24', malzemeKategorisi: 'pvc_bant', renkOlcuEtiketi: '0,40x22' },
+  { id: 'O4', renkKartelaKodu: '24', malzemeKategorisi: 'pvc_bant', renkOlcuEtiketi: '1x33' }
+];
+t('8mm aranınca SADECE 8mm hammadde bulunur, 18mm KARIŞMAZ', RVM.hammaddeEslesenBul(olculuTest, '24', 'sunta', '8mm').id === 'O1');
+t('18mm aranınca SADECE 18mm hammadde bulunur', RVM.hammaddeEslesenBul(olculuTest, '24', 'sunta', '18mm').id === 'O2');
+t('30mm (tanımsız ölçü) için eşleşme bulunamaz — tahmin edilmez', RVM.hammaddeEslesenBul(olculuTest, '24', 'sunta', '30mm') === null);
+t('PVC bantta 0,40x22 ile 1x33 KARIŞMAZ', RVM.hammaddeEslesenBul(olculuTest, '24', 'pvc_bant', '0,40x22').id === 'O3');
+t('ölçü etiketi VERİLMEDEN arama yapılırsa, ölçülü kartlar (hepsi etiketli) eşleşmez', RVM.hammaddeEslesenBul(olculuTest, '24', 'sunta') === null);
 
 console.log('\n-- varyantPlaniOlustur: GERÇEKÇİ ÇOK KATMANLI ÜRÜN AĞACI --');
 // Hammaddeler: sunta/mdf/pvc_bant/boya kategorileri + etiketsiz bir hırdavat.
@@ -146,6 +159,39 @@ const yeniYM3Recete = plan.yeniReceteler.find(r => {
 });
 t('eşleşme bulunamayan kalemde ESKİ hammadde (HM7) KORUNDU (tahmini bağlanmadı)',
   yeniYM3Recete && yeniYM3Recete.kalemler.some(k => k.refId === 'HM7'));
+
+console.log('\n-- YARI MAMÜL DE RENK ETİKETLİ OLABİLİR (boya: "LK.50..." gibi hazır katalog kartları TAKAS edilir, KLONLANMAZ) --');
+const boyaliYarimamuller = [
+  { id: 'YMB1', kod: 'YM.KAPAK.BY', ad: 'Lake Kapak Beyaz' }, // etiketsiz — eski davranış korunmalı
+  { id: 'YMB2', kod: 'LK.15.KAPAK1', ad: 'Lake Boya Kapak Beyaz', renkKartelaKodu: '15', malzemeKategorisi: 'boya' },
+  { id: 'YMB3', kod: 'LK.24.KAPAK1', ad: 'Lake Boya Kapak Antrasit', renkKartelaKodu: '24', malzemeKategorisi: 'boya' }
+];
+const boyaReceteler = [
+  { id: 'RC-BOYATEST', urunId: 'URN-BOYA', kalemler: [
+    { tip: 'yarimamul', refId: 'YMB2', miktar: 1, birim: 'ADET' }
+  ]}
+];
+const boyaVeri = {
+  hammaddeler: [], yarimamuller: boyaliYarimamuller, altMontajlar: [], paketler: [],
+  urunler: [{ id: 'URN-BOYA', kod: 'URN.BOYATEST.BY', ad: 'Boyatest Beyaz' }],
+  receteler: boyaReceteler, renkKisaltmalari: kisaltmalar
+};
+let boyaSayac = 0;
+const boyaPlan = RVM.varyantPlaniOlustur('URN-BOYA', 'urun', '24', 'Antrasit', boyaVeri, p => p + '-TB' + (boyaSayac++));
+t('renk etiketli yarı mamül (LK.15.KAPAK1) YENİDEN KLONLANMADI, hazır Antrasit karşılığına (YMB3) TAKAS edildi', (() => {
+  const yeniUrunRecete = boyaPlan.yeniReceteler.find(r => r.urunId === boyaPlan.kokYeniId);
+  return !!yeniUrunRecete && yeniUrunRecete.kalemler.some(k => k.refId === 'YMB3');
+})());
+t('takas edilen yarı mamül İÇİN yeni bir kart OLUŞTURULMADI (gerçek, önceden var olan LK.24.KAPAK1 kullanıldı)',
+  !boyaPlan.yeniKartlar.some(x => x.kart.id === 'YMB3' || x.kart.kod === 'LK.24.KAPAK1'));
+
+const boyaEksikPlan = RVM.varyantPlaniOlustur('URN-BOYA', 'urun', '99', 'TanımsızRenk',
+  { ...boyaVeri, urunler: boyaVeri.urunler }, p => p + '-TC' + (boyaSayac++));
+t('tanımsız hedef renk için boya karşılığı bulunamazsa ESKİ yarı mamül (YMB2) korunup RAPORLANIR', (() => {
+  const yeniUrunRecete = boyaEksikPlan.yeniReceteler.find(r => r.urunId === boyaEksikPlan.kokYeniId);
+  return !!yeniUrunRecete && yeniUrunRecete.kalemler.some(k => k.refId === 'YMB2') &&
+    boyaEksikPlan.eksikEslesmeler.some(e => e.kaynakTipi === 'yarimamul' && e.hammaddeKod === 'LK.15.KAPAK1');
+})());
 
 console.log('\n-- DÖNGÜ KORUMASI (kendine referans veren alt montaj, AYRI bir çalıştırmada) --');
 const dongPlan = RVM.varyantPlaniOlustur('AM_CYCLE', 'altmontaj', '24', 'Antrasit', veri, idUret);

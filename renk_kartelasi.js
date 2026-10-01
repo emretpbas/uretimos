@@ -105,7 +105,23 @@ const RenkKartelasi = (() => {
     return r ? r.ad : '';
   }
 
-  return { liste, bul, adGetir };
+  // ── RENK TAKASI İÇİN ÖLÇÜ ETİKETLERİ ──────────────────────────────────────
+  // Kullanıcı talebi: "18mm için bir satır 30mm için bir satır 8mm için bir
+  // satır kullanalım... kenar bandında 0,40*22, 0,40*33, ... 2*54" — aynı
+  // renk+kategoride (sunta/mdf/pvc kenar bandı) BİRDEN FAZLA ölçü varyantı
+  // olabiliyor, her biri AYRI bir hammaddeye karşılık geliyor. Boya ve diğer
+  // kategorilerde ölçü boyutu YOKTUR (boş liste = tek satır, ölçüsüz).
+  const PVC_KALINLIKLAR = ['0,40', '0,80', '1', '2'];
+  const PVC_GENISLIKLER = ['22', '33', '54'];
+  const olcuEtiketleri = {
+    sunta: ['8mm', '18mm', '30mm'],
+    mdf: ['8mm', '18mm', '30mm'],
+    pvc_bant: PVC_KALINLIKLAR.flatMap(k => PVC_GENISLIKLER.map(g => k + 'x' + g)),
+    boya: [],
+    diger: []
+  };
+
+  return { liste, bul, adGetir, olcuEtiketleri };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = RenkKartelasi;

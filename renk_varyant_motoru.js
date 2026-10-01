@@ -67,11 +67,15 @@ const RenkVaryantMotoru = (() => {
     return ad;
   }
 
-  // Hedef renk + AYNI malzeme kategorisine etiketli TEK bir hammadde arar.
-  // 0 veya >1 sonuç -> null (belirsiz/eksik — ASLA tahmin edilmez).
-  function hammaddeEslesenBul(hammaddeler, hedefRenkKodu, malzemeKategorisi) {
-    const adaylar = (hammaddeler || []).filter(h =>
-      h.renkKartelaKodu === hedefRenkKodu && h.malzemeKategorisi === malzemeKategorisi);
+  // Hedef renk + AYNI malzeme kategorisi (+ varsa AYNI ölçü etiketi — ör.
+  // sunta/mdf'te kalınlık "18mm", PVC kenar bandında "0,40x22") ile etiketli
+  // TEK bir kart arar. 0 veya >1 sonuç -> null (belirsiz/eksik — ASLA tahmin
+  // edilmez). GENELdir: hem hammaddeler hem de (boya gibi doğrudan yarı
+  // mamül olarak modellenen malzemeler için) yarımamuller listesiyle çalışır.
+  function hammaddeEslesenBul(liste, hedefRenkKodu, malzemeKategorisi, renkOlcuEtiketi) {
+    const adaylar = (liste || []).filter(h =>
+      h.renkKartelaKodu === hedefRenkKodu && h.malzemeKategorisi === malzemeKategorisi &&
+      (renkOlcuEtiketi ? h.renkOlcuEtiketi === renkOlcuEtiketi : !h.renkOlcuEtiketi));
     return adaylar.length === 1 ? adaylar[0] : null;
   }
 
@@ -100,22 +104,41 @@ const RenkVaryantMotoru = (() => {
     const hedefKisaltmaKaydi = (veri.renkKisaltmalari || []).find(r => r.renkKodu === hedefRenkKodu);
     const hedefKisaltma = hedefKisaltmaKaydi ? hedefKisaltmaKaydi.kisaltma : hedefRenkKodu;
 
+    // Etiketli bir karta (hammadde VEYA yarı mamül — ör. "LK.50..." kodlu
+    // boyalı yarı mamül kartları) karşılık gelen hedef renkteki eşleniğini
+    // arar ve kalemi ona bağlar; bulunamazsa eski kart KORUNUR + raporlanır.
+    function etiketliTakasEt(k, kaynakKart, liste, kaynakTipi) {
+      if (kaynakKart.renkKartelaKodu === hedefRenkKodu) return { ...k }; // zaten hedef renkte
+      const hedef = hammaddeEslesenBul(liste, hedefRenkKodu, kaynakKart.malzemeKategorisi, kaynakKart.renkOlcuEtiketi);
+      if (!hedef) {
+        eksikEslesmeler.push({
+          hammaddeKod: kaynakKart.stokKodu || kaynakKart.kod || '', hammaddeAd: kaynakKart.ad || '',
+          malzemeKategorisi: kaynakKart.malzemeKategorisi, renkOlcuEtiketi: kaynakKart.renkOlcuEtiketi || '',
+          hedefRenkKodu, kaynakTipi
+        });
+        return { ...k }; // eşleşme yok — kaynak kart KORUNUR, uyarı raporlanır
+      }
+      return { ...k, refId: hedef.id };
+    }
+
     function kalemKlonla(k) {
       if (k.tip === 'hammadde') {
         const kaynakHm = (veri.hammaddeler || []).find(h => h.id === k.refId);
         if (!kaynakHm || !kaynakHm.renkKartelaKodu || !kaynakHm.malzemeKategorisi) {
           return { ...k }; // renge bağımlı değil — dokunulmaz
         }
-        if (kaynakHm.renkKartelaKodu === hedefRenkKodu) return { ...k }; // zaten hedef renkte
-        const hedef = hammaddeEslesenBul(veri.hammaddeler, hedefRenkKodu, kaynakHm.malzemeKategorisi);
-        if (!hedef) {
-          eksikEslesmeler.push({
-            hammaddeKod: kaynakHm.stokKodu || '', hammaddeAd: kaynakHm.ad || '',
-            malzemeKategorisi: kaynakHm.malzemeKategorisi, hedefRenkKodu
-          });
-          return { ...k }; // eşleşme yok — kaynak hammadde KORUNUR, uyarı raporlanır
+        return etiketliTakasEt(k, kaynakHm, veri.hammaddeler, 'hammadde');
+      }
+      if (k.tip === 'yarimamul') {
+        // Bazı yarı mamüller (ör. boya işlemi görmüş, kendi başına katalog
+        // kalemi olan "LK.50..." kodlu parçalar) de hammadde gibi RENK
+        // ETİKETLİ olabilir — bu durumda recursive KLONLANMAZ, hedef renkteki
+        // HAZIR karşılığıyla TAKAS EDİLİR. Etiketsiz yarı mamüller (gerçek
+        // yapısal alt bileşenler) eskisi gibi alt ağacıyla birlikte klonlanır.
+        const kaynakYm = (veri.yarimamuller || []).find(y => y.id === k.refId);
+        if (kaynakYm && kaynakYm.renkKartelaKodu && kaynakYm.malzemeKategorisi) {
+          return etiketliTakasEt(k, kaynakYm, veri.yarimamuller, 'yarimamul');
         }
-        return { ...k, refId: hedef.id };
       }
       const yeniAltId = kartKlonla(k.tip, k.refId);
       if (!yeniAltId) return { ...k }; // kaynak kart bulunamadı — savunma, dokunma
