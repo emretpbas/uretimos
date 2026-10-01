@@ -98,6 +98,48 @@ almak, kesim listesi oluşturmak").
 
 Tam regresyon: 329/329 PHP, tüm JS paketleri yeşil.
 
+## LOGO'ya doğrudan bağlanma (ÜretimOS'suz) — YENİ
+
+Kullanıcı isteği: **"SolidWorks'teki arayüz ÜretimOS'a bağlanmadan direkt
+LOGO'ya bağlanıp veri çeksin."** `EtiketlemePaneli`'nin Plaka/Kenar Bandı/
+Hırdavat kodu önerileri artık `logo_koprusu/index.php` HTTP köprüsünden
+(bkz. ana depo `logo_koprusu/README.md`) **ÜretimOS'a hiç uğramadan**
+doğrudan çekilebiliyor — `LogoKopruApiClient.cs`.
+
+**Yapılandırma** (`%LocalAppData%\UretimOSKesim\baglanti.json`'a iki alan
+eklenir, ikisi de opsiyonel):
+
+```json
+{
+  "sunucuUrl": "https://uretimos.firmaniz.com/api.php",
+  "kullaniciAdi": "cad_entegrasyon",
+  "sifre": "...",
+  "logoKopruUrl": "https://kopru.firmaniz.local:8443/index.php",
+  "logoApiAnahtari": "logo_koprusu/ayarlar.php'deki AYNI apiAnahtari"
+}
+```
+
+- `logoKopruUrl`/`logoApiAnahtari` **boş bırakılırsa** panel eskisi gibi
+  tamamen ÜretimOS üzerinden çalışır — davranış DEĞİŞMEZ.
+- Doluysa: plaka/kenar bandı/hırdavat kodları LOGO'dan (StokKodu/StokAdi/
+  Urun_AnaBirim) doğrudan gelir; ad/birim kalıbından sınıflandırma
+  (`LogoHammaddeSiniflandirici.TipBelirle`) `page_tiger_aktarim.js` /
+  `page_ag_entegrasyon.js`'teki `tipBelirle()` ile **birebir aynı kuralı**
+  kullanır (iki taraf da aynı veriden aynı sonucu üretsin diye).
+- **Cam kodu İSTİSNADIR:** ÜretimOS'ta "cam" tipi LOGO'nun ham verisinden
+  hiçbir zaman çıkarılamaz — her zaman Hammaddeler ekranından ELLE atanır.
+  Bu yüzden `sunucuUrl` da doluysa cam kodu listesi AYRICA (kısa) bir
+  ÜretimOS sorgusuyla doldurulur; `sunucuUrl` boşsa cam kodu listesi boş
+  kalır (serbest metin olarak elle girilir).
+
+**Bilinçli olarak KAPSAM DIŞI bırakılanlar** (gerçek kullanıcı onayıyla):
+`ReceteAgaciPaneli.cs` (reçete ağacı/BOM paneli) ve `YeniKartFormlari.cs`'nin
+"Atanacak Hammadde" arama kutusu bu köprüyü KULLANMAZ — onlar ÜretimOS
+kartlarındaki `id`/`delikSablonu`/reçeteler/rota bağlantılarına muhtaçtır,
+bunlar LOGO'nun ham master verisinde YOKTUR; o akışı LOGO'ya taşımak reçete
+ağacı ve hırdavat delik otomasyonu özelliklerini kırardı. Bu ikisi ÜretimOS
+üzerinden çalışmaya devam eder.
+
 ## Reçete Ağacı Paneli'nden sıfırdan kart oluşturma — YENİ
 
 Kullanıcı isteği: "sıfırdan paket, yarımamül, alt montaj, hammadde, plaka,

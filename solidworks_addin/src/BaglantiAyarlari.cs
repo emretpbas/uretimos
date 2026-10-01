@@ -22,14 +22,26 @@ namespace UretimOSKesim
     // {
     //   "sunucuUrl": "https://uretimos.firmaniz.com/api.php",
     //   "kullaniciAdi": "cad_entegrasyon",
-    //   "sifre": "..."
+    //   "sifre": "...",
+    //   "logoKopruUrl": "https://kopru.firmaniz.local:8443/index.php",
+    //   "logoApiAnahtari": "..."
     // }
+    //
+    // logoKopruUrl/logoApiAnahtari OPSİYONELDİR — kullanıcı isteği: "SolidWorks
+    // arayüzü ÜretimOS'a bağlanmadan direkt LOGO'ya bağlanıp veri çeksin."
+    // Doldurulursa EtiketlemePaneli, plaka/kenar bandı/hırdavat kodlarını
+    // logo_koprusu/index.php'den (bkz. LogoKopruApiClient.cs) DOĞRUDAN çeker,
+    // ÜretimOS'a hiç uğramaz. Boş bırakılırsa panel eski davranışına
+    // (ÜretimOS üzerinden) sessizce döner — bu proje genelindeki "boş
+    // bırakmak yanlış varsaymaktan ucuzdur" ilkesiyle AYNI.
     // ════════════════════════════════════════════════════════════════════════
     public class BaglantiAyarlariVerisi
     {
         public string SunucuUrl;
         public string KullaniciAdi;
         public string Sifre;
+        public string LogoKopruUrl;
+        public string LogoApiAnahtari;
     }
 
     public static class BaglantiAyarlari
@@ -47,7 +59,13 @@ namespace UretimOSKesim
                 if (!File.Exists(DosyaYolu)) return null;
                 string json = File.ReadAllText(DosyaYolu);
                 var veri = JsonConvert.DeserializeObject<BaglantiAyarlariVerisi>(json);
-                if (veri == null || string.IsNullOrWhiteSpace(veri.SunucuUrl)) return null;
+                // İKİ bağlantı türünden EN AZ biri dolu olsun yeter — bir
+                // makine YALNIZCA LOGO köprüsüne (ÜretimOS'suz) bağlanmak
+                // isteyebilir, sunucuUrl boş diye TÜM dosyayı geçersiz saymak
+                // o senaryoyu kırardı.
+                if (veri == null ||
+                    (string.IsNullOrWhiteSpace(veri.SunucuUrl) && string.IsNullOrWhiteSpace(veri.LogoKopruUrl)))
+                    return null;
                 return veri;
             }
             catch (Exception ex)
@@ -71,7 +89,12 @@ namespace UretimOSKesim
                 {
                     SunucuUrl = "https://uretimos.firmaniz.com/api.php",
                     KullaniciAdi = "cad_entegrasyon",
-                    Sifre = "buraya-kendi-sifrenizi-yazin"
+                    Sifre = "buraya-kendi-sifrenizi-yazin",
+                    // Opsiyonel — doldurmazsanız (boş "" bırakırsanız) plaka/
+                    // kenar bandı/hırdavat kodları eskisi gibi ÜretimOS'tan
+                    // gelmeye devam eder. bkz. logo_koprusu/README.md.
+                    LogoKopruUrl = "",
+                    LogoApiAnahtari = ""
                 };
                 File.WriteAllText(DosyaYolu, JsonConvert.SerializeObject(ornek, Formatting.Indented));
             }

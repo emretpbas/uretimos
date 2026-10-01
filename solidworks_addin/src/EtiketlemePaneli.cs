@@ -27,11 +27,17 @@ namespace UretimOSKesim
     // SaveFileDialog) kanıtlanmış bir teknolojisi — aynı güvenilirlikle
     // çok daha hızlı, daha az riskli teslim edilebilir.
     //
-    // ÜretimOS'tan CANLI liste çekme (plaka/kenar bandı/hırdavat kodları)
-    // TAMAMEN OPSİYONELDİR: BaglantiAyarlari.Yukle() null dönerse (yerel
-    // ayar dosyası yok/okunamıyor) veya sunucuya bağlanılamazsa, panel
-    // SESSİZCE serbest-metin moduna düşer — özellik hiçbir zaman paneli
-    // KULLANILAMAZ hale getirmez, sadece "kolaylık" katmanı devre dışı kalır.
+    // CANLI liste çekme (plaka/kenar bandı/hırdavat/cam kodları) TAMAMEN
+    // OPSİYONELDİR: BaglantiAyarlari.Yukle() null dönerse (yerel ayar dosyası
+    // yok/okunamıyor) veya sunucuya bağlanılamazsa, panel SESSİZCE serbest-
+    // metin moduna düşer — özellik hiçbir zaman paneli KULLANILAMAZ hale
+    // getirmez, sadece "kolaylık" katmanı devre dışı kalır.
+    //
+    // KAYNAK: baglanti.json'da logoKopruUrl+logoApiAnahtari doluysa plaka/
+    // kenar bandı/hırdavat artık ÜretimOS'a HİÇ uğramadan DOĞRUDAN LOGO'dan
+    // (logo_koprusu üzerinden) çekilir — bkz. CekButonu_Click ve
+    // LogoKopruApiClient.cs. Yalnızca cam kodu (LOGO'da sınıflandırılamayan,
+    // her zaman elle atanan bir tip) hâlâ ÜretimOS'tan gelir.
     // ════════════════════════════════════════════════════════════════════════
     public class EtiketlemePaneli : Form
     {
@@ -268,9 +274,20 @@ namespace UretimOSKesim
             Close();
         }
 
-        // Sunucudan hammadde listesini çekip Plaka/Kenar Bandı kutularına
+        // Hammadde listesini çekip Plaka/Kenar Bandı/Hırdavat/Cam kutularına
         // ÖNERİ (autocomplete kaynağı) olarak yükler — BAŞARISIZ olursa
         // panel serbest-metin moduna düşer, HİÇBİR ŞEYİ bloklamaz.
+        //
+        // KAYNAK (kullanıcı isteği: "SolidWorks'teki arayüz ÜretimOS'a
+        // bağlanmadan direkt LOGO'ya bağlanıp veri çeksin"): baglanti.json'da
+        // logoKopruUrl+logoApiAnahtari doluysa plaka/kenar bandı/hırdavat
+        // DOĞRUDAN LOGO'dan (logo_koprusu üzerinden, ÜretimOS'a HİÇ
+        // uğramadan) çekilir — LogoHammaddeSiniflandirici ile ad/birimden
+        // sınıflandırılır. "Cam" İSTİSNADIR: ÜretimOS'ta her zaman ELLE
+        // atanan bir tiptir, LOGO ham verisinden hiçbir zaman çıkarılamaz
+        // (gerçek kullanıcı onayıyla) — bu yüzden cam kodu listesi, SunucuUrl
+        // da doluysa, AYRICA kısa bir ÜretimOS sorgusuyla doldurulur; LOGO
+        // köprü ayarı hiç yoksa ise tüm liste eskisi gibi ÜretimOS'tan gelir.
         private async void CekButonu_Click(object sender, EventArgs e)
         {
             _durumEtiketi.Text = "Bağlanılıyor…";
@@ -284,33 +301,83 @@ namespace UretimOSKesim
                 return;
             }
 
+            bool logoYapilandirilmis = !string.IsNullOrWhiteSpace(ayar.LogoKopruUrl) && !string.IsNullOrWhiteSpace(ayar.LogoApiAnahtari);
+
             try
             {
-                var istemci = new UretimOSApiClient(ayar.SunucuUrl);
-                bool girisBasarili = await istemci.GirisYap(ayar.KullaniciAdi, ayar.Sifre);
-                if (!girisBasarili)
-                {
-                    _durumEtiketi.ForeColor = Color.DarkRed;
-                    _durumEtiketi.Text = "Giriş başarısız — kullanıcı adı/şifreyi kontrol edin:\n" + BaglantiAyarlari.DosyaYoluGoster();
-                    return;
-                }
-
-                string hamJson = await istemci.Getir("hammaddeler");
-                var dizi = JArray.Parse(hamJson ?? "[]");
-
                 var plakalar = new List<string>();
                 var kenarlar = new List<string>();
                 var hirdavatlar = new List<string>();
                 var camlar = new List<string>();
-                foreach (var oge in dizi)
+                string kaynakAciklama;
+
+                if (logoYapilandirilmis)
                 {
-                    string tip = (string)oge["tip"];
-                    string kod = (string)oge["stokKodu"];
-                    if (string.IsNullOrWhiteSpace(kod)) continue;
-                    if (tip == "plaka") plakalar.Add(kod);
-                    else if (tip == "kenar_bandi") kenarlar.Add(kod);
-                    else if (tip == "hirdavat") hirdavatlar.Add(kod);
-                    else if (tip == "cam") camlar.Add(kod);
+                    var logoIstemci = new LogoKopruApiClient(ayar.LogoKopruUrl, ayar.LogoApiAnahtari);
+                    var logoKayitlar = await logoIstemci.KayitlariGetir("hammadde");
+                    foreach (var oge in logoKayitlar)
+                    {
+                        string kod = (string)oge["StokKodu"];
+                        if (string.IsNullOrWhiteSpace(kod)) continue;
+                        string sinif = LogoHammaddeSiniflandirici.TipBelirle((string)oge["StokAdi"], (string)oge["Urun_AnaBirim"]);
+                        if (sinif == "plaka") plakalar.Add(kod);
+                        else if (sinif == "kenar_bandi") kenarlar.Add(kod);
+                        else if (sinif == "hirdavat") hirdavatlar.Add(kod);
+                        // sinif == "sarf" ise: eski ÜretimOS yolundaki (aşağıdaki
+                        // else dalı) davranışla AYNI — hiçbir listeye eklenmez,
+                        // bu panelde sarf malzeme önerisi hiç sunulmuyordu.
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(ayar.SunucuUrl))
+                    {
+                        try
+                        {
+                            var uretimOSIstemci = new UretimOSApiClient(ayar.SunucuUrl);
+                            if (await uretimOSIstemci.GirisYap(ayar.KullaniciAdi, ayar.Sifre))
+                            {
+                                var hamDizi = JArray.Parse(await uretimOSIstemci.Getir("hammaddeler") ?? "[]");
+                                foreach (var oge in hamDizi)
+                                {
+                                    if ((string)oge["tip"] != "cam") continue;
+                                    string kod = (string)oge["stokKodu"];
+                                    if (!string.IsNullOrWhiteSpace(kod)) camlar.Add(kod);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Cam listesi gelmezse SADECE cam boş kalır — LOGO'dan
+                            // DOĞRUDAN gelen plaka/kenar/hırdavat listeleri ETKİLENMEZ.
+                            Tanilama.Kaydet("EtiketlemePaneli: cam kodu ÜretimOS'tan çekilemedi: " + ex);
+                        }
+                    }
+
+                    kaynakAciklama = "LOGO'dan doğrudan" + (camlar.Count > 0 ? " + cam kodu için ÜretimOS" : ", cam kodu ayrıca yapılandırılmadı");
+                }
+                else
+                {
+                    var istemci = new UretimOSApiClient(ayar.SunucuUrl);
+                    bool girisBasarili = await istemci.GirisYap(ayar.KullaniciAdi, ayar.Sifre);
+                    if (!girisBasarili)
+                    {
+                        _durumEtiketi.ForeColor = Color.DarkRed;
+                        _durumEtiketi.Text = "Giriş başarısız — kullanıcı adı/şifreyi kontrol edin:\n" + BaglantiAyarlari.DosyaYoluGoster();
+                        return;
+                    }
+
+                    string hamJson = await istemci.Getir("hammaddeler");
+                    var dizi = JArray.Parse(hamJson ?? "[]");
+                    foreach (var oge in dizi)
+                    {
+                        string tip = (string)oge["tip"];
+                        string kod = (string)oge["stokKodu"];
+                        if (string.IsNullOrWhiteSpace(kod)) continue;
+                        if (tip == "plaka") plakalar.Add(kod);
+                        else if (tip == "kenar_bandi") kenarlar.Add(kod);
+                        else if (tip == "hirdavat") hirdavatlar.Add(kod);
+                        else if (tip == "cam") camlar.Add(kod);
+                    }
+                    kaynakAciklama = "ÜretimOS'tan";
                 }
 
                 _plakaKutusu.Items.Clear();
@@ -328,7 +395,7 @@ namespace UretimOSKesim
                 _hirdavatHizliEkleKutusu.Items.AddRange(_sunucuHirdavatKodlari.ToArray());
 
                 _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ {plakalar.Count} plaka, {kenarlar.Count} kenar bandı, {hirdavatlar.Count} hırdavat, " +
+                _durumEtiketi.Text = $"✓ ({kaynakAciklama}) {plakalar.Count} plaka, {kenarlar.Count} kenar bandı, {hirdavatlar.Count} hırdavat, " +
                     $"{camlar.Count} cam kodu yüklendi (aşağı ok ile seçebilir, hırdavat için '+ Ekle' ile HIRDAVAT alanına ekleyebilirsiniz).";
             }
             catch (Exception ex)
