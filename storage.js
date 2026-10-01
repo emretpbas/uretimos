@@ -179,6 +179,23 @@ const Store = (() => {
     }
   }
 
+  // GERÇEK İHTİYAÇ: "Ürün Kartları & Reçete" ekranı 20.000+ ürün/96.000+
+  // yarı mamül kartını "reçetesi var mı" bilgisine göre gruplamak istiyor —
+  // Store.receteler.all() ile TÜM reçeteleri (en ağır koleksiyon, her biri
+  // kalemler dizisiyle) indirmek yerine, sunucudan yalnızca bağlantı
+  // alanları (urunId/yarimamulId/altMontajId/paketId) + kalem SAYISI gelir.
+  async function receteOzetGetir(fallback = []) {
+    try {
+      const res = await apiFetch(API_URL + '?action=receteOzet');
+      if (!res.ok) return fallback;
+      const data = await res.json();
+      return Array.isArray(data.receteOzet) ? data.receteOzet : fallback;
+    } catch (e) {
+      console.error('Store.receteOzetGetir hatası:', e);
+      return fallback;
+    }
+  }
+
   // Yalnızca değişen kayıtları atomik olarak uygular (sunucuda kilit altında)
   async function patchUygula(key, fark) {
     const res = await apiFetch(API_URL + '?action=patch', {
@@ -773,7 +790,7 @@ const Store = (() => {
 
   return {
     get, set, del, listKeys, setIfAbsent,
-    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, hatVerisiGetir, sunucuModu,
+    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, receteOzetGetir, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifresiDogrula, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,

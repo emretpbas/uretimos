@@ -1737,6 +1737,47 @@ try {
         respond(['key' => $key, 'adet' => is_array($arr) ? count($arr) : 0]);
     }
 
+    elseif ($action === 'receteOzet') {
+        // GERÇEK İHTİYAÇ: "Ürün Kartları & Reçete" ekranı 20.000+ ürün/
+        // 96.000+ yarı mamül kartını hangilerinin reçetesi (BOM) olduğuna
+        // göre gruplamak istiyor — ama Store.receteler.all() TÜM reçeteleri
+        // (her biri kalemler dizisiyle, en ağır koleksiyon) indirmeyi
+        // gerektirirdi. Bu uç, sunucuda 'receteler' blobunu bir kez çözüp
+        // YALNIZCA bağlantı alanlarını (urunId/yarimamulId/altMontajId/
+        // paketId) ve kalem SAYISINI döner — asıl ağır içerik (kalemler'in
+        // kendisi) hiç gönderilmez. Boş reçeteler (kalemsiz) de atlanır,
+        // çünkü gruplama yalnızca "reçetesi VAR mı" sorusuyla ilgileniyor.
+        $oturum = oturumZorunlu($pdo);
+        // action=get/sayim ile BİREBİR AYNI yetki sırası (bkz. o bloklardaki
+        // AYNI yorum) — bu uç her zaman 'receteler' üzerinde çalıştığından
+        // anahtar sabit kontrol edilir.
+        if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array('receteler', HAT_OP_OKUNABILIR, true)) {
+            respond(['error' => 'Operatör oturumu bu veriye erişemez'], 403);
+        }
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array('receteler', CAD_ENT_OKUNABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
+        }
+        koleksiyonYetkiKontrol($oturum, 'receteler', 'oku');
+        $stmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
+        $stmt->execute([':k' => 'receteler']);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $receteler = $row ? json_decode($row['store_value'], true) : [];
+        $ozet = [];
+        foreach ((is_array($receteler) ? $receteler : []) as $r) {
+            if (!is_array($r)) continue;
+            $kalemSayisi = isset($r['kalemler']) && is_array($r['kalemler']) ? count($r['kalemler']) : 0;
+            if ($kalemSayisi === 0) continue;
+            $ozet[] = [
+                'urunId' => $r['urunId'] ?? null,
+                'yarimamulId' => $r['yarimamulId'] ?? null,
+                'altMontajId' => $r['altMontajId'] ?? null,
+                'paketId' => $r['paketId'] ?? null,
+                'kalemSayisi' => $kalemSayisi,
+            ];
+        }
+        respond(['receteOzet' => $ozet]);
+    }
+
     elseif ($action === 'set') {
         $oturum = oturumZorunlu($pdo);
         $body = readJsonBody();

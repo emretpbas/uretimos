@@ -54,9 +54,77 @@ PageModules.kartlar = (() => {
 
   let detayKartId = null; // { id, tip: 'urun'|'yarimamul'|'altmontaj'|'paket' }
   let activeTab = 'urunler';
+  let kartlarArama = ''; // kt-arama kutusunun o anki metni (sekme değişince sıfırlanmaz)
+
+  // GERÇEK ÜRETİM TESTİNDE YAKALANDI: 20.000+ ürün / 96.000+ yarı mamül
+  // kartını TEK bir düz liste (grid) olarak basmak tarayıcıyı kilitliyordu
+  // (aynı kök neden: page_kalem_secici.js/page_dashboard.js'te daha önce
+  // düzeltilen "80k+ kayıt" sınıfı). Kullanıcı isteği: "1. kademe yüklendiği
+  // yer, 2. kademe alt kırılım/ürün ağacı var mı, 3. kademe ürün model
+  // adına göre akordeon menü + arama satırı." Bu üç yardımcı, kartları bu
+  // 3 seviyeli hiyerarşiye (Map içinde Map) gruplar — GERÇEK kart dizilerini
+  // DEĞİL, sadece gruplama anahtarlarını üretir; ağır DOM üretimi
+  // (asıl kartların kendisi) yalnızca kullanıcı o üçüncü seviye grubu
+  // GERÇEKTEN açtığında, tembel (lazy) olarak yapılır — bkz. kartGridCiz.
+  function kaynakEtiketi(kaynak) {
+    if (kaynak === 'tiger' || kaynak === 'tiger_acilis' || kaynak === 'tiger_guncelleme') return 'Logo Tiger Aktarımı';
+    if (kaynak === 'ag_entegrasyon') return 'ERP Entegrasyon Merkezi';
+    return 'Elle Oluşturuldu / Tasarım Araçları';
+  }
+  // receteOzet: api.php action=receteOzet'ten gelen hafif özet
+  // ({urunId|yarimamulId|altMontajId|paketId, kalemSayisi}[]) — ham reçete
+  // içeriği (kalemler) HİÇ istemciye inmez, yalnızca "var mı" bilgisi çıkarılır.
+  function receteVarIdSeti(receteOzet, tip) {
+    const alan = { urun: 'urunId', yarimamul: 'yarimamulId', altmontaj: 'altMontajId', paket: 'paketId' }[tip];
+    const set = new Set();
+    (receteOzet || []).forEach(r => { if (r && r[alan]) set.add(r[alan]); });
+    return set;
+  }
+  // Dönüş: Map(kaynakEtiketi -> { receteVar: Map(modelAdi -> kart[]), receteYok: Map(modelAdi -> kart[]) })
+  function kartlariUclKademeyeGrupla(liste, receteVarSeti) {
+    const kaynaklar = new Map();
+    liste.forEach(k => {
+      const kEtiket = kaynakEtiketi(k.kaynak);
+      if (!kaynaklar.has(kEtiket)) kaynaklar.set(kEtiket, { receteVar: new Map(), receteYok: new Map() });
+      const grup = kaynaklar.get(kEtiket);
+      const hedef = receteVarSeti.has(k.id) ? grup.receteVar : grup.receteYok;
+      const modelAdi = (k.ad || '').trim() || '(Adsız)';
+      if (!hedef.has(modelAdi)) hedef.set(modelAdi, []);
+      hedef.get(modelAdi).push(k);
+    });
+    return kaynaklar;
+  }
+
+  // page_kalem_secici.js'teki MAKS_GORUNEN ile AYNI ilke: ekranda görünecek
+  // satır sayısına bir tavan koymak, DOM'u binlerce elemanla doldurmadan
+  // önce arama/daraltma davranışını teşvik eder.
+  const KT_MAKS_ARAMA = 300;        // arama sonucunda gösterilen kart tavanı
+  const KT_MAKS_MODEL_GRUP = 500;   // bir reçete-durumu kovasında gösterilen model (3. kademe) satırı tavanı
+  const KT_MAKS_KART_GRUP = 300;    // bir model grubu açılınca gösterilen varyant kart tavanı
+
+  // Tek bir ürün/yarı mamül/alt montaj/paket kartının HTML'i — hem arama
+  // sonuçlarında hem 3. kademe (model) grubu açılınca TEMBEL olarak kullanılır.
+  function kartHtmlUret(u, tip) {
+    // Görsel artık karta gömülü olmayabilir (sunucuya taşınmış olabilir);
+    // adres QrDosya.gorselUrl ile çözülür. Eski gömülü kayıtlar da çalışır.
+    const g0 = (u.gorseller && u.gorseller[0]) || null;
+    const g0url = (g0 && QrDosya.gorselMi(g0)) ? QrDosya.gorselUrl(g0) : '';
+    const thumb = g0url ? `<img src="${g0url}" loading="lazy">` : (tip === 'urun' ? '▥' : (tip === 'altmontaj' ? '⬡' : (tip === 'paket' ? '📦' : '◫')));
+    return `<div class="card kt-card" data-id="${u.id}" data-tip="${tip}" style="cursor:pointer">
+      <div class="thumb" style="width:100%;height:120px;margin-bottom:10px;font-size:28px">${thumb}</div>
+      <div style="font-weight:800;font-size:12.5px" class="mono">${App.escapeHtml(u.kod)}</div>
+      <div style="font-size:12.5px;color:var(--text2);margin-top:2px">${App.escapeHtml(u.ad)}</div>
+      <div class="muted" style="font-size:10.5px;margin-top:6px">${App.escapeHtml(u.aciklama || '')}</div>
+    </div>`;
+  }
+  function kartTiklamalariBagla(kapsayici, main) {
+    kapsayici.querySelectorAll('.kt-card').forEach(c => c.onclick = () => { detayKartId = { id: c.dataset.id, tip: c.dataset.tip }; render(main); });
+  }
 
   async function render(main) {
-    const [urunler, yarimamuller, altMontajlar, paketler] = await Promise.all([Store.urunler.all(), Store.yarimamuller.all(), Store.altMontajlar.all(), Store.paketler.all()]);
+    const [urunler, yarimamuller, altMontajlar, paketler, receteOzet] = await Promise.all([
+      Store.urunler.all(), Store.yarimamuller.all(), Store.altMontajlar.all(), Store.paketler.all(), Store.receteOzetGetir()
+    ]);
     if (detayKartId) {
       let kart = urunler.find(x => x.id === detayKartId.id && detayKartId.tip === 'urun');
       if (!kart) kart = yarimamuller.find(x => x.id === detayKartId.id && detayKartId.tip === 'yarimamul');
@@ -65,10 +133,18 @@ PageModules.kartlar = (() => {
       if (kart) { renderDetay(main, kart, detayKartId.tip); return; }
       detayKartId = null;
     }
-    renderGrid(main, urunler, yarimamuller, altMontajlar, paketler);
+    renderGrid(main, urunler, yarimamuller, altMontajlar, paketler, receteOzet);
   }
 
-  function renderGrid(main, urunler, yarimamuller, altMontajlar, paketler) {
+  // Kullanıcı isteği: "ürünleri yüklendiği yer 1. kademe, alt kırılım ve
+  // ürün ağacı var mı 2. kademe, 3. kademe ürün model adına göre başlıklar
+  // halinde akordeon menü şeklinde ayır ve ürün arama satırı da ekle."
+  // 1. ve 2. kademe (kaynak, reçete durumu) sayıca AZ (birkaç grup) olduğu
+  // için her zaman açık bölüm başlıkları olarak gösterilir; asıl ağır
+  // kademe (binlerce farklı model adı olabilen 3.) GERÇEK bir akordeon —
+  // kapalı başlar, bir modelin kartları yalnızca O satır tıklanınca
+  // tembel (lazy) üretilir (bkz. kartHtmlUret/kartTiklamalariBagla).
+  function renderGrid(main, urunler, yarimamuller, altMontajlar, paketler, receteOzet) {
     main.innerHTML = `
       <div class="page-hdr">
         <div>
@@ -96,7 +172,10 @@ PageModules.kartlar = (() => {
         <div class="tab ${activeTab === 'altmontajlar' ? 'active' : ''}" data-tab="altmontajlar">Alt Montajlar ${altMontajlar.length ? '<span class="pill pill-gray" style="margin-left:4px">' + altMontajlar.length + '</span>' : ''}</div>
         <div class="tab ${activeTab === 'paketler' ? 'active' : ''}" data-tab="paketler">Paketler ${paketler.length ? '<span class="pill pill-gray" style="margin-left:4px">' + paketler.length + '</span>' : ''}</div>
       </div>
-      <div class="grid grid-3" id="kt-grid"></div>
+      <div class="fgroup" style="margin:14px 0 6px">
+        <input class="finput" id="kt-arama" placeholder="Kod veya ada göre ara…" value="${App.escapeHtml(kartlarArama)}">
+      </div>
+      <div id="kt-grid"></div>
     `;
     document.getElementById('kt-new').onclick = () => openForm(null, () => render(main));
     document.getElementById('kt-new-ym').onclick = () => openYmForm(main, null, () => render(main));
@@ -122,29 +201,107 @@ PageModules.kartlar = (() => {
     document.getElementById('kt-excel-import').onclick = () => openExcelImport(main);
     main.querySelectorAll('.tab').forEach(t => t.onclick = () => { activeTab = t.dataset.tab; render(main); });
 
-    const grid = document.getElementById('kt-grid');
     const tipMap = { urunler: ['urun', urunler], yarimamuller: ['yarimamul', yarimamuller], altmontajlar: ['altmontaj', altMontajlar], paketler: ['paket', paketler] };
     const [tip, liste] = tipMap[activeTab];
+
+    const aramaKutu = document.getElementById('kt-arama');
+    aramaKutu.oninput = () => { kartlarArama = aramaKutu.value; kartGridCiz(main, tip, liste, receteOzet); };
+    // page_kalem_secici.js'teki AYNI "odak kaybetme" koruması: her tuş
+    // vuruşunda yalnızca #kt-grid yeniden çizilir (bkz. kartGridCiz), bu
+    // input kendisi asla yeniden oluşturulmaz.
+    aramaKutu.focus();
+    aramaKutu.setSelectionRange(aramaKutu.value.length, aramaKutu.value.length);
+
+    kartGridCiz(main, tip, liste, receteOzet);
+  }
+
+  function kartGridCiz(main, tip, liste, receteOzet) {
+    const grid = document.getElementById('kt-grid');
     const tipAdi = { urun: 'ürün', yarimamul: 'yarı mamül', altmontaj: 'alt montaj', paket: 'paket' }[tip];
     if (!liste.length) {
-      grid.style.display = 'block';
       grid.innerHTML = `<div class="empty-state"><div class="eicon">▥</div><div class="etitle">Henüz ${tipAdi} kartı yok</div></div>`;
       return;
     }
-    grid.innerHTML = liste.map(u => {
-      // Görsel artık karta gömülü olmayabilir (sunucuya taşınmış olabilir);
-      // adres QrDosya.gorselUrl ile çözülür. Eski gömülü kayıtlar da çalışır.
-      const g0 = (u.gorseller && u.gorseller[0]) || null;
-      const g0url = (g0 && QrDosya.gorselMi(g0)) ? QrDosya.gorselUrl(g0) : '';
-      const thumb = g0url ? `<img src="${g0url}" loading="lazy">` : (tip === 'urun' ? '▥' : (tip === 'altmontaj' ? '⬡' : (tip === 'paket' ? '📦' : '◫')));
-      return `<div class="card kt-card" data-id="${u.id}" data-tip="${tip}" style="cursor:pointer">
-        <div class="thumb" style="width:100%;height:120px;margin-bottom:10px;font-size:28px">${thumb}</div>
-        <div style="font-weight:800;font-size:12.5px" class="mono">${App.escapeHtml(u.kod)}</div>
-        <div style="font-size:12.5px;color:var(--text2);margin-top:2px">${App.escapeHtml(u.ad)}</div>
-        <div class="muted" style="font-size:10.5px;margin-top:6px">${App.escapeHtml(u.aciklama || '')}</div>
+
+    const arama = kartlarArama.trim().toLowerCase();
+    if (arama) {
+      const eslesen = liste.filter(k => (k.kod || '').toLowerCase().includes(arama) || (k.ad || '').toLowerCase().includes(arama));
+      if (!eslesen.length) {
+        grid.innerHTML = `<div class="empty-state"><div class="eicon">🔍</div><div class="etitle">Eşleşen ${tipAdi} kartı bulunamadı</div></div>`;
+        return;
+      }
+      const gorunen = eslesen.slice(0, KT_MAKS_ARAMA);
+      const tasmaUyarisi = eslesen.length > KT_MAKS_ARAMA
+        ? `<div class="fhint" style="margin-bottom:10px">İlk ${KT_MAKS_ARAMA} / ${eslesen.length} eşleşen gösteriliyor — daraltmak için aramayı detaylandırın.</div>`
+        : '';
+      grid.innerHTML = tasmaUyarisi + `<div class="grid grid-3">${gorunen.map(k => kartHtmlUret(k, tip)).join('')}</div>`;
+      kartTiklamalariBagla(grid, main);
+      return;
+    }
+
+    const receteVarSeti = receteVarIdSeti(receteOzet, tip);
+    const gruplar = kartlariUclKademeyeGrupla(liste, receteVarSeti);
+    const modelKartHaritasi = new Map(); // gid -> kart[] (3. kademenin tembel kart kaynağı)
+    let gidSayaci = 0;
+    let html = '';
+
+    for (const [kaynakAdi, grup] of gruplar.entries()) {
+      const receteVarSayisi = [...grup.receteVar.values()].reduce((a, arr) => a + arr.length, 0);
+      const receteYokSayisi = [...grup.receteYok.values()].reduce((a, arr) => a + arr.length, 0);
+      html += `<div style="display:flex;align-items:center;gap:8px;margin:20px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--border)">
+        <span style="font-size:14px;font-weight:800">${App.escapeHtml(kaynakAdi)}</span>
+        <span class="pill pill-blue">${receteVarSayisi + receteYokSayisi}</span>
       </div>`;
-    }).join('');
-    grid.querySelectorAll('.kt-card').forEach(c => c.onclick = () => { detayKartId = { id: c.dataset.id, tip: c.dataset.tip }; render(main); });
+      [
+        { baslik: '✓ Reçetesi Var (Alt Kırılım / Ürün Ağacı Tanımlı)', sayi: receteVarSayisi, harita: grup.receteVar, renk: 'pill-green' },
+        { baslik: '— Reçetesi Yok', sayi: receteYokSayisi, harita: grup.receteYok, renk: 'pill-gray' }
+      ].forEach(b => {
+        if (!b.sayi) return;
+        html += `<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:var(--text2)">${b.baslik} <span class="pill ${b.renk}" style="margin-left:4px">${b.sayi}</span></div>`;
+        // Çok varyantlı modeller üstte — kullanıcı en kalabalık ürün
+        // ailelerini aramaya gerek kalmadan hemen bulsun diye.
+        const modelGruplari = [...b.harita.entries()].sort((x, y) => y[1].length - x[1].length);
+        const gorunenModeller = modelGruplari.slice(0, KT_MAKS_MODEL_GRUP);
+        if (modelGruplari.length > KT_MAKS_MODEL_GRUP) {
+          html += `<div class="fhint" style="margin-bottom:8px">İlk ${KT_MAKS_MODEL_GRUP} / ${modelGruplari.length} model gösteriliyor — belirli bir modeli bulmak için üstteki arama kutusunu kullanın.</div>`;
+        }
+        gorunenModeller.forEach(([modelAdi, kartlar]) => {
+          gidSayaci++;
+          const gid = 'ktg' + gidSayaci;
+          modelKartHaritasi.set(gid, kartlar);
+          html += `<div class="acc-card" data-kt-tier3="${gid}">
+            <div class="acc-head">
+              <span class="acc-title">${App.escapeHtml(modelAdi)}</span>
+              <span class="acc-sub">${kartlar.length} ${kartlar.length === 1 ? 'kayıt' : 'varyant'}</span>
+              <span class="acc-chev">▶</span>
+            </div>
+            <div class="acc-body" data-kt-govde="${gid}"></div>
+          </div>`;
+        });
+      });
+    }
+    grid.innerHTML = html;
+
+    // 3. kademe (model) satırları: TEMBEL kart üretimi — bir satır ilk kez
+    // açıldığında YALNIZCA o modelin kartları DOM'a eklenir; geri kalan
+    // yüzlerce/binlerce model kapalı kaldığı sürece hiçbir kart DOM'a
+    // girmez (performans sorununun GERÇEK kök nedeni buydu).
+    grid.querySelectorAll('[data-kt-tier3]').forEach(satir => {
+      const gid = satir.dataset.ktTier3;
+      satir.querySelector('.acc-head').onclick = () => {
+        const acildiMi = satir.classList.toggle('open');
+        if (!acildiMi) return;
+        const govde = satir.querySelector(`[data-kt-govde="${gid}"]`);
+        if (govde.dataset.dolduruldu) return;
+        const kartlar = modelKartHaritasi.get(gid) || [];
+        const gorunenKartlar = kartlar.slice(0, KT_MAKS_KART_GRUP);
+        const tasmaUyarisi = kartlar.length > KT_MAKS_KART_GRUP
+          ? `<div class="fhint" style="margin-bottom:10px">İlk ${KT_MAKS_KART_GRUP} / ${kartlar.length} kayıt gösteriliyor.</div>` : '';
+        govde.innerHTML = tasmaUyarisi + `<div class="grid grid-3">${gorunenKartlar.map(k => kartHtmlUret(k, tip)).join('')}</div>`;
+        govde.dataset.dolduruldu = '1';
+        kartTiklamalariBagla(govde, main);
+      };
+    });
   }
 
   async function renderDetay(main, kartParam, tip) {
