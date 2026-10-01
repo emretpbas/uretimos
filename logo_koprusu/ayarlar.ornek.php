@@ -87,4 +87,12 @@ return [
     // buraya YABANCI PARA KODU yazıp o para biriminde bırakmayın.
     'fiyatParaBirimiKodu' => 160,
 
+    // ── SİPARİŞ — GERÇEK ÜRETİM VERİSİYLE (LogoRead ile SSMS'te doğrudan
+    // sorgulanarak) DOĞRULANDI. Bu tek tablo hem başlık hem satır bilgisini
+    // taşıyor (başlık her kalemde tekrar ediyor) — ayrı ORFICHE/ORFLINE
+    // tablolarına gerek yok, index.php bu tablodan sipariş+kalemler yapısını
+    // kendisi üretiyor (bkz. siparisSorgulari()/satirlariSiparisOlarakGrupla()).
+    'siparisTablo' => 'Doxa_Programs.dbo.tbl_Mel_Siparis_Tablosu_222_01',
+    'cariTablo' => 'Doxa_Programs..tbl_Mel_Cariler_222',
+
 ];

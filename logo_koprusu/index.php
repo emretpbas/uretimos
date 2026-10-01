@@ -159,7 +159,103 @@ function fiyatSorgulari(array $ayar, string $urunTablo, int $offset, int $adet):
     ];
 }
 
-if ($tablo !== '' && array_key_exists($tip, $TAM_SORGULAR = fiyatSorgulari($ayar, $tablo, $offset, $adet))) {
+// ── SİPARİŞ SORGULARI — GERÇEK ÜRETİM VERİSİYLE (LogoRead ile doğrudan SSMS
+// sorgusuyla) DOĞRULANDI. Kaynak tablo DÜZ (satır bazında, başlık bilgisi
+// her kalemde TEKRAR EDİYOR) — ÜretimOS'un "Sipariş" hedefi ise İÇ İÇE bir
+// yapı (sipariş → kalemler dizisi) bekliyor. Bu yüzden sayfalama SİPARİŞ
+// bazında yapılır (satır bazında DEĞİL): aksi halde bir siparişin kalemleri
+// iki sayfaya bölünüp aynı sipariş iki eksik parça halinde görünebilirdi —
+// önce OFFSET/FETCH ile bir "sipariş no" sayfası seçilir, SONRA o siparişlerin
+// TÜM kalemleri (sayfa sınırına bakılmaksızın) çekilir.
+function siparisSorgulari(array $ayar, int $offset, int $adet): array
+{
+    $siparisTablo = $ayar['siparisTablo'] ?? 'Doxa_Programs.dbo.tbl_Mel_Siparis_Tablosu_222_01';
+    $cariTablo = $ayar['cariTablo'] ?? 'Doxa_Programs..tbl_Mel_Cariler_222';
+    $urunTablo = $ayar['tablo'] ?? 'Doxa_Programs..tbl_Mel_Urunler_222';
+
+    $satirSecim = "s.sipNo AS SipNo, s.siparisTarihi AS SiparisTarihi, s.siparisTerminTarihi AS TerminTarihi,
+            c.Cari AS CariKodu, c.CariAdi AS CariAdi,
+            u.StokKodu AS StokKodu, u.StokAdi AS StokAdi, u.Urun_AnaBirim AS Birim,
+            s.sipMiktar AS Miktar, s.bekleyenMiktar AS BekleyenMiktar, s.sipNetTutar AS Tutar";
+    $joinler = "FROM $siparisTablo s
+        JOIN $cariTablo c ON c.CariLogic = s.cariRef
+        JOIN $urunTablo u ON u.StokLogic = s.stockref";
+
+    $siparisSorgu = function (string $kosul) use ($satirSecim, $joinler, $siparisTablo, $offset, $adet): array {
+        $sorgu = "WITH SiparisTarihleri AS (
+                SELECT sipNo, MIN(siparisTarihi) AS siparisTarihi
+                FROM $siparisTablo s WHERE $kosul GROUP BY sipNo
+            ), SiparisSayfasi AS (
+                SELECT sipNo FROM SiparisTarihleri
+                ORDER BY siparisTarihi DESC, sipNo
+                OFFSET $offset ROWS FETCH NEXT $adet ROWS ONLY
+            )
+            SELECT $satirSecim
+            $joinler
+            JOIN SiparisSayfasi sp ON sp.sipNo = s.sipNo
+            WHERE $kosul
+            ORDER BY s.sipNo, s.sipSiraNo";
+        $sayim = "SELECT COUNT(DISTINCT sipNo) FROM $siparisTablo s WHERE $kosul";
+        return ['sorgu' => $sorgu, 'sayim' => $sayim];
+    };
+
+    // tip=siparis — AÇIK (bekleyen) siparişler. Küçük hacim (~199 sipariş/
+    // 849 satır, doğrulandı) — varsayılan sayfa boyutuna rahatça sığar.
+    $acik = $siparisSorgu('s.lineType = 0 AND s.bekleyenMiktar > 0');
+    // tip=siparis_tumu — SON 1 YIL (34.797 siparişin TAMAMI değil — her
+    // seferinde 4+ yıllık geçmişi çekmek pratik değil; ihtiyaç olursa
+    // ayarlar.php'de 'siparisKosullari.tumu' ile tarih aralığını genişletin).
+    $tumu = $siparisSorgu("s.lineType = 0 AND s.siparisTarihi >= DATEADD(YEAR, -1, CAST(GETDATE() AS DATE))");
+
+    return [
+        'siparis'      => $acik,
+        'siparis_tumu' => $tumu,
+    ];
+}
+
+// Satır bazlı (ham) sonucu, her sipariş TEK kayıt + Kalemler dizisi olacak
+// şekilde yeniden şekillendirir. GRUPLAMA, sayfalamadan SONRA ama JSON
+// kodlamadan ÖNCE yapılır — SiparisSayfasi CTE'si zaten o sayfaya düşen
+// siparişlerin TÜM kalemlerini (bölünmeden) getirdiği için burada eksik
+// kalem riski yoktur.
+function satirlariSiparisOlarakGrupla(array $satirlar): array
+{
+    $siparisler = [];
+    foreach ($satirlar as $s) {
+        $kod = $s['SipNo'] ?? '';
+        if ($kod === '') continue;
+        if (!isset($siparisler[$kod])) {
+            $siparisler[$kod] = [
+                'SipNo' => $s['SipNo'], 'CariKodu' => $s['CariKodu'] ?? null, 'CariAdi' => $s['CariAdi'] ?? null,
+                'SiparisTarihi' => $s['SiparisTarihi'] ?? null, 'TerminTarihi' => $s['TerminTarihi'] ?? null,
+                'Tutar' => 0, 'Kalemler' => [],
+            ];
+        }
+        $siparisler[$kod]['Tutar'] += (float)($s['Tutar'] ?? 0);
+        // Termin tarihi GERÇEK VERİDE satır bazında farklı çıkabiliyor
+        // (doğrulandı) — başlıkta siparişin EN ERKEN terminini gösteriyoruz.
+        if (!empty($s['TerminTarihi']) && (empty($siparisler[$kod]['TerminTarihi']) || $s['TerminTarihi'] < $siparisler[$kod]['TerminTarihi'])) {
+            $siparisler[$kod]['TerminTarihi'] = $s['TerminTarihi'];
+        }
+        $miktar = (float)($s['Miktar'] ?? 0);
+        $siparisler[$kod]['Kalemler'][] = [
+            'StokKodu' => $s['StokKodu'] ?? null, 'StokAdi' => $s['StokAdi'] ?? null, 'Birim' => $s['Birim'] ?? null,
+            'Miktar' => $s['Miktar'] ?? null, 'BekleyenMiktar' => $s['BekleyenMiktar'] ?? null,
+            // Birim fiyat ayrı bir sütun DEĞİL — LOGO'da satır tutarından
+            // türetiliyor (doğrulandı): tutar / miktar.
+            'BirimFiyat' => $miktar != 0 ? round(((float)($s['Tutar'] ?? 0)) / $miktar, 4) : null,
+        ];
+    }
+    return array_values($siparisler);
+}
+
+$grupAlani = null;
+if ($tip === 'siparis' || $tip === 'siparis_tumu') {
+    $TAM_SORGULAR = siparisSorgulari($ayar, $offset, $adet);
+    $sql = $TAM_SORGULAR[$tip]['sorgu'];
+    $sayimSql = $TAM_SORGULAR[$tip]['sayim'];
+    $grupAlani = 'SipNo';
+} elseif ($tablo !== '' && array_key_exists($tip, $TAM_SORGULAR = fiyatSorgulari($ayar, $tablo, $offset, $adet))) {
     $sql = $TAM_SORGULAR[$tip]['sorgu'];
     $sayimSql = $TAM_SORGULAR[$tip]['sayim'];
 } else {
@@ -172,7 +268,7 @@ if ($tablo !== '' && array_key_exists($tip, $TAM_SORGULAR = fiyatSorgulari($ayar
     ];
     if ($tablo === '' || !array_key_exists($tip, $KOSULLAR)) {
         http_response_code(400);
-        echo json_encode(['hata' => "ayarlar.php'de 'tablo' boş ya da bilinmeyen tip: $tip. Geçerli tipler: " . implode(', ', array_merge(array_keys($KOSULLAR), ['son_alis', 'fiyat_satis', 'fiyat_alis']))], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['hata' => "ayarlar.php'de 'tablo' boş ya da bilinmeyen tip: $tip. Geçerli tipler: " . implode(', ', array_merge(array_keys($KOSULLAR), ['son_alis', 'fiyat_satis', 'fiyat_alis', 'siparis', 'siparis_tumu']))], JSON_UNESCAPED_UNICODE);
         exit;
     }
     $kosul = $KOSULLAR[$tip];
@@ -241,6 +337,14 @@ try {
                 if ($cevrilen !== false) $deger = $cevrilen;
             }
         });
+    }
+
+    // Sipariş tipleri için düz satırları sipariş+kalemler yapısına çevir.
+    // Bu noktadan sonra $satirlar artık "satır sayısı" değil "sipariş
+    // sayısı" taşıyor — aşağıdaki adet/sonSayfaMi hesapları otomatik doğru
+    // birime (sipariş) oturur, ayrı bir sayaç gerekmez.
+    if ($grupAlani !== null) {
+        $satirlar = satirlariSiparisOlarakGrupla($satirlar);
     }
 
     $govde = [

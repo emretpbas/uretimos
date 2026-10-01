@@ -176,6 +176,40 @@ veritabanında (bugün `DOXA_2022`) duruyor. Fiyat sorguları aniden
 "geçersiz veritabanı" hatası verirse `ayarlar.php`'deki
 `fiyatListesiVeritabani` değerini güncel dönem adıyla değiştirin.
 
+## 4c. Siparişleri çekmek
+
+Kaynak **düz** (satır bazlı) bir tablo — başlık bilgisi (sipariş no, müşteri,
+tarih) her kalemde TEKRAR EDİYOR. ÜretimOS'un "Sipariş" hedefi ise İÇ İÇE bir
+yapı bekliyor (sipariş → kalemler dizisi); köprü bu dönüşümü KENDİSİ yapıyor
+— OFFSET/FETCH sayfalaması **sipariş bazında** uygulanıyor (satır bazında
+DEĞİL), yoksa bir siparişin kalemleri iki sayfaya bölünüp eksik görünebilirdi.
+
+| Bridge tipi | Kapsam | Hacim (GERÇEK, doğrulandı) |
+|---|---|---|
+| `?tip=siparis` | Açık (`bekleyenMiktar > 0`) siparişler — varsayılan | 199 sipariş / 849 satır — sayfalamaya gerek yok |
+| `?tip=siparis_tumu` | Son 1 yıl (tüm 4+ yıllık geçmiş DEĞİL) | 5.968 sipariş / 20.857 satır — sayfalı |
+
+**Nasıl bağlanır:** yeni bir profil ekleyin — **Hedef veri tipi: "Sipariş"**,
+**Adres:** `.../?tip=siparis` (ya da `siparis_tumu`), **Kök Alan:** boş
+bırakın (otomatik bulunur). **ALAN EŞLEME**'de üst seviye alanlar (açılır
+listeden): Sipariş No → `SipNo`, Cari/Müşteri → `CariAdi`, Sipariş Tarihi →
+`SiparisTarihi`, Termin Tarihi → `TerminTarihi`, Tutar → `Tutar`, Satırlar
+(dizi) → **`Kalemler`** (bu alan ZORUNLU, doğru yazılmazsa "kayıt listesi
+bulunamadı" hatası alırsınız). Altındaki **İç içe satır alanları** kutuları
+AÇILIR LİSTE DEĞİL, serbest metin kutusudur — şunları AYNEN yazın: Ürün/Stok
+Kodu → `StokKodu`, Ürün Adı → `StokAdi`, Miktar → `Miktar`, Birim → `Birim`,
+Birim Fiyat → `BirimFiyat`.
+
+**Bilinen basitleştirme:** gerçek veride aynı siparişin farklı kalemlerinde
+FARKLI termin tarihleri olabiliyor (doğrulandı); ÜretimOS'un "Sipariş" hedefi
+kalem başına ayrı bir termin alanı TAŞIMADIĞI için köprü, siparişin TÜM
+kalemleri arasındaki EN ERKEN termini başlıkta döner. Kalem bazında ayrı
+termin gerekiyorsa bu, `ag_entegrasyon.js`'e yeni bir kalem alanı eklemeyi
+gerektiren ayrı bir geliştirmedir.
+
+**Birim fiyat:** LOGO'da satırda ayrı bir sütun değil — `sipNetTutar /
+sipMiktar` ile köprü tarafından hesaplanır (doğrulandı).
+
 ## Ölçek notu
 
 LOGO'daki aktif kayıt sayısı (~97.000, üç tip toplamı) `OLCEKLEME_PLANI.md`'de
