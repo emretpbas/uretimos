@@ -2394,7 +2394,18 @@ PageModules.kartlar = (() => {
 
       await App.persist(async () => {
         // 1) Hammaddeler: StokKod eşleşirse güncelle, yoksa yeni oluştur
-        const hammaddeler = await Store.hammaddeler.all();
+        // PERFORMANS: 96.000+ yarımamül / 20.000+ ürünlü kurulumlarda "İçe
+        // Aktar ve Kaydet" ÇOK UZUN SÜRE BEKLETİYORDU — bu fonksiyon
+        // hammaddeler/yarımamuller/altMontajlar/paketler/ürünler
+        // koleksiyonlarının TAMAMINI önizleme ekranı AÇILIRKEN BİR KEZ
+        // (renderImportPreview başında), sonra kayıt sırasında TEKRAR
+        // (burada) olmak üzere ÇİFT indiriyordu. Önizleme zaten güncel bir
+        // anlık görüntü aldığı ve ikisi arasındaki süre (kullanıcının
+        // önizlemeyi gözden geçirip "Kaydet"e basması) saniyeler mertebesinde
+        // olduğu için, aynı diziler burada TEKRAR İNDİRİLMEDEN yeniden
+        // kullanılıyor — ağır koleksiyonlar için gereksiz tekrar ağ/işlem
+        // yükü ortadan kalkıyor.
+        const hammaddeler = mevcutHammaddeler;
     const _onceki_hammaddeler = new Set(hammaddeler.map(x => x && x.id));
         const stokKodToHmId = new Map();
         const stokKodToHmTip = new Map(); // stokKod -> 'plaka'|'hirdavat'|... (kalem oluşturulurken olcu ekleneceği zaman lazım)
@@ -2423,11 +2434,11 @@ PageModules.kartlar = (() => {
         // SEÇTİĞİ TİPE göre DOĞRU koleksiyona (yarimamuller/altMontajlar/paketler)
         // yazılır. PKT kodlu veya açıklamasında "paket" geçenler varsayılan
         // olarak Paket önerilmişti, ama kullanıcı her satırı değiştirebilir.
-        const yarimamuller = await Store.yarimamuller.all();
+        const yarimamuller = mevcutYarimamuller;
     const _onceki_yarimamuller = new Set(yarimamuller.map(x => x && x.id));
-        const altMontajlar = await Store.altMontajlar.all();
+        const altMontajlar = mevcutAltMontajlar;
     const _onceki_altMontajlar = new Set(altMontajlar.map(x => x && x.id));
-        const paketler = await Store.paketler.all();
+        const paketler = mevcutPaketler;
     const _onceki_paketler = new Set(paketler.map(x => x && x.id));
         const stokKodToId = new Map();   // her tipten kart için ortak id haritası
         const stokKodToTip = new Map();  // stokKod -> 'yarimamul'|'altmontaj'|'paket'
@@ -2480,7 +2491,7 @@ PageModules.kartlar = (() => {
         await parcaliKaydet('paketler', paketler, _onceki_paketler);
 
         // 3) Ürün + reçete: kök seviyedeki (level=0) kalemler bu ürünün doğrudan reçete kalemleridir
-        const urunler = await Store.urunler.all();
+        const urunler = mevcutUrunler;
     const _onceki_urunler = new Set(urunler.map(x => x && x.id));
         let urun = urunler.find(u => u.kod === urunKod);
         if (urun) { urun.ad = urunAd; }
