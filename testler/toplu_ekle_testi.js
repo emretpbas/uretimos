@@ -6,13 +6,26 @@ let ok=0,bad=0;const t=(a,k)=>{if(k){ok++;console.log('  GECTI '+a)}else{bad++;c
 
 console.log('\n-- KOD KONTROLU --');
 t('topluEkle tanimli', src.includes('async function topluEkle(key, kayitlar, partiBoyu, ilerleme)'));
-t('patch ucunu kullaniyor (tam kayit degil)', /topluEkle[\s\S]{0,600}patchUygula\(key, \{ ekle: dilim/.test(src));
+t('patch ucunu (tekrar denemeli) kullaniyor, tam kayit degil', /topluEkle[\s\S]{0,600}patchUygulaTekrarli\(key, \{ ekle: dilim/.test(src));
 t('parti boyu sinirlandirilmis (1-1000)', /Math\.min\(\+partiBoyu \|\| 300, 1000\)/.test(src));
 t('disa acilmis', /topluEkle, topluGuncelle/.test(src));
 t('Tiger aktarimi topluEkle kullaniyor', tg.includes("Store.topluEkle('hammaddeler'"));
 t('parti boyu 250', /topluEkle\('hammaddeler', yeniHm, 250/.test(tg));
 t('ilerleme kullaniciya gosteriliyor', /aktarıldı…/.test(tg));
 t('hata olunca buton geri aciliyor', /Yeniden Dene/.test(tg));
+
+console.log('\n-- TEK PARTI HATASINDA TEKRAR DENEME (GERCEK URETIM BULGUSU) --');
+// GERCEK URETIM BULGUSU: 26.000+ kayitlik toplu aktarimda bir parti gecici
+// olarak yavaslayip hata verince TUM dongu duruyor, kullanici "aktar"
+// dugmesine tekrar tekrar basmak zorunda kaliyordu. patchUygulaTekrarli bunu
+// COZER: sadece basarisiz partiyi birkac kez, artan beklemeyle tekrar dener.
+t('patchUygulaTekrarli tanimli', /async function patchUygulaTekrarli\(key, fark, denemeSayisi\)/.test(src));
+t('topluEkle patchUygulaTekrarli kullaniyor', /async function topluEkle[\s\S]{0,600}patchUygulaTekrarli\(/.test(src));
+t('topluGuncelle patchUygulaTekrarli kullaniyor', /async function topluGuncelle[\s\S]{0,600}patchUygulaTekrarli\(/.test(src));
+t('topluSil patchUygulaTekrarli kullaniyor', /async function topluSil[\s\S]{0,600}patchUygulaTekrarli\(/.test(src));
+t('tekrar denemede artan bekleme (exponential backoff) var', /1000 \* Math\.pow\(2, deneme - 1\)/.test(src));
+t('azami deneme sayisi sinirli (10 ile)', /Math\.min\(\+denemeSayisi \|\| 4, 10\)/.test(src));
+t('tum denemeler tukenince gercek hata firlatiliyor', /throw sonHata/.test(src));
 
 console.log('\n-- PARCALAMA MANTIGI (simulasyon) --');
 // Uretimdeki dongunun aynisi
@@ -48,4 +61,40 @@ console.log('  PARTI gonderim ~'+Math.round(partiBoyut/1024)+' KB');
 t('parti boyutu 100 KB altinda (guvenli)', partiBoyut < 100*1024);
 t('tam gonderim 1 MB ustunde (sorunlu)', tamBoyut > 1024*1024);
 
-console.log('\nSONUC: '+ok+' gecti, '+bad+' kaldi');process.exit(bad?1:0);
+// Davranis simulasyonu: patchUygulaTekrarli'nin gercek koddaki mantigini
+// izole calistirip ilk 2 denemede hata verip 3.de basarili olan bir
+// cagriyi tolere ettigini (yani TUM dongunun durmadigini) dogruluyoruz.
+async function patchUygulaTekrarliSim(cagri, denemeSayisi) {
+  const maxDeneme = Math.max(1, Math.min(+denemeSayisi || 4, 10));
+  let sonHata;
+  for (let deneme = 1; deneme <= maxDeneme; deneme++) {
+    try { return await cagri(); } catch (e) {
+      sonHata = e;
+      if (deneme < maxDeneme) await new Promise(r => setTimeout(r, 1)); // test: gercek backoff yerine aninda
+    }
+  }
+  throw sonHata;
+}
+
+(async () => {
+  console.log('\n-- TEKRAR DENEME DAVRANISI (izole simulasyon) --');
+  let deneme = 0;
+  const sonuc = await patchUygulaTekrarliSim(() => {
+    deneme++;
+    if (deneme < 3) throw new Error('gecici sunucu hatasi (simule)');
+    return Promise.resolve('basarili');
+  }, 4);
+  t('2 basarisiz denemeden sonra 3.de basarili oluyor (sonuc dogru)', sonuc === 'basarili');
+  t('tam olarak 3 deneme yapildi', deneme === 3);
+
+  let denemeHepsiKotu = 0;
+  let hataYakalandi = false;
+  try {
+    await patchUygulaTekrarliSim(() => { denemeHepsiKotu++; throw new Error('kalici hata'); }, 3);
+  } catch (e) { hataYakalandi = true; }
+  t('tum denemeler basarisizsa gercek hata disari firliyor', hataYakalandi);
+  t('kalici hatada tam olarak azami deneme kadar denendi (3)', denemeHepsiKotu === 3);
+
+  console.log('\nSONUC: '+ok+' gecti, '+bad+' kaldi');
+  process.exit(bad?1:0);
+})();

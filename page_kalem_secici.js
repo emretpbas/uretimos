@@ -148,9 +148,43 @@ PageModules.kalem_secici = (() => {
       row.querySelector('.ks-filter-birim').oninput = (e) => { filtreBirim = e.target.value; renderTbody(); };
     }
 
+    // GERÇEK ÜRETİM TESTİNDE YAKALANDI: LOGO'dan toplu aktarım sonrası bazı
+    // çağıranlar (ör. page_siparis.js) 80.000+ kalimi her açılışta TEK TEK
+    // BOM maliyeti hesaplayıp buraya veriyordu — bu, sipariş/teklif formunu
+    // açarken uygulamayı kilitliyordu. Artık çağıran isterse yalnızca
+    // {grup,kod,ad,birim} ile HIZLI bir liste verip maliyet hesabını
+    // state.maliyetHesapla(secim)'e bırakabilir; biz bunu SADECE o an EKRANDA
+    // GÖSTERİLECEK (filtrelenmiş + sınırlı) birkaç satır için çağırırız,
+    // 80.000'in tamamı için DEĞİL. maliyetHesapla verilmeyen eski çağıranlar
+    // (netFiyat'ı zaten kendisi hesaplayıp secenekler'e koymuş olanlar) hiç
+    // etkilenmez — s._maliyetCozuldu zaten true sayılır.
+    const MAKS_GORUNEN = 300;
+
+    function maliyetCozumle(s) {
+      if (!state.maliyetHesapla || s._maliyetCozuldu) return;
+      try {
+        const r = state.maliyetHesapla(s) || {};
+        s.netFiyat = r.netFiyat ?? 0;
+        s.maliyetYok = !!r.maliyetYok;
+      } catch (e) {
+        s.netFiyat = 0; s.maliyetYok = true;
+      }
+      s._maliyetCozuldu = true;
+    }
+
     function renderTbody() {
       const tbody = document.getElementById('ks-tbody');
-      const filtreliListe = siralaListe(filtrele());
+      const eslesen = filtrele();
+      // Fiyata göre sıralama istenirse, doğru sıralayabilmek için GÖRÜNEN
+      // kümeyle sınırlı kalmadan önce eşleşen tüm satırların maliyetini
+      // çözmemiz gerekir — ama bu yalnızca kullanıcı AÇIKÇA fiyat sütununa
+      // tıkladığında olur, varsayılan açılışta DEĞİL; ayrıca arama zaten
+      // kümeyi daraltmış olur.
+      if (siralamaKolon === 'netFiyat') eslesen.forEach(maliyetCozumle);
+      const sirali = siralaListe(eslesen);
+      const tasmaVarMi = sirali.length > MAKS_GORUNEN;
+      const filtreliListe = sirali.slice(0, MAKS_GORUNEN);
+      filtreliListe.forEach(maliyetCozumle);
       let html = '';
       if (!filtreliListe.length) {
         html = `<tr><td colspan="6"><div class="empty-state" style="padding:24px 0"><div class="edesc">Filtreyle eşleşen kalem bulunamadı.</div></div></td></tr>`;
@@ -167,12 +201,15 @@ PageModules.kalem_secici = (() => {
         });
       }
       tbody.innerHTML = html;
-      document.getElementById('ks-count-hint').textContent = `${filtreliListe.length} / ${state.secenekler.length} kalem gösteriliyor`;
+      document.getElementById('ks-count-hint').textContent = tasmaVarMi
+        ? `İlk ${MAKS_GORUNEN} / ${sirali.length} eşleşen gösteriliyor (toplam ${state.secenekler.length}) — daraltmak için arayın`
+        : `${filtreliListe.length} / ${state.secenekler.length} kalem gösteriliyor`;
 
       tbody.querySelectorAll('.ks-row').forEach(row => {
         const secimYap = () => {
-          const secim = state.secenekler.find(s => s.grup === row.dataset.grup && s.kod === row.dataset.kod);
-          if (secim && state.onSecildi) state.onSecildi(secim);
+          const secim = filtreliListe.find(s => s.grup === row.dataset.grup && s.kod === row.dataset.kod)
+            || state.secenekler.find(s => s.grup === row.dataset.grup && s.kod === row.dataset.kod);
+          if (secim) { maliyetCozumle(secim); if (state.onSecildi) state.onSecildi(secim); }
         };
         row.querySelector('.ks-sec-btn').onclick = (e) => { e.stopPropagation(); secimYap(); };
         row.onclick = secimYap;

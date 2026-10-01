@@ -1712,6 +1712,31 @@ try {
         respond(['key' => $key, 'value' => $value, 'surum' => $surum]);
     }
 
+    elseif ($action === 'sayim') {
+        // GERÇEK ÜRETİM TESTİNDE YAKALANDI: dashboard gibi ekranlar bir
+        // koleksiyonun yalnızca KAÇ KAYIT olduğunu (dizi uzunluğunu) göstermek
+        // için TÜM koleksiyonu (ör. 80.000+ kayıtlı urunler/yarimamuller)
+        // indirip ayrıştırıyordu — sadece bir sayı göstermek için. Bu uç nokta
+        // aynı yetki kontrolleriyle (action=get ile BİREBİR aynı) veriyi
+        // sunucuda bir kez çözüp yalnızca adedi döner; ağ trafiği ve istemci
+        // JSON.parse yükü ortadan kalkar.
+        $oturum = oturumZorunlu($pdo);
+        $key = $_GET['key'] ?? '';
+        if ($key === '') respond(['error' => 'key zorunlu'], 400);
+        if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array($key, HAT_OP_OKUNABILIR, true)) {
+            respond(['error' => 'Operatör oturumu bu veriye erişemez'], 403);
+        }
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array($key, CAD_ENT_OKUNABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
+        }
+        koleksiyonYetkiKontrol($oturum, $key, 'oku');
+        $stmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
+        $stmt->execute([':k' => $key]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $arr = $row ? json_decode($row['store_value'], true) : [];
+        respond(['key' => $key, 'adet' => is_array($arr) ? count($arr) : 0]);
+    }
+
     elseif ($action === 'set') {
         $oturum = oturumZorunlu($pdo);
         $body = readJsonBody();

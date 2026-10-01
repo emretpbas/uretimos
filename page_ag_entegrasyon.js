@@ -627,9 +627,13 @@ PageModules.ag_entegrasyon = (() => {
             guncelU.push(u); guncel++;
           }
         });
+        // Parti boyutu 1000 (azami): bu koleksiyon LOGO'dan 10.000'lerce kart
+        // ile tek seferde beslenebiliyor; sunucu her partide TÜM koleksiyonu
+        // yeniden yazdığı için parti sayısını azaltmak (200→1000) gereksiz
+        // tekrar-okuma/yazma turunu ~5 kat azaltır.
         await App.persist(async () => {
-          if (yeniU.length) await Store.topluEkle('urunler', yeniU, 200);
-          if (guncelU.length) await Store.topluGuncelle('urunler', guncelU, 200);
+          if (yeniU.length) await Store.topluEkle('urunler', yeniU, 1000);
+          if (guncelU.length) await Store.topluGuncelle('urunler', guncelU, 1000);
         });
       } else if (profil.hedefTip === 'yarimamul_kart') {
         const yarimamuller = await Store.yarimamuller.all();
@@ -648,9 +652,10 @@ PageModules.ag_entegrasyon = (() => {
             guncelY.push(y); guncel++;
           }
         });
+        // Aynı gerekçe: 1000'lik parti, tekrar-okuma/yazma tur sayısını azaltır.
         await App.persist(async () => {
-          if (yeniY.length) await Store.topluEkle('yarimamuller', yeniY, 200);
-          if (guncelY.length) await Store.topluGuncelle('yarimamuller', guncelY, 200);
+          if (yeniY.length) await Store.topluEkle('yarimamuller', yeniY, 1000);
+          if (guncelY.length) await Store.topluGuncelle('yarimamuller', guncelY, 1000);
         });
       } else if (profil.hedefTip === 'cari') {
         const musteriler = await Store.musteriler.all();

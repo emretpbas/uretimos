@@ -4,8 +4,16 @@
 PageModules.dashboard = (() => {
 
   async function render(main) {
-    const [hammaddeler, yarimamuller, urunler, isemirleri, rotalar, fiyatListeleri] = await Promise.all([
-      Store.hammaddeler.all(), Store.yarimamuller.all(), Store.urunler.all(),
+    // GERÇEK ÜRETİM TESTİNDE YAKALANDI: LOGO'dan toplu aktarım sonrası
+    // yarimamuller/urunler 80.000+ kayda çıkınca, panel açılışında bu
+    // koleksiyonları SADECE bir sayı (.length) göstermek için tam indirip
+    // ayrıştırmak girişi gözle görülür yavaşlatıyordu. Bu ikisi burada
+    // GERÇEKTEN yalnızca adet için kullanılıyor — Store.sayim() ile
+    // sunucudan doğrudan sayı istiyoruz, tüm koleksiyonu indirmiyoruz.
+    // hammaddeler burada kalıyor çünkü plaka/hırdavat kırılımı için gerçek
+    // kayıt alanlarına (tip) ihtiyaç var, salt sayıya değil.
+    const [hammaddeler, yarimamulSayisi, urunSayisi, isemirleri, rotalar, fiyatListeleri] = await Promise.all([
+      Store.hammaddeler.all(), Store.sayim('yarimamuller'), Store.sayim('urunler'),
       Store.isemirleri.all(), Store.rotalar.all(), Store.fiyatListeleri.all()
     ]);
 
@@ -29,8 +37,8 @@ PageModules.dashboard = (() => {
       </div>
 
       <div class="grid grid-4">
-        <div class="kpi"><div class="kpi-lbl">Bitmiş Ürün Kartı</div><div class="kpi-val blue">${urunler.length}</div><div class="kpi-sub">Tanımlı ürün</div></div>
-        <div class="kpi"><div class="kpi-lbl">Yarı Mamül</div><div class="kpi-val purple">${yarimamuller.length}</div><div class="kpi-sub">Tanımlı yarı mamül</div></div>
+        <div class="kpi"><div class="kpi-lbl">Bitmiş Ürün Kartı</div><div class="kpi-val blue">${urunSayisi}</div><div class="kpi-sub">Tanımlı ürün</div></div>
+        <div class="kpi"><div class="kpi-lbl">Yarı Mamül</div><div class="kpi-val purple">${yarimamulSayisi}</div><div class="kpi-sub">Tanımlı yarı mamül</div></div>
         <div class="kpi"><div class="kpi-lbl">Hammadde</div><div class="kpi-val green">${hammaddeler.length}</div><div class="kpi-sub">${plakaSayisi} plaka · ${hirdavatSayisi} hırdavat</div></div>
         <div class="kpi"><div class="kpi-lbl">Açık İş Emri</div><div class="kpi-val amber">${acikIsEmri}</div><div class="kpi-sub">${isemirleri.length} toplam iş emri</div></div>
       </div>

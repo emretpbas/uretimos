@@ -161,6 +161,24 @@ const Store = (() => {
     }
   }
 
+  // GERÇEK ÜRETİM TESTİNDE YAKALANDI: bir koleksiyonun yalnızca KAÇ KAYIT
+  // olduğunu (dizi uzunluğunu) göstermek için get()'i çağırıp TÜM koleksiyonu
+  // indirip JSON.parse etmek (ör. 80.000+ kayıtlı urunler/yarimamuller'de)
+  // yalnızca bir sayı için gereksiz ağır bir işti. Sunucu bunu kendisi çözüp
+  // yalnızca adedi döner. Hatada (ör. sunucu kapalı) 0 döner — bir KPI
+  // rakamının hata fırlatıp sayfanın tamamını çökertmesi istenmez.
+  async function sayim(key, fallback = 0) {
+    try {
+      const res = await apiFetch(API_URL + '?action=sayim&key=' + encodeURIComponent(key));
+      if (!res.ok) return fallback;
+      const data = await res.json();
+      return typeof data.adet === 'number' ? data.adet : fallback;
+    } catch (e) {
+      console.error('Store.sayim hatası:', key, e);
+      return fallback;
+    }
+  }
+
   // Yalnızca değişen kayıtları atomik olarak uygular (sunucuda kilit altında)
   async function patchUygula(key, fark) {
     const res = await apiFetch(API_URL + '?action=patch', {
@@ -172,6 +190,31 @@ const Store = (() => {
     if (!res.ok) throw new Error(data.error || ('Kayıt hatası: HTTP ' + res.status));
     if (typeof data.surum === 'number') surumler.set(key, data.surum);
     return data;
+  }
+
+  // GERÇEK ÜRETİM TESTİNDE YAKALANDI: LOGO'dan 26.000+ yarı mamül kartını tek
+  // seferde aktarırken, koleksiyon büyüdükçe her parti sunucuda TÜM blob'u
+  // yeniden okuyup yazıyor (maliyet kayıt sayısıyla büyüyor). Bu sırada tek
+  // bir partinin geçici olarak yavaşlayıp zaman aşımına uğraması TÜM
+  // topluEkle/topluGuncelle döngüsünü durduruyordu — kullanıcı "aktar"
+  // düğmesine defalarca basıp her seferinde 1-2 bin kayıt ilerleme almak
+  // zorunda kalıyordu. Burada sadece BAŞARISIZ partiyi, artan bekleme
+  // süreleriyle birkaç kez yeniden deniyoruz; önceden yazılmış partiler zaten
+  // kalıcı, kaybolmuyor.
+  async function patchUygulaTekrarli(key, fark, denemeSayisi) {
+    const maxDeneme = Math.max(1, Math.min(+denemeSayisi || 4, 10));
+    let sonHata;
+    for (let deneme = 1; deneme <= maxDeneme; deneme++) {
+      try {
+        return await patchUygula(key, fark);
+      } catch (e) {
+        sonHata = e;
+        if (deneme < maxDeneme) {
+          await new Promise(r => setTimeout(r, 1000 * Math.pow(2, deneme - 1)));
+        }
+      }
+    }
+    throw sonHata;
   }
 
   // Büyük listeyi mevcut sunucu verisiyle karşılaştırıp SADECE farkı,
@@ -229,7 +272,7 @@ const Store = (() => {
     let eklenen = 0, parti = 0;
     for (let i = 0; i < liste.length; i += boyut) {
       const dilim = liste.slice(i, i + boyut);
-      await patchUygula(key, { ekle: dilim, guncelle: [], sil: [] });
+      await patchUygulaTekrarli(key, { ekle: dilim, guncelle: [], sil: [] });
       eklenen += dilim.length;
       parti++;
       // Anlık görüntü tutuluyorsa güncelle (küçük koleksiyonlarda)
@@ -253,7 +296,7 @@ const Store = (() => {
     let guncellenen = 0, parti = 0;
     for (let i = 0; i < liste.length; i += boyut) {
       const dilim = liste.slice(i, i + boyut);
-      await patchUygula(key, { ekle: [], guncelle: dilim, sil: [] });
+      await patchUygulaTekrarli(key, { ekle: [], guncelle: dilim, sil: [] });
       guncellenen += dilim.length;
       parti++;
       const harita = anlikGoruntu.get(key);
@@ -278,7 +321,7 @@ const Store = (() => {
     let silinen = 0, parti = 0;
     for (let i = 0; i < liste.length; i += boyut) {
       const dilim = liste.slice(i, i + boyut);
-      await patchUygula(key, { ekle: [], guncelle: [], sil: dilim });
+      await patchUygulaTekrarli(key, { ekle: [], guncelle: [], sil: dilim });
       silinen += dilim.length;
       parti++;
       const harita = anlikGoruntu.get(key);
@@ -730,7 +773,7 @@ const Store = (() => {
 
   return {
     get, set, del, listKeys, setIfAbsent,
-    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, hatVerisiGetir, sunucuModu,
+    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifresiDogrula, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,

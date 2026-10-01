@@ -151,28 +151,36 @@ PageModules.siparis = (() => {
     const duzenlemeModu = !!d.editingId;
 
     // ── Üç kategoriden de seçenek üret: Ürün (bitmiş), Yarı Mamül, Hammadde ──
-    // Her birinin maliyeti hesaplanır; maliyet bulunamazsa "maliyetYok" işaretlenir
-    // ve kullanıcı seçtiğinde fiyatı manuel girmesi istenir.
-    const urunSecenekleri = urunler.map(u => {
-      const katalogKalem = sonListe ? sonListe.kalemler.find(k => k.kod === u.kod) : null;
-      let netFiyat = katalogKalem ? katalogKalem.listeFiyati : null;
-      let maliyetYok = false;
-      if (netFiyat == null) {
-        const m = App.urunMaliyetHesapla(u, receteler, yarimamuller, hammaddeler, rotalar, ayarlar, altMontajlar, urunler, paketler);
-        if (m.toplam > 0 && m.eksikKalemler.length === 0) netFiyat = m.toplam;
-        else { netFiyat = 0; maliyetYok = true; }
-      }
-      return { grup: 'urun', kod: u.kod, ad: u.ad, netFiyat, maliyetYok, birim: 'ADET' };
-    });
-    const ymSecenekleri = yarimamuller.map(y => {
-      const { birimMaliyet, kaynak } = App.ymBirimMaliyetHesapla(y, hammaddeler, ayarlar, receteler, yarimamuller);
-      return { grup: 'yarimamul', kod: y.kod, ad: y.ad, netFiyat: birimMaliyet, maliyetYok: kaynak === 'yok', birim: 'ADET' };
-    });
-    const hmSecenekleri = hammaddeler.map(h => {
-      const fiyatTRY = App.toTRY(h.birimFiyat, h.dvz, ayarlar);
-      return { grup: 'hammadde', kod: h.stokKodu, ad: h.ad, netFiyat: fiyatTRY, maliyetYok: !h.birimFiyat, birim: h.birim };
-    });
+    // GERÇEK ÜRETİM TESTİNDE YAKALANDI: LOGO'dan toplu aktarım sonrası bu
+    // koleksiyonlar 80.000+ kayda çıkınca, HER BİRİ için burada BOM maliyeti
+    // hesaplamak (eskiden "her açılışta hepsine bak" şeklindeydi) sipariş
+    // formunu açarken uygulamayı kilitliyordu. Artık maliyet BURADA
+    // hesaplanmıyor — yalnızca hızlı bir kod/ad/birim listesi kuruluyor;
+    // gerçek maliyet hesabı kalem_secici'ye `maliyetHesapla` callback'i
+    // olarak veriliyor ve yalnızca O AN EKRANDA GÖSTERİLEN birkaç satır için
+    // çalışır (bkz. page_kalem_secici.js).
+    const urunSecenekleri = urunler.map(u => ({ grup: 'urun', kod: u.kod, ad: u.ad, birim: 'ADET', _kart: u }));
+    const ymSecenekleri = yarimamuller.map(y => ({ grup: 'yarimamul', kod: y.kod, ad: y.ad, birim: 'ADET', _kart: y }));
+    const hmSecenekleri = hammaddeler.map(h => ({ grup: 'hammadde', kod: h.stokKodu, ad: h.ad, birim: h.birim, _kart: h }));
     const tumSecenekler = [...urunSecenekleri, ...ymSecenekleri, ...hmSecenekleri];
+
+    // Tek bir seçim için maliyeti hesaplar — eskiden yukarıdaki üç map'in
+    // İÇİNDE, HER kayıt için eagerly çalışan mantığın AYNISI, sadece artık
+    // tek bir kayıt (`secim._kart`) için, talep üzerine çağrılıyor.
+    function maliyetHesaplaSecim(secim) {
+      if (secim.grup === 'urun') {
+        const katalogKalem = sonListe ? sonListe.kalemler.find(k => k.kod === secim.kod) : null;
+        if (katalogKalem && katalogKalem.listeFiyati != null) return { netFiyat: katalogKalem.listeFiyati, maliyetYok: false };
+        const m = App.urunMaliyetHesapla(secim._kart, receteler, yarimamuller, hammaddeler, rotalar, ayarlar, altMontajlar, urunler, paketler);
+        if (m.toplam > 0 && m.eksikKalemler.length === 0) return { netFiyat: m.toplam, maliyetYok: false };
+        return { netFiyat: 0, maliyetYok: true };
+      }
+      if (secim.grup === 'yarimamul') {
+        const { birimMaliyet, kaynak } = App.ymBirimMaliyetHesapla(secim._kart, hammaddeler, ayarlar, receteler, yarimamuller);
+        return { netFiyat: birimMaliyet, maliyetYok: kaynak === 'yok' };
+      }
+      return { netFiyat: App.toTRY(secim._kart.birimFiyat, secim._kart.dvz, ayarlar), maliyetYok: !secim._kart.birimFiyat };
+    }
 
     main.innerHTML = `
       <div class="page-hdr">
@@ -214,6 +222,7 @@ PageModules.siparis = (() => {
         App.goTo('kalem_secici', {
           baslik: 'Sipariş için Kalem Seç',
           secenekler: tumSecenekler,
+          maliyetHesapla: maliyetHesaplaSecim,
           gruplar: { urun: 'Bitmiş Ürünler', yarimamul: 'Yarı Mamüller', hammadde: 'Hammadde/Hırdavat' },
           geriDon: () => render(main),
           onSecildi: (secim) => {
