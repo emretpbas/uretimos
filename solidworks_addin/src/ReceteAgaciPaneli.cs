@@ -1780,15 +1780,25 @@ namespace UretimOSKesim
                 }
 
                 Button onayliBtn = null;
-                if (manifestGirdisi != null && (manifestGirdisi.DwgYolu != null || manifestGirdisi.PdfYolu != null))
+                if (manifestGirdisi != null && (manifestGirdisi.DwgYolu != null || manifestGirdisi.PdfYolu != null || manifestGirdisi.DxfYolu != null))
                 {
-                    string ozet = string.Join(" + ", new[] { manifestGirdisi.DwgYolu != null ? "DWG" : null, manifestGirdisi.PdfYolu != null ? "PDF" : null }.Where(x => x != null));
+                    // DXF: TeknikResimOnaylaVeYukleCalistir/AcikCizimiKaydet artık
+                    // DWG+PDF'in yanında DXF de üretip manifeste kaydediyor — bu
+                    // "daha önce onaylanmışı tekrar yükle" kısayolu DXF'i ATLARSA
+                    // kullanıcı burada yalnızca DWG+PDF'i tekrar yükleyebilir,
+                    // DXF'i kaybeder (tutarsızlık).
+                    string ozet = string.Join(" + ", new[] {
+                        manifestGirdisi.DwgYolu != null ? "DWG" : null,
+                        manifestGirdisi.PdfYolu != null ? "PDF" : null,
+                        manifestGirdisi.DxfYolu != null ? "DXF" : null
+                    }.Where(x => x != null));
                     onayliBtn = new Button { Text = $"✓ Daha önce onaylanmış teknik resmi yükle ({ozet})", Dock = DockStyle.Top, Height = 44, Margin = new Padding(0, 0, 0, 10) };
                     onayliBtn.Click += async (s, e) =>
                     {
                         var dosyalar = new List<string>();
                         if (manifestGirdisi.DwgYolu != null) dosyalar.Add(manifestGirdisi.DwgYolu);
                         if (manifestGirdisi.PdfYolu != null) dosyalar.Add(manifestGirdisi.PdfYolu);
+                        if (manifestGirdisi.DxfYolu != null) dosyalar.Add(manifestGirdisi.DxfYolu);
                         await YukleVeYenile(dosyalar);
                     };
                 }
@@ -2066,22 +2076,28 @@ namespace UretimOSKesim
         }
 
         // ADIM 2 — global buton (altPanel): ŞU AN SolidWorks'te AÇIK olan
-        // (kullanıcının elle düzenlediği) çizimi hem .dwg hem .pdf olarak
-        // kaydeder (çizim İÇERİĞİNE dokunmaz, TeknikResimOnaylaCalistir'deki
+        // (kullanıcının elle düzenlediği) çizimi hem .dwg hem .pdf hem .dxf
+        // olarak kaydeder (çizim İÇERİĞİNE dokunmaz, TeknikResimOnaylaCalistir'deki
         // AYNI mantık) ve ADIM 1'de işaretlenen kalemin ÜretimOS kartına
         // yükler. Çizim BİLEREK kapatılmaz (elle akışla AYNI davranış —
         // kullanıcı isterse tekrar düzenleyip tekrar onaylayabilir).
-        private async System.Threading.Tasks.Task TeknikResimOnaylaVeYukleCalistir()
+        //
+        // Dönüş değeri (bool): TÜM dosyalar hatasız yüklendiğinde true —
+        // kullanıcı isteği doğrultusunda eklenen TeknikResimKaydetGonderVeKapatCalistir
+        // (bkz. aşağısı), çizimi SADECE tam başarıda kapatıp bu panele döner;
+        // kısmi/başarısız durumda kullanıcı düzeltip tekrar deneyebilsin diye
+        // çizim AÇIK bırakılmalı.
+        private async System.Threading.Tasks.Task<bool> TeknikResimOnaylaVeYukleCalistir()
         {
             if (_bekleyenTeknikResim == null)
             {
                 MessageBox.Show("Önce bir satırda '📐 Teknik Resim Oluştur'a basıp çizimi hazırlayın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                return false;
             }
             if (_istemci == null)
             {
                 MessageBox.Show("ÜretimOS bağlantısı yok — teknik resim yüklenemez.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                return false;
             }
             var (tip, kart, modelYolu, beklenenCizim) = _bekleyenTeknikResim.Value;
             string refId = (string)kart["id"];
@@ -2097,7 +2113,7 @@ namespace UretimOSKesim
                 MessageBox.Show(
                     "Onaylamak için önce '📐 Teknik Resim Oluştur' ile açtığınız ÇİZİM (.slddrw) belgesini aktif hale getirin.",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                return false;
             }
 
             // GERÇEK BULGU (bkz. _bekleyenTeknikResim tanımındaki NOT):
@@ -2116,7 +2132,7 @@ namespace UretimOSKesim
                     "getirip (pencereler arasından seçip) tekrar 'Onayla'ya basın — böylece yanlış karta " +
                     "yükleme YAPILMAZ.",
                     "ÜretimOS — Çizim/Kart Uyuşmuyor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                return false;
             }
 
             // Kullanıcı isteği: "hepsi çizim dosyasının uzantılı klasöründe
@@ -2163,7 +2179,7 @@ namespace UretimOSKesim
                     "teknik resim otomatik kaydedilemiyor. Önce SolidWorks'te ilgili SLDPRT/SLDASM dosyasını " +
                     "bir klasöre kaydedin, sonra tekrar deneyin.",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                return false;
             }
             string dwgHedefYolu = Path.Combine(varsayilanKlasor, dosyaAdOnEki + ".dwg");
 
@@ -2171,25 +2187,27 @@ namespace UretimOSKesim
             _durumEtiketi.Text = $"Çizim '{dwgHedefYolu}' konumuna kaydediliyor…";
 
             var resimUretici = new TeknikResimOlusturucu(_app);
+            // Kullanıcı isteği: "gerekli dxf dwg ve pdf oluşup yüklensin" —
+            // CNC/lazer kesim gibi dış akışlar genelde DXF ister.
             bool kaydedildi = resimUretici.AcikCizimiKaydet(cizimBelge, dwgHedefYolu,
-                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg);
+                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg, out string kaydedilenDxf);
             if (!kaydedildi)
             {
                 _durumEtiketi.ForeColor = Color.DarkRed;
                 _durumEtiketi.Text = "Teknik resim kaydedilemedi.";
-                MessageBox.Show("DWG/PDF kaydedilemedi.\n\n" + string.Join("\n", resimUretici.Uyarilar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                MessageBox.Show("DWG/PDF/DXF kaydedilemedi.\n\n" + string.Join("\n", resimUretici.Uyarilar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
             }
 
             // SwAddin.cs'teki elle "2) Onayla" akışıyla AYNI manifest kaydı —
             // böylece bu model için sonradan '📎 Teknik Resim' butonuna
             // basılırsa ("Daha önce onaylanmış teknik resmi yükle") aynı
             // dosyalar önerilir.
-            Manifest.Kaydet(modelYolu, kaydedilenDwg, kaydedilenPdf, kaydedilenJpg);
+            Manifest.Kaydet(modelYolu, kaydedilenDwg, kaydedilenPdf, kaydedilenJpg, kaydedilenDxf);
 
             int basariliSayisi = 0;
             var hatalar = new List<string>();
-            foreach (var dosyaYolu in new[] { kaydedilenDwg, kaydedilenPdf })
+            foreach (var dosyaYolu in new[] { kaydedilenDwg, kaydedilenPdf, kaydedilenDxf })
             {
                 if (dosyaYolu == null) continue;
                 try
@@ -2206,21 +2224,81 @@ namespace UretimOSKesim
                 }
             }
 
-            if (hatalar.Count == 0)
+            // GERÇEK ÇÖKME RİSKİ (bkz. AnaPencerede üstündeki NOT): yukarıdaki
+            // foreach içindeki await _istemci.DosyaYukle çağrılarından
+            // dönüşte devam BAZEN yanlış iş parçacığında çalışıyor —
+            // _durumEtiketi.Text/ForeColor (WinForms) bu riske açıktı.
+            bool tumuBasarili = hatalar.Count == 0;
+            AnaPencerede(() =>
             {
-                _bekleyenTeknikResim = null;
-                if (_teknikResimOnaylaBtn != null) _teknikResimOnaylaBtn.Enabled = false;
-                _durumEtiketi.ForeColor = Color.DarkGreen;
-                _durumEtiketi.Text = $"✓ '{kod}' için teknik resim onaylandı ve {basariliSayisi} dosya (DWG+PDF) ÜretimOS'a yüklendi.";
-            }
-            else
-            {
-                _durumEtiketi.ForeColor = Color.DarkOrange;
-                _durumEtiketi.Text = $"Çizim kaydedildi ama {hatalar.Count} dosya ÜretimOS'a yüklenemedi — düzeltip tekrar onaylayabilirsiniz.";
-                MessageBox.Show("Çizim kaydedildi ama bazı dosyalar ÜretimOS'a yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
+                if (tumuBasarili)
+                {
+                    _bekleyenTeknikResim = null;
+                    if (_teknikResimOnaylaBtn != null) _teknikResimOnaylaBtn.Enabled = false;
+                    _durumEtiketi.ForeColor = Color.DarkGreen;
+                    _durumEtiketi.Text = $"✓ '{kod}' için teknik resim onaylandı ve {basariliSayisi} dosya (DWG+PDF+DXF) ÜretimOS'a yüklendi.";
+                }
+                else
+                {
+                    _durumEtiketi.ForeColor = Color.DarkOrange;
+                    _durumEtiketi.Text = $"Çizim kaydedildi ama {hatalar.Count} dosya ÜretimOS'a yüklenemedi — düzeltip tekrar onaylayabilirsiniz.";
+                    MessageBox.Show("Çizim kaydedildi ama bazı dosyalar ÜretimOS'a yüklenemedi:\n\n" + string.Join("\n", hatalar), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            });
             if (resimUretici.Uyarilar.Count > 0)
                 Tanilama.Kaydet("TeknikResimOnaylaVeYukleCalistir uyarilari: " + string.Join(" | ", resimUretici.Uyarilar));
+            return tumuBasarili;
+        }
+
+        // KULLANICI İSTEĞİ: "teknik resim ekranında düzenleme yaptıktan sonra
+        // kaydet ve üretimosa gönder tuşu ile gönderelim ve bu tuşa basınca
+        // gerekli dxf dwg ve pdf oluşup yüklensin ve hepsi kapanarak yine
+        // reçete ekranına dönüş yapsın" — ayrı bir pencereye (bu WinForms
+        // paneli) geri dönüp '✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle'ye
+        // basmak YERİNE, SolidWorks'ün KENDİ "ÜretimOS" şerit sekmesinden
+        // (çizim zaten aktifken) TEK tuşla: kaydet+yükle+çizimi kapat+bu
+        // paneli öne getir. SwAddin.cs'teki TeknikResimGonderVeKapatCalistir
+        // ribbon komutu, _acikReceteAgaciPaneli referansı üzerinden bunu
+        // çağırır (bkz. o metottaki NOT).
+        //
+        // Üstteki TeknikResimOnaylaVeYukleCalistir'i AYNEN kullanır (kod
+        // tekrarı yok) — yalnızca TAM başarıda (true) ek olarak çizimi kapatıp
+        // paneli öne getirir; kısmi/başarısız durumda (false) çizim AÇIK
+        // kalır ki kullanıcı hatayı görüp düzeltip tekrar deneyebilsin.
+        public async System.Threading.Tasks.Task TeknikResimKaydetGonderVeKapatCalistir()
+        {
+            var cizimBelge = _app?.ActiveDoc as IModelDoc2;
+            string cizimBaslik = cizimBelge?.GetTitle();
+
+            bool basarili = await TeknikResimOnaylaVeYukleCalistir();
+            if (!basarili) return; // hata zaten kullanıcıya gösterildi
+
+            // GERÇEK ÇÖKME RİSKİ (bkz. AnaPencerede üstündeki NOT, BilesenAgaciniCiz
+            // başındaki AYNI gerekçe): yukarıdaki await (ağ isteği) sonrası devam
+            // BAZEN yanlış iş parçacığında çalışıyor — hem _app.CloseDoc (SolidWorks
+            // COM çağrısı, STA) hem Activate/WindowState (WinForms) bu riske açık.
+            // AnaPencerede ile UI iş parçacığına marshal edilir.
+            AnaPencerede(() =>
+            {
+                // Çizimin işi bitti — DWG/PDF/DXF zaten AcikCizimiKaydet ile ayrı
+                // dosyalara yazıldı ve ÜretimOS'a yüklendi; SLDDRW'nin kendisini
+                // ayrıca kaydetmeye gerek yok (tek seferlik çalışma dosyası).
+                // AltiYuzKutuOlusturucu.cs/KutuYerlestirmeYoneticisi.cs'teki AYNI
+                // CloseDoc(GetTitle()) deseni — en iyi çaba, başarısız olsa bile
+                // asıl iş (kaydet+yükle) zaten tamamlandı.
+                try
+                {
+                    if (!string.IsNullOrEmpty(cizimBaslik)) _app.CloseDoc(cizimBaslik);
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet("TeknikResimKaydetGonderVeKapatCalistir (CloseDoc) HATA: " + ex);
+                }
+
+                // ReceteAgaciAcCalistir'deki AYNI "mevcut paneli öne getir" deseni.
+                Activate();
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            });
         }
 
         // "yarımamül seçince parçanın en boy yüksekliği gelsin" — Sinif ==
@@ -4648,10 +4726,16 @@ namespace UretimOSKesim
                         // açık bir "klasor" özniteliği olarak da ekleniyor.
                         string klasor = !string.IsNullOrEmpty(girdi.DwgYolu) ? Path.GetDirectoryName(girdi.DwgYolu)
                             : !string.IsNullOrEmpty(girdi.PdfYolu) ? Path.GetDirectoryName(girdi.PdfYolu)
+                            : !string.IsNullOrEmpty(girdi.DxfYolu) ? Path.GetDirectoryName(girdi.DxfYolu)
                             : !string.IsNullOrEmpty(girdi.JpgYolu) ? Path.GetDirectoryName(girdi.JpgYolu) : null;
                         el.Add(new System.Xml.Linq.XElement("YerelOnayliDosyaKonumu",
                             new System.Xml.Linq.XAttribute("dwgYolu", girdi.DwgYolu ?? ""),
                             new System.Xml.Linq.XAttribute("pdfYolu", girdi.PdfYolu ?? ""),
+                            // DXF: TeknikResimOnaylaVeYukleCalistir artık bunu da
+                            // üretip manifeste kaydediyor (kullanıcı isteği: "gerekli
+                            // dxf dwg ve pdf oluşup yüklensin") — XML'i tüketen COST/
+                            // ERP tarafı da bu yolu görebilsin diye eklendi.
+                            new System.Xml.Linq.XAttribute("dxfYolu", girdi.DxfYolu ?? ""),
                             new System.Xml.Linq.XAttribute("jpgYolu", girdi.JpgYolu ?? ""),
                             new System.Xml.Linq.XAttribute("klasor", klasor ?? ""),
                             new System.Xml.Linq.XAttribute("onayZamani", girdi.OnayZamani.ToString("yyyy-MM-ddTHH:mm:ss"))));

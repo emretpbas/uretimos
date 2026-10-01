@@ -162,11 +162,12 @@ namespace UretimOSKesim
         // anındaki (kullanıcının elle düzenlediği) çizimden üretiliyor.
         // Çizim KAPATILMAZ.
         public bool AcikCizimiKaydet(IModelDoc2 cizimBelge, string dwgYolu,
-            out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg)
+            out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg, out string kaydedilenDxf)
         {
             kaydedilenDwg = null;
             kaydedilenPdf = null;
             kaydedilenJpg = null;
+            kaydedilenDxf = null;
             Tanilama.Kaydet("AcikCizimiKaydet basladi: " + dwgYolu);
             try
             {
@@ -178,14 +179,18 @@ namespace UretimOSKesim
                 kaydedilenDwg = FarkliKaydet(ext, klasor, adOnEki, "dwg", baslikLog);
                 kaydedilenPdf = FarkliKaydet(ext, klasor, adOnEki, "pdf", baslikLog);
                 kaydedilenJpg = FarkliKaydet(ext, klasor, adOnEki, "jpg", baslikLog);
+                // Kullanıcı isteği: "gerekli dxf dwg ve pdf oluşup yüklensin" —
+                // CNC/lazer kesim gibi dış akışlar genelde DXF ister; diğer
+                // üçüyle AYNI SaveAs3 tabanlı yardımcıyla üretilir.
+                kaydedilenDxf = FarkliKaydet(ext, klasor, adOnEki, "dxf", baslikLog);
 
-                return kaydedilenDwg != null || kaydedilenPdf != null || kaydedilenJpg != null;
+                return kaydedilenDwg != null || kaydedilenPdf != null || kaydedilenJpg != null || kaydedilenDxf != null;
             }
             catch (Exception ex)
             {
                 Tanilama.Kaydet("AcikCizimiKaydet HATA (managed exception): " + ex);
                 _uyarilar.Add("Çizim kaydedilirken hata: " + ex.Message);
-                return kaydedilenDwg != null || kaydedilenPdf != null || kaydedilenJpg != null;
+                return kaydedilenDwg != null || kaydedilenPdf != null || kaydedilenJpg != null || kaydedilenDxf != null;
             }
         }
 

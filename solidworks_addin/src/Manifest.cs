@@ -11,6 +11,11 @@ namespace UretimOSKesim
         public string DwgYolu;
         public string PdfYolu;
         public string JpgYolu;
+        // Kullanıcı isteği: "gerekli dxf dwg ve pdf oluşup yüklensin" —
+        // CNC/lazer kesim gibi akışlar genelde DXF ister. Eski manifest
+        // kayıtlarında bu alan yok, JSON deserialize edince null kalır
+        // (geriye dönük uyumlu, eski kayıtları bozmaz).
+        public string DxfYolu;
         public DateTime OnayZamani;
     }
 
@@ -30,7 +35,7 @@ namespace UretimOSKesim
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "UretimOSKesim", "rapor_manifest.json");
 
-        public static void Kaydet(string modelYolu, string dwgYolu, string pdfYolu, string jpgYolu)
+        public static void Kaydet(string modelYolu, string dwgYolu, string pdfYolu, string jpgYolu, string dxfYolu = null)
         {
             var tum = Oku();
             tum[Anahtar(modelYolu)] = new ManifestGirdisi
@@ -39,6 +44,7 @@ namespace UretimOSKesim
                 DwgYolu = dwgYolu,
                 PdfYolu = pdfYolu,
                 JpgYolu = jpgYolu,
+                DxfYolu = dxfYolu,
                 OnayZamani = DateTime.Now
             };
             Yaz(tum);

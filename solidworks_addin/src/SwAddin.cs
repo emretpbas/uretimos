@@ -275,10 +275,18 @@ namespace UretimOSKesim
             const int ID_CNC_YERLESIM = 109;
             const int ID_ALTI_YUZ_KUTU = 110;
             const int ID_KUTU_FRAME_YERLESTIR = 111;
+            // Kullanıcı isteği: "teknik resim ekranında düzenleme yaptıktan
+            // sonra kaydet ve üretimosa gönder tuşu ile gönderelim... hepsi
+            // kapanarak yine reçete ekranına dönüş yapsın" — çizim açıkken,
+            // ayrıca Reçete Ağacı penceresine geri dönüp '✓ Teknik Resmi
+            // Onayla ve ÜretimOS'a Yükle'ye basmaya GEREK KALMADAN, aynı
+            // "ÜretimOS" şerit sekmesinden (bkz. SekmeKur — Çizim türü için
+            // de kuruluyor) tek tuşla kaydet+yükle+kapat+panele dön.
+            const int ID_TEKNIK_GONDER_KAPAT = 112;
             int[] komutIdleri = new int[] {
                 ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET,
                 ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI, ID_CNC_YERLESIM,
-                ID_ALTI_YUZ_KUTU, ID_KUTU_FRAME_YERLESTIR
+                ID_ALTI_YUZ_KUTU, ID_KUTU_FRAME_YERLESTIR, ID_TEKNIK_GONDER_KAPAT
             };
 
             bool eskisiniYokSay = false;
@@ -496,6 +504,25 @@ namespace UretimOSKesim
                 ID_KUTU_FRAME_YERLESTIR, itemTipi);
             Tanilama.Kaydet("11. AddCommandItem2 tamamlandi");
 
+            // KOMUT 12 — kullanıcı isteği: "bu sekmeye basmak için tekrar o
+            // ekrana gelmem gerekiyor [ReceteAgaciPaneli'ne dönüp Onayla
+            // basmak yerine] teknik resim ekranında düzenleme yaptıktan
+            // sonra kaydet ve üretimosa gönder tuşu ile gönderelim". Çizim
+            // (.slddrw) aktifken bu komuta basmak: DWG+PDF+DXF kaydeder,
+            // ADIM 1'de ('📐 Teknik Resim Oluştur', Reçete Ağacı panelinden)
+            // işaretlenen ÜretimOS kartına yükler, ÇİZİMİ KAPATIR ve Reçete
+            // Ağacı panelini öne getirir — TÜMÜ panele geri dönmeden.
+            Tanilama.Kaydet("12. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "Teknik Resmi Kaydet, ÜretimOS'a Gönder ve Kapat", -1,
+                "Reçete Ağacı panelinde '📐 Teknik Resim Oluştur' ile açtığınız VE şu an SolidWorks'te " +
+                "aktif olan çizimi DWG+PDF+DXF olarak kaydeder, işaretlenen ÜretimOS kartına yükler, " +
+                "sonra çizimi kapatıp Reçete Ağacı panelini öne getirir. Reçete Ağacı penceresi açık " +
+                "olmalı (bkz. '8) Reçete Ağacı').",
+                "Kaydet ve Gönder", 11, "TeknikResimGonderVeKapatCalistir", "PaketOlusturEtkinMi",
+                ID_TEKNIK_GONDER_KAPAT, itemTipi);
+            Tanilama.Kaydet("12. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -562,9 +589,16 @@ namespace UretimOSKesim
             Tanilama.Kaydet("AddCommandTabBox tamamlandi, kutu null mu=" + (kutu == null));
             if (kutu == null) return;
 
-            int[] cmdIdleri = new int[11];
-            int[] metinTipi = new int[11];
-            for (int i = 0; i < 11; i++)
+            // GERÇEK BULGU: bu sayı daha önce 11'e SABİTLENMİŞTİ (10. ve 11.
+            // komutlar — 6 Yüz Kutu/Kutuyu Frame'e Yerleştir — eklendiğinde
+            // güncellenmişti) — 12. komut (Teknik Resmi Kaydet/Gönder/Kapat)
+            // eklenince bu sabit de GÜNCELLENMEZSE, komut menüde/araç
+            // çubuğunda kayıtlı olsa bile sekmede HİÇ GÖRÜNMEZ (AddCommands
+            // yalnızca bu dizideki ID'leri sekmeye ekler).
+            const int KOMUT_SAYISI = 12;
+            int[] cmdIdleri = new int[KOMUT_SAYISI];
+            int[] metinTipi = new int[KOMUT_SAYISI];
+            for (int i = 0; i < KOMUT_SAYISI; i++)
             {
                 cmdIdleri[i] = grup.get_CommandID(i);
                 metinTipi[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
@@ -608,14 +642,14 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            // NOT: dosya adı "_v7" oldu (v6'dan) — 9 kareli şeritten 11 kareli
-            // şeride geçildi (6 Yüz Kutu Oluştur + Kutuyu Frame'e Yerleştir
-            // eklendi); "dosya zaten var" kontrolü eski 9 kareli dosyayı
-            // YENİDEN KULLANMASIN diye (aksi halde 10-11. komutların ikonu
+            // NOT: dosya adı "_v8" oldu (v7'den) — 11 kareli şeritten 12
+            // kareli şeride geçildi ("Teknik Resmi Kaydet, ÜretimOS'a Gönder
+            // ve Kapat" eklendi); "dosya zaten var" kontrolü eski 11 kareli
+            // dosyayı YENİDEN KULLANMASIN diye (aksi halde 12. komutun ikonu
             // boş/yanlış kalır) — bkz. önceki sürümler için verilen aynı gerekçe.
-            string yol20 = Path.Combine(klasor, "komutlar_v7_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v7_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v7_40.png");
+            string yol20 = Path.Combine(klasor, "komutlar_v8_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v8_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v8_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -628,12 +662,13 @@ namespace UretimOSKesim
         // AddCommandItem2 çağrıları): 0=Kesim, 1=Etiketle, 2=Teknik Resim
         // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi, 5=Montaj Şeması
         // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı, 8=CNC Yerleşimi,
-        // 9=6 Yüz Kutu Oluştur, 10=Kutuyu Frame'e Yerleştir.
+        // 9=6 Yüz Kutu Oluştur, 10=Kutuyu Frame'e Yerleştir, 11=Teknik Resmi
+        // Kaydet/Gönder/Kapat.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 11;
+            int genislik = kareBoyutu * 12;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -649,6 +684,7 @@ namespace UretimOSKesim
                 CncYerlesimIkonuCiz(g, kareBoyutu * 8, kareBoyutu);
                 AltiYuzKutuIkonuCiz(g, kareBoyutu * 9, kareBoyutu);
                 KutuFrameYerlestirIkonuCiz(g, kareBoyutu * 10, kareBoyutu);
+                TeknikResimGonderKapatIkonuCiz(g, kareBoyutu * 11, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
         }
@@ -878,6 +914,23 @@ namespace UretimOSKesim
                 g.DrawLine(kalem, x + s * 0.5f, s * 0.32f, x + s * 0.5f, s * 0.5f);
                 g.DrawLine(kalem, x + s * 0.42f, s * 0.42f, x + s * 0.5f, s * 0.5f);
                 g.DrawLine(kalem, x + s * 0.58f, s * 0.42f, x + s * 0.5f, s * 0.5f);
+            }
+        }
+
+        // 11: Teknik Resmi Kaydet, ÜretimOS'a Gönder ve Kapat — teal zemin,
+        // disket (kaydet) + yukarı/dışarı giden ok (gönder) şekli.
+        private void TeknikResimGonderKapatIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.Teal, x, 0, s, s);
+            using (var kalem = new Pen(Color.White, Math.Max(1f, s / 18f)))
+            {
+                // Disket gövdesi (kaydet)
+                g.DrawRectangle(kalem, x + s * 0.15f, s * 0.15f, s * 0.5f, s * 0.55f);
+                g.FillRectangle(Brushes.White, x + s * 0.24f, s * 0.2f, s * 0.22f, s * 0.15f);
+                // Gönderme oku — gövdeden dışarı/yukarı çıkıyor
+                g.DrawLine(kalem, x + s * 0.72f, s * 0.75f, x + s * 0.72f, s * 0.3f);
+                g.DrawLine(kalem, x + s * 0.6f, s * 0.42f, x + s * 0.72f, s * 0.3f);
+                g.DrawLine(kalem, x + s * 0.84f, s * 0.42f, x + s * 0.72f, s * 0.3f);
             }
         }
 
@@ -1127,7 +1180,7 @@ namespace UretimOSKesim
             Tanilama.Kaydet("MontajSemasiOnaylaCalistir: " + dwgYolu);
             var resimUretici = new TeknikResimOlusturucu(_app);
             bool basarili = resimUretici.AcikCizimiKaydet(aktifBelge, dwgYolu,
-                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg);
+                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg, out _);
 
             if (basarili && !string.IsNullOrWhiteSpace(_sonMontajSemasiModelYolu))
             {
@@ -1248,22 +1301,51 @@ namespace UretimOSKesim
             Tanilama.Kaydet("TeknikResimOnaylaCalistir: " + dwgYolu);
             var resimUretici = new TeknikResimOlusturucu(_app);
             bool basarili = resimUretici.AcikCizimiKaydet(aktifBelge, dwgYolu,
-                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg);
+                out string kaydedilenDwg, out string kaydedilenPdf, out string kaydedilenJpg, out string kaydedilenDxf);
 
             if (basarili && !string.IsNullOrWhiteSpace(_sonOlusturulanModelYolu))
             {
-                Manifest.Kaydet(_sonOlusturulanModelYolu, kaydedilenDwg, kaydedilenPdf, kaydedilenJpg);
+                Manifest.Kaydet(_sonOlusturulanModelYolu, kaydedilenDwg, kaydedilenPdf, kaydedilenJpg, kaydedilenDxf);
                 Tanilama.Kaydet("Manifest.Kaydet tamamlandi: " + _sonOlusturulanModelYolu);
             }
 
             string ozet = basarili
-                ? $"Kaydedildi:\n{kaydedilenDwg ?? "(dwg başarısız)"}\n{kaydedilenPdf ?? "(pdf başarısız)"}\n{kaydedilenJpg ?? "(jpg başarısız)"}"
+                ? $"Kaydedildi:\n{kaydedilenDwg ?? "(dwg başarısız)"}\n{kaydedilenPdf ?? "(pdf başarısız)"}\n{kaydedilenJpg ?? "(jpg başarısız)"}\n{kaydedilenDxf ?? "(dxf başarısız)"}"
                 : "Kaydetme başarısız.";
             if (resimUretici.Uyarilar.Count > 0)
                 ozet += "\n\n" + string.Join("\n", resimUretici.Uyarilar);
 
             MessageBox.Show(ozet, "ÜretimOS Teknik Resim", MessageBoxButtons.OK,
                 basarili ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        // ── KOMUT: TEKNİK RESMİ KAYDET, ÜRETİMOS'A GÖNDER VE KAPAT ───────────
+        // Kullanıcı isteği: "ayrıca bu sekmeye basmak için tekrar o ekrana
+        // gelmem gerekiyor [Reçete Ağacı penceresine dönüp '✓ Teknik Resmi
+        // Onayla ve ÜretimOS'a Yükle'ye basmak] bunu teknik resim ekranında
+        // düzenleme yaptıktan sonra kaydet ve üretimosa gönder tuşu ile
+        // gönderelim ve bu tuşa basınca gerekli dxf dwg ve pdf oluşup
+        // yüklensin ve hepsi kapanarak yine reçete ekranına dönüş yapsın."
+        //
+        // BU KOMUT YUKARIDAKİ TeknikResimOnaylaCalistir'den (SaveFileDialog
+        // ile yerel kaydeden, ÜretimOS'a YÜKLEMEYEN, bağımsız eski akış)
+        // FARKLIDIR — Reçete Ağacı panelinin KENDİ "✓ Teknik Resmi Onayla ve
+        // ÜretimOS'a Yükle" mantığını (ADIM 1'de işaretlenen karta yükleme,
+        // çizim/kart eşleşme kontrolü dahil) AYNEN kullanır, panel içinde
+        // tutulan _bekleyenTeknikResim/_istemci durumuna ihtiyaç duyduğundan
+        // panelin KENDİSİNE (ReceteAgaciPaneli.TeknikResimKaydetGonderVeKapatCalistir)
+        // delege eder — mantığı burada TEKRARLAMAZ.
+        public async void TeknikResimGonderVeKapatCalistir()
+        {
+            if (_acikReceteAgaciPaneli == null || _acikReceteAgaciPaneli.IsDisposed)
+            {
+                MessageBox.Show(
+                    "Önce ÜretimOS'ta 'Reçete Ağacı' panelini açıp bir satırda '📐 Teknik Resim Oluştur'a " +
+                    "basarak bu çizimi hazırlamış olmanız gerekir.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            await _acikReceteAgaciPaneli.TeknikResimKaydetGonderVeKapatCalistir();
         }
 
         // ── KOMUT: ETİKETLEME PANELİ ──────────────────────────────────────────

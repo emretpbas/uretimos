@@ -208,6 +208,34 @@ ağacında TEK bir bileşen seçilmesini zorunlu kılıyordu. Artık:
    montaja referans olarak eklensin, eşleşme her zaman AYNEN geri gelir — ama
    her zaman "Farklı Kart Seç…" ile değiştirilebilir kalır.
 
+## Teknik Resmi Kaydet, ÜretimOS'a Gönder ve Kapat — YENİ
+
+Kullanıcı isteği: "bu sekmeye basmak için tekrar o ekrana gelmem gerekiyor
+[Reçete Ağacı penceresine dönüp '✓ Teknik Resmi Onayla ve ÜretimOS'a
+Yükle'ye basmak yerine] teknik resim ekranında düzenleme yaptıktan sonra
+kaydet ve üretimosa gönder tuşu ile gönderelim ve bu tuşa basınca gerekli
+dxf dwg ve pdf oluşup yüklensin ve hepsi kapanarak yine reçete ekranına
+dönüş yapsın."
+
+Çizim (.slddrw) aktifken SolidWorks'ün KENDİ "ÜretimOS" şerit sekmesinden
+**"Teknik Resmi Kaydet, ÜretimOS'a Gönder ve Kapat"**e basmak:
+
+1. Çizimi DWG + PDF + **DXF** olarak kaydeder (DXF yeni — CNC/lazer kesim
+   gibi dış akışlar genelde bunu ister; `AcikCizimiKaydet` artık üçünün
+   yanında bunu da üretiyor, `TeknikResimOnaylaCalistir`/`MontajSemasiOnaylaCalistir`
+   akışlarına ve manifest/XML dışa aktarımına da aynı şekilde eklendi).
+2. '📐 Teknik Resim Oluştur' ile işaretlenmiş ÜretimOS kartına yükler —
+   Reçete Ağacı panelinin KENDİ "✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle"
+   mantığıyla (çizim/kart eşleşme kontrolü dahil) AYNEN, kod tekrarı yok.
+3. **TAM başarıda** çizimi kapatır ve Reçete Ağacı panelini öne getirir —
+   kısmi/başarısız yüklemede çizim AÇIK bırakılır ki hata görülüp
+   düzeltilsin.
+
+Ön koşul: Reçete Ağacı paneli açık olmalı (komut, SwAddin'in tuttuğu
+`_acikReceteAgaciPaneli` referansı üzerinden panele delege eder) ve o
+panelde önce '📐 Teknik Resim Oluştur'a basılmış olmalı — aksi halde komut
+bilgilendirici bir uyarı gösterip hiçbir şey yapmaz.
+
 ## Kurulum
 
 ### A) Otomatik kurulum — Setup.exe (ÖNERİLEN, SWOOD gibi tek dosya)
