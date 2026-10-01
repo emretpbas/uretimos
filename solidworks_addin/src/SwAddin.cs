@@ -1337,7 +1337,8 @@ namespace UretimOSKesim
         // delege eder — mantığı burada TEKRARLAMAZ.
         public async void TeknikResimGonderVeKapatCalistir()
         {
-            if (_acikReceteAgaciPaneli == null || _acikReceteAgaciPaneli.IsDisposed)
+            var panel = AcikReceteAgaciPaneliniBul();
+            if (panel == null)
             {
                 MessageBox.Show(
                     "Önce ÜretimOS'ta 'Reçete Ağacı' panelini açıp bir satırda '📐 Teknik Resim Oluştur'a " +
@@ -1345,7 +1346,48 @@ namespace UretimOSKesim
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            await _acikReceteAgaciPaneli.TeknikResimKaydetGonderVeKapatCalistir();
+            await panel.TeknikResimKaydetGonderVeKapatCalistir();
+        }
+
+        // GERÇEK BULGU (kullanıcı günlüğü, 13:17:48→13:20:04): bir Reçete
+        // Ağacı paneli açıkken ve içinde '📐 Teknik Resim Oluştur' çalıştırılmış
+        // (çizim hazır, _bekleyenTeknikResim set edilmiş) hâldeyken, SolidWorks
+        // bu eklentiyi oturum İÇİNDE, kullanıcı hiçbir şey yapmadan SESSİZCE
+        // yeniden bağladı (günlükte İKİNCİ bir "=== ConnectToSW basladi ===").
+        // YENİ SwAddin nesnesinin _acikReceteAgaciPaneli alanı sıfırdan
+        // başlar — ama Reçete Ağacı penceresi (AYNI SLDWORKS.exe SÜRECİNDE,
+        // bağımsız bir WinForms Form nesnesi) KAPANMADAN hayatta kalmaya
+        // devam eder, yalnızca "yetim" kalır (onu oluşturan ESKİ SwAddin
+        // örneği artık erişilemez). Sonuç: kullanıcı paneli Alt+Tab ile
+        // GÖREBİLİYORDU ama "Kaydet ve Gönder" (_acikReceteAgaciPaneli
+        // üzerinden erişen) paneli HİÇ BULAMIYORDU.
+        //
+        // Application.OpenForms, SÜREÇ genelinde TÜM açık Form'ları (hangi
+        // SwAddin örneğinin oluşturduğundan BAĞIMSIZ) takip eden statik bir
+        // koleksiyondur — bu yüzden _acikReceteAgaciPaneli boş/atılmışsa,
+        // oradan "yetim" bir panel aranıp BU (yeni, çalışan) örneğe yeniden
+        // bağlanır (adopte edilir); böylece eklenti sessizce yeniden
+        // bağlansa bile panel kaybolmaz. ReceteAgaciAcCalistir'in "zaten
+        // açık mı" kontrolü de AYNI yardımcıyı kullanır — aksi halde bir
+        // yeniden bağlanmadan sonra "Reçete Ağacı"na tekrar basmak, yetim
+        // paneli göz ardı edip İKİNCİ (yinelenen, kafa karıştırıcı) bir
+        // panel daha açardı.
+        private ReceteAgaciPaneli AcikReceteAgaciPaneliniBul()
+        {
+            if (_acikReceteAgaciPaneli != null && !_acikReceteAgaciPaneli.IsDisposed)
+                return _acikReceteAgaciPaneli;
+
+            foreach (Form f in Application.OpenForms)
+            {
+                if (f is ReceteAgaciPaneli yetim && !yetim.IsDisposed)
+                {
+                    Tanilama.Kaydet("AcikReceteAgaciPaneliniBul: yetim panel bulundu (eklenti muhtemelen yeniden baglanmis), bu ornege adapte ediliyor");
+                    _acikReceteAgaciPaneli = yetim;
+                    yetim.FormClosed += (s, e) => { if (ReferenceEquals(_acikReceteAgaciPaneli, yetim)) _acikReceteAgaciPaneli = null; };
+                    return yetim;
+                }
+            }
+            return null;
         }
 
         // ── KOMUT: ETİKETLEME PANELİ ──────────────────────────────────────────
@@ -1415,12 +1457,13 @@ namespace UretimOSKesim
             // birbirini engellemeden kullanılabilir. Komut tekrar
             // çalıştırılırsa (aynı ya da farklı belgede) YENİ bir pencere
             // yerine MEVCUT açık panel öne getirilir (yığılmayı önler).
-            if (_acikReceteAgaciPaneli != null && !_acikReceteAgaciPaneli.IsDisposed)
+            var acikPanel = AcikReceteAgaciPaneliniBul();
+            if (acikPanel != null)
             {
-                Tanilama.Kaydet("ReceteAgaciAcCalistir: zaten açık panel öne getiriliyor");
-                _acikReceteAgaciPaneli.Activate();
-                if (_acikReceteAgaciPaneli.WindowState == FormWindowState.Minimized)
-                    _acikReceteAgaciPaneli.WindowState = FormWindowState.Normal;
+                Tanilama.Kaydet("ReceteAgaciAcCalistir: zaten açık (veya yetim, yeniden adapte edilen) panel öne getiriliyor");
+                acikPanel.Activate();
+                if (acikPanel.WindowState == FormWindowState.Minimized)
+                    acikPanel.WindowState = FormWindowState.Normal;
                 return;
             }
 
