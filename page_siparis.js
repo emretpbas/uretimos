@@ -489,6 +489,20 @@ PageModules.siparis = (() => {
 
   async function renderDetay(main, s) {
     const revizyonlar = (await Store.siparisRevizyonlari.all()).filter(r => r.siparisId === s.id).sort((a,b) => b.revNo - a.revNo);
+    // Sipariş kaleminin reçetesi olup olmadığını göster — LOGO gibi dış
+    // kaynaklardan gelen siparişlerde ürünün ÜretimOS'ta henüz hiç reçete
+    // tanımı olmayabilir; bu BOM eksikliğini sessizce gizlemek yerine açıkça
+    // "Reçete Yok" rozetiyle gösteriyoruz.
+    const [tumUrunler, tumReceteler] = await Promise.all([Store.urunler.all(), Store.receteler.all()]);
+    const urunIdHarita = new Map(tumUrunler.map(u => [String(u.kod || '').toUpperCase(), u.id]));
+    const receteliUrunIdleri = new Set(
+      tumReceteler.filter(r => (r.kalemler || []).length > 0).map(r => r.urunId)
+    );
+    const receteDurumu = (kod) => {
+      const urunId = urunIdHarita.get(String(kod || '').toUpperCase());
+      if (!urunId) return { var_: false, etiket: 'Ürün kartı yok' };
+      return receteliUrunIdleri.has(urunId) ? { var_: true, etiket: 'Var' } : { var_: false, etiket: 'Yok' };
+    };
     main.innerHTML = `
       <div class="page-hdr">
         <div><div class="page-title">${s.kod}</div><div class="page-sub">${App.escapeHtml(s.musteriAdi)}</div></div>
@@ -505,10 +519,12 @@ PageModules.siparis = (() => {
       </div>
       <div class="card">
         <div class="card-hdr"><div class="card-title">Sipariş Kalemleri</div></div>
-        <table class="dtable"><tr><th>Ürün</th><th>📦 Paket / Ağırlık</th><th class="r">Net Fiyat</th><th class="r">Miktar</th><th class="r">Toplam</th></tr>
-          ${s.kalemler.map(k => `<tr><td><b class="mono">${App.escapeHtml(k.kod)}</b> — ${App.escapeHtml(k.ad)}</td>
+        <table class="dtable"><tr><th>Ürün</th><th>📦 Paket / Ağırlık</th><th>Reçete</th><th class="r">Net Fiyat</th><th class="r">Miktar</th><th class="r">Toplam</th></tr>
+          ${s.kalemler.length ? s.kalemler.map(k => { const rd = receteDurumu(k.kod); return `<tr><td><b class="mono">${App.escapeHtml(k.kod)}</b> — ${App.escapeHtml(k.ad)}</td>
             <td style="font-size:10.5px">${(() => { const coz = kalemOlcuCozumu(k.kod, k.miktar || 1); const m = coz ? App.olcuOzetMetni(coz) : ''; return m || '<span class="muted">—</span>'; })()}</td>
-            <td class="r">${App.fmtTL(k.netFiyat)}</td><td class="r">${k.miktar}</td><td class="r">${App.fmtTL(k.netFiyat * k.miktar)}</td></tr>`).join('')}
+            <td><span class="pill ${rd.var_ ? 'pill-green' : 'pill-gray'}" style="font-size:9px">${App.escapeHtml(rd.etiket)}</span></td>
+            <td class="r">${App.fmtTL(k.netFiyat)}</td><td class="r">${k.miktar}</td><td class="r">${App.fmtTL(k.netFiyat * k.miktar)}</td></tr>`; }).join('')
+            : `<tr><td colspan="6"><div class="empty-state" style="padding:14px 10px"><div class="edesc">Bu siparişte hiç kalem yok. Dış kaynaktan (ör. LOGO Entegrasyon Merkezi) aktarılmışsa, o profildeki "Sipariş kalemi alanları" eşlemesinin dolu olduğunu kontrol edin.</div></div></td></tr>`}
         </table>
         ${paketToplamKutusu(siparisPaketToplami(s.kalemler))}
       </div>
