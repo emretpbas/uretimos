@@ -267,6 +267,27 @@ const Store = (() => {
     return { guncellenen, parti };
   }
 
+  // Kayıtları id listesine göre PARTİLER halinde siler. topluEkle/
+  // topluGuncelle ile aynı gerekçe (413 koruması) — büyük bir temizlik
+  // (ör. kullanılmayan içe aktarılmış kartları silme) tek istekte değil
+  // parça parça gönderilir.
+  async function topluSil(key, idler, partiBoyu, ilerleme) {
+    const liste = Array.isArray(idler) ? idler.map(String) : [];
+    if (!liste.length) return { silinen: 0, parti: 0 };
+    const boyut = Math.max(1, Math.min(+partiBoyu || 300, 1000));
+    let silinen = 0, parti = 0;
+    for (let i = 0; i < liste.length; i += boyut) {
+      const dilim = liste.slice(i, i + boyut);
+      await patchUygula(key, { ekle: [], guncelle: [], sil: dilim });
+      silinen += dilim.length;
+      parti++;
+      const harita = anlikGoruntu.get(key);
+      if (harita) dilim.forEach(id => harita.delete(id));
+      if (typeof ilerleme === 'function') ilerleme(silinen, liste.length, parti);
+    }
+    return { silinen, parti };
+  }
+
   // Sunucu/güvenlik duvarı sınırı. GoDaddy gibi paylaşımlı hostinglerde
   // mod_security büyük POST gövdelerini 403 ile reddeder (413 değil!).
   // Bu eşiğin üstündeki yazmalar otomatik olarak PARÇALI gönderilir.
@@ -709,7 +730,7 @@ const Store = (() => {
 
   return {
     get, set, del, listKeys, setIfAbsent,
-    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, hatVerisiGetir, sunucuModu,
+    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifresiDogrula, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,

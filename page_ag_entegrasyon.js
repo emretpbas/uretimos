@@ -257,7 +257,21 @@ PageModules.ag_entegrasyon = (() => {
         <button class="btn btn-sm btn-blue" id="ae-disa-yukle">${App.escapeHtml(tanim.ad)} Kayıtlarını Listele</button>
         ${a.sonSenkron[profil.id] ? `<div class="fhint" style="margin-top:6px">Son gönderim: ${new Date(a.sonSenkron[profil.id]).toLocaleString('tr')}</div>` : ''}
         <div id="ae-disa-onizleme" style="margin-top:8px"></div>
-      </div>`}`;
+      </div>`}
+
+      ${!disaMi && profil.hedefTip === 'yarimamul_kart' ? `
+      <div class="card" style="margin-top:12px">
+        <div class="card-hdr"><div class="card-title">4️⃣ Temizlik — Kullanılmayan İçe Aktarılanlar</div>
+          <button class="btn btn-sm" id="ae-temizlik-bul">🧹 Kullanılmayanları Bul</button></div>
+        <div class="fhint">
+          Bu profille (<code>kaynak: ag_entegrasyon</code>) oluşturulmuş, ama hiçbir reçetede
+          kalem olarak geçmeyen, kendi reçetesi olmayan ve hiçbir iş emrinde üretilmeyen yarı
+          mamülleri bulur. Büyük bir toplu aktarımdan sonra (ör. LOGO'nun TÜM kataloğu) gerçekte
+          kullanılmayan binlerce kartı ayıklamak için kullanılır — hiçbir şey ÖNİZLEME GÖRMEDEN
+          silinmez.
+        </div>
+        <div id="ae-temizlik-sonuc" style="margin-top:8px"></div>
+      </div>` : ''}`;
 
     document.getElementById('ae-profil-sil').onclick = () => profilSil(a, profil, main);
     document.getElementById('ae-yon').onchange = () => {
@@ -277,6 +291,72 @@ PageModules.ag_entegrasyon = (() => {
     if (cekBtn) cekBtn.onclick = () => veriCek(a, profil, main);
     const disaBtn = document.getElementById('ae-disa-yukle');
     if (disaBtn) disaBtn.onclick = () => disaListele(profil);
+    const temizlikBtn = document.getElementById('ae-temizlik-bul');
+    if (temizlikBtn) temizlikBtn.onclick = () => yarimamulTemizlikBul();
+  }
+
+  // ── TEMİZLİK: kullanılmayan içe aktarılmış yarı mamülleri bul/sil ────────
+  // "Kullanılmış" sayılma koşulu BİLEREK GENİŞ tutuldu (yanlışlıkla silme
+  // riskini azaltmak için) — üçünden biri yeterli:
+  //   1) Bir reçetede kalem olarak geçiyor (tip:'yarimamul', refId=bu id)
+  //   2) Kendi reçetesi var (receteler[].yarimamulId === bu id) — yani
+  //      ÜretimOS bunu ÜRETİLEN bir ara montaj olarak tanımlamış
+  //   3) Herhangi bir iş emrinin üretim listesinde geçiyor
+  async function yarimamulTemizlikBul() {
+    const h = document.getElementById('ae-temizlik-sonuc');
+    h.innerHTML = '<span class="muted" style="font-size:12px">Taranıyor…</span>';
+    const [yarimamuller, receteler, isemirleri] = await Promise.all([
+      Store.yarimamuller.all(), Store.receteler.all(), Store.isemirleri.all()
+    ]);
+    const kullanilanIdSeti = new Set();
+    receteler.forEach(r => {
+      if (r.yarimamulId) kullanilanIdSeti.add(r.yarimamulId);
+      (r.kalemler || []).forEach(k => { if (k.tip === 'yarimamul' && k.refId) kullanilanIdSeti.add(k.refId); });
+    });
+    isemirleri.forEach(ie => {
+      (ie.uretimListesi || []).forEach(k => { if (k.tip === 'yarimamul' && k.refId) kullanilanIdSeti.add(k.refId); });
+    });
+    const kullanilmayanlar = yarimamuller.filter(y => y.kaynak === 'ag_entegrasyon' && !kullanilanIdSeti.has(y.id));
+
+    if (!kullanilmayanlar.length) {
+      h.innerHTML = `<div class="fhint" style="color:var(--green-text)">✓ Bu profille gelen, kullanılmayan bir yarı mamül bulunamadı.</div>`;
+      return;
+    }
+    h.innerHTML = `
+      <div style="border:1.5px solid var(--amber);background:var(--amber-bg);border-radius:8px;padding:8px 10px;font-size:11.5px;color:var(--amber-text);margin-bottom:8px">
+        ⚠ <b>${kullanilmayanlar.length}</b> yarı mamül hiçbir reçetede/iş emrinde geçmiyor ve kendi
+        reçetesi yok. Silmeden önce <b>JSON İndir</b>'e basıp bir yedek alın
+        (ya da Ayarlar'dan tam yedek alın) — silme işlemi GERİ ALINAMAZ.
+      </div>
+      <div class="tbl-wrap" style="max-height:220px"><table class="dtable">
+        <tr><th>Kod</th><th>Ad</th></tr>
+        ${kullanilmayanlar.slice(0, 200).map(y => `<tr><td class="mono" style="font-size:11px">${App.escapeHtml(y.kod || '')}</td><td style="font-size:11.5px">${App.escapeHtml(y.ad || '')}</td></tr>`).join('')}
+      </table></div>
+      ${kullanilmayanlar.length > 200 ? `<div class="fhint" style="margin-top:4px">İlk 200 gösteriliyor, toplam ${kullanilmayanlar.length}.</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" id="ae-temizlik-indir">⬇ JSON İndir (yedek)</button>
+        <button class="btn btn-red" id="ae-temizlik-sil">🗑 ${kullanilmayanlar.length} Kaydı Sil</button>
+      </div>`;
+
+    document.getElementById('ae-temizlik-indir').onclick = () => {
+      const blob = new Blob([JSON.stringify(kullanilmayanlar, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a2 = document.createElement('a');
+      a2.href = url; a2.download = 'yarimamul_kullanilmayan_yedek_' + new Date().toISOString().slice(0, 10) + '.json';
+      a2.click();
+      URL.revokeObjectURL(url);
+    };
+    document.getElementById('ae-temizlik-sil').onclick = () => {
+      App.confirmDialog(
+        `${kullanilmayanlar.length} yarı mamül KALICI OLARAK silinecek. Bu işlem GERİ ALINAMAZ. JSON yedeğini indirdiğinizden emin misiniz?`,
+        async () => {
+          h.innerHTML = '<span class="muted" style="font-size:12px">Siliniyor…</span>';
+          const sonuc = await App.persist(() => Store.topluSil('yarimamuller', kullanilmayanlar.map(y => y.id), 200));
+          App.toast(`${sonuc.silinen} yarı mamül silindi.`, 'ok');
+          yarimamulTemizlikBul();
+        }
+      );
+    };
   }
 
   function formdanProfilGuncelle(profil) {
