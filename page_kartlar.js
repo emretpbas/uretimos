@@ -338,6 +338,7 @@ PageModules.kartlar = (() => {
           <button class="btn" id="kt-excel-aktar">📥 Alt Kırılım Excel</button>
           <button class="btn" id="kt-edit">Düzenle</button>
           <button class="btn" id="kt-copy" title="Kartı ve reçetesini kopyalayıp yeni kart olarak kaydet">⧉ Kartı + Reçeteyi Kopyala</button>
+          <button class="btn" id="kt-renk-varyant" title="Reçetedeki tüm alt ağacı tarayıp renge bağımlı (sunta/mdf/pvc kenar bandı/boya) hammaddeleri hedef renge göre otomatik değiştirerek yeni bir renk varyantı kartı oluşturur">🎨 Renk Varyantı Oluştur</button>
           <button class="btn" id="kt-recete-sil" title="Reçetenin TÜM kalemlerini sil (kart kalır)">🗑 Reçeteyi Boşalt</button>
           <button class="btn btn-red" id="kt-kart-sil" title="Kartı ve reçetesini tamamen sil">✗ Kartı Sil</button>
         </div>
@@ -528,6 +529,15 @@ PageModules.kartlar = (() => {
       render(main);
     };
 
+    // ── RENK VARYANTI OLUŞTUR ─────────────────────────────────────────────
+    // Reçetedeki TÜM alt ağacı (yarı mamül/alt montaj/paket/ürün, iç içe)
+    // hedef renk için klonlar; her klonun hammadde kalemlerinden SADECE renk
+    // etiketli olanları (bkz. page_hammadde.js: renkKartelaKodu +
+    // malzemeKategorisi) hedef rengin AYNI malzeme kategorisindeki karşılığı
+    // ile değiştirir. Miktar/ölçü/rota/amortisman/GYG DEĞİŞMEZ — bkz.
+    // renk_varyant_motoru.js. Deterministik kural motoru; AI/LLM KULLANMAZ.
+    document.getElementById('kt-renk-varyant').onclick = () => renkVaryantiBaslat(main, kart, tip);
+
     // ── REÇETEYİ BOŞALT ───────────────────────────────────────────────────
     // Kartı korur, reçetesindeki tüm kalemleri siler.
     document.getElementById('kt-recete-sil').onclick = async () => {
@@ -656,6 +666,98 @@ PageModules.kartlar = (() => {
     // ── MALİYET / LİSTE FİYATI / KÂRLILIK ÖZETİ ─────────────────────────────
     const maliyetCard = document.getElementById('kt-maliyet-card');
     renderMaliyetKarti(maliyetCard, kart, tip, receteler, yarimamuller, altMontajlar, urunler, hammaddeler, rotalar, paketler);
+  }
+
+  // ── RENK VARYANTI OLUŞTUR: hedef renk seçimi + önizleme + kaydet ─────────
+  // Deterministik kural motoru (renk_varyant_motoru.js) kullanır — AI/LLM
+  // DEĞİL. Kaynak: kullanıcı talebi — "beyaz renkten kar beyaz ya da beyaz
+  // mdflam kullanılıyorsa antrasit renkte d143 ya da karbon gri kullanılıyor
+  // ... metraj ağırlık ölçü vb kriterler değişmiyor rotalar ve diğer
+  // süreçler amortisman vb değerlerde değişmiyor".
+  async function renkVaryantiBaslat(main, kart, tip) {
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="fhint" style="margin-bottom:10px">
+        <b>${App.escapeHtml(kart.kod)}</b> — ${App.escapeHtml(kart.ad)} kartının (reçetesindeki TÜM alt ağaç dahil) hedef
+        renk için bir kopyasını oluşturur. Sadece renk etiketli (Hammaddeler ekranında "Renk Kartela Kodu" + "Malzeme
+        Kategorisi" girilmiş) hammaddeler takas edilir; miktar/ölçü/rota/amortisman/GYG değişmez.
+      </div>
+      <div class="fgroup"><label class="flbl">Hedef Renk</label>
+        <select class="fselect" id="rv-hedef-renk">
+          <option value="">— Renk seçin —</option>
+          ${Object.entries(RenkKartelasi.liste.reduce((g, r) => { (g[r.kategori] = g[r.kategori] || []).push(r); return g; }, {}))
+            .map(([kategori, kayitlar]) => `<optgroup label="${App.escapeHtml(kategori)}">
+              ${kayitlar.map(r => `<option value="${r.kod}">${r.kod} - ${App.escapeHtml(r.ad)}</option>`).join('')}
+            </optgroup>`).join('')}
+        </select>
+      </div>
+      <div id="rv-onizleme"></div>
+    `;
+    const footer = `<button class="btn" id="rv-vazgec">Vazgeç</button>
+      <button class="btn btn-blue" id="rv-onizle">Önizle</button>
+      <button class="btn btn-green" id="rv-olustur" disabled>Varyantı Oluştur</button>`;
+    App.openModal({ title: '🎨 Renk Varyantı Oluştur', body, footer, wide: true });
+    document.getElementById('rv-vazgec').onclick = App.closeModal;
+    let hazirPlan = null;
+
+    document.getElementById('rv-onizle').onclick = async () => {
+      const hedefRenkKodu = document.getElementById('rv-hedef-renk').value;
+      if (!hedefRenkKodu) { App.toast('Hedef renk seçin', 'err'); return; }
+      const hedefRenkAdi = RenkKartelasi.adGetir(hedefRenkKodu);
+      const [hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler, renkKisaltmalari] = await Promise.all([
+        Store.hammaddeler.all(), Store.yarimamuller.all(), Store.altMontajlar.all(),
+        Store.paketler.all(), Store.urunler.all(), Store.receteler.all(), Store.renkKisaltmalari.all()
+      ]);
+      const veri = { hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler, renkKisaltmalari };
+      const plan = RenkVaryantMotoru.varyantPlaniOlustur(kart.id, tip, hedefRenkKodu, hedefRenkAdi, veri, App.uid);
+
+      const onizleme = document.getElementById('rv-onizleme');
+      document.getElementById('rv-olustur').disabled = true;
+      hazirPlan = null;
+      if (!plan.yeniKartlar.length) {
+        onizleme.innerHTML = `<div class="fhint" style="color:var(--red-text)">Bu kart için reçete bulunamadı, oluşturulacak bir şey yok.</div>`;
+        return;
+      }
+      const tipEtiket = { urun: 'Ürün', yarimamul: 'Yarı Mamül', altmontaj: 'Alt Montaj', paket: 'Paket' };
+      onizleme.innerHTML = `
+        <div class="hr"></div>
+        <div class="flbl" style="margin-bottom:6px">Oluşturulacak Kartlar (${plan.yeniKartlar.length})</div>
+        <div class="tbl-wrap" style="max-height:220px;overflow:auto"><table class="dtable" style="font-size:11px">
+          <tr><th>Tip</th><th>Yeni Kod</th><th>Yeni Ad</th></tr>
+          ${plan.yeniKartlar.map(x => `<tr><td>${tipEtiket[x.tip]}</td><td class="mono">${App.escapeHtml(x.kart.kod)}</td><td>${App.escapeHtml(x.kart.ad)}</td></tr>`).join('')}
+        </table></div>
+        ${plan.eksikEslesmeler.length ? `
+          <div class="fhint" style="margin-top:10px;background:var(--amber-bg,#fff7e6);border:1px solid var(--amber);padding:10px 12px;border-radius:8px">
+            <b>⚠ ${plan.eksikEslesmeler.length} hammadde için ${App.escapeHtml(hedefRenkAdi)} karşılığı tanımlı değil</b> —
+            bu kalemler ESKİ hammaddesiyle değişmeden bırakılacak (tahmini bağlanmaz). Devam edebilir, ya da önce
+            <a href="#" id="rv-anahtar-link">Renk Eşleştirme Anahtarı</a>'nı tamamlayabilirsiniz.
+            <div style="margin-top:6px">${plan.eksikEslesmeler.map(e => `• ${App.escapeHtml(e.hammaddeAd)} (${App.escapeHtml(e.malzemeKategorisi)})`).join('<br>')}</div>
+          </div>` : `<div class="fhint" style="margin-top:10px;color:var(--green-text)">✓ Tüm renk etiketli hammaddeler için ${App.escapeHtml(hedefRenkAdi)} karşılığı bulundu.</div>`}
+      `;
+      const anahtarLink = document.getElementById('rv-anahtar-link');
+      if (anahtarLink) anahtarLink.onclick = (e) => { e.preventDefault(); App.closeModal(); App.goTo('renk_anahtari'); };
+
+      hazirPlan = plan;
+      document.getElementById('rv-olustur').disabled = false;
+    };
+
+    document.getElementById('rv-olustur').onclick = async () => {
+      if (!hazirPlan) return;
+      const plan = hazirPlan;
+      await App.persist(async () => {
+        const storeKeyMap = { urun: 'urunler', yarimamul: 'yarimamuller', altmontaj: 'altMontajlar', paket: 'paketler' };
+        for (const tipAdi of Object.keys(storeKeyMap)) {
+          const kayitlar = plan.yeniKartlar.filter(x => x.tip === tipAdi).map(x => x.kart);
+          if (kayitlar.length) await Store.topluEkle(storeKeyMap[tipAdi], kayitlar);
+        }
+        if (plan.yeniReceteler.length) await Store.topluEkle('receteler', plan.yeniReceteler);
+      });
+      App.toast(`Renk varyantı oluşturuldu: ${plan.yeniKartlar.length} kart` +
+        (plan.eksikEslesmeler.length ? ` (${plan.eksikEslesmeler.length} eksik eşleşme ile)` : ''), 'ok');
+      App.closeModal();
+      detayKartId = { id: plan.kokYeniId, tip };
+      render(main);
+    };
   }
 
   // Bir kartın toplam maliyetini (kalem+rota+amortisman+GYG), önerilen liste

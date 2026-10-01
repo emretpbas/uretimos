@@ -796,6 +796,7 @@ const Store = (() => {
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,
     hammaddeler: coll('hammaddeler'),
+    renkKisaltmalari: coll('renkKisaltmalari'),  // Renk Eşleştirme Anahtarı: {id,renkKodu,renkAdi,kisaltma} — renk varyantı motorunun kod üretiminde kullanılır (bkz. renk_varyant_motoru.js)
     yarimamuller: coll('yarimamuller'),
     altMontajlar: coll('altMontajlar'),    // alt montaj kartları — yarımamülden bağımsız 4. kart tipi, kendi reçetesi olabilir
     paketler: coll('paketler'),    // SANAL 5. kart tipi — sevkiyat öncesi paketleme/koli/kutu adedi takibi için; üretim planlama/satınalma/MRP/depo akışlarına HİÇ girmez, sadece Üretim Tamamla→Kalite Onayı→Sevkiyat İrsaliyesi zincirinde kullanılır. Kendi reçetesi olabilir (Reçete Yap gibi).

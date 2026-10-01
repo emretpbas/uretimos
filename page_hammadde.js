@@ -353,8 +353,11 @@ PageModules.hammadde = (() => {
   async function openForm(item, onSaved, onDeger) {
     const isEdit = !!item;
     const d = item || { tip: 'plaka', kategori: 'Plaka', birim: 'M2', dvz: 'TL', grainYonu: 'yok', fireYuzde: 8, en: 1830, boy: 3660 };
-    // Yeni kart açılırken çağıran bir ad önerisi geçebilir (örn. operatörün kart tanımı)
+    // Yeni kart açılırken çağıran bir ad/renk önerisi geçebilir (örn. operatörün
+    // kart tanımı, veya Renk Eşleştirme Anahtarı'ndan "+ Yeni Hammadde")
     if (!isEdit && onDeger && onDeger.ad) d.ad = onDeger.ad;
+    if (!isEdit && onDeger && onDeger.renkKartelaKodu) d.renkKartelaKodu = onDeger.renkKartelaKodu;
+    if (!isEdit && onDeger && onDeger.malzemeKategorisi) d.malzemeKategorisi = onDeger.malzemeKategorisi;
     const kategoriler = await Store.hammaddeKategorileriGetir();
     const body = document.createElement('div');
     body.innerHTML = `
@@ -381,6 +384,32 @@ PageModules.hammadde = (() => {
       </div>
       <div class="fgroup"><label class="flbl">Hammadde Adı</label>
         <input class="finput" id="f-ad" value="${App.escapeHtml(d.ad || '')}" placeholder="örn. SUNTALAM CY 30MM KAR BEYAZ"></div>
+
+      <div class="frow">
+        <div class="fgroup" style="flex:1"><label class="flbl">Renk Kartela Kodu (Renk Varyantı Oluştur için)</label>
+          <select class="fselect" id="f-renk-kartela">
+            <option value="">— Renk bağımlı değil —</option>
+            ${Object.entries(RenkKartelasi.liste.reduce((g, r) => { (g[r.kategori] = g[r.kategori] || []).push(r); return g; }, {}))
+              .map(([kategori, kayitlar]) => `<optgroup label="${App.escapeHtml(kategori)}">
+                ${kayitlar.map(r => `<option value="${r.kod}" ${d.renkKartelaKodu === r.kod ? 'selected' : ''}>${r.kod} - ${App.escapeHtml(r.ad)}</option>`).join('')}
+              </optgroup>`).join('')}
+          </select>
+        </div>
+        <div class="fgroup" style="flex:1"><label class="flbl">Malzeme Kategorisi (Renk Takasında Eşleştirme Anahtarı)</label>
+          <select class="fselect" id="f-malzeme-kategori">
+            <option value="">—</option>
+            <option value="sunta" ${d.malzemeKategorisi === 'sunta' ? 'selected' : ''}>Sunta (Melamin)</option>
+            <option value="mdf" ${d.malzemeKategorisi === 'mdf' ? 'selected' : ''}>MDF (Lam)</option>
+            <option value="pvc_bant" ${d.malzemeKategorisi === 'pvc_bant' ? 'selected' : ''}>PVC Kenar Bandı</option>
+            <option value="boya" ${d.malzemeKategorisi === 'boya' ? 'selected' : ''}>Boya</option>
+            <option value="diger" ${d.malzemeKategorisi === 'diger' ? 'selected' : ''}>Diğer</option>
+          </select>
+        </div>
+      </div>
+      <div class="fhint" style="margin-top:-6px">Bu ikisi birlikte doldurulursa, "🎨 Renk Varyantı Oluştur" bu hammaddeyi
+        hedef renk + AYNI malzeme kategorisine etiketli başka bir hammadde ile OTOMATİK takas eder (ör. Beyaz Sunta ↔ Antrasit
+        Sunta; MDF'ler kendi aralarında, Sunta'lar kendi aralarında — birbirine karışmaz). Boş bırakılırsa bu hammaddeye
+        renk varyantı oluşturulurken HİÇ dokunulmaz.</div>
 
       <div id="f-plaka-fields">
         <div class="frow">
@@ -475,6 +504,16 @@ PageModules.hammadde = (() => {
     document.getElementById('f-tip').onchange = togglePlakaFields;
     togglePlakaFields();
 
+    // Kartela kodu seçilince (plaka tipinde) mevcut "Renk/Desen" alanı boşsa
+    // kartelanın adıyla otomatik doldurulur — kullanıcı elle girdiyse ÜZERİNE
+    // YAZILMAZ (uydurma/kayıp olmasın).
+    document.getElementById('f-renk-kartela').onchange = (e) => {
+      const renkInput = document.getElementById('f-renk');
+      if (renkInput && !renkInput.value.trim() && e.target.value) {
+        renkInput.value = RenkKartelasi.adGetir(e.target.value);
+      }
+    };
+
     document.getElementById('f-yeni-kategori').onclick = () => {
       const yeniAd = window.prompt('Yeni kategori adı (örn. Yedek Parça, Boya Malzemesi):');
       if (!yeniAd || !yeniAd.trim()) return;
@@ -529,7 +568,9 @@ PageModules.hammadde = (() => {
         tedarikci: document.getElementById('f-tedarikci').value,
         tedarikSuresiGun: document.getElementById('f-tedariksuresi').value,
         minSiparisMiktari: document.getElementById('f-minsiparis').value,
-        emniyetStogu: document.getElementById('f-emniyet').value
+        emniyetStogu: document.getElementById('f-emniyet').value,
+        renkKartelaKodu: document.getElementById('f-renk-kartela').value,
+        malzemeKategorisi: document.getElementById('f-malzeme-kategori').value
       };
     }
 
@@ -575,7 +616,9 @@ PageModules.hammadde = (() => {
         sonTeklifTarihi: document.getElementById('f-tekliftarih').value || null,
         tedarikci: document.getElementById('f-tedarikci').value.trim(),
         varsayilanTedarikciId: document.getElementById('f-varsayilan-tedarikci-id').value || null,
-        varsayilanTedarikciAdi: document.getElementById('f-varsayilan-tedarikci-ad').value || null
+        varsayilanTedarikciAdi: document.getElementById('f-varsayilan-tedarikci-ad').value || null,
+        renkKartelaKodu: document.getElementById('f-renk-kartela').value || null,
+        malzemeKategorisi: document.getElementById('f-malzeme-kategori').value || null
       };
       await App.persist(() => Store.hammaddeler.upsert(next));
       App.toast(isEdit ? 'Hammadde güncellendi' : 'Hammadde tanımlandı', 'ok');

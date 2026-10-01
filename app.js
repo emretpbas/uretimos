@@ -104,6 +104,7 @@ const App = (() => {
       { id: 'hammadde_piyasa', label: 'Hammadde Fiyat Anomalileri', icon: '📈', roller: ['admin','arge','satinalma','yonetim'] },
       { id: 'yarimamul', label: 'Yarı Mamüller', icon: '◫', roller: ['admin','arge','teknik_ofis','uretim_planlama','yonetim','uretim'] },
       { id: 'kartlar', label: 'Ürün Kartları & Reçete', icon: '▥', roller: ['admin','arge','teknik_ofis','yonetim','uretim'] },
+      { id: 'renk_anahtari', label: 'Renk Eşleştirme Anahtarı', icon: '🎨', roller: ['admin','arge','teknik_ofis','yonetim'] },
       { id: 'step_ice_aktar', label: 'STEP\'ten Ürün Ağacı (CAD)', icon: '📐', roller: ['admin','arge','teknik_ofis','yonetim'] },
       { id: 'montaj_semasi', label: 'Montaj Şemasından Reçete (AI)', icon: '🤖', roller: ['admin','arge','teknik_ofis','yonetim'] },
       { id: 'is_emri_formu', label: 'İş Emri Formu (Teknik Resimden)', icon: '📋', roller: ['admin','yonetim','uretim_planlama','arge','teknik_ofis','uretim'] },
