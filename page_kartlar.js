@@ -2379,6 +2379,19 @@ PageModules.kartlar = (() => {
     document.getElementById('ei-back').onclick = App.closeModal;
 
     document.getElementById('ei-confirm').onclick = async () => {
+      const btnConfirm = document.getElementById('ei-confirm');
+      // GERÇEK ÜRETİM SORUNU: bu düğme kaydetme sırasında DEVRE DIŞI
+      // BIRAKILMIYORDU — büyük koleksiyonlarda (ör. 96.000+ yarımamül)
+      // sunucu tarafı her "patch" isteğinde İLGİLİ KOLEKSİYONUN TAMAMINI
+      // (tek JSON blob) okuyup yeniden yazdığından bir kayıt onlarca
+      // saniye sürebiliyor; kullanıcı görünür bir ilerleme olmadığı için
+      // "tepkisiz" sanıp düğmeye TEKRAR TEKRAR basıyordu. Bu da AYNI
+      // içe aktarma akışının eşzamanlı birden fazla kopyasını (yarışan
+      // closure dizileri + çakışan patch istekleri) tetikleyip bazı
+      // kayıtların (özellikle reçete) kaybolmasına/eksik kalmasına yol
+      // açabiliyordu. Artık düğme ilk tıklamada DEVRE DIŞI bırakılıyor ve
+      // her adımda METNİ GÜNCELLENEREK görünür ilerleme gösteriliyor.
+      if (btnConfirm.disabled) return;
       const urunKod = document.getElementById('ei-urunkod').value.trim();
       const urunAd = document.getElementById('ei-urunad').value.trim();
       if (!urunKod || !urunAd) { App.toast('Ürün kodu ve adı zorunlu', 'err'); return; }
@@ -2392,6 +2405,11 @@ PageModules.kartlar = (() => {
         ymEslesme[parseInt(sel.dataset.i)].secilenTip = sel.value;
       });
 
+      btnConfirm.disabled = true;
+      const asamaGoster = (metin) => { btnConfirm.textContent = metin; };
+      asamaGoster('Kaydediliyor: Hammaddeler...');
+
+      try {
       await App.persist(async () => {
         // 1) Hammaddeler: StokKod eşleşirse güncelle, yoksa yeni oluştur
         // PERFORMANS: 96.000+ yarımamül / 20.000+ ürünlü kurulumlarda "İçe
@@ -2429,6 +2447,7 @@ PageModules.kartlar = (() => {
           stokKodToHmTip.set(h.stokKod, kayit.tip || h.tip || 'hirdavat');
         });
         await parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler);
+        asamaGoster('Kaydediliyor: Yarı Mamül/Alt Montaj/Paket...');
 
         // 2) Yarı Mamül / Alt Montaj / Paket: her kalem, KULLANICININ ÖNİZLEMEDE
         // SEÇTİĞİ TİPE göre DOĞRU koleksiyona (yarimamuller/altMontajlar/paketler)
@@ -2489,6 +2508,7 @@ PageModules.kartlar = (() => {
         await parcaliKaydet('yarimamuller', yarimamuller, _onceki_yarimamuller);
         await parcaliKaydet('altMontajlar', altMontajlar, _onceki_altMontajlar);
         await parcaliKaydet('paketler', paketler, _onceki_paketler);
+        asamaGoster('Kaydediliyor: Ürün...');
 
         // 3) Ürün + reçete: kök seviyedeki (level=0) kalemler bu ürünün doğrudan reçete kalemleridir
         const urunler = mevcutUrunler;
@@ -2540,11 +2560,16 @@ PageModules.kartlar = (() => {
         }).filter(k => k && k.refId);
         if (recete) { recete.kalemler = kokKalemler; }
         else { recete = { id: 'RC-' + urun.kod, urunId: urun.id, ad: urunAd + ' Reçetesi', kalemler: kokKalemler }; receteler.push(recete); }
-        await parcaliKaydet('receteler', receteler, _onceki_receteler);
+        asamaGoster('Kaydediliyor: Reçeteler...');
 
         // 4) Her yarımamül/alt montaj/paketin KENDİ alt reçetesini de kaydet
         // (montaj hiyerarşisi) — kart tipine göre DOĞRU alana (yarimamulId/
-        // altMontajId/paketId) bağlanır.
+        // altMontajId/paketId) bağlanır. NOT: kök reçete ile alt reçeteler
+        // TEK bir parcaliKaydet çağrısında (döngü sonunda) birlikte
+        // yazılır — receteler en ağır koleksiyon olduğundan, bu akışta
+        // İKİ AYRI yazma (önce kök, sonra alt reçeteler) sunucu tarafında
+        // aynı koleksiyonun TAMAMINI gereksiz yere İKİ KEZ okuyup
+        // yeniden yazdırıyordu (bkz. api.php 'patch' ucu — tek JSON blob).
         for (const y of ymEslesme) {
           const tip = stokKodToTip.get(y.stokKod) || 'yarimamul';
           const kalemler = (parsed.receteKalemleri.get(y.stokKod) || []).map(k => {
@@ -2579,6 +2604,15 @@ PageModules.kartlar = (() => {
       App.closeModal();
       detayKartId = null;
       render(main);
+      } catch (e) {
+        // Hata olsa da düğme tekrar tıklanabilir hale getirilir — aksi halde
+        // kullanıcı tekrar denemek için pencereyi kapatıp yeniden açmak
+        // zorunda kalır. Hata zaten App.persist üzerinden fırlatılıp genel
+        // "sessiz hata avcısı" (app.js) tarafından toast olarak gösterilir.
+        btnConfirm.disabled = false;
+        btnConfirm.textContent = 'İçe Aktar ve Kaydet';
+        throw e;
+      }
     };
   }
 

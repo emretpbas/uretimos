@@ -69,5 +69,26 @@ console.log('\n-- TOPLAM ÇAĞRI SAYISI: her ağır koleksiyon için Store.X.all
 t('Store.receteler.all() (TAM koleksiyon) artık hiç çağrılmıyor (bulunan: 0 olmalı)',
   (fonksiyonGovdesi.match(/Store\.receteler\.all\(\)/g) || []).length === 0);
 
+console.log('\n-- KOD KONTROLU: "yine tepkisiz" (3. tur) — görünür ilerleme YOK ve çoklu tıklama koruması YOKTU --');
+// GERÇEK ÜRETİM SORUNU (3. tur): kullanıcı "basıldığı belli ama reçeteyi
+// kaydetmiyor/güncellemiyor" diye bildirdi. Kök neden: api.php'nin 'patch'
+// ucu her istekte İLGİLİ KOLEKSİYONUN TAMAMINI (tek JSON blob) sunucuda
+// okuyup yeniden yazdığından (receteler gibi ağır koleksiyonlarda) bir
+// kayıt onlarca saniye sürebiliyor; düğme bu süre boyunca DEVRE DIŞI
+// BIRAKILMIYORDU ve görünür bir ilerleme de yoktu — kullanıcı "tepkisiz"
+// sanıp tekrar tekrar bastı, bu da AYNI akışın eşzamanlı birden fazla
+// kopyasını (yarışan closure dizileri + çakışan patch istekleri) tetikleyip
+// bazı kayıtların (özellikle reçete) kaybolmasına yol açabiliyordu.
+t('"ei-confirm" tıklandığında düğme HEMEN devre dışı bırakılıyor (çoklu/çakışan tıklama koruması)',
+  fonksiyonGovdesi.includes('if (btnConfirm.disabled) return;') &&
+  fonksiyonGovdesi.includes('btnConfirm.disabled = true;'));
+t('kayıt adımları boyunca düğme metni GÖRÜNÜR ilerleme gösterecek şekilde güncelleniyor (asamaGoster)',
+  (fonksiyonGovdesi.match(/asamaGoster\(/g) || []).length >= 4);
+t('hata durumunda düğme TEKRAR tıklanabilir hale getiriliyor (kullanıcı yeniden deneyebilsin)',
+  fonksiyonGovdesi.includes('btnConfirm.disabled = false;') &&
+  fonksiyonGovdesi.includes("btnConfirm.textContent = 'İçe Aktar ve Kaydet';"));
+t('receteler koleksiyonuna artık TEK bir parcaliKaydet çağrısıyla yazılıyor (kök + alt reçeteler BİRLİKTE — önceden İKİ AYRI yazma, ağır koleksiyonun TAMAMINI sunucuda iki kez okutup yazdırıyordu)',
+  (fonksiyonGovdesi.match(/await parcaliKaydet\('receteler', receteler, _onceki_receteler\);/g) || []).length === 1);
+
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);
