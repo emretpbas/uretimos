@@ -54,7 +54,7 @@ t('kayıt adımında urunler artık mevcutUrunler\'DEN atanıyor (tekrar indirme
 
 t('receteler artık TAM indirilmiyor (Store.receteler.all() çağrısı YOK) — yerine hedefli Store.receteBul kullanılıyor',
   !fonksiyonGovdesi.includes('await Store.receteler.all()') &&
-  fonksiyonGovdesi.includes('const receteler = await Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] });'));
+  fonksiyonGovdesi.includes("Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] })"));
 
 t('receteBul için istenen id listesi, yarı mamül/alt montaj/paket tipine göre DOĞRU sabit ön ek (RC-YM-/RC-AM-/RC-PKT-) ile üretiliyor',
   fonksiyonGovdesi.includes("return (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;"));
@@ -83,12 +83,39 @@ t('"ei-confirm" tıklandığında düğme HEMEN devre dışı bırakılıyor (ç
   fonksiyonGovdesi.includes('if (btnConfirm.disabled) return;') &&
   fonksiyonGovdesi.includes('btnConfirm.disabled = true;'));
 t('kayıt adımları boyunca düğme metni GÖRÜNÜR ilerleme gösterecek şekilde güncelleniyor (asamaGoster)',
-  (fonksiyonGovdesi.match(/asamaGoster\(/g) || []).length >= 4);
+  (fonksiyonGovdesi.match(/asamaGoster\(/g) || []).length >= 3);
 t('hata durumunda düğme TEKRAR tıklanabilir hale getiriliyor (kullanıcı yeniden deneyebilsin)',
   fonksiyonGovdesi.includes('btnConfirm.disabled = false;') &&
   fonksiyonGovdesi.includes("btnConfirm.textContent = 'İçe Aktar ve Kaydet';"));
 t('receteler koleksiyonuna artık TEK bir parcaliKaydet çağrısıyla yazılıyor (kök + alt reçeteler BİRLİKTE — önceden İKİ AYRI yazma, ağır koleksiyonun TAMAMINI sunucuda iki kez okutup yazdırıyordu)',
   (fonksiyonGovdesi.match(/await parcaliKaydet\('receteler', receteler, _onceki_receteler\);/g) || []).length === 1);
+
+console.log('\n-- KOD KONTROLU: "yine tepkisiz" (4. tur) — göç sonrası bile dakikalarca süren SIRALI (sequential) istekler --');
+// GERÇEK ÜRETİM SORUNU (4. tur): kv_items göçü tamamlandıktan SONRA bile
+// kullanıcı "aynı ya da farklı 2-3 dakika sürüyor" diye bildirdi. Kök neden:
+// hammaddeler/yarımamuller/altMontajlar/paketler/ürünler/receteBul için 6
+// bağımsız istek BİRBİRİ ARDINA (await ... await ... await ...) gönderiliyordu;
+// GoDaddy'nin paylaşımlı sunucusunda her isteğin kendi ağ gidiş-dönüş
+// maliyeti olduğundan bu kolayca dakikalara ulaşıyordu. Bu 6 işlemin hiçbiri
+// birbirinin SONUCUNA bağımlı olmadığından (hepsi yalnızca önizlemede zaten
+// indirilmiş veri + istemci tarafında üretilmiş id'ler kullanıyor), artık
+// Promise.all ile EŞZAMANLI gönderiliyor.
+t('hammaddeler/yarımamuller/altMontajlar/paketler/ürünler/receteBul artık TEK bir Promise.all içinde EŞZAMANLI gönderiliyor (sıralı await ZİNCİRİ YOK)',
+  fonksiyonGovdesi.includes("const [, , , , , receteler] = await Promise.all([") &&
+  fonksiyonGovdesi.includes("parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler),") &&
+  fonksiyonGovdesi.includes("parcaliKaydet('yarimamuller', yarimamuller, _onceki_yarimamuller),") &&
+  fonksiyonGovdesi.includes("parcaliKaydet('altMontajlar', altMontajlar, _onceki_altMontajlar),") &&
+  fonksiyonGovdesi.includes("parcaliKaydet('paketler', paketler, _onceki_paketler),") &&
+  fonksiyonGovdesi.includes("parcaliKaydet('urunler', urunler, _onceki_urunler),") &&
+  fonksiyonGovdesi.includes("Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] })"));
+t('hammaddeler artık urunler/receteBul\'dan ÖNCE tek başına await EDİLMİYOR (sıralı zincir kırıldı)',
+  !fonksiyonGovdesi.includes("await parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler);"));
+t('yarımamuller/altMontajlar/paketler artık ayrı ayrı await EDİLMİYOR (sıralı zincir kırıldı)',
+  !fonksiyonGovdesi.includes("await parcaliKaydet('yarimamuller', yarimamuller, _onceki_yarimamuller);") &&
+  !fonksiyonGovdesi.includes("await parcaliKaydet('altMontajlar', altMontajlar, _onceki_altMontajlar);") &&
+  !fonksiyonGovdesi.includes("await parcaliKaydet('paketler', paketler, _onceki_paketler);"));
+t('urunler artık tek başına await EDİLMİYOR (sıralı zincir kırıldı)',
+  !fonksiyonGovdesi.includes("await parcaliKaydet('urunler', urunler, _onceki_urunler);"));
 
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

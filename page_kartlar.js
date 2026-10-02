@@ -2407,22 +2407,25 @@ PageModules.kartlar = (() => {
 
       btnConfirm.disabled = true;
       const asamaGoster = (metin) => { btnConfirm.textContent = metin; };
-      asamaGoster('Kaydediliyor: Hammaddeler...');
+      asamaGoster('Kaydediliyor: Hazırlanıyor...');
 
       try {
       await App.persist(async () => {
-        // 1) Hammaddeler: StokKod eşleşirse güncelle, yoksa yeni oluştur
-        // PERFORMANS: 96.000+ yarımamül / 20.000+ ürünlü kurulumlarda "İçe
-        // Aktar ve Kaydet" ÇOK UZUN SÜRE BEKLETİYORDU — bu fonksiyon
-        // hammaddeler/yarımamuller/altMontajlar/paketler/ürünler
-        // koleksiyonlarının TAMAMINI önizleme ekranı AÇILIRKEN BİR KEZ
-        // (renderImportPreview başında), sonra kayıt sırasında TEKRAR
-        // (burada) olmak üzere ÇİFT indiriyordu. Önizleme zaten güncel bir
-        // anlık görüntü aldığı ve ikisi arasındaki süre (kullanıcının
-        // önizlemeyi gözden geçirip "Kaydet"e basması) saniyeler mertebesinde
-        // olduğu için, aynı diziler burada TEKRAR İNDİRİLMEDEN yeniden
-        // kullanılıyor — ağır koleksiyonlar için gereksiz tekrar ağ/işlem
-        // yükü ortadan kalkıyor.
+        // PERFORMANS (3. tur — göç sonrası bile 2-3 dakika sürdüğü bildirildi):
+        // kv_items göçü yazma maliyetini koleksiyon boyutundan bağımsız hale
+        // getirdi, ama bu akış hâlâ hammaddeler/yarımamuller/altMontajlar/
+        // paketler/ürünler/receteBul/receteler için 6-7 isteği BİRBİRİ
+        // ARDINA (sequential await) gönderiyordu. GoDaddy'nin paylaşımlı
+        // sunucusunda her isteğin kendi ağ gidiş-dönüş + PHP başlatma
+        // maliyeti olduğundan (saniyeler mertebesinde), 7 sıralı istek kolayca
+        // 2-3 dakikaya ulaşabiliyordu — kayıtların TEKRAR indirilmesi/ÇİFT
+        // yazılması gibi bir sorun YOKTU, sadece gereksiz yere SIRAYLA
+        // bekleniyordu. Aşağıdaki 6 işlemin (5 koleksiyon yazması + receteBul
+        // okuması) HİÇBİRİ diğerinin SONUCUNA bağımlı değil — hepsi yalnızca
+        // önizlemede zaten indirilmiş verileri ve İSTEMCİ TARAFINDA üretilen
+        // id'leri (App.uid) kullanıyor. Bu yüzden hepsi Promise.all ile
+        // EŞZAMANLI gönderiliyor; yalnızca reçete kaydı (receteBul'un SONUCUNA
+        // ihtiyaç duyduğu için) ayrı ve ondan SONRA çalışıyor.
         const hammaddeler = mevcutHammaddeler;
     const _onceki_hammaddeler = new Set(hammaddeler.map(x => x && x.id));
         const stokKodToHmId = new Map();
@@ -2446,8 +2449,6 @@ PageModules.kartlar = (() => {
           stokKodToHmId.set(h.stokKod, kayit.id);
           stokKodToHmTip.set(h.stokKod, kayit.tip || h.tip || 'hirdavat');
         });
-        await parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler);
-        asamaGoster('Kaydediliyor: Yarı Mamül/Alt Montaj/Paket...');
 
         // 2) Yarı Mamül / Alt Montaj / Paket: her kalem, KULLANICININ ÖNİZLEMEDE
         // SEÇTİĞİ TİPE göre DOĞRU koleksiyona (yarimamuller/altMontajlar/paketler)
@@ -2505,12 +2506,8 @@ PageModules.kartlar = (() => {
             stokKodToId.set(y.stokKod, kayit.id);
           }
         });
-        await parcaliKaydet('yarimamuller', yarimamuller, _onceki_yarimamuller);
-        await parcaliKaydet('altMontajlar', altMontajlar, _onceki_altMontajlar);
-        await parcaliKaydet('paketler', paketler, _onceki_paketler);
-        asamaGoster('Kaydediliyor: Ürün...');
 
-        // 3) Ürün + reçete: kök seviyedeki (level=0) kalemler bu ürünün doğrudan reçete kalemleridir
+        // 3) Ürün: kök seviyedeki (level=0) kalemler bu ürünün doğrudan reçete kalemleridir
         const urunler = mevcutUrunler;
     const _onceki_urunler = new Set(urunler.map(x => x && x.id));
         let urun = urunler.find(u => u.kod === urunKod);
@@ -2519,7 +2516,6 @@ PageModules.kartlar = (() => {
           urun = { id: App.uid('URN'), kod: urunKod, ad: urunAd, tip: 'bitmis_urun', aciklama: 'Excelden içe aktarıldı', gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
           urunler.push(urun);
         }
-        await parcaliKaydet('urunler', urunler, _onceki_urunler);
 
         // Excel'deki en/boy verilerini reçete kalemine olcu objesi olarak yaz.
         // Sadece plaka tipi hammadde kalemleri için geçerlidir; diğerlerinde null.
@@ -2546,7 +2542,24 @@ PageModules.kartlar = (() => {
           if (!kartId) return null;
           return (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;
         }).filter(Boolean);
-        const receteler = await Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] });
+
+        // HEPSİ BİRDEN: yukarıdaki 5 koleksiyonun hiçbiri birbirinin SONUCUNA
+        // bağımlı değil (yalnızca önizlemede indirilmiş veri + App.uid ile
+        // istemci tarafında üretilmiş id'ler kullanıyorlar) — bu yüzden tek
+        // tek sırayla beklemek yerine Promise.all ile AYNI ANDA gönderiliyor.
+        // receteBul de urun.id'ye (zaten senkron/istemci tarafında biliniyor)
+        // ihtiyaç duyduğundan aynı anda çalışabilir; yalnızca reçete YAZMASI
+        // (receteBul'un SONUCUNU birleştirmesi gerektiği için) bu grubun
+        // tamamlanmasını bekler.
+        asamaGoster('Kaydediliyor: Tüm veriler eşzamanlı...');
+        const [, , , , , receteler] = await Promise.all([
+          parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler),
+          parcaliKaydet('yarimamuller', yarimamuller, _onceki_yarimamuller),
+          parcaliKaydet('altMontajlar', altMontajlar, _onceki_altMontajlar),
+          parcaliKaydet('paketler', paketler, _onceki_paketler),
+          parcaliKaydet('urunler', urunler, _onceki_urunler),
+          Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] })
+        ]);
     const _onceki_receteler = new Set(receteler.map(x => x && x.id));
         let recete = receteler.find(r => r.urunId === urun.id);
         const kokKalemler = (parsed.level0 || []).map(k => {
