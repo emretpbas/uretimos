@@ -196,6 +196,28 @@ const Store = (() => {
     }
   }
 
+  // GERÇEK İHTİYAÇ: "Excelden Reçete İçe Aktar" akışı, bir ürünün kök
+  // reçetesini (urunId ile bulup) ve içindeki her yarı mamül/alt montaj/
+  // paketin KENDİ alt reçetesini (sabit id ile: RC-YM-/RC-AM-/RC-PKT-)
+  // güncelliyor — onlarca kayıt için Store.receteler.all() ile TÜM
+  // koleksiyonu (en ağır koleksiyon) indirmek yerine, sunucudan YALNIZCA
+  // istenen id'lerle eşleşen veya istenen urunId'lere ait reçeteler istenir.
+  async function receteBul({ ids, urunIds } = {}, fallback = []) {
+    try {
+      const res = await apiFetch(API_URL + '?action=receteBul', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ids || [], urunIds: urunIds || [] })
+      });
+      if (!res.ok) return fallback;
+      const data = await res.json();
+      return Array.isArray(data.receteler) ? data.receteler : fallback;
+    } catch (e) {
+      console.error('Store.receteBul hatası:', e);
+      return fallback;
+    }
+  }
+
   // Yalnızca değişen kayıtları atomik olarak uygular (sunucuda kilit altında)
   async function patchUygula(key, fark) {
     const res = await apiFetch(API_URL + '?action=patch', {
@@ -790,7 +812,7 @@ const Store = (() => {
 
   return {
     get, set, del, listKeys, setIfAbsent,
-    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, receteOzetGetir, hatVerisiGetir, sunucuModu,
+    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, receteOzetGetir, receteBul, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifresiDogrula, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,

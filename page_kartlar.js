@@ -2510,7 +2510,23 @@ PageModules.kartlar = (() => {
           return { kabaEn: k.en || null, kabaBoy: k.boy || null, netEn: k.en || null, netBoy: k.boy || null };
         }
 
-        const receteler = await Store.receteler.all();
+        // PERFORMANS: bu aşamada sadece KÖK ürünün reçetesi (urunId ile) ve
+        // içindeki yarı mamül/alt montaj/paketlerin KENDİ alt reçeteleri
+        // (sabit id: RC-YM-/RC-AM-/RC-PKT-) ilgilendiriyor — toplamda en
+        // fazla düzinelerce kayıt. receteler koleksiyonunun TAMAMINI (96.000+
+        // yarı mamül ölçeğinde en ağır koleksiyon) indirip
+        // istemcide JSON.parse etmek yerine, sunucudan YALNIZCA bu id'lerle
+        // eşleşenler istenir (bkz. Store.receteBul) — "içe aktar yine
+        // tepkisiz" raporunun kök nedeni buydu: önceki düzeltme diğer 5
+        // koleksiyonun ÇİFT indirilmesini durdurmuştu ama receteler zaten
+        // ÖNİZLEMEDE çekilmediğinden burada hâlâ TAM indiriliyordu.
+        const altReceteIdleri = ymEslesme.map(y => {
+          const tip = stokKodToTip.get(y.stokKod) || 'yarimamul';
+          const kartId = stokKodToId.get(y.stokKod);
+          if (!kartId) return null;
+          return (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;
+        }).filter(Boolean);
+        const receteler = await Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] });
     const _onceki_receteler = new Set(receteler.map(x => x && x.id));
         let recete = receteler.find(r => r.urunId === urun.id);
         const kokKalemler = (parsed.level0 || []).map(k => {

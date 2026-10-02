@@ -1778,6 +1778,44 @@ try {
         respond(['receteOzet' => $ozet]);
     }
 
+    elseif ($action === 'receteBul') {
+        // GERÇEK İHTİYAÇ: "Excelden Reçete İçe Aktar" akışı, bir ürünün KÖK
+        // reçetesini (urunId ile) ve içindeki her yarı mamül/alt montaj/
+        // paketin KENDİ alt reçetesini (sabit id ile: RC-YM-/RC-AM-/RC-PKT-)
+        // güncellemek için TÜM 'receteler' koleksiyonunu (en ağır koleksiyon,
+        // 96.000+ yarı mamül + 20.000+ ürün ölçeğinde onlarca MB) indirip
+        // istemcide JSON.parse ediyordu — bu da tarayıcının ana iş parçacığını
+        // uzun süre KİLİTLEYİP "İçe Aktar" düğmesini tepkisiz gösteriyordu
+        // (receteOzet'teki AYNI kök neden, bu sefer kalemler İÇERİĞİNİN
+        // kendisine ihtiyaç olduğu için receteOzet kullanılamıyordu). Bu uç,
+        // sunucuda blobu bir kez çözüp YALNIZCA istenen id'lerle EŞLEŞEN veya
+        // istenen urunId'lere ait reçeteleri (genelde onlarca kayıt) döner —
+        // asıl ağır TRANSFER ve istemci JSON.parse yükü ortadan kalkar.
+        $oturum = oturumZorunlu($pdo);
+        if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array('receteler', HAT_OP_OKUNABILIR, true)) {
+            respond(['error' => 'Operatör oturumu bu veriye erişemez'], 403);
+        }
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array('receteler', CAD_ENT_OKUNABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
+        }
+        koleksiyonYetkiKontrol($oturum, 'receteler', 'oku');
+        $body = readJsonBody();
+        $idSet = array_flip(array_map('strval', is_array($body['ids'] ?? null) ? $body['ids'] : []));
+        $urunIdSet = array_flip(array_map('strval', is_array($body['urunIds'] ?? null) ? $body['urunIds'] : []));
+        $stmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
+        $stmt->execute([':k' => 'receteler']);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $receteler = $row ? json_decode($row['store_value'], true) : [];
+        $bulunan = [];
+        foreach ((is_array($receteler) ? $receteler : []) as $r) {
+            if (!is_array($r)) continue;
+            $idEslesti = isset($r['id']) && isset($idSet[(string)$r['id']]);
+            $urunEslesti = isset($r['urunId']) && isset($urunIdSet[(string)$r['urunId']]);
+            if ($idEslesti || $urunEslesti) $bulunan[] = $r;
+        }
+        respond(['receteler' => $bulunan]);
+    }
+
     elseif ($action === 'set') {
         $oturum = oturumZorunlu($pdo);
         $body = readJsonBody();
