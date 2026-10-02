@@ -211,6 +211,134 @@ t('tanımsız hedef renk için boya karşılığı bulunamazsa ESKİ yarı mamü
     boyaEksikPlan.eksikEslesmeler.some(e => e.kaynakTipi === 'yarimamul' && e.hammaddeKod === 'LK.15.KAPAK1');
 })());
 
+console.log('\n-- KRİTİK AYRIM: KODU KENDİ İÇİNDE RENK TAŞIYAN yapısal parça, Reçete Yapım Raporu tarafından ETİKETLENMİŞ olsa bile TAKAS DEĞİL kod-deseniyle KLONLANIR --');
+// GERÇEK BUG (bu testle yakalandı): "YM.PARCA.1.BY" gibi yapısal bir parça,
+// Reçete Yapım Raporu tarafından (Renk Eşleştirme Anahtarı'nda görünürlük
+// için) renkKartelaKodu+malzemeKategorisi ile ETİKETLENMİŞ olabilir — AMA bu
+// etiket "LK.15.KAPAK1" gibi bir katalog kalemiyle AYNI anlama gelmez. Kodun
+// KENDİSİ zaten renk taşıyorsa (".BY"/".ANT" gibi tanınan bir ekle bitiyorsa)
+// o parça HER ZAMAN kod deseniyle eşleştirilir/klonlanır — aksi halde AYNI
+// (kategori, ölçü) etiketini taşıyan BİRDEN FAZLA farklı YAPISAL parça
+// (ör. 3 farklı panel) birbirine KARIŞIR ve hepsi "eksik eşleşme" (belirsiz)
+// sayılır — gerçek veriyle doğrulandı.
+const yapiselEtiketliVeri = {
+  hammaddeler: [{ id: 'YEHM1', stokKodu: 'SKU-SUNTA-ANT', ad: 'Antrasit Sunta', renkKartelaKodu: '24', malzemeKategorisi: 'sunta' }],
+  yarimamuller: [
+    // İKİ FARKLI yapısal parça, Reçete Yapım Raporu tarafından AYNI
+    // (kategori, ölçüsüz) etiketle etiketlenmiş — kod YİNE DE benzersiz.
+    { id: 'YEYM1', kod: 'YM.PARCA.1.BY', ad: 'Parça 1 Beyaz', renkKartelaKodu: '15', malzemeKategorisi: 'sunta' },
+    { id: 'YEYM2', kod: 'YM.PARCA.2.BY', ad: 'Parça 2 Beyaz', renkKartelaKodu: '15', malzemeKategorisi: 'sunta' },
+    // Antrasit kardeşler ÖNCEDEN VAR (etiketsiz — henüz yayılmamış)
+    { id: 'YEYM1-ANT', kod: 'YM.PARCA.1.ANT', ad: 'Parça 1 Antrasit' },
+    { id: 'YEYM2-ANT', kod: 'YM.PARCA.2.ANT', ad: 'Parça 2 Antrasit' }
+  ],
+  altMontajlar: [], paketler: [],
+  urunler: [{ id: 'YEURN', kod: 'URN.TEST.BY', ad: 'Test Ürünü Beyaz' }],
+  receteler: [
+    { id: 'RC-YEURN', urunId: 'YEURN', kalemler: [
+      { tip: 'yarimamul', refId: 'YEYM1', miktar: 1, birim: 'ADET' },
+      { tip: 'yarimamul', refId: 'YEYM2', miktar: 1, birim: 'ADET' }
+    ]},
+    { id: 'RC-YEYM1', yarimamulId: 'YEYM1', kalemler: [{ tip: 'hammadde', refId: 'YEHM1', miktar: 1, birim: 'M2' }] },
+    { id: 'RC-YEYM2', yarimamulId: 'YEYM2', kalemler: [{ tip: 'hammadde', refId: 'YEHM1', miktar: 1, birim: 'M2' }] }
+  ],
+  renkKisaltmalari: kisaltmalar
+};
+let yeSayac = 0;
+const yapiselPlan = RVM.varyantPlaniOlustur('YEURN', 'urun', '24', 'Antrasit', yapiselEtiketliVeri, p => p + '-YE' + (yeSayac++), { mevcutKartiKullan: true });
+t('İKİ farklı etiketli-ama-yapısal parça BİRBİRİNE KARIŞMADI (belirsiz eşleşme/eksik raporlanmadı)', yapiselPlan.eksikEslesmeler.length === 0);
+t('Parça 1\'in Antrasit kardeşi (YEYM1-ANT) DOĞRU şekilde kod deseniyle bulundu (TAKAS değil, mevcut kartla eşleşme)', (() => {
+  const r = yapiselPlan.yeniReceteler.find(r => r.urunId === yapiselPlan.kokYeniId || (r.urunId && r.urunId === 'YEURN'));
+  return r && r.kalemler.some(k => k.refId === 'YEYM1-ANT');
+})());
+t('Parça 2\'nin Antrasit kardeşi (YEYM2-ANT) de AYRI AYRI doğru bulundu (ikisi KARIŞMADI)', (() => {
+  const r = yapiselPlan.yeniReceteler.find(r => r.urunId === yapiselPlan.kokYeniId || (r.urunId && r.urunId === 'YEURN'));
+  return r && r.kalemler.some(k => k.refId === 'YEYM2-ANT');
+})());
+t('her ikisi de KENDİ reçetesinde doğru hammaddeye (Antrasit sunta) bağlandı', (() => {
+  const r1 = yapiselPlan.yeniReceteler.find(r => r.yarimamulId === 'YEYM1-ANT');
+  const r2 = yapiselPlan.yeniReceteler.find(r => r.yarimamulId === 'YEYM2-ANT');
+  return r1 && r1.kalemler.some(k => k.refId === 'YEHM1') && r2 && r2.kalemler.some(k => k.refId === 'YEHM1');
+})());
+
+console.log('\n-- mevcutKartiKullan: SİSTEM GENELİNDE ZATEN VAR OLAN kardeş kartları KULLAN (yenisini oluşturma) --');
+// GERÇEK İHTİYAÇ: "Reçete Yapım Raporu"nun sistem genelinde eşleştirmesi —
+// Antrasit ürün/paket/yarımamül kartları ÖNCEDEN (ayrı bir Excel importuyla)
+// zaten oluşturulmuş olabilir; bu durumda YENİ kopya YARATILMAZ, var olan
+// kartlar (kendi amortisman/rota gibi alanları KORUNARAK) kullanılıp SADECE
+// eksik/boş reçeteleri master'dan kurulur.
+const mkVeri = {
+  hammaddeler: [
+    { id: 'MHM1', stokKodu: 'SKU-SUNTA-BY', ad: 'Kar Beyaz Sunta', renkKartelaKodu: '15', malzemeKategorisi: 'sunta' },
+    { id: 'MHM2', stokKodu: 'SKU-SUNTA-ANT', ad: 'Karbon Gri Sunta', renkKartelaKodu: '24', malzemeKategorisi: 'sunta' }
+  ],
+  yarimamuller: [
+    { id: 'MYM1', kod: 'YM.PARCA.1.BY', ad: 'Kapak Parçası Beyaz', rotaId: 'ROT-ESKI' },
+    // KARDEŞ ÖNCEDEN VAR — kendi rotası/amortismanı FARKLI, KORUNMALI
+    { id: 'MYM2', kod: 'YM.PARCA.1.ANT', ad: 'Kapak Parçası Antrasit (Önceden Var)', rotaId: 'ROT-ANT-OZEL', amortismanGideri: 99 }
+  ],
+  altMontajlar: [],
+  paketler: [
+    { id: 'MPKT1', kod: 'PKT.GOVDE.1.BY', ad: 'Gövde Paketi Beyaz' },
+    // KARDEŞ PAKET de ÖNCEDEN VAR
+    { id: 'MPKT2', kod: 'PKT.GOVDE.1.ANT', ad: 'Gövde Paketi Antrasit (Önceden Var)' }
+  ],
+  urunler: [
+    { id: 'MURN1', kod: 'URN.DOLAP.BY', ad: 'Dolap Beyaz' }
+    // Antrasit ÜRÜN kartı HENÜZ YOK — bu durumda yeni oluşturulmalı
+  ],
+  receteler: [
+    { id: 'MRC-URN1', urunId: 'MURN1', kalemler: [
+      { tip: 'paket', refId: 'MPKT1', miktar: 1, birim: 'ADET' }
+    ]},
+    { id: 'MRC-PKT1', paketId: 'MPKT1', kalemler: [
+      { tip: 'yarimamul', refId: 'MYM1', miktar: 1, birim: 'ADET' }
+    ]},
+    { id: 'MRC-YM1', yarimamulId: 'MYM1', kalemler: [
+      { tip: 'hammadde', refId: 'MHM1', miktar: 2, birim: 'M2' }
+    ]}
+    // MYM2 (önceden var olan Antrasit kardeş) KASITLI OLARAK reçetesiz —
+    // "boşsa master'dan kurulur" davranışını kanıtlamak için.
+  ],
+  renkKisaltmalari: [
+    { renkKodu: '15', renkAdi: 'Beyaz', kisaltmalar: ['BY'] },
+    { renkKodu: '24', renkAdi: 'Antrasit', kisaltmalar: ['ANT'] }
+  ]
+};
+let mkSayac = 0;
+const mkIdUret = (p) => p + '-MK' + (mkSayac++);
+const mkPlan = RVM.varyantPlaniOlustur('MURN1', 'urun', '24', 'Antrasit', mkVeri, mkIdUret, { mevcutKartiKullan: true });
+
+t('kök için YENİ ürün kartı oluşturuldu (Antrasit ürün henüz yoktu)',
+  mkPlan.yeniKartlar.some(x => x.tip === 'urun' && x.kart.kod === 'URN.DOLAP.ANT'));
+t('ÖNCEDEN VAR OLAN Antrasit paket kartı (MPKT2) TEKRAR OLUŞTURULMADI',
+  !mkPlan.yeniKartlar.some(x => x.tip === 'paket'));
+t('kök ürünün reçetesi, VAR OLAN paket kartının (MPKT2) id\'sine bağlandı (yeni bir paket DEĞİL)', (() => {
+  const yeniUrun = mkPlan.yeniKartlar.find(x => x.tip === 'urun').kart;
+  const r = mkPlan.yeniReceteler.find(r => r.urunId === yeniUrun.id);
+  return !!r && r.kalemler[0].refId === 'MPKT2';
+})());
+t('ÖNCEDEN VAR OLAN Antrasit yarı mamül kartı (MYM2) TEKRAR OLUŞTURULMADI, kendi rotası/amortismanı KORUNDU', (() => {
+  const olusturulduMu = mkPlan.yeniKartlar.some(x => x.tip === 'yarimamul');
+  const hedefKartDegismedi = mkVeri.yarimamuller.find(y => y.id === 'MYM2').rotaId === 'ROT-ANT-OZEL' &&
+    mkVeri.yarimamuller.find(y => y.id === 'MYM2').amortismanGideri === 99;
+  return !olusturulduMu && hedefKartDegismedi;
+})());
+t('MYM2 (önceden var, reçetesizdi) master\'ın (MYM1) reçetesinden KURULDU — hammadde doğru renge (MHM2) takas edilerek', (() => {
+  const r = mkPlan.yeniReceteler.find(r => r.yarimamulId === 'MYM2');
+  return !!r && r.kalemler.some(k => k.refId === 'MHM2' && k.miktar === 2);
+})());
+
+console.log('\n-- mevcutKartiKullan: VAR OLAN kartın KENDİ reçetesi ZATEN DOLUYSA ÜZERİNE YAZILMAZ --');
+const mkVeriDoluRecete = JSON.parse(JSON.stringify(mkVeri));
+mkVeriDoluRecete.receteler.push({ id: 'MRC-YM2-ELLE', yarimamulId: 'MYM2', kalemler: [{ tip: 'hammadde', refId: 'MHM2', miktar: 999, birim: 'ADET' }] });
+let mkSayac2 = 0;
+const mkPlan2 = RVM.varyantPlaniOlustur('MURN1', 'urun', '24', 'Antrasit', mkVeriDoluRecete, (p) => p + '-MK2' + (mkSayac2++), { mevcutKartiKullan: true });
+t('kullanıcının ELLE kurduğu (dolu) kardeş reçetesi master tarafından EZİLMEDİ', (() => {
+  const r = mkPlan2.yeniReceteler.find(r => r.yarimamulId === 'MYM2');
+  return !r || (r.kalemler.length === 1 && r.kalemler[0].miktar === 999);
+})());
+
 console.log('\n-- DÖNGÜ KORUMASI (kendine referans veren alt montaj, AYRI bir çalıştırmada) --');
 const dongPlan = RVM.varyantPlaniOlustur('AM_CYCLE', 'altmontaj', '24', 'Antrasit', veri, idUret);
 t('kendine referans veren kart sonsuz özyinelemeye girmeden tamamlanıyor (bu satıra ulaşıldı)', true);

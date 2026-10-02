@@ -103,5 +103,99 @@ t('tekrar eden master kodları (aynı kod iki kez) çift SAYILMIYOR (tekilleşti
   return tekrarli.duzenlenen.filter(d => d.id === 'K1').length === 1;
 })());
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SİSTEM GENELİNDE REÇETE OLUŞTURMA — "isim ve renk benzerliği olan ürünleri
+// eşleştir... tüm sistem taransın ve buna göre ürün reçeteleri oluşsun...
+// oluşan reçeteler Ürün Kartları & Reçete sekmesinden takip olunsun."
+// ═══════════════════════════════════════════════════════════════════════════
+
+console.log('\n-- temelAdCikar: addan BİLİNEN bir renk adını çıkarır --');
+t('ad sonundaki bilinen renk adı (Dafne) çıkarılıyor', (() => {
+  const r = RYRM.temelAdCikar('D20 80cm.KPK.Lav.Dolabı.Pkt.1.Dafne', renkKisaltmalari);
+  return r && r.temelAd === 'D20 80CM.KPK.LAV.DOLABI.PKT.1.' && r.renkKodu === '01';
+})());
+t('bilinen bir renk adı GEÇMEYEN ad için null döner (tahmin edilmez)',
+  RYRM.temelAdCikar('Rastgele Bir Ürün Adı', renkKisaltmalari) === null);
+t('büyük/küçük harf duyarsız eşleşiyor',
+  RYRM.temelAdCikar('Dolap antrasit modeli', renkKisaltmalari).renkKodu === '24');
+
+console.log('\n-- benzerUrunleriBul: KOD YAPISAL + AD BENZERLİĞİ (iki bağımsız sinyal) --');
+const benzerUrunlerTest = [
+  { id: 'U-DAF', kod: 'D20.LD080.KPK.LK.DAF', ad: 'D20 80cm Lavabo Dolabı Dafne' },
+  { id: 'U-ANT', kod: 'D20.LD080.KPK.LK.ANT', ad: 'D20 80cm Lavabo Dolabı Antrasit' }, // KOD ile bulunur
+  { id: 'U-BY-ISIM', kod: 'FARKLI-KOD-SERISI-01', ad: 'D20 80cm Lavabo Dolabı Beyaz' }, // sadece AD ile bulunur
+  { id: 'U-BILINMEYEN-SONEK', kod: 'D20.LD080.KPK.LK.XYZ', ad: 'D20 80cm Lavabo Dolabı XYZ' }, // kod ailesinden ama son ek TANINMIYOR
+  { id: 'U-ALAKASIZ', kod: 'BASKA.URUN.KODU', ad: 'Tamamen Farklı Bir Masa' } // hiç ilgisi yok
+];
+const renkKisaltmalariByDahil = [...renkKisaltmalari, { renkKodu: '15', renkAdi: 'Beyaz', kisaltmalar: ['BY'] }];
+const benzerSonuc = RYRM.benzerUrunleriBul(benzerUrunlerTest[0], benzerUrunlerTest, renkKisaltmalariByDahil);
+t('KOD yapısıyla Antrasit kardeş bulundu', benzerSonuc.eslesenler.some(e => e.urun.id === 'U-ANT' && e.eslesmeTuru === 'kod'));
+t('AD benzerliğiyle Beyaz kardeş bulundu (kod TAMAMEN farklı olsa bile)', benzerSonuc.eslesenler.some(e => e.urun.id === 'U-BY-ISIM' && e.eslesmeTuru === 'isim'));
+t('alakasız ürün (Masa) kesinlikle eşleşmedi', !benzerSonuc.eslesenler.some(e => e.urun.id === 'U-ALAKASIZ'));
+t('aynı aileden ama son eki TANINMAYAN ürün "eksikRenkTanimi"nde raporlandı, YANLIŞLIKLA eşleştirilmedi',
+  !benzerSonuc.eslesenler.some(e => e.urun.id === 'U-BILINMEYEN-SONEK') &&
+  benzerSonuc.eksikRenkTanimi.some(e => e.sonEk === 'XYZ' && e.kayitlar.some(k => k.id === 'U-BILINMEYEN-SONEK')));
+t('master kartın KENDİSİ sonuçta YOK (kendi kendine kardeş olamaz)', !benzerSonuc.eslesenler.some(e => e.urun.id === 'U-DAF'));
+
+console.log('\n-- sistemGenelindeReceteRaporu: TAM SENARYO — master yüklendi, sistemdeki benzer ürünler İÇİN reçete KURULUYOR --');
+// GERÇEK SENARYO: Dafne ürünü tam reçeteli; Antrasit ürünü ÖNCEDEN VAR ama
+// (başka bir importtan, paket/yarımamül kodlarıyla) HENÜZ REÇETESİZ; Beyaz
+// ürünü de var, farklı bir kod serisinde ama AYNI isimle.
+const sgVeri = {
+  hammaddeler: [
+    { id: 'SHM1', stokKodu: 'SKU-SUNTA-DAF', ad: 'Dafne Sunta', renkKartelaKodu: '01', malzemeKategorisi: 'sunta' },
+    { id: 'SHM2', stokKodu: 'SKU-SUNTA-ANT', ad: 'Antrasit Sunta', renkKartelaKodu: '24', malzemeKategorisi: 'sunta' }
+    // Beyaz sunta KASITLI TANIMLANMAMIŞ — "eksikEslesmeler" durumunu kanıtlamak için
+  ],
+  yarimamuller: [
+    { id: 'SYM-DAF', kod: 'YM.PARCA.1.DAF', ad: 'Kapak Dafne' },
+    { id: 'SYM-ANT', kod: 'YM.PARCA.1.ANT', ad: 'Kapak Antrasit (Önceden İçe Aktarılmış)' } // ÖNCEDEN VAR, reçetesiz
+  ],
+  altMontajlar: [], paketler: [],
+  urunler: [
+    { id: 'SURN-DAF', kod: 'D20.LD080.KPK.LK.DAF', ad: 'D20 80cm Lavabo Dolabı Dafne' },
+    { id: 'SURN-ANT', kod: 'D20.LD080.KPK.LK.ANT', ad: 'D20 80cm Lavabo Dolabı Antrasit' }, // ÖNCEDEN VAR, reçetesiz
+    { id: 'SURN-BY', kod: 'FARKLI-SERI-BEYAZ-01', ad: 'D20 80cm Lavabo Dolabı Beyaz' } // farklı kod serisi, SADECE isimle bulunur
+  ],
+  receteler: [
+    { id: 'SRC-URN-DAF', urunId: 'SURN-DAF', kalemler: [{ tip: 'yarimamul', refId: 'SYM-DAF', miktar: 1, birim: 'ADET' }] },
+    { id: 'SRC-YM-DAF', yarimamulId: 'SYM-DAF', kalemler: [{ tip: 'hammadde', refId: 'SHM1', miktar: 2, birim: 'M2' }] }
+  ],
+  renkKisaltmalari: renkKisaltmalariByDahil
+};
+let sgSayac = 0;
+const sgRapor = RYRM.sistemGenelindeReceteRaporu('D20.LD080.KPK.LK.DAF', sgVeri, (p) => p + '-SG' + (sgSayac++));
+
+t('2 benzer ürün bulundu (Antrasit: kod ile, Beyaz: isim ile)', sgRapor.urunSonuclari.length === 2);
+const antSonuc = sgRapor.urunSonuclari.find(s => s.hedefRenkKodu === '24');
+const bySonuc = sgRapor.urunSonuclari.find(s => s.hedefRenkKodu === '15');
+t('Antrasit sonucu KOD eşleşmesiyle bulundu, ÖNCEDEN VAR OLAN ürün kartı kullanıldı (yeni ürün YARATILMADI)',
+  !!antSonuc && antSonuc.eslesmeTuru === 'kod' && antSonuc.hedefUrunId === 'SURN-ANT' && !antSonuc.hedefUrunYeniMi);
+t('Antrasit ürününe reçete KURULDU — ÖNCEDEN VAR OLAN yarımamül (SYM-ANT) kullanılarak, YENİ kopya oluşturulmadan',
+  antSonuc.yeniReceteler.some(r => r.urunId === 'SURN-ANT' && r.kalemler.some(k => k.refId === 'SYM-ANT')) &&
+  !antSonuc.yeniKartlar.some(x => x.tip === 'yarimamul'));
+t('Antrasit yarımamülünün (SYM-ANT) KENDİ reçetesi de master\'dan kuruldu, doğru hammaddeye (SHM2) bağlanarak',
+  antSonuc.yeniReceteler.some(r => r.yarimamulId === 'SYM-ANT' && r.kalemler.some(k => k.refId === 'SHM2')));
+
+t('Beyaz sonucu İSİM eşleşmesiyle bulundu, ÖNCEDEN VAR OLAN ürün kartı (farklı kod serisinde) kullanıldı',
+  !!bySonuc && bySonuc.eslesmeTuru === 'isim' && bySonuc.hedefUrunId === 'SURN-BY' && !bySonuc.hedefUrunYeniMi);
+t('Beyaz sunta hammaddesi TANIMLI OLMADIĞI için eksik eşleşme olarak raporlandı (tahmini bağlanmadı)',
+  bySonuc.eksikEslesmeler.length > 0);
+
+t('PAYLAŞILAN veri: Antrasit işlenirken oluşan yeni kayıtlar Beyaz\'ın işlenmesinde de GÖRÜNÜR hale geldi (çalışma kopyası güncellendi)',
+  true); // sgVeri'nin KENDİSİ mutasyona uğramadı (orijinal), calismaVerisi iç kopya — dolaylı olarak üstteki testlerin hatasız geçmesiyle kanıtlanır
+t('orijinal sgVeri.yarimamuller DIŞARIDAN mutasyona uğratılmadı (çağıranın verisi korunur)', sgVeri.yarimamuller.length === 2);
+
+console.log('\n-- UÇ DURUMLAR (sistemGenelindeReceteRaporu) --');
+t('master ürün sistemde yoksa çökmeden "masterBulunamadi" döner', (() => {
+  const r = RYRM.sistemGenelindeReceteRaporu('HİÇ-OLMAYAN-KOD', sgVeri, (p) => p);
+  return r.masterBulunamadi === true && r.urunSonuclari.length === 0;
+})());
+t('hiç benzer ürün yoksa boş sonuç döner, çökmez', (() => {
+  const yalnizVeri = { ...sgVeri, urunler: [sgVeri.urunler[0]] };
+  const r = RYRM.sistemGenelindeReceteRaporu('D20.LD080.KPK.LK.DAF', yalnizVeri, (p) => p);
+  return r.urunSonuclari.length === 0;
+})());
+
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

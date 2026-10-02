@@ -121,7 +121,23 @@ const RenkVaryantMotoru = (() => {
   //        receteler, renkKisaltmalari:[{renkKodu,renkAdi,kisaltma}]}
   // idUret(prefix) -> string : çağıran taraf App.uid enjekte eder (testte
   // deterministik bir sayaç verilir) — motor SAF kalır, DOM/Store'a dokunmaz.
-  function varyantPlaniOlustur(kokId, kokTip, hedefRenkKodu, hedefRenkAdi, veri, idUret) {
+  // secenekler.mevcutKartiKullan: true ise (ör. "Reçete Yapım Raporu"nun
+  // sistem genelinde eşleştirme akışı) her kademede YENİ bir klon kartı
+  // OLUŞTURMADAN ÖNCE, AYNI parça ailesinden (temel kod + hedef renk eki
+  // ile) ZATEN VAR OLAN bir kart arar — bulursa ONU kullanır (kimliğini,
+  // kendi alanlarını KORUYARAK), sadece eksikse/boşsa reçetesini
+  // tamamlar; bulamazsa eskisi gibi YENİ klon oluşturur. Varsayılan
+  // (false / belirtilmezse) "🎨 Renk Varyantı Oluştur" tuşunun tekil kart
+  // davranışıdır — HER ZAMAN yeni kart klonlar, geriye dönük BİREBİR aynı.
+  // secenekler.kokHedefId: KÖK kart için kod-yapısal eşleştirmeyi BYPASS
+  // edip DOĞRUDAN bu id'yi hedef olarak kullanır — çağıran taraf (ör.
+  // ürün düzeyinde AD benzerliğiyle, kod yapısı FARKLI bir kart bulmuşsa)
+  // kökün kimliğini zaten biliyor demektir. Alt kırılımlar (reçetedeki
+  // kalemler) yine normal kod-yapısal eşleştirmeyle bulunur — bu sadece
+  // KÖK seviyesi içindir.
+  function varyantPlaniOlustur(kokId, kokTip, hedefRenkKodu, hedefRenkAdi, veri, idUret, secenekler) {
+    const mevcutKartiKullan = !!(secenekler && secenekler.mevcutKartiKullan);
+    const kokHedefId = secenekler && secenekler.kokHedefId;
     const idMap = new Map(); // "tip:eskiId" -> yeniId  (tekilleştirme + döngü koruması)
     const yeniKartlar = [];
     const yeniReceteler = [];
@@ -163,10 +179,21 @@ const RenkVaryantMotoru = (() => {
         // Bazı yarı mamüller (ör. boya işlemi görmüş, kendi başına katalog
         // kalemi olan "LK.50..." kodlu parçalar) de hammadde gibi RENK
         // ETİKETLİ olabilir — bu durumda recursive KLONLANMAZ, hedef renkteki
-        // HAZIR karşılığıyla TAKAS EDİLİR. Etiketsiz yarı mamüller (gerçek
-        // yapısal alt bileşenler) eskisi gibi alt ağacıyla birlikte klonlanır.
+        // HAZIR karşılığıyla TAKAS EDİLİR.
+        //
+        // ÖNEMLİ AYRIM: bu SADECE kodun KENDİSİ renk bilgisi TAŞIMIYORSA
+        // geçerlidir. Normal YAPISAL parçalar (ör. "YM.D20LD080KPKML.3.DAF")
+        // "Reçete Yapım Raporu" tarafından Renk Eşleştirme Anahtarı'nda
+        // görünürlük için ETİKETLENMİŞ olabilir — ama onların kodu zaten
+        // PER-PARÇA benzersiz bir renk eki taşıyor, bu yüzden (kategori,
+        // ölçü) gibi PAYLAŞILAN bir etiketle eşleştirmeye çalışmak BELİRSİZ
+        // olur (ör. aynı "sunta+ölçüsüz" etiketini taşıyan 3 FARKLI panel
+        // birbirine karışır). Kodu renk taşıyan parçalar HER ZAMAN kod
+        // deseniyle (aşağı düşüp kartKlonla ile) eşleştirilir/klonlanır —
+        // etiketli olsalar bile.
         const kaynakYm = (veri.yarimamuller || []).find(y => y.id === k.refId);
-        if (kaynakYm && kaynakYm.renkKartelaKodu && kaynakYm.malzemeKategorisi) {
+        const kodKendiRenginiTasiyorMu = kaynakYm && kisaltmaIleRenkBul(kaynakYm.kod, veri.renkKisaltmalari);
+        if (kaynakYm && !kodKendiRenginiTasiyorMu && kaynakYm.renkKartelaKodu && kaynakYm.malzemeKategorisi) {
           return etiketliTakasEt(k, kaynakYm, veri.yarimamuller, 'yarimamul');
         }
       }
@@ -182,24 +209,56 @@ const RenkVaryantMotoru = (() => {
       const kaynak = liste && liste.find(x => x.id === eskiId);
       if (!kaynak) return null;
 
-      const yeniId = idUret(kartPrefix(tip));
-      idMap.set(anahtar, yeniId); // ÖNEMLİ: alt kırılıma inmeden ÖNCE kaydedilir (döngü koruması)
+      let yeniId, yeniAd, mevcutKart = null;
+      if (mevcutKartiKullan) {
+        if (tip === kokTip && eskiId === kokId && kokHedefId) {
+          // KÖK için çağıran taraf hedefi ZATEN BİLİYOR (ör. ad benzerliğiyle
+          // bulunmuş, kod yapısı FARKLI bir kart) — kod-yapısal aramayı
+          // BYPASS ET, doğrudan bu id'yi kullan.
+          mevcutKart = liste.find(x => x.id === kokHedefId) || null;
+        } else {
+          const temelKod = temelKodCikar(kaynak.kod, veri.renkKisaltmalari);
+          if (temelKod) {
+            mevcutKart = liste.find(x => x.id !== kaynak.id && x.kod.startsWith(temelKod + '.') &&
+              (kisaltmaIleRenkBul(x.kod, veri.renkKisaltmalari) || {}).renkKodu === hedefRenkKodu);
+          }
+        }
+      }
 
-      const kaynakKisaltmaKaydi = kisaltmaIleRenkBul(kaynak.kod, veri.renkKisaltmalari);
-      const yeniKart = JSON.parse(JSON.stringify(kaynak));
-      yeniKart.id = yeniId;
-      yeniKart.kod = varyantKoduUret(kaynak.kod, kaynakKisaltmaKaydi, hedefKisaltma);
-      yeniKart.ad = varyantAdUret(kaynak.ad, kaynakKisaltmaKaydi ? kaynakKisaltmaKaydi.renkAdi : null, hedefRenkAdi);
-      yeniKart.gorseller = []; // eski renk fotoğrafı yeni renk için YANLIŞ olur — kasıtlı boş
-      yeniKartlar.push({ tip, kart: yeniKart });
+      if (mevcutKart) {
+        // AYNI aileden ZATEN VAR OLAN bir kart bulundu — kendi kimliği ve
+        // alanları (rota/amortisman/GYG dahil) KORUNUR, YENİDEN OLUŞTURULMAZ.
+        yeniId = mevcutKart.id;
+        yeniAd = mevcutKart.ad;
+        idMap.set(anahtar, yeniId);
+      } else {
+        yeniId = idUret(kartPrefix(tip));
+        idMap.set(anahtar, yeniId); // ÖNEMLİ: alt kırılıma inmeden ÖNCE kaydedilir (döngü koruması)
+
+        const kaynakKisaltmaKaydi = kisaltmaIleRenkBul(kaynak.kod, veri.renkKisaltmalari);
+        const yeniKart = JSON.parse(JSON.stringify(kaynak));
+        yeniKart.id = yeniId;
+        yeniKart.kod = varyantKoduUret(kaynak.kod, kaynakKisaltmaKaydi, hedefKisaltma);
+        yeniKart.ad = varyantAdUret(kaynak.ad, kaynakKisaltmaKaydi ? kaynakKisaltmaKaydi.renkAdi : null, hedefRenkAdi);
+        yeniKart.gorseller = []; // eski renk fotoğrafı yeni renk için YANLIŞ olur — kasıtlı boş
+        yeniKartlar.push({ tip, kart: yeniKart });
+        yeniAd = yeniKart.ad;
+      }
 
       const kaynakRecete = (veri.receteler || []).find(r => r[idAlani(tip)] === eskiId);
       if (kaynakRecete && (kaynakRecete.kalemler || []).length) {
-        const yeniKalemler = kaynakRecete.kalemler.map(kalemKlonla);
-        yeniReceteler.push({
-          id: idUret('RC'), [idAlani(tip)]: yeniId,
-          ad: yeniKart.ad + ' Reçetesi', kalemler: yeniKalemler
-        });
+        // mevcutKartiKullan modunda: hedef kartın KENDİ (dolu) bir reçetesi
+        // zaten varsa — kullanıcının elle kurduğu bir yapı olabilir —
+        // SESSİZCE ÜZERİNE YAZILMAZ. Sadece boş/yoksa master'dan kurulur.
+        const mevcutAltRecete = mevcutKart ? (veri.receteler || []).find(r => r[idAlani(tip)] === yeniId) : null;
+        if (!mevcutAltRecete || !(mevcutAltRecete.kalemler || []).length) {
+          const yeniKalemler = kaynakRecete.kalemler.map(kalemKlonla);
+          yeniReceteler.push({
+            id: mevcutAltRecete ? mevcutAltRecete.id : idUret('RC'),
+            [idAlani(tip)]: yeniId,
+            ad: yeniAd + ' Reçetesi', kalemler: yeniKalemler
+          });
+        }
       }
       return yeniId;
     }

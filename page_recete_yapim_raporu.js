@@ -37,6 +37,26 @@ PageModules.recete_yapim_raporu = (() => {
         <div id="ryr-status" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
       </div>
       <div id="ryr-rapor"></div>
+
+      <div id="ryr-sistem-tara-wrap" style="display:none">
+        <div class="hr"></div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-hdr">
+            <div class="card-title">🌐 Sistem Genelinde Benzer Ürünleri Bul ve Reçete Oluştur</div>
+            <button class="btn btn-blue" id="ryr-sistem-tara">Tara</button>
+          </div>
+          <div class="fhint">
+            Bu, yarı mamül etiketlemeden FARKLI bir adımdır: ÜRÜN KODU 1. kırılım, altındaki PAKET ve YARI MAMÜL kodları
+            2. kırılım kabul edilerek, sistemdeki TÜM ürünler arasında bu reçeteyle <b>isim ve/veya renk benzerliği</b>
+            olanlar bulunur (kod yapısı AYNI ailedense veya addaki renk sözcüğü dışındaki kısım birebir aynıysa). Bulunan
+            her ürün için — ZATEN VAR OLAN paket/yarı mamül kartları KULLANILARAK (tekrar yaratılmadan), sadece eksik/boş
+            reçeteleri bu master'dan kurularak — tam bir ürün reçetesi oluşturulur. Oluşan/güncellenen reçeteler normal
+            birer kayıttır — <b>Ürün Kartları & Reçete</b> ekranından diğer tüm kartlar gibi görülüp düzenlenir.
+          </div>
+          <div id="ryr-sistem-durum" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
+        </div>
+        <div id="ryr-sistem-rapor"></div>
+      </div>
     `;
 
     document.getElementById('ryr-file').onchange = async (e) => {
@@ -56,11 +76,14 @@ PageModules.recete_yapim_raporu = (() => {
         }
         sonMasterKodlar = { rootKod: parsed.rootKod, stokKodlari: parsed.items.map(i => i.stokKod) };
         statusEl.innerHTML = `<b>${App.escapeHtml(parsed.rootKod)}</b> okundu — ${parsed.items.length} satır (tüm alt ağaç dahil).`;
+        document.getElementById('ryr-sistem-tara-wrap').style.display = '';
         await kontrolEtVeCiz(main);
       } catch (err) {
         statusEl.innerHTML = '<span style="color:var(--red-text)">Dosya okunamadı: ' + App.escapeHtml(err.message) + '</span>';
       }
     };
+
+    document.getElementById('ryr-sistem-tara').onclick = () => sistemGenelindeTaraVeCiz(main);
   }
 
   async function kontrolEtVeCiz(main) {
@@ -162,6 +185,114 @@ PageModules.recete_yapim_raporu = (() => {
     });
     App.toast(duzenlenen.length + ' parça etiketlendi', 'ok');
     await kontrolEtVeCiz(main);
+  }
+
+  // ── SİSTEM GENELİNDE BENZER ÜRÜNLERİ BUL VE REÇETE OLUŞTUR ────────────────
+  async function sistemGenelindeTaraVeCiz(main) {
+    if (!sonMasterKodlar) return;
+    const durumEl = document.getElementById('ryr-sistem-durum');
+    durumEl.textContent = 'Sistem genelinde taranıyor (büyük kataloglarda birkaç saniye sürebilir)…';
+    const [hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler, renkKisaltmalari] = await Promise.all([
+      Store.hammaddeler.all(), Store.yarimamuller.all(), Store.altMontajlar.all(),
+      Store.paketler.all(), Store.urunler.all(), Store.receteler.all(), Store.renkKisaltmalari.all()
+    ]);
+    const veri = { hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler, renkKisaltmalari };
+    const sgRapor = ReceteYapimRaporuMotoru.sistemGenelindeReceteRaporu(sonMasterKodlar.rootKod, veri, App.uid);
+    durumEl.textContent = '';
+    sistemRaporCiz(main, sgRapor);
+  }
+
+  function sistemRaporCiz(main, sgRapor) {
+    const kapsayici = document.getElementById('ryr-sistem-rapor');
+    if (sgRapor.masterBulunamadi) {
+      kapsayici.innerHTML = `<div class="fhint" style="color:var(--red-text)">Bu reçetenin kök ürün kodu (${App.escapeHtml(sonMasterKodlar.rootKod)}) ÜretimOS'ta bir ürün kartı olarak bulunamadı — önce bu reçeteyi normal şekilde (Ürün Kartları & Reçete → Excelden İçe Aktar) içe aktarmanız gerekiyor.</div>`;
+      return;
+    }
+    if (!sgRapor.urunSonuclari.length && !sgRapor.eksikRenkTanimi.length) {
+      kapsayici.innerHTML = `<div class="empty-state"><div class="eicon">✓</div>
+        <div class="etitle">Benzer ürün bulunamadı</div>
+        <div class="edesc">Sistemde bu ürünle isim veya kod yapısı benzerliği olan başka bir ürün yok.</div></div>`;
+      return;
+    }
+
+    const toplamYeniKart = sgRapor.urunSonuclari.reduce((a, s) => a + s.yeniKartlar.length, 0);
+    const toplamYeniRecete = sgRapor.urunSonuclari.reduce((a, s) => a + s.yeniReceteler.length, 0);
+    const toplamEksik = sgRapor.urunSonuclari.reduce((a, s) => a + s.eksikEslesmeler.length, 0);
+
+    kapsayici.innerHTML = `
+      ${sgRapor.urunSonuclari.length ? `
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-hdr">
+            <div class="card-title">✅ Bulunan Benzer Ürünler (${sgRapor.urunSonuclari.length}) — ${toplamYeniKart} yeni kart, ${toplamYeniRecete} reçete oluşturulacak/tamamlanacak${toplamEksik ? `, ${toplamEksik} eksik eşleşme` : ''}</div>
+            <button class="btn btn-green" id="ryr-sistem-uygula">Tümünü Uygula</button>
+          </div>
+          <table class="dtable" style="font-size:11.5px">
+            <tr><th>Eşleşme</th><th>Ürün Kodu</th><th>Ad</th><th>Hedef Renk</th><th class="r">Yeni Kart</th><th class="r">Reçete</th><th class="r">Eksik</th></tr>
+            ${sgRapor.urunSonuclari.map(s => `<tr>
+              <td><span class="pill ${s.eslesmeTuru === 'kod' ? 'pill-blue' : 'pill-amber'}">${s.eslesmeTuru === 'kod' ? 'Kod' : 'İsim'}</span></td>
+              <td class="mono">${App.escapeHtml(s.kaynakUrunKod)}</td>
+              <td>${App.escapeHtml(s.kaynakUrunAd || '')}</td>
+              <td><span class="pill pill-green">${App.escapeHtml(s.hedefRenkKodu)} - ${App.escapeHtml(s.hedefRenkAdi)}</span></td>
+              <td class="r">${s.yeniKartlar.length}</td>
+              <td class="r">${s.yeniReceteler.length}</td>
+              <td class="r">${s.eksikEslesmeler.length ? `<span class="pill pill-amber">${s.eksikEslesmeler.length}</span>` : '—'}</td>
+            </tr>`).join('')}
+          </table>
+          <div class="fhint" style="margin-top:8px"><span class="pill pill-blue" style="font-size:9.5px">Kod</span> eşleşmesi kod yapısından (güvenilir), <span class="pill pill-amber" style="font-size:9.5px">İsim</span> eşleşmesi addaki renk sözcüğü çıkarıldıktan sonra kalan metnin birebir aynı olmasından gelir — ikisi de sadece Renk Eşleştirme Anahtarı'nda TANIMLI renkleri tanır.</div>
+        </div>` : ''}
+
+      ${sgRapor.eksikRenkTanimi.length ? `
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title" style="margin-bottom:8px">⚠ Renk Tanımı Eksik — Ürün Kodlarında Tanınmayan Son Ekler (${sgRapor.eksikRenkTanimi.length})</div>
+          <div class="fhint" style="margin-bottom:10px">Bu ürünler AYNI kod ailesinden ama son ekleri hiçbir renge tanımlı değil — önce Renk Eşleştirme Anahtarı'nda tanımlayın, sonra tekrar tarayın.</div>
+          <table class="dtable" style="font-size:11.5px">
+            <tr><th>Son Ek</th><th>Etkilenen Ürünler</th><th></th></tr>
+            ${sgRapor.eksikRenkTanimi.map(e => `<tr>
+              <td class="mono"><b>.${App.escapeHtml(e.sonEk)}</b></td>
+              <td style="font-size:10.5px">${e.kayitlar.map(k => App.escapeHtml(k.kod)).join(', ')}</td>
+              <td class="r"><button class="btn btn-sm ryr-sistem-renk-tanimla" data-sonek="${App.escapeHtml(e.sonEk)}">Bu Son Ek İçin Renk Tanımla →</button></td>
+            </tr>`).join('')}
+          </table>
+        </div>` : ''}
+    `;
+
+    const uygulaBtn = document.getElementById('ryr-sistem-uygula');
+    if (uygulaBtn) uygulaBtn.onclick = () => sistemGenelindeUygula(main, sgRapor);
+    kapsayici.querySelectorAll('.ryr-sistem-renk-tanimla').forEach(btn => {
+      btn.onclick = () => App.goTo('renk_anahtari', { onerilenKisaltma: btn.dataset.sonek });
+    });
+  }
+
+  async function sistemGenelindeUygula(main, sgRapor) {
+    const tipKoleksiyon = { urun: 'urunler', yarimamul: 'yarimamuller', altmontaj: 'altMontajlar', paket: 'paketler' };
+    const yeniKartlarToplam = { urun: [], yarimamul: [], altmontaj: [], paket: [] };
+    const receteYazilacak = [];
+    sgRapor.urunSonuclari.forEach(sonuc => {
+      sonuc.yeniKartlar.forEach(({ tip, kart }) => yeniKartlarToplam[tip].push(kart));
+      sonuc.yeniReceteler.forEach(r => receteYazilacak.push(r));
+    });
+
+    await App.persist(async () => {
+      for (const tip of Object.keys(tipKoleksiyon)) {
+        if (yeniKartlarToplam[tip].length) await Store.topluEkle(tipKoleksiyon[tip], yeniKartlarToplam[tip]);
+      }
+      if (receteYazilacak.length) {
+        // Her kalem ya YENİ bir reçete kaydıdır (yeni oluşturulan kart için)
+        // ya da ÖNCEDEN VAR OLAN (ama boş) bir reçetenin tamamlanmasıdır —
+        // hangisi olduğu Store'daki GÜNCEL id listesine göre ayrıştırılır.
+        const mevcutReceteler = await Store.receteler.all();
+        const mevcutIdSeti = new Set(mevcutReceteler.map(r => r.id));
+        const yeniler = receteYazilacak.filter(r => !mevcutIdSeti.has(r.id));
+        const guncellenecekler = receteYazilacak.filter(r => mevcutIdSeti.has(r.id));
+        if (yeniler.length) await Store.topluEkle('receteler', yeniler);
+        if (guncellenecekler.length) await Store.topluGuncelle('receteler', guncellenecekler);
+      }
+    });
+
+    const toplamUrun = sgRapor.urunSonuclari.length;
+    const toplamKart = Object.values(yeniKartlarToplam).reduce((a, l) => a + l.length, 0);
+    App.toast(`${toplamUrun} ürün için reçete oluşturuldu/tamamlandı (${toplamKart} yeni kart, ${receteYazilacak.length} reçete) — Ürün Kartları & Reçete'den görüntüleyebilirsiniz`, 'ok');
+    document.getElementById('ryr-sistem-rapor').innerHTML = '';
   }
 
   return { render };
