@@ -27,11 +27,14 @@
 // "genel" hale getirmek, üretimde ZATEN ÇALIŞAN ve kapsamlı testlerle
 // doğrulanmış bir motoru riske atardı.
 //
-// ÖLÇÜ EŞLEŞTİRME ANAHTARI (Store.olcuEslestirmeAnahtari — Renk Eşleştirme
-// Anahtarı'nın ÖLÇÜ karşılığı): her kayıt bir "aile" (ör. "Alinda 60/80cm
-// Serisi") + o ailedeki her ölçünün kod içinde nasıl yazıldığı
-// {olcu:60,kodParcasi:'0060'}. Kayıtlı olmayan bir token ASLA tahmin
-// EDİLMEZ — renk motorundaki "never guess" ilkesiyle BİREBİR aynı.
+// ÖLÇÜ EŞLEŞTİRME ANAHTARI: artık ELLE GİRİLMİYOR — "Ölçü Eşleştirme
+// Anahtarı'na gerek yok, sen reçetelerden oluştur" isteğiyle, her tarama
+// sistemde ZATEN KAYITLI kartların kod örüntüsünden taze bir anahtar üretir
+// (bkz. olcuEslestirmeAnahtariniOtomatikCikar). Her kayıt bir "aile" + o
+// ailedeki her ölçünün kod içinde nasıl yazıldığı {olcu:60,kodParcasi:'0060'}
+// — biçim AYNI, sadece kaynağı artık Store değil, kartların kendisi. Kayıtlı
+// olmayan (karşılaştıracak kardeşi sistemde bulunmayan) bir token ASLA
+// tahmin EDİLMEZ — renk motorundaki "never guess" ilkesiyle BİREBİR aynı.
 //
 // KASITLI OLARAK BU SÜRÜMDE YAPILMAYAN (dürüst sınır, kademeli genişletme
 // planlanıyor):
@@ -308,6 +311,98 @@ const OlcuVaryantMotoru = (() => {
     return { masterKart, aileAdi: masterEslesme.aile.aileAdi || '', sonuclar, eksikEslesmeler };
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ÖLÇÜ EŞLEŞTİRME ANAHTARINI OTOMATİK ÇIKARMA — "Ölçü Eşleştirme Anahtarı'na
+  // gerek yok, sen reçetelerden oluştur" isteği. Elle girilen bir anahtar
+  // ARTIK GEREKMİYOR: sistemde ZATEN KAYITLI kartların (ürün/yarımamül/alt
+  // montaj/paket) kod örüntüsünden, HER TARAMADA taze olarak türetilir —
+  // hiçbir yerde saklanmaz, Store'da böyle bir koleksiyon YOKTUR.
+  //
+  // YÖNTEM (muhafazakâr — "never guess" ilkesiyle birebir aynı): aynı kart
+  // tipinde, kodun SAYI OLMAYAN kısımları HARFİYEN AYNI olan ve TEK BİR rakam
+  // bloğu (2+ hane) DIŞINDA her şeyi paylaşan en az 2 kart bulunursa, o TEK
+  // farklı rakam bloğu "ölçü" tokenı sayılır. Birden fazla konum farklıysa
+  // (iki ayrı değişken olabilir — riskli) grup ATLANIR, tahmin YAPILMAZ. Tek
+  // bir örnekten (karşılaştıracak kardeş olmadan) HİÇBİR aile türetilmez.
+  //
+  // BİLİNEN SINIR: gerçek verideki bazı aileler (ör. AD0060.20.VV/AD0080.20.NG)
+  // ölçü DIŞINDA da (renk/model eki) farklılaşır — bu durumda kod iskeleti
+  // birebir örtüşmez ve bu fonksiyon o aileyi OTOMATİK YAKALAYAMAZ (manuel
+  // anahtarın eskiden kapattığı bu boşluk artık KASITLI OLARAK açık
+  // bırakılıyor — yanlış eşleştirme riskinden daha güvenli). Kod iskeleti
+  // SADECE ölçü bakımından farklılaşan aileler (ör. D20.LD065/080/100)
+  // sorunsuz yakalanır; sistemde o ailenin en az 2 ölçüsü kayıtlı olduğu an
+  // bot bunu kendiliğinden fark eder.
+  // ══════════════════════════════════════════════════════════════════════
+  function kodSablonVeRakamlariCikar(kod) {
+    const parcalar = String(kod || '').split(/(\d{2,})/);
+    const rakamlar = [];
+    let sablon = '';
+    parcalar.forEach((p, i) => { if (i % 2 === 1) { rakamlar.push(p); sablon += '\u0000'; } else sablon += p; });
+    return { sablon, rakamlar };
+  }
+
+  function tipEtiketOto(tip) {
+    return tip === 'urun' ? 'Ürün' : tip === 'yarimamul' ? 'Yarı Mamül' : tip === 'altmontaj' ? 'Alt Montaj' : 'Paket';
+  }
+
+  // Bir kart tipi içindeki kartları kod iskeletine göre gruplar, her grupta
+  // TEK bir rakam konumu farklıysa o grubu bir "aile" olarak döner.
+  function tipIcinOtomatikAileler(tip, kartlar) {
+    const gruplar = new Map(); // sablon -> [rakamlar]
+    (kartlar || []).forEach(kart => {
+      if (!kart || !kart.kod) return;
+      const { sablon, rakamlar } = kodSablonVeRakamlariCikar(kart.kod);
+      if (!rakamlar.length) return; // hiç rakam bloğu yok -> ölçü ailesi olamaz
+      if (!gruplar.has(sablon)) gruplar.set(sablon, []);
+      gruplar.get(sablon).push(rakamlar);
+    });
+
+    const aileler = [];
+    gruplar.forEach((uyeler, sablon) => {
+      if (uyeler.length < 2) return; // karşılaştıracak kardeş yok -> tahmin edilmez
+      const konumSayisi = uyeler[0].length;
+      let farkliKonum = -1, cokFarkliKonum = false;
+      for (let pos = 0; pos < konumSayisi; pos++) {
+        const degerler = new Set(uyeler.map(r => r[pos]));
+        if (degerler.size > 1) {
+          if (farkliKonum === -1) farkliKonum = pos; else cokFarkliKonum = true;
+        }
+      }
+      if (farkliKonum === -1 || cokFarkliKonum) return; // 0 ya da 2+ değişken konum -> belirsiz, atla
+
+      const gorulenler = new Set();
+      const olculer = [];
+      uyeler.forEach(r => {
+        const token = r[farkliKonum];
+        if (gorulenler.has(token)) return;
+        gorulenler.add(token);
+        const sayisal = parseInt(token, 10);
+        olculer.push({ olcu: isNaN(sayisal) ? token : String(sayisal), kodParcasi: token });
+      });
+      if (olculer.length < 2) return;
+
+      aileler.push({
+        id: 'OTO-' + tip + '-' + sablon.length + '-' + farkliKonum + '-' + olculer.map(o => o.kodParcasi).sort().join('_'),
+        aileAdi: '(Otomatik) ' + tipEtiketOto(tip) + ': ' + sablon.replace(/\u0000/g, '#'),
+        olculer
+      });
+    });
+    return aileler;
+  }
+
+  // DIŞA AÇIK: tamSistemTaramasi tarafından her çalışmada çağrılır. veri:
+  // {urunler, yarimamuller, altMontajlar, paketler, ...} — Store.olcuEslestirmeAnahtari
+  // KULLANILMAZ, böyle bir koleksiyon/sayfa artık YOKTUR.
+  function olcuEslestirmeAnahtariniOtomatikCikar(veri) {
+    return [].concat(
+      tipIcinOtomatikAileler('urun', veri.urunler),
+      tipIcinOtomatikAileler('yarimamul', veri.yarimamuller),
+      tipIcinOtomatikAileler('altmontaj', veri.altMontajlar),
+      tipIcinOtomatikAileler('paket', veri.paketler)
+    );
+  }
+
   // TÜM SİSTEMİ TARAR — dört kart tipinin (ürün/yarımamül/altmontaj/paket)
   // TAMAMINI dolaşır, reçetesi TAM olan ve kodu TANIMLI bir ölçü ailesine ait
   // her kartı "master" adayı sayıp sistemGenelindeOlcuTamamlama çalıştırır.
@@ -317,7 +412,11 @@ const OlcuVaryantMotoru = (() => {
   // Dönüş: { sonuclar:[{masterTip,masterKod,masterAd,aileAdi,hedefOlcu,
   //          hedefKod,hedefAd,yeniKartlar,yeniReceteler}], eksikEslesmeler }
   function tamSistemTaramasi(veri, idUret) {
-    const olcuEslestirmeAnahtari = veri.olcuEslestirmeAnahtari || [];
+    // Artık elle girilen bir anahtara GEREK YOK — her tarama, o anda sistemde
+    // kayıtlı kartların kod örüntüsünden taze bir anahtar çıkarır (bkz.
+    // olcuEslestirmeAnahtariniOtomatikCikar yorum bloğu). Hiçbir yerde
+    // saklanmaz, her çalışmada yeniden hesaplanır.
+    const olcuEslestirmeAnahtari = olcuEslestirmeAnahtariniOtomatikCikar(veri);
     if (!olcuEslestirmeAnahtari.length) return { sonuclar: [], eksikEslesmeler: [] };
 
     const calismaVerisi = {
@@ -371,7 +470,7 @@ const OlcuVaryantMotoru = (() => {
   return {
     kodParcasiIleOlcuBul, hedefKodParcasiBul, olcuVaryantKoduUret,
     alternatifHammaddeleriBul, olcuVaryantPlaniOlustur, sistemGenelindeOlcuTamamlama,
-    tamSistemTaramasi
+    olcuEslestirmeAnahtariniOtomatikCikar, tamSistemTaramasi
   };
 })();
 

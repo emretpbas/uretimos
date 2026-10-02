@@ -252,5 +252,79 @@ t('zaten TAM (kalemli) reçetesi olan ölçüye DOKUNULMAZ (tekrar işlenmez)', 
   assert.strictEqual(rapor.sonuclar.length, 0, 'zaten tam reçetesi olan ölçüye dokunulmamalı');
 });
 
+console.log('\n-- olcuEslestirmeAnahtariniOtomatikCikar: "Ölçü Eşleştirme Anahtarı\'na gerek yok, sen reçetelerden oluştur" --');
+t('GERÇEK D20.LD065/080/100 ÜÇLÜSÜ kardeş kartlardan OTOMATİK aile çıkarıyor (elle anahtar YOK)', () => {
+  const veri = {
+    urunler: [], altMontajlar: [], paketler: [],
+    yarimamuller: [
+      { id: 'YM1', kod: 'YM.D20LD065KPKML.3.ANT' },
+      { id: 'YM2', kod: 'YM.D20LD080KPKML.3.ANT' },
+      { id: 'YM3', kod: 'YM.D20LD100KPKML.3.ANT' },
+    ]
+  };
+  const aileler = OVM.olcuEslestirmeAnahtariniOtomatikCikar(veri);
+  assert.strictEqual(aileler.length, 1);
+  const olculer = aileler[0].olculer.map(o => o.olcu).sort();
+  assert.deepStrictEqual(olculer, ['100', '65', '80']); // olcu: parseInt ile baştaki sıfır atılır (display için), kodParcasi HAM token kalır
+  assert.deepStrictEqual(aileler[0].olculer.map(o => o.kodParcasi).sort(), ['065', '080', '100']);
+});
+t('TEK örnekten (karşılaştıracak kardeş yok) HİÇBİR aile türetilmez — tahmin edilmez', () => {
+  const veri = { urunler: [], altMontajlar: [], paketler: [], yarimamuller: [{ id: 'YM1', kod: 'YM.AD006010.03.VV' }] };
+  assert.strictEqual(OVM.olcuEslestirmeAnahtariniOtomatikCikar(veri).length, 0);
+});
+t('İKİ ayrı konumda birden rakam farkı varsa (belirsiz — iki değişken olabilir) grup ATLANIR', () => {
+  const veri = {
+    urunler: [], altMontajlar: [], paketler: [],
+    yarimamuller: [
+      { id: 'YM1', kod: 'AB.10.20.CD' },
+      { id: 'YM2', kod: 'AB.30.40.CD' }, // HEM ilk hem ikinci rakam bloğu farklı -> belirsiz
+    ]
+  };
+  assert.strictEqual(OVM.olcuEslestirmeAnahtariniOtomatikCikar(veri).length, 0);
+});
+t('Kod iskeleti (rakam dışı kısım) BİREBİR örtüşmeyen kartlar (ör. farklı renk eki) aile SAYILMAZ', () => {
+  // GERÇEK VERİDEKİ BİLİNEN SINIR: AD0060.20.VV / AD0080.20.NG hem ölçü hem
+  // renk ekiyle farklılaşıyor — otomatik çıkarım bunu KASITLI OLARAK
+  // yakalamaz (yanlış eşleştirme riskinden daha güvenli).
+  const veri = {
+    urunler: [{ id: 'U1', kod: 'AD0060.20.VV' }, { id: 'U2', kod: 'AD0080.20.NG' }],
+    altMontajlar: [], paketler: [], yarimamuller: []
+  };
+  assert.strictEqual(OVM.olcuEslestirmeAnahtariniOtomatikCikar(veri).length, 0);
+});
+t('Tek haneli rakamlar (ör. sıra/kat no) ölçü tokenı SAYILMAZ (2+ hane şartı)', () => {
+  const veri = {
+    urunler: [], altMontajlar: [], paketler: [],
+    yarimamuller: [{ id: 'YM1', kod: 'AB.1.CD' }, { id: 'YM2', kod: 'AB.2.CD' }]
+  };
+  assert.strictEqual(OVM.olcuEslestirmeAnahtariniOtomatikCikar(veri).length, 0);
+});
+t('Dört kart tipi (ürün/yarımamül/altmontaj/paket) BİRBİRİNDEN BAĞIMSIZ taranır, sonuçlar birleşir', () => {
+  const veri = {
+    urunler: [{ id: 'U1', kod: 'URN.60.X' }, { id: 'U2', kod: 'URN.80.X' }],
+    yarimamuller: [{ id: 'YM1', kod: 'YM.60.X' }, { id: 'YM2', kod: 'YM.80.X' }],
+    altMontajlar: [], paketler: []
+  };
+  assert.strictEqual(OVM.olcuEslestirmeAnahtariniOtomatikCikar(veri).length, 2);
+});
+t('tamSistemTaramasi artık Store.olcuEslestirmeAnahtari OLMADAN (elle anahtar girilmeden) çalışıyor', () => {
+  let sayac2 = 0;
+  const idUret2 = (p) => p + '-OTO-' + (++sayac2);
+  const veri = {
+    hammaddeler: [],
+    yarimamuller: [
+      { id: 'YM1', kod: 'YM.D20LD065KPKML.3.ANT', ad: '65cm' },
+      { id: 'YM2', kod: 'YM.D20LD080KPKML.3.ANT', ad: '80cm' },
+    ],
+    altMontajlar: [], paketler: [], urunler: [],
+    receteler: [{ id: 'RC-65', yarimamulId: 'YM1', ad: '65 Reçetesi', kalemler: [{ tip: 'hammadde', refId: 'HM-X', miktar: 1 }] }]
+    // YM2 (80cm) için KASITLI olarak reçete YOK ve olcuEslestirmeAnahtari alanı HİÇ VERİLMEDİ
+  };
+  const { sonuclar } = OVM.tamSistemTaramasi(veri, idUret2);
+  assert.strictEqual(sonuclar.length, 1, 'elle anahtar olmadan da 80cm kardeşi otomatik tamamlanmalı');
+  assert.strictEqual(sonuclar[0].hedefKod, 'YM.D20LD080KPKML.3.ANT');
+  assert.ok(sonuclar[0].yeniReceteler.some(r => r.yarimamulId === 'YM2'), 'YM2 (zaten var olan kart) için reçete tamamlanmalı');
+});
+
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

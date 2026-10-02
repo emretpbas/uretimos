@@ -847,7 +847,6 @@ const Store = (() => {
     ziyaretlerGetir, sayfaZiyaretiKaydet, auditOnizle, auditGeriAl,
     hammaddeler: coll('hammaddeler'),
     renkKisaltmalari: coll('renkKisaltmalari'),  // Renk Eşleştirme Anahtarı: {id,renkKodu,renkAdi,kisaltma} — renk varyantı motorunun kod üretiminde kullanılır (bkz. renk_varyant_motoru.js)
-    olcuEslestirmeAnahtari: coll('olcuEslestirmeAnahtari'),  // Ölçü Eşleştirme Anahtarı: {id,aileAdi,olculer:[{olcu,kodParcasi}]} — ölçü varyantı motorunun kod eşleştirmesinde kullanılır (bkz. olcu_varyant_motoru.js)
     receteTamamlamaGunlugu: coll('receteTamamlamaGunlugu'),  // Reçete Tamamlama Botu'nun her otomatik/manuel çalışmasının kaydı: {id,zaman,tetikleyici,tamamlananSayisi,yeniKartSayisi,detaylar,eksikEslesmeler} — bkz. page_recete_tamamlama_botu.js
     yarimamuller: coll('yarimamuller'),
     altMontajlar: coll('altMontajlar'),    // alt montaj kartları — yarımamülden bağımsız 4. kart tipi, kendi reçetesi olabilir

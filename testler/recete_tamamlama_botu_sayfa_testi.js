@@ -23,8 +23,8 @@ console.log('\n-- KOD KONTROLU: OTOMATİK çalışma (botCalistirVeUygula) dış
 t('botCalistirVeUygula dışa açık (app.js/page_kartlar.js çağırabiliyor)', kaynak.includes('return { render, botCalistirVeUygula };'));
 t('otomatik çalışma da OlcuVaryantMotoru.tamSistemTaramasi\'yi kullanıyor (AYNI motor, iki ayrı kod yolu YOK)',
   (kaynak.match(/OlcuVaryantMotoru\.tamSistemTaramasi\(/g) || []).length >= 2);
-t('hiç aile tanımlı değilse otomatik çalışma sessizce atlanır (gereksiz günlük/işlem YOK)',
-  kaynak.includes('if (!veri.olcuEslestirmeAnahtari.length) return null; // hiç aile tanımlı değil — yapacak bir şey yok'));
+t('Ölçü Eşleştirme Anahtarı artık ELLE GİRİLMİYOR — Store\'dan anahtar OKUNMUYOR (motor kartlardan kendisi çıkarıyor)',
+  !kaynak.includes("Store.olcuEslestirmeAnahtari"));
 t('yapacak hiçbir şey bulunamazsa (sonuç VE eksik eşleşme ikisi de boş) günlük KAYDI BİLE YAZILMAZ (gürültü önleniyor)',
   kaynak.includes('if (!sonuclar.length && !eksikEslesmeler.length) return null;'));
 t('otomatik çalışmada hata kullanıcının asıl işlemini (içe aktarma/giriş) ENGELLEMİYOR (try/catch ile yutuluyor)',
@@ -43,9 +43,11 @@ t('günlük hiç çalışma yoksa anlamlı bir yönlendirme gösteriyor (sessizc
 console.log('\n-- KOD KONTROLU: "yapamadığı işler için yönlendirme yapsın" — elle tamamlanacaklar ayrı gösteriliyor --');
 t('render fonksiyonu elleGerekenleriCiz() ile ŞU ANKİ (taze) eksik eşleşmeleri ayrıca gösteriyor',
   kaynak.includes('await elleGerekenleriCiz();'));
-t('"hedefOlcuTanimsiz" (küçük bir tanımla tamamlanabilir) durumu Ölçü Eşleştirme Anahtarı\'na YÖNLENDİRİYOR',
+t('"hedefOlcuTanimsiz" (bu ölçüde henüz kardeş kart yok) durumu AYRI bir bölümde açıklanıyor',
   kaynak.includes("hedefOlcuTanimsizlar = eksikEslesmeler.filter(e => e.neden === 'hedefOlcuTanimsiz')") &&
-  kaynak.includes("App.goTo('olcu_anahtari')"));
+  kaynak.includes('Bu Ölçüde Henüz Kardeş Kart Yok'));
+t('sayfada artık Ölçü Eşleştirme Anahtarı sayfasına hiçbir yönlendirme YOK (sayfa kaldırıldı)',
+  !kaynak.includes("App.goTo('olcu_anahtari')"));
 t('"ölçüye özel olabilir" (otomatik düzeltilemeyen) durumu AYRI ve açık bir uyarıyla gösteriliyor',
   kaynak.includes("olcuyeOzelOlabilirler = eksikEslesmeler.filter(e => e.neden === 'olcuyeOzelOlabilirElleKontrolEdin')"));
 

@@ -7,12 +7,16 @@
 // ────────────────────────────────────────────────────────────────────────────
 // NASIL ÇALIŞIR: sistemdeki TÜM ürün/yarımamül/alt montaj/paket kartları
 // taranır (bkz. OlcuVaryantMotoru.tamSistemTaramasi — tarama/eşleştirme
-// mantığının TAMAMI motor dosyasında yaşar, burada TEKRARLANMAZ). Kodu Ölçü
-// Eşleştirme Anahtarı'nda TANIMLI bir aileye ait VE reçetesi TAM (kalemli)
-// olan her kart bir "master" adayıdır — bu ustadan aynı ailenin reçetesi
-// EKSİK/BOŞ olan kardeş ölçüleri tamamlanır. Kod örüntüsünden güvenle
-// türetilemeyen kalemler (ör. LOGO'nun kendi numaralandırdığı paketleme
-// kutuları) ASLA tahmin edilmez, "elle kontrol" raporunda işaretlenir.
+// mantığının TAMAMI motor dosyasında yaşar, burada TEKRARLANMAZ). "Ölçü
+// Eşleştirme Anahtarı" ARTIK ELLE GİRİLMİYOR — motor, kartların kod
+// örüntüsünden (kodu TEK bir rakam bloğu dışında birebir örtüşen en az 2
+// kardeş kart) kendisi bir anahtar çıkarır (bkz. olcu_varyant_motoru.js
+// başındaki "ÖLÇÜ EŞLEŞTİRME ANAHTARINI OTOMATİK ÇIKARMA" yorumu). O ailenin
+// reçetesi TAM (kalemli) olan her kart bir "master" adayıdır — bu ustadan
+// aynı ailenin reçetesi EKSİK/BOŞ olan kardeş ölçüleri tamamlanır. Kod
+// örüntüsünden güvenle türetilemeyen kalemler (ör. LOGO'nun kendi
+// numaralandırdığı paketleme kutuları) ASLA tahmin edilmez, "elle kontrol"
+// raporunda işaretlenir.
 //
 // OTOMATİK ÇALIŞMA (botCalistirVeUygula, dışa açık — app.js/page_kartlar.js
 // çağırır): bulunan her şey OTOMATİK UYGULANIR (kullanıcı onayı beklemez) —
@@ -43,11 +47,14 @@ PageModules.recete_tamamlama_botu = (() => {
   const TETIKLEYICI_ETIKET = { ice_aktar_sonrasi: 'İçe aktarma sonrası (otomatik)', oturum_baslangici: 'Oturum başlangıcı (otomatik)', manuel: 'Manuel tarama' };
 
   async function veriTopla() {
-    const [hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler, olcuEslestirmeAnahtari] = await Promise.all([
+    const [hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler] = await Promise.all([
       Store.hammaddeler.all(), Store.yarimamuller.all(), Store.altMontajlar.all(),
-      Store.paketler.all(), Store.urunler.all(), Store.receteler.all(), Store.olcuEslestirmeAnahtari.all()
+      Store.paketler.all(), Store.urunler.all(), Store.receteler.all()
     ]);
-    return { hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler, olcuEslestirmeAnahtari };
+    // NOT: Ölçü Eşleştirme Anahtarı artık ELLE GİRİLMİYOR — OlcuVaryantMotoru.
+    // tamSistemTaramasi, kartların kod örüntüsünden kendisi taze bir anahtar
+    // çıkarır (bkz. olcu_varyant_motoru.js). Burada Store'dan OKUNMAZ.
+    return { hammaddeler, yarimamuller, altMontajlar, paketler, urunler, receteler };
   }
 
   // Bulunan sonuçları (yeni kartlar + yeni/tamamlanan reçeteler) Store'a yazar
@@ -94,7 +101,6 @@ PageModules.recete_tamamlama_botu = (() => {
   async function botCalistirVeUygula(tetikleyici) {
     try {
       const veri = await veriTopla();
-      if (!veri.olcuEslestirmeAnahtari.length) return null; // hiç aile tanımlı değil — yapacak bir şey yok
       const { sonuclar, eksikEslesmeler } = OlcuVaryantMotoru.tamSistemTaramasi(veri, App.uid);
       if (!sonuclar.length && !eksikEslesmeler.length) return null;
 
@@ -136,19 +142,20 @@ PageModules.recete_tamamlama_botu = (() => {
       </div>
       <div class="card" style="margin-bottom:14px">
         <div class="fhint">
-          Bu bot, <a href="#" id="rtb-anahtar-link">Ölçü Eşleştirme Anahtarı</a>'nda tanımlı ailelere ait, reçetesi
-          TAM olan kartları "örnek" (master) alır ve AYNI ailenin reçetesi EKSİK/BOŞ kardeş ölçülerini OTOMATİK
-          tamamlar — her "Excelden Reçete İçe Aktar" sonrasında ve uygulamayı her açtığınızda (son çalışmadan belirli
-          bir süre geçtiyse) arka planda kendiliğinden çalışır. Kod örüntüsünden güvenle türetilemeyen kalemler
-          (ör. ölçüye özel ama LOGO'nun kendi numaralandırdığı paketleme kutuları) ASLA tahmin edilmez — aşağıda
-          "Elle Tamamlanması Gerekenler" altında işaretlenir.
+          Bu bot, elle bir tanım girmenize GEREK KALMADAN, sistemde kayıtlı kartların kod örüntüsünden kendisi
+          "ölçü ailelerini" çıkarır: aynı tipte (ürün/yarımamül/alt montaj/paket), kodu TEK BİR rakam bloğu
+          (ör. 65/80/100) dışında birebir örtüşen en az 2 kart bulursa, bunları bir aile sayar. Reçetesi TAM olan
+          kartı "örnek" (master) alıp AYNI ailenin reçetesi EKSİK/BOŞ kardeş ölçülerini OTOMATİK tamamlar — her
+          "Excelden Reçete İçe Aktar" sonrasında ve uygulamayı her açtığınızda (son çalışmadan belirli bir süre
+          geçtiyse) arka planda kendiliğinden çalışır. Kod örüntüsünden güvenle türetilemeyen kalemler (ör. ölçüye
+          özel ama LOGO'nun kendi numaralandırdığı paketleme kutuları, ya da ölçü DIŞINDA da renk/model ekiyle
+          farklılaşan aileler) ASLA tahmin edilmez — aşağıda "Elle Tamamlanması Gerekenler" altında işaretlenir.
         </div>
       </div>
       <div id="rtb-gunluk"></div>
       <div id="rtb-durum" class="fhint"></div>
       <div id="rtb-rapor"></div>
     `;
-    document.getElementById('rtb-anahtar-link').onclick = (e) => { e.preventDefault(); App.goTo('olcu_anahtari'); };
     document.getElementById('rtb-tara').onclick = () => taraVeCiz(main);
 
     await gunlukCiz();
@@ -164,9 +171,7 @@ PageModules.recete_tamamlama_botu = (() => {
     gunluk.sort((a, b) => (b.zaman || '').localeCompare(a.zaman || ''));
     const sonYirmi = gunluk.slice(0, 20);
     if (!sonYirmi.length) {
-      kapsayici.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="fhint">Bot henüz hiç çalışmadı (ya da yapacak bir şey bulmadı). Önce <a href="#" id="rtb-anahtar-link3">Ölçü Eşleştirme Anahtarı</a>'nda en az bir aile tanımlayın, sonra bir reçete içe aktarın ya da "Şimdi Tekrar Tara"ya basın.</div></div>`;
-      const a = document.getElementById('rtb-anahtar-link3');
-      if (a) a.onclick = (e) => { e.preventDefault(); App.goTo('olcu_anahtari'); };
+      kapsayici.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="fhint">Bot henüz hiç çalışmadı (ya da yapacak bir şey bulmadı). Sistemde kodu TEK rakam bloğu dışında örtüşen en az 2 kardeş kart (ör. 65cm/80cm) olunca otomatik devreye girer — bir reçete içe aktarın ya da "Şimdi Tekrar Tara"ya basın.</div></div>`;
       return;
     }
     kapsayici.innerHTML = `
@@ -192,7 +197,6 @@ PageModules.recete_tamamlama_botu = (() => {
   // AYRIDIR — günlük GEÇMİŞİ, bu bölüm ŞU ANKİ durumu gösterir.
   async function elleGerekenleriCiz() {
     const veri = await veriTopla();
-    if (!veri.olcuEslestirmeAnahtari.length) return; // zaten "henüz tanımlanmadı" mesajı rapor bölümünde gösterilecek
     const { eksikEslesmeler } = OlcuVaryantMotoru.tamSistemTaramasi(veri, () => '__onizleme__');
     if (!eksikEslesmeler.length) return;
     yonlendirmeCiz(eksikEslesmeler);
@@ -206,15 +210,14 @@ PageModules.recete_tamamlama_botu = (() => {
     kapsayici.innerHTML = `
       ${hedefOlcuTanimsizlar.length ? `
         <div class="card" style="margin-bottom:12px">
-          <div class="card-title" style="margin-bottom:8px">➡ Küçük Bir Tanımla Tamamlanabilir: Hedef Ölçü Eksik (${hedefOlcuTanimsizlar.length})</div>
-          <div class="fhint" style="margin-bottom:10px">Bu kartların ailesi tanınıyor ama hedeflenen ölçü için kod parçası henüz Ölçü Eşleştirme Anahtarı'na girilmemiş — ekleyince bot bir sonraki çalışmasında bunları da otomatik tamamlar.</div>
+          <div class="card-title" style="margin-bottom:8px">⏳ Bu Ölçüde Henüz Kardeş Kart Yok (${hedefOlcuTanimsizlar.length})</div>
+          <div class="fhint" style="margin-bottom:10px">Bu kalemin ailesi tanınıyor ama hedeflenen ölçüde bu kalem için sistemde henüz eşleşen bir kardeş kod yok — o ölçüdeki kart/reçete sisteme girince (ör. bir sonraki Excel içe aktarımıyla) bot bunu bir sonraki taramasında otomatik yakalar.</div>
           <table class="dtable" style="font-size:11.5px">
-            <tr><th>Aile</th><th>Kod</th><th>Hedef Ölçü</th><th></th></tr>
+            <tr><th>Aile</th><th>Kod</th><th>Hedef Ölçü</th></tr>
             ${hedefOlcuTanimsizlar.map(e => `<tr>
               <td>${App.escapeHtml(e.aileAdi || '')}</td>
               <td class="mono">${App.escapeHtml(e.kod || '')}</td>
               <td><span class="pill pill-amber">${App.escapeHtml(String(e.hedefOlcu))}</span></td>
-              <td class="r"><button class="btn btn-sm rtb-anahtar-git">Ölçü Eşleştirme Anahtarı'na Git →</button></td>
             </tr>`).join('')}
           </table>
         </div>` : ''}
@@ -235,7 +238,6 @@ PageModules.recete_tamamlama_botu = (() => {
         </div>` : ''}
       ${mevcut}
     `;
-    kapsayici.querySelectorAll('.rtb-anahtar-git').forEach(b => b.onclick = () => App.goTo('olcu_anahtari'));
   }
 
   async function taraVeCiz(main) {
@@ -244,15 +246,6 @@ PageModules.recete_tamamlama_botu = (() => {
     document.getElementById('rtb-rapor').innerHTML = '';
 
     const veri = await veriTopla();
-    if (!veri.olcuEslestirmeAnahtari.length) {
-      durumEl.textContent = '';
-      document.getElementById('rtb-rapor').innerHTML = `<div class="empty-state"><div class="eicon">📏</div>
-        <div class="etitle">Henüz hiç Ölçü Ailesi tanımlanmadı</div>
-        <div class="edesc">Önce <a href="#" id="rtb-anahtar-link2">Ölçü Eşleştirme Anahtarı</a>'nda en az bir aile + ölçü eşleştirmesi girin.</div></div>`;
-      document.getElementById('rtb-anahtar-link2').onclick = (e) => { e.preventDefault(); App.goTo('olcu_anahtari'); };
-      return;
-    }
-
     const { sonuclar, eksikEslesmeler } = OlcuVaryantMotoru.tamSistemTaramasi(veri, App.uid);
     durumEl.textContent = '';
     raporCiz(main, sonuclar, eksikEslesmeler);
@@ -263,7 +256,7 @@ PageModules.recete_tamamlama_botu = (() => {
     if (!sonuclar.length && !eksikEslesmeler.length) {
       kapsayici.innerHTML = `<div class="empty-state"><div class="eicon">✓</div>
         <div class="etitle">Tamamlanacak eksik reçete bulunamadı</div>
-        <div class="edesc">Tanımlı ölçü ailelerindeki tüm kardeşlerin reçeteleri zaten tam, ya da henüz sistemde o ölçüde bir kart yok.</div></div>`;
+        <div class="edesc">Otomatik olarak tanınan ölçü ailelerindeki tüm kardeşlerin reçeteleri zaten tam, ya da sistemde kodu TEK rakam bloğu dışında örtüşen en az 2 kardeş kart henüz yok.</div></div>`;
       return;
     }
 

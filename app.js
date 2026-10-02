@@ -105,7 +105,6 @@ const App = (() => {
       { id: 'yarimamul', label: 'Yarı Mamüller', icon: '◫', roller: ['admin','arge','teknik_ofis','uretim_planlama','yonetim','uretim'] },
       { id: 'kartlar', label: 'Ürün Kartları & Reçete', icon: '▥', roller: ['admin','arge','teknik_ofis','yonetim','uretim'] },
       { id: 'renk_anahtari', label: 'Renk Eşleştirme Anahtarı', icon: '🎨', roller: ['admin','arge','teknik_ofis','yonetim'] },
-      { id: 'olcu_anahtari', label: 'Ölçü Eşleştirme Anahtarı', icon: '📏', roller: ['admin','arge','teknik_ofis','yonetim'] },
       { id: 'recete_yapim_raporu', label: 'Reçete Yapım Raporu', icon: '📋', roller: ['admin','arge','teknik_ofis','yonetim'] },
       { id: 'recete_tamamlama_botu', label: 'Reçete Tamamlama Botu', icon: '🤖', roller: ['admin','arge','teknik_ofis','yonetim'] },
       { id: 'step_ice_aktar', label: 'STEP\'ten Ürün Ağacı (CAD)', icon: '📐', roller: ['admin','arge','teknik_ofis','yonetim'] },
