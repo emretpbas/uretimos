@@ -26,12 +26,40 @@ const Store = (() => {
     try { window.dispatchEvent(new CustomEvent('uretimos:oturum-dustu')); } catch (e) {}
   }
 
+  // GERÇEK ÜRETİM SORUNU: tarayıcının fetch()'i için VARSAYILAN bir zaman
+  // aşımı YOKTUR — sunucu (1 GB RAM'lı paylaşımlı barındırma) büyük bir
+  // koleksiyonu (ör. 96.000+ yarımamül, tek JSON blob) 'patch' ucunda
+  // işlerken donar/çok yavaşlarsa, istek SONSUZA KADAR bekler; kullanıcı
+  // ekranda "Kaydediliyor: ..." yazısının hiç değişmediğini görür, hiçbir
+  // hata gelmez, ne devam eder ne de düğme tekrar tıklanabilir hale gelir
+  // ("basıldığı belli ama kaydetmiyor" raporunun kök nedeni). Sunucu
+  // tarafı zaten max_execution_time=120s ile sınırlı (bkz. api.php) — bu
+  // yüzden istemci biraz daha cömert bir süre (140s) sonunda isteği
+  // İPTAL EDER ve anlaşılır bir hata fırlatır; bu da patchUygulaTekrarli'nin
+  // (zaten var olan) yeniden deneme mekanizmasını devreye sokar.
+  const ISTEK_ZAMAN_ASIMI_MS = 140000;
+
   async function apiFetch(url, opts) {
     opts = opts || {};
     opts.headers = Object.assign({}, opts.headers || {});
     const t = tokenGetir();
     if (t) opts.headers['Authorization'] = 'Bearer ' + t;
-    const res = await fetch(url, opts);
+    const denetleyici = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    let zamanAsimiOldu = false;
+    let zamanlayici = null;
+    if (denetleyici) {
+      opts.signal = denetleyici.signal;
+      zamanlayici = setTimeout(() => { zamanAsimiOldu = true; denetleyici.abort(); }, ISTEK_ZAMAN_ASIMI_MS);
+    }
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (e) {
+      if (zamanAsimiOldu) throw new Error('Sunucu zamanında yanıt vermedi (140sn) — bağlantı sorunu olabilir veya koleksiyon çok büyük. Lütfen tekrar deneyin.');
+      throw e;
+    } finally {
+      if (zamanlayici) clearTimeout(zamanlayici);
+    }
     if (res.status === 401) { oturumDustu(); throw new Error('Oturum süresi doldu — lütfen tekrar giriş yapın'); }
     return res;
   }
