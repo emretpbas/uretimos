@@ -153,6 +153,31 @@ function db() {
         )');
         // Eski kurulumlara sürüm sütununu ekle (varsa hata yutulur)
         try { $pdo->exec('ALTER TABLE kv_store ADD COLUMN surum INTEGER NOT NULL DEFAULT 0'); } catch (Exception $e) {}
+
+        // ── SATIR SATIR DEPOLAMA (büyük koleksiyonlar için) ───────────────────
+        // GERÇEK ÜRETİM SORUNU: kv_store'daki "tek JSON blob" mimarisinde,
+        // 96.000+ yarımamül gibi büyük bir koleksiyona sadece 11 kayıt
+        // güncellense bile sunucu KOLEKSİYONUN TAMAMINI okuyup çözüp yeniden
+        // kodlayıp yazmak zorunda kalıyordu. 1 GB RAM'lı paylaşımlı sunucuda
+        // bu, "İçe Aktar ve Kaydet" gibi akışların dakikalarca (hatta
+        // sonsuza kadar) asılı kalmasına yol açıyordu — yalnızca client
+        // tarafı optimizasyonları (çift indirmeyi önlemek, zaman aşımı
+        // eklemek) bu KÖK nedeni çözemedi, çünkü darboğaz sunucunun KENDİ
+        // yazma maliyetindeydi. KV_ITEMS_KOLEKSIYONLAR listesindeki (en
+        // büyük) koleksiyonlar artık burada SATIR SATIR saklanır: bir patch
+        // yalnızca DEĞİŞEN kayıtlara dokunur, maliyeti koleksiyonun
+        // boyutundan BAĞIMSIZ (sabit) olur. Göç KADEMELİ ve OTOMATİKTİR —
+        // bkz. kvItemsGocEttirKilitli(): bir koleksiyonun eski blobu, o
+        // koleksiyona ilk dokunulduğunda (okuma ya da yazma) sessizce bu
+        // tabloya taşınır; hiçbir manuel adım/aşağı süre gerekmez.
+        $pdo->exec('CREATE TABLE IF NOT EXISTS kv_items (
+            store_key TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            item_json TEXT NOT NULL,
+            sira INTEGER NOT NULL,
+            PRIMARY KEY (store_key, item_id)
+        )');
+        try { $pdo->exec('CREATE INDEX IF NOT EXISTS ix_kv_items_key_sira ON kv_items (store_key, sira)'); } catch (Exception $e) {}
         $pdo->exec('CREATE TABLE IF NOT EXISTS sessions (
             token TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -232,7 +257,170 @@ function readJsonBody() {
 //      sunucudaki sürüm farklıysa yazma REDDEDİLİR (409) ve güncel veri döner.
 //   2) patch ucu: yalnızca DEĞİŞEN kayıtlar gönderilir ve birleştirme sunucuda
 //      yazma kilidi altında yapılır — çakışma imkânsızdır.
+// En büyük koleksiyonlar — bkz. kv_items tablosunun oluşturulduğu yerdeki
+// yorum (db() fonksiyonu). Yalnızca BURADAKİ anahtarlar satır satır
+// (kv_items) saklanır; geri kalan ~75 küçük koleksiyon ESKİ (tek blob)
+// modelde kalır — değişim/risk alanı bilerek en küçükte tutulur.
+const KV_ITEMS_KOLEKSIYONLAR = ['yarimamuller', 'urunler', 'receteler', 'hammaddeler', 'altMontajlar', 'paketler'];
+
+// kv_store.store_value sütunu NOT NULL olduğundan (eski şema), bir anahtarın
+// "artık kv_items'ta satır satır saklanıyor" durumu gerçek NULL yerine bu
+// SENTİNEL metinle işaretlenir — hiçbir geçerli JSON değeri bu metinle
+// EŞLEŞEMEZ (JSON her zaman [,{,",rakam,true/false/null ile başlar).
+const KV_ITEMS_SENTINEL = '__kv_items_satirlarda__';
+
+// Bir anahtarın eski blob'unu (varsa) kv_items'a satır satır taşır.
+// ÇAĞIRANI ZATEN bir yazma kilidi (BEGIN IMMEDIATE) içinde olmalıdır — bu
+// fonksiyon KENDİ transaction'ını AÇMAZ/KAPATMAZ (iç içe BEGIN hatası
+// vermemesi için). İdempotenttir: zaten göçmüşse ya da hiç veri yoksa
+// hiçbir şey yapmaz.
+function kvItemsGocEttirKilitli($pdo, $key) {
+    if (!in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) return;
+    $st = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
+    $st->execute([':k' => $key]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row || $row['store_value'] === KV_ITEMS_SENTINEL) return; // zaten göçmüş ya da hiç veri yok
+    $liste = json_decode($row['store_value'], true);
+    if (!is_array($liste)) $liste = [];
+    $ins = $pdo->prepare('INSERT OR REPLACE INTO kv_items (store_key,item_id,item_json,sira) VALUES (:k,:id,:j,:s)');
+    $sira = 0;
+    foreach ($liste as $kayit) {
+        if (!is_array($kayit) || !isset($kayit['id'])) continue; // id'siz kayıt zaten patch'te de desteklenmiyordu
+        $ins->execute([':k' => $key, ':id' => (string)$kayit['id'], ':j' => json_encode($kayit, JSON_UNESCAPED_UNICODE), ':s' => $sira]);
+        $sira++;
+    }
+    $pdo->prepare('UPDATE kv_store SET store_value = :sentinel WHERE store_key = :k')->execute([':k' => $key, ':sentinel' => KV_ITEMS_SENTINEL]);
+}
+
+// SADECE OKUMA amaçlı çağıranlar için: göç gerekiyorsa KENDİ kısa yazma
+// kilidini açıp göçü yapar ve serbest bırakır. Zaten göçmüşse (ucuz bir
+// SELECT ile anlaşılır) kilide HİÇ dokunmadan hemen döner — her okuma
+// isteğinde gereksiz yazma kilidi alınmaz.
+function kvItemsGocEttirGerekirse($pdo, $key) {
+    if (!in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) return;
+    $st = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
+    $st->execute([':k' => $key]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row || $row['store_value'] === KV_ITEMS_SENTINEL) return;
+    $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        kvItemsGocEttirKilitli($pdo, $key);
+        $pdo->exec('COMMIT');
+    } catch (Exception $e) {
+        try { $pdo->exec('ROLLBACK'); } catch (Exception $e2) {}
+        throw $e;
+    }
+}
+
+// kv_items'tan TÜM koleksiyonu eski blob formatına BİREBİR eşdeğer bir
+// JSON dizi METNİNE dönüştürür. Her item_json zaten geçerli bir JSON
+// değeri olarak saklandığından, aradaki virgülle BİRLEŞTİRMEK yeterlidir
+// — PHP tarafında tekrar decode+encode YAPILMAZ (okuma da hızlanır).
+function kvItemsOkuJson($pdo, $key) {
+    $st = $pdo->prepare('SELECT item_json FROM kv_items WHERE store_key = :k ORDER BY sira ASC');
+    $st->execute([':k' => $key]);
+    $parcalar = [];
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) $parcalar[] = $r['item_json'];
+    return '[' . implode(',', $parcalar) . ']';
+}
+
+// Bir anahtarın GEÇERLİ değerini (göçmüş olsun olmasın) JSON dizi metni
+// olarak döner — 'get', auditOnizle/auditGeriAl ve kvOkuSurumlu'nun ortak
+// okuma yolu. Göç gerekiyorsa önce göçtürür.
+function kvOkuJson($pdo, $key) {
+    if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+        kvItemsGocEttirGerekirse($pdo, $key);
+        return kvItemsOkuJson($pdo, $key);
+    }
+    $st = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
+    $st->execute([':k' => $key]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    return $row ? $row['store_value'] : null;
+}
+
+// kv_items'taki TÜM koleksiyonu verilen JSON dizi metninden YENİDEN KURAR
+// (tam değiştirme — 'set' ucu ve yedekten-geri-yükleme için). Büyük
+// koleksiyonlarda 'set' zaten İSTİSNAİ/nadir bir yoldur (normal akış
+// 'patch'tir) — bu yüzden burada O(n) maliyet kabul edilebilirdir, eski
+// modelden FARKSIZDIR.
+function kvItemsYazTumunu($pdo, $key, $json) {
+    $liste = json_decode($json, true);
+    if (!is_array($liste)) $liste = [];
+    // Çağıranı zaten bir transaction içindeyse (ör. kvYazSurumlu → 'set' ucu)
+    // iç içe BEGIN açmamak için kendi transaction'ımızı yalnızca gerekirse açarız.
+    $kendiTransactionu = !$pdo->inTransaction();
+    if ($kendiTransactionu) $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        $pdo->prepare('DELETE FROM kv_items WHERE store_key = :k')->execute([':k' => $key]);
+        $ins = $pdo->prepare('INSERT INTO kv_items (store_key,item_id,item_json,sira) VALUES (:k,:id,:j,:s)');
+        $sira = 0;
+        foreach ($liste as $kayit) {
+            if (!is_array($kayit) || !isset($kayit['id'])) continue;
+            $ins->execute([':k' => $key, ':id' => (string)$kayit['id'], ':j' => json_encode($kayit, JSON_UNESCAPED_UNICODE), ':s' => $sira]);
+            $sira++;
+        }
+        if ($kendiTransactionu) $pdo->exec('COMMIT');
+    } catch (Exception $e) {
+        if ($kendiTransactionu) { try { $pdo->exec('ROLLBACK'); } catch (Exception $e2) {} }
+        throw $e;
+    }
+}
+
+// Yalnızca DEĞİŞEN kayıtlara dokunan hızlı patch — kv_items üzerinde
+// doğrudan çalışır, koleksiyonun TAMAMINI PHP belleğine ASLA ALMAZ. Bu,
+// "İçe Aktar ve Kaydet" gibi akışların 96.000+ kayıtlı bir koleksiyonda
+// bile ANINDA tamamlanmasını sağlayan ASIL düzeltmedir. ÇAĞIRANI ZATEN
+// bir yazma kilidi (BEGIN IMMEDIATE) içinde olmalıdır.
+function kvItemsPatchUygulaKilitli($pdo, $key, $ekle, $guncelle, $sil) {
+    kvItemsGocEttirKilitli($pdo, $key);
+    $insUpd = $pdo->prepare(
+        "INSERT INTO kv_items (store_key,item_id,item_json,sira) VALUES (:k,:id,:j,
+            (SELECT COALESCE(MAX(sira),-1)+1 FROM kv_items WHERE store_key=:k2))
+         ON CONFLICT(store_key,item_id) DO UPDATE SET item_json = excluded.item_json"
+    );
+    $degisen = 0;
+    foreach ($guncelle as $kayit) {
+        if (!is_array($kayit) || !isset($kayit['id'])) continue;
+        $insUpd->execute([':k' => $key, ':k2' => $key, ':id' => (string)$kayit['id'], ':j' => json_encode($kayit, JSON_UNESCAPED_UNICODE)]);
+        $degisen++;
+    }
+    foreach ($ekle as $kayit) {
+        if (!is_array($kayit) || !isset($kayit['id'])) continue;
+        $insUpd->execute([':k' => $key, ':k2' => $key, ':id' => (string)$kayit['id'], ':j' => json_encode($kayit, JSON_UNESCAPED_UNICODE)]);
+        $degisen++;
+    }
+    if (count($sil)) {
+        $del = $pdo->prepare('DELETE FROM kv_items WHERE store_key = :k AND item_id = :id');
+        foreach ($sil as $id) { $del->execute([':k' => $key, ':id' => (string)$id]); $degisen++; }
+    }
+    $c = $pdo->prepare('SELECT COUNT(*) c FROM kv_items WHERE store_key = :k');
+    $c->execute([':k' => $key]);
+    $kayitSayisi = (int)$c->fetch(PDO::FETCH_ASSOC)['c'];
+    return ['degisen' => $degisen, 'kayitSayisi' => $kayitSayisi];
+}
+
+// kv_store satırını store_value=SENTINEL bırakarak oluşturur/günceller ve
+// sürümü artırır — kvItemsPatchUygulaKilitli sonrası sürüm takibi için.
+function kvSurumArttirKilitli($pdo, $key) {
+    $st = $pdo->prepare('SELECT surum FROM kv_store WHERE store_key = :k');
+    $st->execute([':k' => $key]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    $yeniSurum = ($row ? (int)$row['surum'] : 0) + 1;
+    $now = date('c');
+    $ins = $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at, surum) VALUES (:k,:sentinel,:t,:s)
+        ON CONFLICT(store_key) DO UPDATE SET store_value = :sentinel2, updated_at = :t2, surum = :s2');
+    $ins->execute([':k' => $key, ':sentinel' => KV_ITEMS_SENTINEL, ':sentinel2' => KV_ITEMS_SENTINEL, ':t' => $now, ':s' => $yeniSurum, ':t2' => $now, ':s2' => $yeniSurum]);
+    return $yeniSurum;
+}
+
 function kvOkuSurumlu($pdo, $key) {
+    if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+        $deger = kvOkuJson($pdo, $key); // migrate-if-needed dahil
+        $st = $pdo->prepare('SELECT surum FROM kv_store WHERE store_key = :k');
+        $st->execute([':k' => $key]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        return ['deger' => $deger, 'surum' => $row ? (int)$row['surum'] : 0];
+    }
     $st = $pdo->prepare('SELECT store_value, surum FROM kv_store WHERE store_key = :k');
     $st->execute([':k' => $key]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
@@ -241,6 +429,14 @@ function kvOkuSurumlu($pdo, $key) {
 }
 
 function kvYazSurumlu($pdo, $key, $json, $yeniSurum) {
+    if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+        kvItemsYazTumunu($pdo, $key, $json);
+        $now = date('c');
+        $st = $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at, surum) VALUES (:k,:sentinel,:t,:s)
+            ON CONFLICT(store_key) DO UPDATE SET store_value = :sentinel2, updated_at = :t2, surum = :s2');
+        $st->execute([':k' => $key, ':sentinel' => KV_ITEMS_SENTINEL, ':sentinel2' => KV_ITEMS_SENTINEL, ':t' => $now, ':s' => $yeniSurum, ':t2' => $now, ':s2' => $yeniSurum]);
+        return;
+    }
     $now = date('c');
     $st = $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at, surum)
         VALUES (:k,:v,:t,:s)
@@ -507,6 +703,16 @@ function kullaniciAdiTabanUret($email) {
 // bir token verilir: yalnızca terminalin ihtiyaç duyduğu koleksiyonları
 // okuyabilir/yazabilir (aşağıdaki beyaz listeler).
 function kvOku($pdo, $key, $fallback = []) {
+    // GERÇEK ÜRETİM SORUNU: hatVerisi gibi uçlar bu fonksiyonla 'yarimamuller'/
+    // 'receteler'/'hammaddeler' gibi SATIR SATIR saklanan (kv_items) büyük
+    // koleksiyonları da okur — bu yüzden ESKİ blob mimarisine özgü ham SQL
+    // yerine ortak kvOkuJson() üzerinden (göç dahil) okunur.
+    if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+        $json = kvOkuJson($pdo, $key);
+        if ($json === null) return $fallback;
+        $arr = json_decode($json, true);
+        return is_array($arr) ? $arr : $fallback;
+    }
     $stmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
     $stmt->execute([':k' => $key]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -515,6 +721,14 @@ function kvOku($pdo, $key, $fallback = []) {
     return is_array($arr) ? $arr : $fallback;
 }
 function kvYaz($pdo, $key, $deger) {
+    if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+        kvItemsYazTumunu($pdo, $key, json_encode($deger, JSON_UNESCAPED_UNICODE));
+        $now = date('c');
+        $stmt = $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at) VALUES (:k,:sentinel,:t)
+            ON CONFLICT(store_key) DO UPDATE SET store_value = :sentinel2, updated_at = :t2');
+        $stmt->execute([':k' => $key, ':sentinel' => KV_ITEMS_SENTINEL, ':sentinel2' => KV_ITEMS_SENTINEL, ':t' => $now, ':t2' => $now]);
+        return;
+    }
     $now = date('c');
     $json = json_encode($deger, JSON_UNESCAPED_UNICODE);
     $stmt = $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at) VALUES (:k,:v,:t)
@@ -1596,14 +1810,12 @@ try {
         $hat = $_GET['hat'] ?? '';
         if ($hat === '') respond(['error' => 'hat zorunlu'], 400);
 
-        $oku = function ($key) use ($pdo) {
-            $st = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
-            $st->execute([':k' => $key]);
-            $r = $st->fetch(PDO::FETCH_ASSOC);
-            if (!$r) return [];
-            $v = json_decode($r['store_value'], true);
-            return is_array($v) ? $v : [];
-        };
+        // GERÇEK HATA (yakalandı): bu kapanış 'yarimamuller'/'receteler'/
+        // 'hammaddeler' gibi SATIR SATIR (kv_items) saklanan koleksiyonları
+        // ham SQL ile okuyordu — göç sonrası store_value NULL olduğundan bu
+        // koleksiyonlar sessizce BOŞ dönerdi. Artık migration-farkında ortak
+        // kvOku() kullanılıyor.
+        $oku = function ($key) use ($pdo) { return kvOku($pdo, $key, []); };
 
         // 1) Yalnızca BU HATTIN iş kartları (biten işler son 50 ile sınırlı)
         $tumIsler = $oku('istasyonIsleri');
@@ -1696,11 +1908,15 @@ try {
         }
         // ROL BAZLI ERİŞİM: hassas koleksiyonları yetkisiz rollere kapat
         koleksiyonYetkiKontrol($oturum, $key, 'oku');
-        $stmt = $pdo->prepare('SELECT store_value, surum FROM kv_store WHERE store_key = :k');
-        $stmt->execute([':k' => $key]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $value = $row ? $row['store_value'] : null;
-        $surum = $row ? (int)$row['surum'] : 0;   // istemci bunu yazarken geri gönderir
+        // SATIR SATIR (kv_items) saklanan büyük koleksiyonlarda değer, PHP'de
+        // tekrar decode+encode EDİLMEDEN doğrudan JSON parçalarının
+        // birleştirilmesiyle kurulur (bkz. kvOkuJson/kvItemsOkuJson) — hem
+        // sunucu hem istemci tarafında gereksiz ağır işlem ortadan kalkar.
+        $value = kvOkuJson($pdo, $key);
+        $st2 = $pdo->prepare('SELECT surum FROM kv_store WHERE store_key = :k');
+        $st2->execute([':k' => $key]);
+        $surumRow = $st2->fetch(PDO::FETCH_ASSOC);
+        $surum = $surumRow ? (int)$surumRow['surum'] : 0;   // istemci bunu yazarken geri gönderir
         // GÜVENLİK: kullaniciler koleksiyonu istemciye şifre hash'leri OLMADAN gider
         if ($key === 'kullaniciler' && $value !== null) {
             $arr = json_decode($value, true);
@@ -1730,6 +1946,14 @@ try {
             respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
         }
         koleksiyonYetkiKontrol($oturum, $key, 'oku');
+        if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+            // SATIR SATIR saklanan koleksiyonlarda adet, içeriği HİÇ okumadan
+            // doğrudan SQL COUNT ile alınır — en hafif yol.
+            kvItemsGocEttirGerekirse($pdo, $key);
+            $c = $pdo->prepare('SELECT COUNT(*) adet FROM kv_items WHERE store_key = :k');
+            $c->execute([':k' => $key]);
+            respond(['key' => $key, 'adet' => (int)$c->fetch(PDO::FETCH_ASSOC)['adet']]);
+        }
         $stmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
         $stmt->execute([':k' => $key]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1758,10 +1982,9 @@ try {
             respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
         }
         koleksiyonYetkiKontrol($oturum, 'receteler', 'oku');
-        $stmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
-        $stmt->execute([':k' => 'receteler']);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $receteler = $row ? json_decode($row['store_value'], true) : [];
+        // kvOku artık 'receteler' satır satır (kv_items) saklanıyorsa onu da
+        // doğru şekilde okur (göç dahil) — ham SQL burada tekrarlanmaz.
+        $receteler = kvOku($pdo, 'receteler', []);
         $ozet = [];
         foreach ((is_array($receteler) ? $receteler : []) as $r) {
             if (!is_array($r)) continue;
@@ -1800,18 +2023,34 @@ try {
         }
         koleksiyonYetkiKontrol($oturum, 'receteler', 'oku');
         $body = readJsonBody();
-        $idSet = array_flip(array_map('strval', is_array($body['ids'] ?? null) ? $body['ids'] : []));
-        $urunIdSet = array_flip(array_map('strval', is_array($body['urunIds'] ?? null) ? $body['urunIds'] : []));
-        $stmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
-        $stmt->execute([':k' => 'receteler']);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $receteler = $row ? json_decode($row['store_value'], true) : [];
+        $ids = array_values(array_unique(array_map('strval', is_array($body['ids'] ?? null) ? $body['ids'] : [])));
+        $urunIds = array_values(array_unique(array_map('strval', is_array($body['urunIds'] ?? null) ? $body['urunIds'] : [])));
+        // 'receteler' satır satır (kv_items) saklanıyor — id eşleşmesi İNDEKSLİ
+        // bir IN (...) sorgusu, urunId eşleşmesi ise SQLite'ın yerleşik JSON1
+        // fonksiyonuyla (json_extract) yapılır. Böylece koleksiyonun TAMAMI
+        // ASLA PHP belleğine alınmaz — yalnızca eşleşen (genelde düzinelerce)
+        // satır okunur.
+        kvItemsGocEttirGerekirse($pdo, 'receteler');
         $bulunan = [];
-        foreach ((is_array($receteler) ? $receteler : []) as $r) {
-            if (!is_array($r)) continue;
-            $idEslesti = isset($r['id']) && isset($idSet[(string)$r['id']]);
-            $urunEslesti = isset($r['urunId']) && isset($urunIdSet[(string)$r['urunId']]);
-            if ($idEslesti || $urunEslesti) $bulunan[] = $r;
+        if ($ids || $urunIds) {
+            $kosullar = []; $parametreler = [':k' => 'receteler'];
+            if ($ids) {
+                $yerTutucular = [];
+                foreach ($ids as $i => $id) { $ph = ':id' . $i; $yerTutucular[] = $ph; $parametreler[$ph] = $id; }
+                $kosullar[] = 'item_id IN (' . implode(',', $yerTutucular) . ')';
+            }
+            if ($urunIds) {
+                $yerTutucular = [];
+                foreach ($urunIds as $i => $uid) { $ph = ':uid' . $i; $yerTutucular[] = $ph; $parametreler[$ph] = $uid; }
+                $kosullar[] = "json_extract(item_json,'$.urunId') IN (" . implode(',', $yerTutucular) . ')';
+            }
+            $sql = 'SELECT item_json FROM kv_items WHERE store_key = :k AND (' . implode(' OR ', $kosullar) . ')';
+            $st = $pdo->prepare($sql);
+            $st->execute($parametreler);
+            while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+                $d = json_decode($r['item_json'], true);
+                if (is_array($d)) $bulunan[] = $d;
+            }
         }
         respond(['receteler' => $bulunan]);
     }
@@ -1898,6 +2137,32 @@ try {
         $sil = is_array($body['sil'] ?? null) ? $body['sil'] : [];
         if (!count($ekle) && !count($guncelle) && !count($sil)) {
             respond(['ok' => true, 'degisiklik' => 0]);
+        }
+
+        // ── HIZLI YOL: SATIR SATIR (kv_items) saklanan büyük koleksiyonlar ──
+        // GERÇEK ÜRETİM SORUNU: "İçe Aktar ve Kaydet" gibi akışlar 11 kayıt
+        // bile güncellese, aşağıdaki ESKİ yol 96.000+ kayıtlı 'yarimamuller'
+        // gibi bir koleksiyonun TAMAMINI okuyup çözüp yeniden kodlayıp
+        // yazıyordu — 1 GB RAM'lı sunucuda bu dakikalarca sürüp SONSUZA
+        // KADAR asılı kalabiliyordu ("içe aktar yine tepkisiz" raporunun kök
+        // nedeni). KV_ITEMS_KOLEKSIYONLAR'daki anahtarlar için bunun yerine
+        // yalnızca DEĞİŞEN kayıtlara dokunan kvItemsPatchUygulaKilitli
+        // kullanılır — maliyet koleksiyonun boyutundan BAĞIMSIZDIR.
+        if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+            $pdo->exec('BEGIN IMMEDIATE');
+            try {
+                $sonuc = kvItemsPatchUygulaKilitli($pdo, $key, $ekle, $guncelle, $sil);
+                $yeniSurum = kvSurumArttirKilitli($pdo, $key);
+                $pdo->exec('COMMIT');
+            } catch (Exception $e) {
+                try { $pdo->exec('ROLLBACK'); } catch (Exception $e2) {}
+                throw $e;
+            }
+            auditYaz($pdo, $oturum['kullanici_adi'], 'patch', $key, [
+                'rol' => $oturum['rol'], 'sayfa' => $body['sayfa'] ?? null,
+                'kayitSayisi' => $sonuc['kayitSayisi']
+            ]);
+            respond(['ok' => true, 'surum' => $yeniSurum, 'kayitSayisi' => $sonuc['kayitSayisi'], 'degisiklik' => $sonuc['degisen']]);
         }
 
         $pdo->exec('BEGIN IMMEDIATE');   // yazma kilidini hemen al
@@ -2091,10 +2356,20 @@ try {
         $oncekiStmt = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
         $oncekiStmt->execute([':k' => $key]);
         $oncekiRow = $oncekiStmt->fetch(PDO::FETCH_ASSOC);
+        // SATIR SATIR (kv_items) saklanan bir koleksiyon siliniyorsa, önceki
+        // değeri (varsa) denetim için JSON olarak al, SONRA kv_items
+        // satırlarını da temizle — aksi halde "yetim" satırlar kalır ve bu
+        // anahtar daha sonra YENİDEN kullanılırsa eski veriler hortlar.
+        $oncekiDeger = $oncekiRow ? $oncekiRow['store_value'] : null;
+        if (in_array($key, KV_ITEMS_KOLEKSIYONLAR, true) && $oncekiDeger === KV_ITEMS_SENTINEL) {
+            $oncekiDeger = kvItemsOkuJson($pdo, $key); // göçmüşse gerçek içerik buradadır
+            if ($oncekiDeger === '[]') $oncekiDeger = null; // boşsa 'hiç veri yoktu' ile tutarlı
+        }
         $pdo->prepare('DELETE FROM kv_store WHERE store_key = :k')->execute([':k' => $key]);
+        $pdo->prepare('DELETE FROM kv_items WHERE store_key = :k')->execute([':k' => $key]);
         auditYaz($pdo, $oturum['kullanici_adi'], 'silme', $key, [
             'rol' => $oturum['rol'], 'sayfa' => $body['sayfa'] ?? null,
-            'onceki' => $oncekiRow ? $oncekiRow['store_value'] : null
+            'onceki' => $oncekiDeger
         ]);
         respond(['ok' => true, 'key' => $key, 'deleted' => true]);
     }
@@ -2380,11 +2655,12 @@ try {
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) respond(['error' => 'Kayıt bulunamadı'], 404);
         if ($row['onceki_deger'] === null) respond(['error' => 'Bu kaydın önceki değeri saklanmamış — geri alınamaz'], 400);
-        $sim = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
-        $sim->execute([':k' => $row['anahtar']]);
-        $simRow = $sim->fetch(PDO::FETCH_ASSOC);
+        // kvOkuJson, SATIR SATIR (kv_items) saklanan koleksiyonları da doğru
+        // okur — ham store_value okusaydık göç sonrası bu her zaman NULL
+        // (yani "şimdiki 0 kayıt") görünürdü.
+        $simdikiJson = kvOkuJson($pdo, $row['anahtar']);
         $onceki = json_decode($row['onceki_deger'], true);
-        $simdiki = $simRow ? json_decode($simRow['store_value'], true) : null;
+        $simdiki = $simdikiJson !== null ? json_decode($simdikiJson, true) : null;
         respond([
             'id' => $row['id'], 'anahtar' => $row['anahtar'], 'ts' => $row['ts'], 'kullanici' => $row['kullanici'],
             'oncekiSayi' => is_array($onceki) ? count($onceki) : null,
@@ -2409,16 +2685,25 @@ try {
         if ($row['onceki_deger'] === null) respond(['error' => 'Bu kaydın önceki değeri saklanmamış — geri alınamaz'], 400);
 
         // Şu anki değeri al (geri almanın "öncesi" olarak denetime yazılacak)
-        $sim = $pdo->prepare('SELECT store_value FROM kv_store WHERE store_key = :k');
-        $sim->execute([':k' => $row['anahtar']]);
-        $simRow = $sim->fetch(PDO::FETCH_ASSOC);
-        $suAnki = $simRow ? $simRow['store_value'] : null;
+        $suAnki = kvOkuJson($pdo, $row['anahtar']);
 
-        $now = date('c');
-        $ins = $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at) VALUES (:k,:v,:t)
-            ON CONFLICT(store_key) DO UPDATE SET store_value = :v2, updated_at = :t2');
-        $ins->execute([':k' => $row['anahtar'], ':v' => $row['onceki_deger'], ':t' => $now,
-                       ':v2' => $row['onceki_deger'], ':t2' => $now]);
+        // SATIR SATIR (kv_items) saklanan bir koleksiyon geri alınıyorsa,
+        // ham store_value yazmak YETMEZ (göç mantığı bunu "henüz göçmemiş
+        // eski blob" sanıp üzerine yazabilir) — kv_items'ın kendisi eski
+        // değerden YENİDEN KURULMALIDIR.
+        if (in_array($row['anahtar'], KV_ITEMS_KOLEKSIYONLAR, true)) {
+            kvItemsYazTumunu($pdo, $row['anahtar'], $row['onceki_deger']);
+            $now = date('c');
+            $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at) VALUES (:k,:sentinel,:t)
+                ON CONFLICT(store_key) DO UPDATE SET store_value = :sentinel2, updated_at = :t2')
+                ->execute([':k' => $row['anahtar'], ':sentinel' => KV_ITEMS_SENTINEL, ':sentinel2' => KV_ITEMS_SENTINEL, ':t' => $now, ':t2' => $now]);
+        } else {
+            $now = date('c');
+            $ins = $pdo->prepare('INSERT INTO kv_store (store_key, store_value, updated_at) VALUES (:k,:v,:t)
+                ON CONFLICT(store_key) DO UPDATE SET store_value = :v2, updated_at = :t2');
+            $ins->execute([':k' => $row['anahtar'], ':v' => $row['onceki_deger'], ':t' => $now,
+                           ':v2' => $row['onceki_deger'], ':t2' => $now]);
+        }
 
         $pdo->prepare('UPDATE audit_log SET geri_alindi = 1 WHERE id = :i')->execute([':i' => $id]);
         $geriSayi = is_array(json_decode($row['onceki_deger'], true)) ? count(json_decode($row['onceki_deger'], true)) : null;
