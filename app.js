@@ -419,6 +419,7 @@ const App = (() => {
         }
       }
       goTo(girisSayfasi);
+      setTimeout(() => botArkaPlandaCalistirGerekirse(state.role), 2000);
     } else {
       // Operatör terminalde çalışırken sayfa yenilenirse ana girişe düşmesin
       let hatStandalone = null;
@@ -1138,6 +1139,26 @@ const App = (() => {
     renderLoginScreen();
   }
 
+  // REÇETE TAMAMLAMA BOTU — "ben açtığımda yaptığı ve düzenlediklerini
+  // raporlasın" + "sürekli çalışmaya devam etsin" isteğinin periyodik
+  // tetikleyicisi. Gerçek bir sunucu zamanlayıcısı (cron) OLMADAN en
+  // güvenilir "periyodik" yaklaşım budur: uygulama AÇILDIĞINDA (giriş veya
+  // sayfa yenileme), son çalışmadan BOT_BEKLEME_SAATI'nden fazla süre
+  // geçtiyse arka planda (EKRANI BLOKLAMADAN) yeniden çalışır. Sadece
+  // reçete/ölçü tanımlarına erişimi olan rollerde (hassas üretim verisi).
+  const BOT_BEKLEME_SAATI = 4;
+  async function botArkaPlandaCalistirGerekirse(rol) {
+    if (!['admin', 'arge', 'teknik_ofis', 'yonetim'].includes(rol)) return;
+    if (!PageModules.recete_tamamlama_botu) return;
+    try {
+      const gunluk = await Store.receteTamamlamaGunlugu.all();
+      const sonZaman = gunluk.reduce((en, g) => (!en || (g.zaman || '') > en) ? (g.zaman || '') : en, '');
+      if (sonZaman && (Date.now() - new Date(sonZaman).getTime()) < BOT_BEKLEME_SAATI * 3600 * 1000) return;
+      PageModules.recete_tamamlama_botu.botCalistirVeUygula('oturum_baslangici')
+        .catch(e => console.error('Reçete Tamamlama Botu (oturum başlangıcı) hatası:', e));
+    } catch (e) { console.error('Reçete Tamamlama Botu zamanlama kontrolü:', e); }
+  }
+
   function selectRole(roleId, kullanici) {
     state.role = roleId;
     state.kullanici = kullanici || null;
@@ -1146,6 +1167,7 @@ const App = (() => {
     // Girişten önce (oturumsuz) yapılamayan seed/migrasyonlar şimdi token ile
     // yeniden denenir — arka planda çalışır, ekranı bloklamaz.
     baslangicHazirliklari().catch(e => console.error('Başlangıç hazırlıkları:', e));
+    setTimeout(() => botArkaPlandaCalistirGerekirse(state.role), 2000);
     document.getElementById('sidebar').style.display = '';
     // ── GİRİŞ SONRASI BİLDİRİM TARAMASI (mobilde ERTELENİR) ────────────────
     // AiDenetci.tara() tüm KPI'ları ve koleksiyonları işler; masaüstünde bir

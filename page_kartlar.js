@@ -2617,6 +2617,17 @@ PageModules.kartlar = (() => {
       App.closeModal();
       detayKartId = null;
       render(main);
+      // REÇETE TAMAMLAMA BOTU: "reçeteleri yükledikçe büyük ölçülerin alt
+      // kırılımlı reçetelerini sistem otomatik arkada tamamlamaya devam
+      // etsin" — her içe aktarma sonrası arka planda (AWAIT EDİLMEDEN,
+      // kullanıcıyı zaten yavaş olan bu akışta bir saniye bile fazladan
+      // BEKLETMEDEN) tüm sistemi tarar ve bulduğu eksik ölçü kardeşlerini
+      // otomatik tamamlar. Sonuç Store.receteTamamlamaGunlugu'ne yazılır —
+      // bkz. page_recete_tamamlama_botu.js "Son Çalışmalar".
+      if (PageModules.recete_tamamlama_botu) {
+        PageModules.recete_tamamlama_botu.botCalistirVeUygula('ice_aktar_sonrasi')
+          .catch(e => console.error('Reçete Tamamlama Botu (içe aktarma sonrası) hatası:', e));
+      }
       } catch (e) {
         // Hata olsa da düğme tekrar tıklanabilir hale getirilir — aksi halde
         // kullanıcı tekrar denemek için pencereyi kapatıp yeniden açmak

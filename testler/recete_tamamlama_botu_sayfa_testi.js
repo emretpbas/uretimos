@@ -1,27 +1,53 @@
 // ── Reçete Tamamlama Botu sayfası — kaynak metin kontrolü ───────────────────
 // GERÇEK İHTİYAÇ: "reçeteleri yükledikçe büyük ölçülerin alt kırılımlı
-// reçetelerini sistem otomatik arkada tamamlamaya devam etsin... ajan...
-// kodlara göre otomatik hammadde atsın." Bu testler, sayfanın motor
-// fonksiyonlarını DOĞRU çağırdığını ve yazma işleminin DOĞRU koleksiyonlara
-// gittiğini (page_recete_yapim_raporu.js testleriyle AYNI desende) doğrular.
+// reçetelerini sistem otomatik arkada tamamlamaya devam etsin... botları
+// sisteme kur ve çalışmaya başlasın, sürekli çalışmaya devam etsin, ben
+// açtığımda yaptığı ve düzenlediklerini raporlasın, yapamadığı işler için
+// yönlendirme yapsın." Bu testler, sayfanın (a) tarama mantığını motor
+// dosyasına DELEGE ettiğini (burada TEKRARLANMADIĞINI), (b) otomatik
+// çalışmanın bir GÜNLÜK bıraktığını, (c) elle tamamlanması gerekenler için
+// doğru sayfalara YÖNLENDİRME yaptığını doğrular.
 const fs = require('fs'), path = require('path');
 const kaynak = fs.readFileSync(path.join(__dirname, '..', 'page_recete_tamamlama_botu.js'), 'utf8');
 let ok = 0, bad = 0;
 const t = (a, k) => { if (k) { ok++; console.log('  GECTI ' + a); } else { bad++; console.log('  KALDI ' + a); } };
 
-console.log('\n-- KOD KONTROLU: tarama MANUEL bir tuşla tetikleniyor, tüm koleksiyonları tarıyor --');
-t('"Tüm Sistemi Tara" butonu taraVeCiz\'i çağırıyor', kaynak.includes("document.getElementById('rtb-tara').onclick = () => taraVeCiz(main)"));
-t('tarama OlcuVaryantMotoru.kodParcasiIleOlcuBul VE sistemGenelindeOlcuTamamlama motorlarını çağırıyor (mantık BURADA tekrarlanmıyor)',
-  kaynak.includes('OlcuVaryantMotoru.kodParcasiIleOlcuBul(kart.kod, calismaVerisi.olcuEslestirmeAnahtari)') &&
-  kaynak.includes('OlcuVaryantMotoru.sistemGenelindeOlcuTamamlama(kart.kod, tip, calismaVerisi, App.uid)'));
-t('tarama TÜM 4 kart tipini (ürün/yarımamül/altmontaj/paket) dolaşıyor',
-  kaynak.includes("const TIP_KOLEKSIYON = { urun: 'urunler', yarimamul: 'yarimamuller', altmontaj: 'altMontajlar', paket: 'paketler' };"));
-t('tarama MANUEL bir tuşla tetikleniyor (sayfa açılır açılmaz OTOMATİK TAM SİSTEM taraması YAPILMIYOR)',
-  !kaynak.includes('taraVeCiz(main);\n    document.getElementById'));
-t('reçetesi EKSİK/BOŞ olan kartlar MASTER olarak kullanılmıyor (yalnızca TAM reçeteli kartlar örnek alınır)',
-  kaynak.includes('if (!kendiRecetesi || !(kendiRecetesi.kalemler || []).length) continue;'));
-t('aynı aile+ölçü birden fazla master üzerinden TEKRAR işlenmiyor (mükerrer önleme)',
-  kaynak.includes('islenenAileOlcu.has(anahtarIslem)'));
+console.log('\n-- KOD KONTROLU: tarama mantığı MOTOR dosyasına delege ediliyor (burada tekrarlanmıyor) --');
+t('"Şimdi Tekrar Tara" butonu taraVeCiz\'i çağırıyor', kaynak.includes("document.getElementById('rtb-tara').onclick = () => taraVeCiz(main)"));
+t('manuel tarama OlcuVaryantMotoru.tamSistemTaramasi\'yi çağırıyor (döngü mantığı BURADA TEKRARLANMIYOR)',
+  kaynak.includes('OlcuVaryantMotoru.tamSistemTaramasi(veri, App.uid)'));
+t('tarama MANUEL bir tuşla tetikleniyor (sayfa açılır açılmaz SONUÇ UYGULANMIYOR, önce gösterilir)',
+  !kaynak.includes("taraVeCiz(main);\n    await gunlukCiz"));
+
+console.log('\n-- KOD KONTROLU: OTOMATİK çalışma (botCalistirVeUygula) dışa açık ve günlük bırakıyor --');
+t('botCalistirVeUygula dışa açık (app.js/page_kartlar.js çağırabiliyor)', kaynak.includes('return { render, botCalistirVeUygula };'));
+t('otomatik çalışma da OlcuVaryantMotoru.tamSistemTaramasi\'yi kullanıyor (AYNI motor, iki ayrı kod yolu YOK)',
+  (kaynak.match(/OlcuVaryantMotoru\.tamSistemTaramasi\(/g) || []).length >= 2);
+t('hiç aile tanımlı değilse otomatik çalışma sessizce atlanır (gereksiz günlük/işlem YOK)',
+  kaynak.includes('if (!veri.olcuEslestirmeAnahtari.length) return null; // hiç aile tanımlı değil — yapacak bir şey yok'));
+t('yapacak hiçbir şey bulunamazsa (sonuç VE eksik eşleşme ikisi de boş) günlük KAYDI BİLE YAZILMAZ (gürültü önleniyor)',
+  kaynak.includes('if (!sonuclar.length && !eksikEslesmeler.length) return null;'));
+t('otomatik çalışmada hata kullanıcının asıl işlemini (içe aktarma/giriş) ENGELLEMİYOR (try/catch ile yutuluyor)',
+  kaynak.includes("console.error('Reçete Tamamlama Botu otomatik çalışma hatası:', e);") &&
+  kaynak.includes('return null;'));
+t('her çalışma (otomatik veya manuel) Store.receteTamamlamaGunlugu\'ne yazılıyor',
+  (kaynak.match(/Store\.topluEkle\('receteTamamlamaGunlugu'/g) || []).length === 2);
+
+console.log('\n-- KOD KONTROLU: "ben açtığımda yaptığını raporlasın" — Son Çalışmalar günlüğü gösteriliyor --');
+t('render fonksiyonu gunlukCiz() çağırarak geçmiş çalışmaları gösteriyor', kaynak.includes('await gunlukCiz();'));
+t('günlük Store.receteTamamlamaGunlugu.all() okuyor ve en yeniden eskiye sıralıyor',
+  kaynak.includes('Store.receteTamamlamaGunlugu.all()') && kaynak.includes("gunluk.sort((a, b) => (b.zaman || '').localeCompare(a.zaman || ''))"));
+t('günlük hiç çalışma yoksa anlamlı bir yönlendirme gösteriyor (sessizce boş DEĞİL)',
+  kaynak.includes('Bot henüz hiç çalışmadı'));
+
+console.log('\n-- KOD KONTROLU: "yapamadığı işler için yönlendirme yapsın" — elle tamamlanacaklar ayrı gösteriliyor --');
+t('render fonksiyonu elleGerekenleriCiz() ile ŞU ANKİ (taze) eksik eşleşmeleri ayrıca gösteriyor',
+  kaynak.includes('await elleGerekenleriCiz();'));
+t('"hedefOlcuTanimsiz" (küçük bir tanımla tamamlanabilir) durumu Ölçü Eşleştirme Anahtarı\'na YÖNLENDİRİYOR',
+  kaynak.includes("hedefOlcuTanimsizlar = eksikEslesmeler.filter(e => e.neden === 'hedefOlcuTanimsiz')") &&
+  kaynak.includes("App.goTo('olcu_anahtari')"));
+t('"ölçüye özel olabilir" (otomatik düzeltilemeyen) durumu AYRI ve açık bir uyarıyla gösteriliyor',
+  kaynak.includes("olcuyeOzelOlabilirler = eksikEslesmeler.filter(e => e.neden === 'olcuyeOzelOlabilirElleKontrolEdin')"));
 
 console.log('\n-- KOD KONTROLU: oluşan kartlar/reçeteler DOĞRU koleksiyonlara yazılıyor --');
 t('ürün/yarımamül/altmontaj/paket -> Store.urunler/yarimamuller/altMontajlar/paketler eşlemesi doğru',
@@ -32,14 +58,10 @@ t('reçete yazarken TÜM koleksiyon indirilmiyor, hedefli Store.receteBul kullan
 t('YENİ reçete kayıtları topluEkle, VAR OLAN (boştan tamamlanan) reçeteler topluGuncelle ile ayrıştırılıyor',
   kaynak.includes("const yeniler = receteYazilacak.filter(r => !mevcutIdSeti.has(r.id));") &&
   kaynak.includes("const guncellenecekler = receteYazilacak.filter(r => mevcutIdSeti.has(r.id));"));
+t('yazma mantığı (uygulaYazma) TEK bir yerde yaşar — hem manuel hem otomatik akış AYNI fonksiyonu çağırıyor',
+  (kaynak.match(/await uygulaYazma\(sonuclar\)/g) || []).length === 2);
 t('uygulama sonrası kullanıcıya Ürün Kartları & Reçete\'den görüntüleyebileceği açıkça söyleniyor',
   kaynak.includes('Ürün Kartları & Reçete\'den görüntüleyebilirsiniz'));
-
-console.log('\n-- KOD KONTROLU: elle kontrol gereken (tahmin edilmeyen) kalemler ayrı raporlanıyor --');
-t('eksik eşleşmeler ayrı bir "Elle Kontrol Gerekiyor" bölümünde gösteriliyor',
-  kaynak.includes('Elle Kontrol Gerekiyor'));
-t('Ölçü Eşleştirme Anahtarı hiç tanımlı değilse anlamlı bir yönlendirme gösteriliyor (sessizce boş rapor DEĞİL)',
-  kaynak.includes('Henüz hiç Ölçü Ailesi tanımlanmadı') && kaynak.includes("App.goTo('olcu_anahtari')"));
 
 console.log('\nSONUC: ' + ok + ' gecti, ' + bad + ' kaldi');
 process.exit(bad ? 1 : 0);

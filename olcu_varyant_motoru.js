@@ -308,9 +308,70 @@ const OlcuVaryantMotoru = (() => {
     return { masterKart, aileAdi: masterEslesme.aile.aileAdi || '', sonuclar, eksikEslesmeler };
   }
 
+  // TÜM SİSTEMİ TARAR — dört kart tipinin (ürün/yarımamül/altmontaj/paket)
+  // TAMAMINI dolaşır, reçetesi TAM olan ve kodu TANIMLI bir ölçü ailesine ait
+  // her kartı "master" adayı sayıp sistemGenelindeOlcuTamamlama çalıştırır.
+  // page_recete_tamamlama_botu.js (manuel "Tara" düğmesi) VE otomatik
+  // tetikleyiciler (içe aktarma sonrası / oturum başlangıcı, bkz. app.js)
+  // AYNI bu fonksiyonu çağırır — tarama mantığı TEK YERDE yaşar.
+  // Dönüş: { sonuclar:[{masterTip,masterKod,masterAd,aileAdi,hedefOlcu,
+  //          hedefKod,hedefAd,yeniKartlar,yeniReceteler}], eksikEslesmeler }
+  function tamSistemTaramasi(veri, idUret) {
+    const olcuEslestirmeAnahtari = veri.olcuEslestirmeAnahtari || [];
+    if (!olcuEslestirmeAnahtari.length) return { sonuclar: [], eksikEslesmeler: [] };
+
+    const calismaVerisi = {
+      hammaddeler: veri.hammaddeler || [],
+      yarimamuller: [...(veri.yarimamuller || [])],
+      altMontajlar: [...(veri.altMontajlar || [])],
+      paketler: [...(veri.paketler || [])],
+      urunler: [...(veri.urunler || [])],
+      receteler: [...(veri.receteler || [])],
+      olcuEslestirmeAnahtari
+    };
+    const kartListesiAl = (tip) => tip === 'urun' ? calismaVerisi.urunler : tip === 'yarimamul' ? calismaVerisi.yarimamuller
+      : tip === 'altmontaj' ? calismaVerisi.altMontajlar : calismaVerisi.paketler;
+
+    const tumSonuclar = [];
+    const tumEksikEslesmeler = [];
+    const islenenAileOlcu = new Set(); // "tip:aileAdi:olcu" -> tekrar işlenmesin
+
+    ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
+      kartListesiAl(tip).forEach(kart => {
+        const eslesme = kodParcasiIleOlcuBul(kart.kod, calismaVerisi.olcuEslestirmeAnahtari);
+        if (!eslesme) return;
+        const anahtarIslem = tip + ':' + (eslesme.aile.aileAdi || eslesme.aile.id) + ':' + eslesme.olcu;
+        if (islenenAileOlcu.has(anahtarIslem)) return;
+        const kendiRecetesi = calismaVerisi.receteler.find(r => r[idAlani(tip)] === kart.id);
+        if (!kendiRecetesi || !(kendiRecetesi.kalemler || []).length) return; // reçetesi eksik -> master OLAMAZ
+
+        const rapor = sistemGenelindeOlcuTamamlama(kart.kod, tip, calismaVerisi, idUret);
+        if (rapor.masterBulunamadi || rapor.masterOlcuAilesineAitDegil) return;
+        islenenAileOlcu.add(anahtarIslem);
+
+        rapor.sonuclar.forEach(sonuc => {
+          sonuc.yeniKartlar.forEach(({ tip: t, kart: k }) => kartListesiAl(t).push(k));
+          sonuc.yeniReceteler.forEach(yeniRecete => {
+            const idx = calismaVerisi.receteler.findIndex(r => r.id === yeniRecete.id);
+            if (idx >= 0) calismaVerisi.receteler[idx] = yeniRecete; else calismaVerisi.receteler.push(yeniRecete);
+          });
+          tumSonuclar.push({
+            masterTip: tip, masterKod: kart.kod, masterAd: kart.ad, aileAdi: rapor.aileAdi,
+            hedefOlcu: sonuc.hedefOlcu, hedefKod: sonuc.hedefKod, hedefAd: sonuc.hedefAd,
+            yeniKartlar: sonuc.yeniKartlar, yeniReceteler: sonuc.yeniReceteler
+          });
+        });
+        tumEksikEslesmeler.push(...rapor.eksikEslesmeler.map(e => ({ ...e, masterKod: kart.kod })));
+      });
+    });
+
+    return { sonuclar: tumSonuclar, eksikEslesmeler: tumEksikEslesmeler };
+  }
+
   return {
     kodParcasiIleOlcuBul, hedefKodParcasiBul, olcuVaryantKoduUret,
-    alternatifHammaddeleriBul, olcuVaryantPlaniOlustur, sistemGenelindeOlcuTamamlama
+    alternatifHammaddeleriBul, olcuVaryantPlaniOlustur, sistemGenelindeOlcuTamamlama,
+    tamSistemTaramasi
   };
 })();
 
