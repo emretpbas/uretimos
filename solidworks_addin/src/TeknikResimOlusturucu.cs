@@ -368,16 +368,17 @@ namespace UretimOSKesim
         {
             string dosyaAdi = System.IO.Path.Combine(cikisKlasoru, (dosyaAdiOnEki ?? "teknik_resim") + "." + uzanti);
             int hata = 0, uyari = 0;
-            Tanilama.Kaydet($"SaveAs3 ({uzanti}) cagriliyor: " + dosyaAdi);
-            // NOT: SolidWorks 2017'de IModelDocExtension.SaveAs3 6 parametreli
-            // (Name, Version, Options, ExportData, ref Errors, ref Warnings) —
-            // gerçek derlemede (SolidWorks 2017) doğrulandı, bkz. AltiYuzKutuOlusturucu.cs.
-            bool basarili = ext.SaveAs3(dosyaAdi, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref hata, ref uyari);
-            Tanilama.Kaydet($"SaveAs3 ({uzanti}) tamamlandi, basarili=" + basarili + ", hata=" + hata);
+            Tanilama.Kaydet($"SaveAs ({uzanti}) cagriliyor: " + dosyaAdi);
+            // NOT: bu SolidWorks 2017 interop'unda IModelDocExtension'da SaveAs2/
+            // SaveAs3 HİÇ YOK (IntelliSense ile doğrulandı) — yalnızca eski SaveAs:
+            // (Name, Version, ExportData, ref Errors, ref Warnings), "Options"
+            // (sessiz/silent) parametresi yok, bkz. AltiYuzKutuOlusturucu.cs notu.
+            bool basarili = ext.SaveAs(dosyaAdi, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
+                null, ref hata, ref uyari);
+            Tanilama.Kaydet($"SaveAs ({uzanti}) tamamlandi, basarili=" + basarili + ", hata=" + hata);
             if (!basarili)
             {
-                _uyarilar.Add($"'{modelYoluLog}' → {uzanti.ToUpperInvariant()} kaydedilemedi (SaveAs3 hata kodu: {hata}).");
+                _uyarilar.Add($"'{modelYoluLog}' → {uzanti.ToUpperInvariant()} kaydedilemedi (SaveAs hata kodu: {hata}).");
                 return null;
             }
             return dosyaAdi;
