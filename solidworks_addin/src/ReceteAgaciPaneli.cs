@@ -334,10 +334,26 @@ namespace UretimOSKesim
         private void KurulumYap()
         {
             Text = "ÜretimOS — Reçete Ağacı (Alt Kalem Ekle, Çok Katmanlı)";
-            Width = 900;
-            Height = 820;
+            // Kullanıcı geri bildirimi: "daha yüksekçözünürlüklü olsun birde
+            // mevcut ekrana göre sığsın bazı satır devamları görünmüyor" —
+            // SABİT 900×820 piksel, küçük/dar ekranlarda (veya Windows DPI
+            // ölçeklemesi >%100 iken) satır sonundaki butonları (↑ Taşı,
+            // Teknik Resim Oluştur vb.) kırpıyordu. AutoScaleMode.Dpi,
+            // Form'un VE alt kontrollerinin güncel sistem DPI'sine göre
+            // ölçeklenmesini sağlar (bulanık/küçük görünümü düzeltir —
+            // SolidWorks'ün KENDİ işlem genelindeki DPI farkındalığını
+            // DEĞİŞTİREMEYİZ, bu yalnızca bu Form'un KENDİ ölçeklemesi).
+            // Boyut artık sabit DEĞİL, kullanıcının o anki ekranının
+            // çalışma alanına (görev çubuğu hariç) göre hesaplanır — her
+            // zaman ekrana SIĞAR, geniş ekranlarda daha fazla yer kullanıp
+            // satırların kırpılmasını azaltır.
+            AutoScaleMode = AutoScaleMode.Dpi;
+            var calismaAlani = Screen.FromPoint(Cursor.Position).WorkingArea;
+            Width = (int)(calismaAlani.Width * 0.92);
+            Height = (int)(calismaAlani.Height * 0.90);
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(760, 520);
+            MinimumSize = new Size(Math.Min(760, calismaAlani.Width), Math.Min(520, calismaAlani.Height));
+            MaximumSize = calismaAlani.Size;
             // Bkz. Tema sınıfı yorumu — Font burada TEK bir yerden ayarlanır,
             // kendi Font'unu açıkça belirtmeyen tüm alt kontroller (Label/
             // Button/TextBox vb. — bu dosyadaki ezici çoğunluk) WinForms'un
