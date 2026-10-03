@@ -100,6 +100,11 @@ namespace UretimOSKesim
         // paneli öne getirmek için tutulur (bkz. ReceteAgaciAcCalistir).
         private ReceteAgaciPaneli _acikReceteAgaciPaneli;
 
+        // Kullanıcı isteği: "nestinge girecek parçaları kutucuklarla
+        // seçebilelim" — AYNI modeless + "zaten açıksa öne getir" deseni
+        // (bkz. NestingGonderAcCalistir / AcikNestingGonderPaneliniBul).
+        private NestingGonderPaneli _acikNestingGonderPaneli;
+
         // ── SolidWorks YAŞAM DÖNGÜSÜ ─────────────────────────────────────────
         // GEÇMİŞ TANI: gerçek denemede SolidWorks'ün KENDİ native modülünde
         // (sldappu) tam çökme oluştu. KomutlariKur() önce tamamen devre dışı
@@ -283,10 +288,22 @@ namespace UretimOSKesim
             // "ÜretimOS" şerit sekmesinden (bkz. SekmeKur — Çizim türü için
             // de kuruluyor) tek tuşla kaydet+yükle+kapat+panele dön.
             const int ID_TEKNIK_GONDER_KAPAT = 112;
+            // KOMUT 13 — kullanıcı isteği: "SolidWorks'te panel malzemelerin
+            // otomatik teknik resmini alıp plakaya yerleştir... nestinge
+            // girecek parçaları kutucuklarla seçebilelim... kalınlık ve
+            // farklı malzemeler için farklı nestingler yapılacak... nesting
+            // bitince DXF dosyasını çıktı alalım." Web'den SolidWorks'ü
+            // UZAKTAN tetikleyen bir mekanizma YOK (bkz. NestingGonderPaneli.cs
+            // başı) — bu yüzden akış SolidWorks'ten BAŞLAR: bu komut sadece
+            // onaylı teknik resmi olan parçaları (bkz. Manifest.cs) ÜretimOS'un
+            // kesim ihtiyacı satırlarına gönderir, DXF çıktısı ZATEN var olan
+            // page_nesting.js akışından (web'de "Nesting Çalıştır" → "DXF
+            // İndir") alınır — orada HİÇBİR DEĞİŞİKLİK gerekmedi.
+            const int ID_NESTING_GONDER = 113;
             int[] komutIdleri = new int[] {
                 ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET,
                 ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI, ID_CNC_YERLESIM,
-                ID_ALTI_YUZ_KUTU, ID_KUTU_FRAME_YERLESTIR, ID_TEKNIK_GONDER_KAPAT
+                ID_ALTI_YUZ_KUTU, ID_KUTU_FRAME_YERLESTIR, ID_TEKNIK_GONDER_KAPAT, ID_NESTING_GONDER
             };
 
             bool eskisiniYokSay = false;
@@ -523,6 +540,18 @@ namespace UretimOSKesim
                 ID_TEKNIK_GONDER_KAPAT, itemTipi);
             Tanilama.Kaydet("12. AddCommandItem2 tamamlandi");
 
+            Tanilama.Kaydet("13. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "Nesting'e Gönder (ÜretimOS)", -1,
+                "Aktif montajda, onaylı bir teknik resmi OLAN (bkz. '2) Teknik Resmi Onayla') parçaları " +
+                "kutucuklarla seçtirir; seçilenleri malzeme koduna (= kalınlık+malzeme) göre otomatik " +
+                "gruplayıp ÜretimOS'un kesim ihtiyacı satırlarına gönderir — her grup kendi nesting'ine " +
+                "gider. DXF çıktısı ÜretimOS'ta 'Kesim Optimizasyonu' sayfasından (Nesting Çalıştır → " +
+                "DXF İndir) alınır.",
+                "Nesting'e Gönder", 12, "NestingGonderAcCalistir", "PaketOlusturEtkinMi",
+                ID_NESTING_GONDER, itemTipi);
+            Tanilama.Kaydet("13. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -642,14 +671,14 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
-            // NOT: dosya adı "_v8" oldu (v7'den) — 11 kareli şeritten 12
-            // kareli şeride geçildi ("Teknik Resmi Kaydet, ÜretimOS'a Gönder
-            // ve Kapat" eklendi); "dosya zaten var" kontrolü eski 11 kareli
-            // dosyayı YENİDEN KULLANMASIN diye (aksi halde 12. komutun ikonu
-            // boş/yanlış kalır) — bkz. önceki sürümler için verilen aynı gerekçe.
-            string yol20 = Path.Combine(klasor, "komutlar_v8_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v8_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v8_40.png");
+            // NOT: dosya adı "_v9" oldu (v8'den) — 12 kareli şeritten 13
+            // kareli şeride geçildi ("Nesting'e Gönder" eklendi); "dosya
+            // zaten var" kontrolü eski 12 kareli dosyayı YENİDEN KULLANMASIN
+            // diye (aksi halde 13. komutun ikonu boş/yanlış kalır) — bkz.
+            // önceki sürümler için verilen aynı gerekçe.
+            string yol20 = Path.Combine(klasor, "komutlar_v9_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v9_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v9_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -663,12 +692,12 @@ namespace UretimOSKesim
         // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi, 5=Montaj Şeması
         // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı, 8=CNC Yerleşimi,
         // 9=6 Yüz Kutu Oluştur, 10=Kutuyu Frame'e Yerleştir, 11=Teknik Resmi
-        // Kaydet/Gönder/Kapat.
+        // Kaydet/Gönder/Kapat, 12=Nesting'e Gönder.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 12;
+            int genislik = kareBoyutu * 13;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -685,8 +714,26 @@ namespace UretimOSKesim
                 AltiYuzKutuIkonuCiz(g, kareBoyutu * 9, kareBoyutu);
                 KutuFrameYerlestirIkonuCiz(g, kareBoyutu * 10, kareBoyutu);
                 TeknikResimGonderKapatIkonuCiz(g, kareBoyutu * 11, kareBoyutu);
+                NestingGonderIkonuCiz(g, kareBoyutu * 12, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
+        }
+
+        // 12: Nesting'e Gönder — mor zemin, plaka üzerine dizilmiş küçük
+        // dikdörtgenler (nested panel yerleşimini çağrıştırır).
+        private void NestingGonderIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.MediumPurple, x, 0, s, s);
+            float m = s * 0.12f;
+            using (var disKalem = new Pen(Color.White, Math.Max(1f, s / 16f)))
+            {
+                g.DrawRectangle(disKalem, x + m, m, s - 2 * m, s - 2 * m);
+            }
+            // İç dikdörtgenler — nested parçalar
+            float ic = s * 0.22f;
+            g.FillRectangle(Brushes.White, x + m + ic * 0.3f, m + ic * 0.3f, ic * 1.6f, ic);
+            g.FillRectangle(Brushes.White, x + m + ic * 2.1f, m + ic * 0.3f, ic * 0.9f, ic * 1.8f);
+            g.FillRectangle(Brushes.White, x + m + ic * 0.3f, m + ic * 1.6f, ic * 1.6f, ic * 0.7f);
         }
 
         // 0: Kesim Listesi — mavi zemin, kesik çizgili panel (bir plakanın
@@ -1390,6 +1437,25 @@ namespace UretimOSKesim
             return null;
         }
 
+        // Nesting'e Gönder paneli için AYNI "zaten açıksa öne getir / yetim
+        // panele adapte ol" deseni (bkz. AcikReceteAgaciPaneliniBul yukarısı).
+        private NestingGonderPaneli AcikNestingGonderPaneliniBul()
+        {
+            if (_acikNestingGonderPaneli != null && !_acikNestingGonderPaneli.IsDisposed)
+                return _acikNestingGonderPaneli;
+
+            foreach (Form f in Application.OpenForms)
+            {
+                if (f is NestingGonderPaneli yetim && !yetim.IsDisposed)
+                {
+                    _acikNestingGonderPaneli = yetim;
+                    yetim.FormClosed += (s, e) => { if (ReferenceEquals(_acikNestingGonderPaneli, yetim)) _acikNestingGonderPaneli = null; };
+                    return yetim;
+                }
+            }
+            return null;
+        }
+
         // ── KOMUT: ETİKETLEME PANELİ ──────────────────────────────────────────
         // ARTIK GERÇEK BİR ARAYÜZ (EtiketlemePaneli.cs) — eskiden burada
         // yalnızca "SolidWorks'ün kendi Özel Özellikler'inden elle girin"
@@ -1471,6 +1537,44 @@ namespace UretimOSKesim
             var panel = new ReceteAgaciPaneli(hedefModel, _app);
             _acikReceteAgaciPaneli = panel;
             panel.FormClosed += (s, e) => { if (ReferenceEquals(_acikReceteAgaciPaneli, panel)) _acikReceteAgaciPaneli = null; };
+            panel.Show();
+        }
+
+        // ── KOMUT: NESTİNG'E GÖNDER (ÜretimOS) ──────────────────────────────
+        // Kullanıcı isteği: "SolidWorks'te panel malzemelerin otomatik teknik
+        // resmini alıp plakaya yerleştir... nestinge girecek parçaları
+        // kutucuklarla seçebilelim... kalınlık ve farklı malzemeler için
+        // farklı nestingler yapılacak." Reçete Ağacı ile AYNI "modeless +
+        // zaten açıksa öne getir" deseni — montaj açıkken SolidWorks ve bu
+        // panel aynı anda kullanılabilir (bkz. NestingGonderPaneli.cs başı).
+        public void NestingGonderAcCalistir()
+        {
+            IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
+            if (aktifBelge == null)
+            {
+                MessageBox.Show("Önce bir montaj açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (aktifBelge.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                MessageBox.Show("Nesting'e Gönder yalnızca montaj belgelerinde kullanılabilir.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            ModelDoc2 hedefModel = (ModelDoc2)aktifBelge;
+
+            var acikPanel = AcikNestingGonderPaneliniBul();
+            if (acikPanel != null)
+            {
+                acikPanel.Activate();
+                if (acikPanel.WindowState == FormWindowState.Minimized)
+                    acikPanel.WindowState = FormWindowState.Normal;
+                return;
+            }
+
+            Tanilama.Kaydet("NestingGonderAcCalistir: " + hedefModel.GetPathName());
+            var panel = new NestingGonderPaneli(hedefModel);
+            _acikNestingGonderPaneli = panel;
+            panel.FormClosed += (s, e) => { if (ReferenceEquals(_acikNestingGonderPaneli, panel)) _acikNestingGonderPaneli = null; };
             panel.Show();
         }
 

@@ -236,6 +236,48 @@ dönüş yapsın."
 panelde önce '📐 Teknik Resim Oluştur'a basılmış olmalı — aksi halde komut
 bilgilendirici bir uyarı gösterip hiçbir şey yapmaz.
 
+## Nesting'e Gönder — YENİ
+
+Kullanıcı isteği: "SolidWorks'te panel malzemelerin otomatik teknik resmini
+alıp plakaya yerleştir... nestinge girecek parçaları kutucuklarla
+seçebilelim ve kalınlık ve farklı malzemeler için farklı nestingler
+yapılacak, nesting bitince bunun dxf dosyasını çıktı alalım."
+
+**Mimari karar:** web'den (ÜretimOS'un "Kesim Optimizasyonu" sayfasından)
+masaüstündeki SolidWorks'ü UZAKTAN tetiklemek şu an YOK ve inşası ayrı/büyük
+bir iştir (`UretimOSApiClient` SADECE eklenti→sunucu yönünde çalışır — bkz.
+"Neden böyle" bölümü). Bu yüzden akış TERSİNE çevrildi: kullanıcı
+SolidWorks'te montaj AÇIKKEN "Nesting'e Gönder"e basar, bu panel ÜretimOS'un
+kesim ihtiyacı satırlarına CANLI yazar; DXF çıktısı ZATEN var olan web
+akışından (Kesim Optimizasyonu → Nesting Çalıştır → DXF İndir) alınır,
+orada hiçbir değişiklik gerekmedi.
+
+Montajda SolidWorks'ün KENDİ "ÜretimOS" şerit sekmesinden **"Nesting'e
+Gönder (ÜretimOS)"**'e basmak:
+
+1. Aktif montajı `KesimListesiCikarici.MontajiGez` ile tarar, bulunan her
+   parçayı bir satır olarak listeler (ad/kod/malzeme/boy×en/adet/teknik resim
+   durumu).
+2. **Sadece onaylı bir teknik resmi OLAN** (bkz. `Manifest.cs`, "1) Teknik
+   Resim Oluştur → 2) Teknik Resmi Onayla" akışından geçmiş) parçalar
+   işaretlenebilir — henüz onaylanmamış parçalar gri görünür, işaretlenemez.
+   Ölçü/malzeme/delik verisi çizim dosyasından YENİDEN okunmaz; zaten
+   doğrulanmış Özel Özellikler (`KesimListesiCikarici`) + geometri
+   (`DelikFormCikarici`) yolundan gelir — "Teknik Resim Oluştur" burada
+   sadece "bu parça kesime hazır mı" kapısı olarak kullanılır.
+3. Seçilen parçalar **malzeme koduna** (`URETIMOS_PLAKA_KODU`) göre otomatik
+   gruplanır — bir plaka kodu tek bir kalınlık+malzeme kombinasyonunu
+   temsil ettiğinden, bu grup aynı zamanda kalınlığa göre de ayrışmış olur.
+   Her grup, ÜretimOS'ta o plaka hammaddesine ait AÇIK bir kesim satırı
+   varsa ona eklenir, yoksa yeni bir satır açılır.
+4. Malzeme kodu boş olan ya da ÜretimOS'ta eşleşen bir plaka hammaddesi
+   bulunamayan parçalar TAHMİN EDİLMEZ — panelin alt kısmındaki sonuç
+   kutusunda ayrıca listelenir, kullanıcı önce Hammaddeler'den ilgili plaka
+   kartını tanımlamalı.
+
+Ön koşul: ÜretimOS sunucu bağlantısı (bkz. `BaglantiAyarlari.cs`) ve en az
+bir parçanın onaylı teknik resmi olması.
+
 ## Kurulum
 
 ### A) Otomatik kurulum — Setup.exe (ÖNERİLEN, SWOOD gibi tek dosya)
