@@ -167,8 +167,12 @@ namespace UretimOSKesim
 
                 string dosyaYolu = Path.Combine(cikisKlasoru, kod + ".SLDPRT");
                 int hata = 0, uyariKod = 0;
+                // NOT: SolidWorks 2017'de IModelDocExtension.SaveAs3 6 parametreli
+                // (Name, Version, Options, ExportData, ref Errors, ref Warnings) —
+                // gerçek derlemede (SolidWorks 2017, Object Browser/IntelliSense ile
+                // doğrulandı) 7 parametreli (iki ayrı object) sürüm bu interop'ta YOK.
                 bool basarili = belge.Extension.SaveAs3(dosyaYolu, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, null, ref hata, ref uyariKod);
+                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref hata, ref uyariKod);
                 Tanilama.Kaydet($"AltiYuzKutuOlusturucu.PanelOlustur({yuz}) SaveAs3 basarili={basarili} hata={hata}");
                 if (!basarili)
                 {
@@ -218,8 +222,9 @@ namespace UretimOSKesim
 
                 string montajYolu = Path.Combine(cikisKlasoru, p.Kod + ".SLDASM");
                 int hata = 0, uyariKod = 0;
+                // bkz. yukarıdaki PanelOlustur'daki SaveAs3 6-parametre notu.
                 bool basarili = montaj.Extension.SaveAs3(montajYolu, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, null, ref hata, ref uyariKod);
+                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref hata, ref uyariKod);
                 Tanilama.Kaydet($"AltiYuzKutuOlusturucu.MontajOlustur SaveAs3 basarili={basarili} hata={hata}");
                 if (!basarili)
                 {

@@ -369,8 +369,11 @@ namespace UretimOSKesim
             string dosyaAdi = System.IO.Path.Combine(cikisKlasoru, (dosyaAdiOnEki ?? "teknik_resim") + "." + uzanti);
             int hata = 0, uyari = 0;
             Tanilama.Kaydet($"SaveAs3 ({uzanti}) cagriliyor: " + dosyaAdi);
+            // NOT: SolidWorks 2017'de IModelDocExtension.SaveAs3 6 parametreli
+            // (Name, Version, Options, ExportData, ref Errors, ref Warnings) —
+            // gerçek derlemede (SolidWorks 2017) doğrulandı, bkz. AltiYuzKutuOlusturucu.cs.
             bool basarili = ext.SaveAs3(dosyaAdi, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, null, ref hata, ref uyari);
+                (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref hata, ref uyari);
             Tanilama.Kaydet($"SaveAs3 ({uzanti}) tamamlandi, basarili=" + basarili + ", hata=" + hata);
             if (!basarili)
             {
