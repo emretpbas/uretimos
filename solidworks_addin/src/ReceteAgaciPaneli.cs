@@ -612,6 +612,23 @@ namespace UretimOSKesim
             Controls.Add(_paketOlcuPanel);
             Controls.Add(_rotaPanel);
             Controls.Add(ustPanel);
+
+            // Kullanıcı isteği: "boşluğa daha fazla satır görebilelim en az 30
+            // satır sığsın" — soldaki palet listesinde (_paletListesi)
+            // kaydırmadan en az 30 öğe görünmesini garanti eder. ItemHeight,
+            // WinForms tarafından (artık ambient Form.Font'tan miras alınan,
+            // Tema.TabanFont) GERÇEK ölçüme göre hesaplanır — TAHMİN değil.
+            // Yüzdeye dayalı genişlik/yükseklik (yukarıdaki calismaAlani
+            // hesaplaması) küçük ekranlarda 30 satırı garanti etmeyebildiği
+            // için, gerekiyorsa pencere bu sabit listeye göre BÜYÜTÜLÜR —
+            // ama MaximumSize (calismaAlani) ASLA aşılmaz, ekranı taşmaz.
+            int satirYuksekligi = _paletListesi.ItemHeight;
+            int sabitDikeyAlan = ustPanel.Height + altPanel.Height + paletBaslik.Height +
+                _paletTipKutusu.Height + _paletAramaKutusu.Height + aramaEtiket.Height +
+                ekleBtn.Height + yeniKartBtn.Height + solPanel.Padding.Vertical +
+                (Height - ClientSize.Height); // pencere başlık çubuğu/kenarlık payı
+            int gerekliYukseklik = sabitDikeyAlan + satirYuksekligi * 30;
+            if (gerekliYukseklik > Height) Height = Math.Min(gerekliYukseklik, calismaAlani.Height);
         }
 
         // ── VERİ YÜKLEME ─────────────────────────────────────────────────────
