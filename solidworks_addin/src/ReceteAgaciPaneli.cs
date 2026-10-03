@@ -981,9 +981,17 @@ namespace UretimOSKesim
                 _urunler.Add(urunKarti);
                 PaletiFiltrele();
 
+                // AnaPencerede: bkz. tanımındaki NOT ve EslesmeYazVeUygula'daki
+                // AYNI düzeltme — bu "await _istemci.ToplukaEkleGuncelle(...)"
+                // SONRASI kod bir SolidWorks COM çağrısı (OzelAlanYaz) içeriyor;
+                // sarmalanmadan çağırılması AYNI çökme riskini taşır. (Aşağıdaki
+                // KokKartAyarla çağrısı kendi İÇİNDE marshal ediyor, bkz. tanımı.)
                 string kod = (string)urunKarti["kod"];
-                try { KesimListesiCikarici.OzelAlanYaz(_hedefModel, OzelAlanlar.KOD, kod); }
-                catch (Exception ex) { Tanilama.Kaydet("UrunKokuOlustur (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                AnaPencerede(() =>
+                {
+                    try { KesimListesiCikarici.OzelAlanYaz(_hedefModel, OzelAlanlar.KOD, kod); }
+                    catch (Exception ex) { Tanilama.Kaydet("UrunKokuOlustur (URETIMOS_KOD yazılamadı) HATA: " + ex); }
+                });
             }
 
             KokKartAyarla("urun", urunKarti);
@@ -2952,6 +2960,8 @@ namespace UretimOSKesim
         // eşleşti" (reçetesi olmayan) durumları AYNI temizliği paylaşır.
         private void KokKartYokGoster(string mesaj)
         {
+            // KokKartAyarla'daki AYNI gerekçe/düzeltme.
+            if (InvokeRequired) { AnaPencerede(() => KokKartYokGoster(mesaj)); return; }
             _kokTip = null; _kokKart = null;
             _kaydetBtn.Enabled = false;
             // BilesenAgaciniCiz'deki AYNI "foreach sırasında Dispose ile
@@ -3014,35 +3024,47 @@ namespace UretimOSKesim
         private void EslesmeYazVeUygula(string tip, JObject kart)
         {
             if (kart == null) return;
-            if (_seciliBilesenDugumu?.Model != null)
+
+            // GERÇEK ÇÖKME (kullanıcı raporu: "yarımamül oluşturdum tamama
+            // bastım gitti"): bu fonksiyon YeniKartOlustur içinde bir
+            // "await KartApiyaKaydet(...)" SONRASINDA doğrudan çağrılıyordu
+            // ve İÇİNDE hem SolidWorks COM çağrısı (OzelAlanYaz) hem de
+            // WinForms kontrol erişimi (BilesenAgaciniCiz/KokKartYokGoster/
+            // KokKartAyarla) var — AnaPencerede tanımındaki NOT'ta ve 2712/
+            // 3296. satırlardaki AYNI düzeltmede açıklanan senaryonun TA
+            // KENDİSİ. Tüm gövde artık o kanıtlanmış düzeltmeyle sarmalanıyor.
+            AnaPencerede(() =>
             {
-                string kod = (string)kart["kod"] ?? (string)kart["stokKodu"];
-                if (!string.IsNullOrWhiteSpace(kod))
+                if (_seciliBilesenDugumu?.Model != null)
                 {
-                    try
+                    string kod = (string)kart["kod"] ?? (string)kart["stokKodu"];
+                    if (!string.IsNullOrWhiteSpace(kod))
                     {
-                        KesimListesiCikarici.OzelAlanYaz(_seciliBilesenDugumu.Model, OzelAlanlar.KOD, kod);
-                        _seciliBilesenDugumu.MevcutKod = kod;
-                        BilesenAgaciniCiz();
-                    }
-                    catch (Exception ex)
-                    {
-                        Tanilama.Kaydet("EslesmeYazVeUygula (URETIMOS_KOD yazılamadı) HATA: " + ex);
+                        try
+                        {
+                            KesimListesiCikarici.OzelAlanYaz(_seciliBilesenDugumu.Model, OzelAlanlar.KOD, kod);
+                            _seciliBilesenDugumu.MevcutKod = kod;
+                            BilesenAgaciniCiz();
+                        }
+                        catch (Exception ex)
+                        {
+                            Tanilama.Kaydet("EslesmeYazVeUygula (URETIMOS_KOD yazılamadı) HATA: " + ex);
+                        }
                     }
                 }
-            }
 
-            // Hammadde kartlarının kendi reçetesi yok — KokKartAyarla'yı
-            // ÇAĞIRMAYIZ, aksi halde AlanAdiTipten'in bilmediği bir tip için
-            // yanlış bir alanla (ör. paketId) hayalet bir 'hammadde reçetesi'
-            // taslağı oluşturulabilirdi. Yalnızca eşleşme kaydedilir.
-            if (tip == "hammadde")
-            {
-                KokKartYokGoster($"✓ Hammadde kartıyla eşleşti: {kart["stokKodu"] ?? kart["id"]} — {kart["ad"]}. " +
-                    "Hammaddelerin kendi reçetesi olmadığı için burada düzenlenecek bir şey yok.");
-                return;
-            }
-            KokKartAyarla(tip, kart);
+                // Hammadde kartlarının kendi reçetesi yok — KokKartAyarla'yı
+                // ÇAĞIRMAYIZ, aksi halde AlanAdiTipten'in bilmediği bir tip için
+                // yanlış bir alanla (ör. paketId) hayalet bir 'hammadde reçetesi'
+                // taslağı oluşturulabilirdi. Yalnızca eşleşme kaydedilir.
+                if (tip == "hammadde")
+                {
+                    KokKartYokGoster($"✓ Hammadde kartıyla eşleşti: {kart["stokKodu"] ?? kart["id"]} — {kart["ad"]}. " +
+                        "Hammaddelerin kendi reçetesi olmadığı için burada düzenlenecek bir şey yok.");
+                    return;
+                }
+                KokKartAyarla(tip, kart);
+            });
         }
 
         // ── PALET (SOLDAKİ LİSTE) ────────────────────────────────────────────
@@ -3726,6 +3748,11 @@ namespace UretimOSKesim
 
         private void KokKartAyarla(string tip, JObject kart)
         {
+            // BilesenAgaciniCiz'deki AYNI gerekçe/düzeltme: bu fonksiyonun da
+            // (EslesmeYazVeUygula/UrunKokuOlustur dahil) çoğu "await" sonrası
+            // çağrı noktası var; her çağırana marshaling'i unutmama
+            // sorumluluğu bırakmak yerine gövde burada kendi kendini korur.
+            if (InvokeRequired) { AnaPencerede(() => KokKartAyarla(tip, kart)); return; }
             _kokTip = tip;
             _kokKart = kart;
             var recete = ReceteGetir(tip, kart);
