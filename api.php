@@ -809,10 +809,15 @@ const HAT_OP_YAZILABILIR = ['istasyonIsleri', 'gerceklesenSureKayitlari', 'olcum
 // cncTakimlari YALNIZCA OKUNABİLİR (hammaddeler ile AYNI gerekçe): CNC
 // Operasyon Paneli bir freze takımını operasyona SEÇER, takım kütüphanesini
 // değiştirmez/oluşturmaz — takım tanımı ÜretimOS'un kendi ekranından yapılır.
+// kesimIhtiyaclari OKUNABİLİR+YAZILABİLİR: "Nesting'e Gönder" paneli
+// (solidworks_addin/src/NestingGonderPaneli.cs) onaylı teknik resmi olan
+// parçaları buraya yazar (yeni satır açar ya da mevcut açık satıra ekler) —
+// web tarafındaki page_nesting.js ZATEN bu koleksiyonu kullanıyordu, eklenti
+// de AYNI koleksiyona yazıyor, ayrı bir uç/şema YOK.
 // 'delete' ucu bu role TAMAMEN KAPALI (aşağıda ayrıca engellenir) — delete
 // bir koleksiyonun TAMAMINI siler, otomasyon kimliğine bu güç verilmez.
-const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler', 'receteler', 'rotalar', 'cncTakimlari', 'hatlar', 'ayarlar'];
-const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler', 'rotalar', 'hatlar'];
+const CAD_ENT_OKUNABILIR = ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler', 'receteler', 'rotalar', 'cncTakimlari', 'hatlar', 'ayarlar', 'kesimIhtiyaclari'];
+const CAD_ENT_YAZILABILIR = ['yarimamuller', 'paketler', 'urunler', 'receteler', 'rotalar', 'hatlar', 'kesimIhtiyaclari'];
 
 // ── ROL BAZLI ERİŞİM DENETİMİ ──────────────────────────────────────────────
 // GÜVENLİK DÜZELTMESİ (v39): Önceden get/set/patch/delete uçları yalnızca
