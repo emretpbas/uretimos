@@ -92,9 +92,13 @@ namespace UretimOSKesim
                 Dock = DockStyle.Top, Height = 54, Padding = new Padding(8), ForeColor = Color.DimGray
             };
 
+            // NOT: "View" burada BİLEREK tam nitelenmiş (System.Windows.Forms.View) —
+            // bu dosyada SolidWorks.Interop.sldworks de "View" adlı bir COM arayüzü
+            // tanımlıyor (using SolidWorks.Interop.sldworks ModelDoc2/swDocumentTypes_e
+            // için gerekli), gerçek bir derlemede CS0104 belirsiz başvuru hatası verdi.
             _liste = new ListView
             {
-                Dock = DockStyle.Fill, View = View.Details, CheckBoxes = true,
+                Dock = DockStyle.Fill, View = System.Windows.Forms.View.Details, CheckBoxes = true,
                 FullRowSelect = true, GridLines = true
             };
             _liste.Columns.Add("Parça", 220);
