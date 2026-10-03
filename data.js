@@ -172,9 +172,16 @@ const VARSAYILAN_AYARLAR = {
   satisKariYuzde: 25,             // hedef satış kârı % (eski/genel hesap için)
   usdTry: 33.10,
   eurTry: 35.85,
-  testereKayipPayiMM: 4,          // LİNEER TESTERE kesim payı / bıçak kalınlığı (mm)
-  frezeKayipPayiMM: 3,            // CNC/FLAT-TABLA (freze) kesim payı — lineer testereden farklı, freze bıçağı/uç kalınlığına göre (mm)
-  plakaKenarBosluguMM: 10,        // plaka kenarından bırakılan pay (mm)
+  testereKayipPayiMM: 4,          // LİNEER TESTERE kesim payı / bıçak kalınlığı (mm) — SADECE varsayilanEbatlamaTakimId HİÇ seçilmediyse kullanılan ESKİ/manuel yedek değer
+  frezeKayipPayiMM: 3,            // CNC/FLAT-TABLA (freze) kesim payı (mm) — SADECE varsayilanFrezeTakimId HİÇ seçilmediyse kullanılan ESKİ/manuel yedek değer
+  plakaKenarBosluguMM: 10,        // plaka kenarından bırakılan pay (mm) — TEK SEFERLİK ayar, Kesim Optimizasyonu'nun tamamında kullanılır
+  // Kesim Optimizasyonu'nda kesim payı (kerf) artık BU takımlardan OTOMATİK
+  // türetilir (bkz. page_nesting.js) — CNC Takım Kütüphanesi'nden seçilen
+  // takımın kalınlığı/çapı kullanılır, "tek seferde ayarlayalım, bu ayar
+  // tekrar değişmediği sürece bu şekilde devam etsin" isteği. null ise (henüz
+  // bir takım seçilmediyse) yukarıdaki manuel sayılara düşülür.
+  varsayilanFrezeTakimId: null,    // Store.cncTakimlari içinde takimTipi='frezeleme' bir kayıt id'si
+  varsayilanEbatlamaTakimId: null, // Store.cncTakimlari içinde takimTipi='ebatlama' bir kayıt id'si
 
   // ── Liste fiyatı formülü (Fiyatlama modülü) ──────────────────────────────
   // Liste Fiyatı = (Net Maliyet × (1+gygYuzde/100) × (1+nakliyeYuzde/100) × (1+karYuzde/100)) / boluKatsayisi

@@ -1992,8 +1992,13 @@ const App = (() => {
     }
   }
 
-  function openSettings() {
+  async function openSettings() {
     const a = state.ayarlar;
+    const cncTakimlari = await Store.cncTakimlari.all();
+    const frezeTakimlari = cncTakimlari.filter(k => (k.takimTipi || 'frezeleme') === 'frezeleme' && k.aktif !== false);
+    const ebatlamaTakimlari = cncTakimlari.filter(k => k.takimTipi === 'ebatlama' && k.aktif !== false);
+    const takimSecenekleri = (liste, seciliId, birimEtiket) => `<option value="">— Seçilmedi (manuel sayı kullanılır) —</option>` +
+      liste.map(k => `<option value="${k.id}" ${k.id === seciliId ? 'selected' : ''}>${escapeHtml(k.kod)} — ${escapeHtml(k.ad)} (${birimEtiket === 'cap' ? fmt(k.capMm, 2) : fmt(k.kalinlikMm, 2)} mm)</option>`).join('');
     const body = `
       <div class="fgroup"><label class="flbl">Saatlik İşçilik Ücreti (₺/saat)</label>
         <input class="finput" id="set-iscilik" type="number" value="${a.saatlikIscilikUcreti}" step="1"></div>
@@ -2013,10 +2018,18 @@ const App = (() => {
           <input class="finput" id="set-eur" type="number" value="${a.eurTry}" step="0.01"></div>
       </div>
       <div class="hr"></div>
+      <div class="flbl" style="margin-bottom:8px">Kesim Optimizasyonu (CAM) — Takım ve Boşluk Ayarları</div>
+      <div class="fhint" style="margin-top:-4px;margin-bottom:10px">Bir takım seçildiğinde kesim payı (kerf) o takımın kalınlığından/çapından OTOMATİK hesaplanır — tekrar girmenize gerek yok, bu ayar değiştirmediğiniz sürece aynen kullanılır. Takım seçilmezse aşağıdaki manuel sayılar yedek olarak kullanılır.</div>
       <div class="frow">
-        <div class="fgroup"><label class="flbl">Lineer Testere Kesim Payı (mm)</label>
+        <div class="fgroup"><label class="flbl">Varsayılan Ebatlama (Testere) Takımı</label>
+          <select class="fselect" id="set-ebatlama-takim">${takimSecenekleri(ebatlamaTakimlari, a.varsayilanEbatlamaTakimId, 'kalinlik')}</select></div>
+        <div class="fgroup"><label class="flbl">Varsayılan Frezeleme Takımı</label>
+          <select class="fselect" id="set-freze-takim">${takimSecenekleri(frezeTakimlari, a.varsayilanFrezeTakimId, 'cap')}</select></div>
+      </div>
+      <div class="frow">
+        <div class="fgroup"><label class="flbl">Lineer Testere Kesim Payı (mm) — manuel yedek</label>
           <input class="finput" id="set-kesimpay" type="number" value="${a.testereKayipPayiMM}" step="0.5"></div>
-        <div class="fgroup"><label class="flbl">Freze (CNC/Flat-Tabla) Kesim Payı (mm)</label>
+        <div class="fgroup"><label class="flbl">Freze (CNC/Flat-Tabla) Kesim Payı (mm) — manuel yedek</label>
           <input class="finput" id="set-frezepay" type="number" value="${a.frezeKayipPayiMM ?? 3}" step="0.5"></div>
       </div>
       <div class="frow">
@@ -2201,6 +2214,8 @@ const App = (() => {
         testereKayipPayiMM: parseFloat(document.getElementById('set-kesimpay').value) || 0,
         frezeKayipPayiMM: parseFloat(document.getElementById('set-frezepay').value) || 0,
         plakaKenarBosluguMM: parseFloat(document.getElementById('set-kenarbosluk').value) || 0,
+        varsayilanFrezeTakimId: document.getElementById('set-freze-takim').value || null,
+        varsayilanEbatlamaTakimId: document.getElementById('set-ebatlama-takim').value || null,
         fiyatGygYuzde: parseFloat(document.getElementById('set-fiyat-gyg').value) || 0,
         fiyatNakliyeYuzde: parseFloat(document.getElementById('set-fiyat-nakliye').value) || 0,
         fiyatKarYuzde: parseFloat(document.getElementById('set-fiyat-kar').value) || 0,

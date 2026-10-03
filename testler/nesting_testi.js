@@ -105,4 +105,43 @@ console.log('\n-- DELIK/FORM: kullanici istegi "nestinge ... delikleri ve formla
   t('donmus parcada delik koordinati 90 derece donusturuluyor', /10\r\n20(\r\n|$)/.test(dxfRot) && /20\r\n2990(\r\n|$)/.test(dxfRot));
 }
 
+console.log('\n-- KESIM PAYI (KERF): CNC Takim Kutuphanesi takimdan OTOMATIK turetiliyor --');
+{
+  eval(al('kesimPayiHesapla'));
+  const ayarlarManuel = { testereKayipPayiMM: 4, frezeKayipPayiMM: 3, varsayilanEbatlamaTakimId: null, varsayilanFrezeTakimId: null };
+  t('hic takim secilmediyse (eski kurulum) MANUEL sayiya duser — lineer',
+    kesimPayiHesapla('lineer', ayarlarManuel, []) === 4);
+  t('hic takim secilmediyse (eski kurulum) MANUEL sayiya duser — cnc/freze',
+    kesimPayiHesapla('cnc', ayarlarManuel, []) === 3);
+
+  const cncTakimlari = [
+    { id: 'CNCT-EB1', takimTipi: 'ebatlama', kalinlikMm: 3.5 },
+    { id: 'CNCT-FR1', takimTipi: 'frezeleme', capMm: 8 }
+  ];
+  const ayarlarTakimli = { testereKayipPayiMM: 4, frezeKayipPayiMM: 3, varsayilanEbatlamaTakimId: 'CNCT-EB1', varsayilanFrezeTakimId: 'CNCT-FR1' };
+  t('ebatlama takimi secilince lineer kesim payi takimin KALINLIGINA esit (manuel sayi degil)',
+    kesimPayiHesapla('lineer', ayarlarTakimli, cncTakimlari) === 3.5);
+  t('frezeleme takimi secilince cnc kesim payi takimin CAPINA esit (manuel sayi degil)',
+    kesimPayiHesapla('cnc', ayarlarTakimli, cncTakimlari) === 8);
+  t('secili takim id artik listede yoksa (silinmis) MANUEL sayiya guvenle duser',
+    kesimPayiHesapla('lineer', { testereKayipPayiMM: 4, varsayilanEbatlamaTakimId: 'YOK' }, cncTakimlari) === 4);
+}
+
+console.log('\n-- TEK YUZEYDE DELIK KURALI: hicbir AYNA/FLIP islemi YOK, sadece 90 derece rotasyon --');
+{
+  // Kullanici istegi: "delikler sadece tek yuzeyde delinecek sekilde yerlessin."
+  // Bu, mevcut tasarimda ZATEN dogru: algoritma SADECE 90 derece dondurur
+  // (yukardaki "rotated=true -> (dy, origW-dx)" testi tam bir ROTASYON
+  // formulüdür, AYNA degil). Asagidaki kaynak-metin kontrolleri, gelecekte
+  // birinin yanlislikla bir mirror/flip islemi EKLEMEDIGINI garanti eder.
+  t('kaynakta GERCEK bir ayna/mirror ISLEMI (fonksiyon/metod/degisken) yok — sadece YASAKLAYICI yorumdaki kelime haric',
+    !/\bmirror(?!\/)[a-zA-Z]*\s*[:(=]/i.test(src2));
+  t('kaynakta ayna donusumune isaret eden negatif-olcek (-1 * ) deseni yok',
+    !/-1\s*\*\s*(dx|dy|x|y)\b/.test(src2));
+  t('delikKoordDonustur SADECE 90 derece ROTASYON formulu (dy, origW-dx) kullaniyor — ayna formulu (origW-dx, dy) DEGIL',
+    src2.includes('return [dy, origW - dx];') && !src2.includes('return [origW - dx, dy];'));
+  t('ROTASYON/FLIP KURALI yorumu kaynakta acikca belgelenmis (bakim sirasinda gorulsun)',
+    src2.includes('AYNA/FLİP (mirror) işlemi YOKTUR ve ASLA eklenmemelidir'));
+}
+
 console.log('\nSONUC: '+ok+' gecti, '+bad+' kaldi');process.exit(bad?1:0);

@@ -215,10 +215,14 @@ PageModules.nesting = (() => {
       const plaka = plakalar.find(p => p.id === satir.hammaddeId);
       if (!plaka) { App.toast('Bu satır için geçerli bir hammadde seçilmedi', 'err'); return; }
       const ayarlar = App.state.ayarlar;
+      const cncTakimlari = await Store.cncTakimlari.all();
       const kesimModu = kesimModlari[satir.id] || satir.kesimModu || 'cnc';
       // CNC/Flat-Tabla (freze) ve Lineer Testere FARKLI kesim payı kullanır —
       // freze ucu kalınlığı testere bıçağından farklı olduğu için ayrı parametre.
-      const kesimPayi = kesimModu === 'lineer' ? ayarlar.testereKayipPayiMM : ayarlar.frezeKayipPayiMM;
+      // Kesim payı artık ÖNCELİKLE Ayarlar'da seçilen takımdan (CNC Takım
+      // Kütüphanesi) otomatik türetilir — bkz. kesimPayiHesapla. Hiç takım
+      // seçilmediyse (eski kurulum) manuel sayılara düşülür.
+      const kesimPayi = kesimPayiHesapla(kesimModu, ayarlar, cncTakimlari);
       const sonucNesting = kesimModu === 'lineer'
         ? nestLineerTestere(plaka.en, plaka.boy, ayarlar.plakaKenarBosluguMM, kesimPayi, satir.parcalar)
         : nestParcalar(plaka.en, plaka.boy, ayarlar.plakaKenarBosluguMM, kesimPayi, satir.parcalar);
@@ -476,7 +480,34 @@ PageModules.nesting = (() => {
     });
   }
 
+  // ── KESİM PAYI (KERF) — CNC TAKIM KÜTÜPHANESİ'NDEN OTOMATİK ─────────────
+  // Kullanıcı isteği: "kullanılan freze çapı ve dış kenarlardan kalacak
+  // boşluğu tek seferde ayarlayalım ve bu ayar tekrar değişmediği sürece bu
+  // şekilde devam etsin." Ayarlar'da seçilen takımın (page_cnc_takimlari.js)
+  // kalınlığı (ebatlama/testere) ya da çapı (frezeleme/freze) kesim payı
+  // olarak kullanılır — kullanıcı HER nesting çalıştırmasında payı tekrar
+  // girmez. Henüz bir takım SEÇİLMEDİYSE (eski kurulum/geçiş süreci), Ayarlar
+  // sayfasındaki eski manuel sayılara (testereKayipPayiMM/frezeKayipPayiMM)
+  // düşülür — geriye uyumluluk.
+  function kesimPayiHesapla(kesimModu, ayarlar, cncTakimlari) {
+    if (kesimModu === 'lineer') {
+      const takim = (cncTakimlari || []).find(k => k.id === ayarlar.varsayilanEbatlamaTakimId);
+      if (takim && takim.kalinlikMm > 0) return takim.kalinlikMm;
+      return ayarlar.testereKayipPayiMM;
+    }
+    const takim = (cncTakimlari || []).find(k => k.id === ayarlar.varsayilanFrezeTakimId);
+    if (takim && takim.capMm > 0) return takim.capMm;
+    return ayarlar.frezeKayipPayiMM;
+  }
+
   // ── NESTING ALGORİTMASI (CNC / Flat-Tabla) ──────────────────────────────
+  // ROTASYON/FLİP KURALI (kullanıcı isteği: "delikler sadece tek yüzeyde
+  // delinecek şekilde yerleşsin"): parçalar grainKilitli değilse SADECE 90°
+  // DÖNDÜRÜLÜR (bkz. `rotated` bayrağı, delikKoordDonustur). Bu dosyada hiçbir
+  // AYNA/FLİP (mirror) işlemi YOKTUR ve ASLA eklenmemelidir — bir delik,
+  // parça hangi yönde yerleşirse yerleşsin HER ZAMAN plakanın aynı (üst)
+  // yüzeyinde kalır; ayna/flip eklenirse delikler ALT yüzeye geçebilir ve
+  // makine iki taraflı delme gerektirir. bkz. testler/nesting_delik_testi.js.
   function nestParcalar(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcalar) {
     let items = [];
     parcalar.forEach((p, pi) => {
