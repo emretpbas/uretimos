@@ -168,14 +168,12 @@ namespace UretimOSKesim
                 string dosyaYolu = Path.Combine(cikisKlasoru, kod + ".SLDPRT");
                 int hata = 0, uyariKod = 0;
                 // NOT: SolidWorks 2017'nin bu interop'unda IModelDocExtension'da
-                // SaveAs2/SaveAs3 HİÇ YOK — gerçek derlemede IntelliSense ile
-                // doğrulandı (yalnızca SaveAs ve SaveAsPackAndGo var). SaveAs imzası:
-                // (Name, Version, ExportData, ref Errors, ref Warnings) — "Options"
-                // (sessiz/silent) parametresi YOK, yani bu eski metot teorik olarak
-                // bir uyarı diyaloğu açabilir (SaveAs2/3'teki Silent bayrağı burada
-                // karşılığı yok) — gerçek SolidWorks'te test ederken gözlemleyin.
+                // SaveAs2/SaveAs3 HİÇ YOK, ama düz SaveAs TAM 6 parametreli modern
+                // imzayı taşıyor — gerçek derlemede derleyici hatasından (CS7036)
+                // KESİN doğrulandı: SaveAs(string Name, int Version, int Options,
+                // object ExportData, ref int Errors, ref int Warnings).
                 bool basarili = belge.Extension.SaveAs(dosyaYolu, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                    null, ref hata, ref uyariKod);
+                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref hata, ref uyariKod);
                 Tanilama.Kaydet($"AltiYuzKutuOlusturucu.PanelOlustur({yuz}) SaveAs basarili={basarili} hata={hata}");
                 if (!basarili)
                 {
@@ -225,9 +223,9 @@ namespace UretimOSKesim
 
                 string montajYolu = Path.Combine(cikisKlasoru, p.Kod + ".SLDASM");
                 int hata = 0, uyariKod = 0;
-                // bkz. yukarıdaki PanelOlustur'daki SaveAs notu (SaveAs2/3 bu interop'ta yok).
+                // bkz. yukarıdaki PanelOlustur'daki SaveAs notu (6 parametreli, Options dahil).
                 bool basarili = montaj.Extension.SaveAs(montajYolu, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                    null, ref hata, ref uyariKod);
+                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref hata, ref uyariKod);
                 Tanilama.Kaydet($"AltiYuzKutuOlusturucu.MontajOlustur SaveAs basarili={basarili} hata={hata}");
                 if (!basarili)
                 {

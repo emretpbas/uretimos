@@ -370,11 +370,11 @@ namespace UretimOSKesim
             int hata = 0, uyari = 0;
             Tanilama.Kaydet($"SaveAs ({uzanti}) cagriliyor: " + dosyaAdi);
             // NOT: bu SolidWorks 2017 interop'unda IModelDocExtension'da SaveAs2/
-            // SaveAs3 HİÇ YOK (IntelliSense ile doğrulandı) — yalnızca eski SaveAs:
-            // (Name, Version, ExportData, ref Errors, ref Warnings), "Options"
-            // (sessiz/silent) parametresi yok, bkz. AltiYuzKutuOlusturucu.cs notu.
+            // SaveAs3 HİÇ YOK, ama düz SaveAs TAM 6 parametreli modern imzayı
+            // taşıyor (derleyici hatasından CS7036 KESİN doğrulandı) — bkz.
+            // AltiYuzKutuOlusturucu.cs notu.
             bool basarili = ext.SaveAs(dosyaAdi, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                null, ref hata, ref uyari);
+                (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref hata, ref uyari);
             Tanilama.Kaydet($"SaveAs ({uzanti}) tamamlandi, basarili=" + basarili + ", hata=" + hata);
             if (!basarili)
             {
