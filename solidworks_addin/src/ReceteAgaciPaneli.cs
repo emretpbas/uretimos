@@ -829,15 +829,34 @@ namespace UretimOSKesim
                 // AYNI özel alandan (OzelAlanlar.TAHIL_YONU) doğrudan okunur;
                 // sentetik/yer tutucu düğümlerde (Model==null) bilinmiyor
                 // demektir — TAHMİN EDİLMEZ, kilitsiz varsayılır.
-                var parcaGirdileri = grup.Value.Select(d => new NestingParcaGirdi
+                // KULLANICI RAPORU: "parçaların üzerindeki delikler de
+                // çıkmadı" — delik verisi, DİĞER tüm delik tüketen yollarla
+                // (KesimListesiCikarici.MontajiGez, NestingGonderPaneli.
+                // ParcaNesnesiOlustur) AYNI onay kapısı/kaynaktan okunur:
+                // OzelAlanlar.DELIKLER_ONAYLANDI="evet" DEĞİLSE delikler HİÇ
+                // dahil edilmez (kullanıcı SolidWorks'te görsel karşılaştırıp
+                // onaylamadan CNC'ye/nesting'e TAHMİN ile gönderilmez).
+                var parcaGirdileri = new List<NestingParcaGirdi>();
+                foreach (var d in grup.Value)
                 {
-                    Ad = d.GosterimAdi,
-                    En = d.TaslakEnMm,
-                    Boy = d.TaslakBoyMm,
-                    Adet = Math.Max(1, d.Miktar),
-                    GrainKilitli = d.Model != null && !string.IsNullOrWhiteSpace(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.TAHIL_YONU)),
-                    YmKod = d.MevcutKod ?? ""
-                }).ToList();
+                    var girdi = new NestingParcaGirdi
+                    {
+                        Ad = d.GosterimAdi,
+                        En = d.TaslakEnMm,
+                        Boy = d.TaslakBoyMm,
+                        Adet = Math.Max(1, d.Miktar),
+                        GrainKilitli = d.Model != null && !string.IsNullOrWhiteSpace(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.TAHIL_YONU)),
+                        YmKod = d.MevcutKod ?? ""
+                    };
+                    bool deliklerOnaylandi = d.Model != null &&
+                        string.Equals(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.DELIKLER_ONAYLANDI), "evet", StringComparison.OrdinalIgnoreCase);
+                    if (deliklerOnaylandi)
+                    {
+                        var (delikler, _) = DelikFormCikarici.Cikar(d.Model, d.TaslakKalinlikMm);
+                        girdi.Delikler = delikler.Select(dl => (x: dl.XMm, y: dl.YMm, cap: dl.CapMm)).ToList();
+                    }
+                    parcaGirdileri.Add(girdi);
+                }
 
                 var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri);
                 if (sonuc.Plakalar.Count == 0)

@@ -515,6 +515,9 @@ namespace UretimOSKesim
 
             var (kesimPayi, kenarBosluk) = KesimPayiVeKenarBosluguHesapla();
 
+            // Delikler SADECE DeliklerOnaylandi=true ise dahil edilir — AYNI
+            // onay kapısı ParcaNesnesiOlustur'da (ÜretimOS'a gönderme yolu)
+            // da kullanılıyor (bkz. o metottaki NOT).
             var parcaGirdileri = secilenler.Select(s => new NestingParcaGirdi
             {
                 Ad = s.Desc,
@@ -522,7 +525,8 @@ namespace UretimOSKesim
                 Boy = s.Lenght,
                 Adet = s.Qty,
                 GrainKilitli = !string.IsNullOrWhiteSpace(s.TahilYonu),
-                YmKod = s.SapCode ?? ""
+                YmKod = s.SapCode ?? "",
+                Delikler = s.DeliklerOnaylandi ? s.Delikler.Select(d => (x: d.XMm, y: d.YMm, cap: d.CapMm)).ToList() : new List<(double, double, double)>()
             }).ToList();
 
             var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri);

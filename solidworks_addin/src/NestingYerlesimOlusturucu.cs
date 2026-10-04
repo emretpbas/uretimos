@@ -83,6 +83,25 @@ namespace UretimOSKesim
                     belge.SketchManager.CreateCornerRectangle(
                         oge.X * MM_TO_M, oge.Y * MM_TO_M, 0,
                         (oge.X + oge.W) * MM_TO_M, (oge.Y + oge.H) * MM_TO_M, 0);
+
+                    // KULLANICI RAPORU: "parçaların üzerindeki delikler de
+                    // çıkmadı" — delik merkezleri NestingHesaplayici'de ZATEN
+                    // plaka mutlak koordinatına dönüştürülmüş durumda (bkz. o
+                    // dosyadaki delikKoordDonustur mantığı). GÜVENİLİRLİK
+                    // UYARISI (DelikFormCikarici.cs ile AYNI ilke):
+                    // ISketchManager.CreateCircle BU DOSYADA/projede İLK KEZ
+                    // kullanılıyor, SaveAs/CreateCornerRectangle'ın aksine
+                    // GERÇEK bir SolidWorks derlemesinde HENÜZ doğrulanmadı —
+                    // standart dokümante imza (Xc,Yc,Zc, Xp,Yp,Zp — merkez +
+                    // çember üzerinde bir nokta) kullanıldı; yanlışsa en
+                    // olası sonuç bir DERLEME HATASIDIR (güvenli).
+                    foreach (var delik in oge.Delikler)
+                    {
+                        double r = delik.cap / 2.0;
+                        belge.SketchManager.CreateCircle(
+                            delik.x * MM_TO_M, delik.y * MM_TO_M, 0,
+                            (delik.x + r) * MM_TO_M, delik.y * MM_TO_M, 0);
+                    }
                 }
 
                 belge.SketchManager.InsertSketch(true); // sketch'i kapat

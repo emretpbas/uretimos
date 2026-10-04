@@ -14,6 +14,10 @@ namespace UretimOSKesim
         public int Adet = 1;
         public bool GrainKilitli; // true ise ASLA döndürülmez (desen/tahıl yönü)
         public string YmKod;
+        // Parçanın KENDİ (döndürülmemiş) yerel çerçevesinde, sol-alt (0,0)
+        // referanslı delik merkezleri + çapı (mm) — page_nesting.js'teki
+        // satir.delikler ile AYNI veri şekli (bkz. buildDxf/delikKoordDonustur).
+        public List<(double x, double y, double cap)> Delikler = new List<(double, double, double)>();
     }
 
     // Bir plaka üzerinde yerleşmiş TEK bir parça örneği (kesilmiş kopya).
@@ -24,6 +28,10 @@ namespace UretimOSKesim
         public double W, H;   // mm, yerleşmiş (olası 90° döndürülmüş) ölçü
         public bool Rotated;
         public string YmKod;
+        // Delik merkezleri, PLAKANIN mutlak koordinat sisteminde (X,Y'ye göre
+        // ZATEN ofsetlenmiş) + çapı (mm) — rotated ise page_nesting.js'teki
+        // delikKoordDonustur ile AYNI dönüşüm (dx,dy)->(dy, origW-dx) uygulanır.
+        public List<(double x, double y, double cap)> Delikler = new List<(double, double, double)>();
     }
 
     public class NestingPlakaSonucu
@@ -58,6 +66,11 @@ namespace UretimOSKesim
         private class Item
         {
             public string Ad; public double W, H; public bool GrainKilitli; public string YmKod;
+            // OrigW: rotated=true olduğunda delik koordinatlarını doğru
+            // dönüştürebilmek için parçanın orijinal (döndürülmemiş) genişliği
+            // (page_nesting.js'teki item.origW ile AYNI amaç).
+            public double OrigW;
+            public List<(double x, double y, double cap)> Delikler;
         }
 
         private class Placed
@@ -72,7 +85,7 @@ namespace UretimOSKesim
             var items = new List<Item>();
             foreach (var p in parcalar)
                 for (int k = 0; k < Math.Max(1, p.Adet); k++)
-                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod });
+                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, OrigW = p.En, Delikler = p.Delikler });
             items = items.OrderByDescending(i => i.W * i.H).ToList();
 
             double usableW = plakaEn - 2 * kenarBosluk;
@@ -97,15 +110,27 @@ namespace UretimOSKesim
                 var plaka = new NestingPlakaSonucu();
                 foreach (var pl in placed)
                 {
+                    double mutlakX = pl.X + kenarBosluk, mutlakY = pl.Y + kenarBosluk;
+                    // page_nesting.js'teki delikKoordDonustur ile AYNI dönüşüm:
+                    // rotated ise (dx,dy) -> (dy, origW-dx), sonra plakadaki
+                    // mutlak konuma (kenar boşluğu dahil) ofsetlenir.
+                    var delikler = (pl.Item.Delikler ?? new List<(double, double, double)>())
+                        .Select(d =>
+                        {
+                            var (dx, dy) = pl.Rotated ? (d.y, pl.Item.OrigW - d.x) : (d.x, d.y);
+                            return (x: mutlakX + dx, y: mutlakY + dy, cap: d.cap);
+                        })
+                        .ToList();
                     plaka.Yerlesenler.Add(new NestingYerlesimOgesi
                     {
                         Ad = pl.Item.Ad,
-                        X = pl.X + kenarBosluk,
-                        Y = pl.Y + kenarBosluk,
+                        X = mutlakX,
+                        Y = mutlakY,
                         W = pl.W,
                         H = pl.H,
                         Rotated = pl.Rotated,
-                        YmKod = pl.Item.YmKod
+                        YmKod = pl.Item.YmKod,
+                        Delikler = delikler
                     });
                 }
                 sonuc.Plakalar.Add(plaka);

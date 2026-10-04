@@ -226,7 +226,7 @@ namespace UretimOSKesim
             if (_cmdMgr != null)
             {
                 // CommandGroup ID, KomutlariKur() içindeki GRUP_ID ile AYNI olmalı.
-                _cmdMgr.RemoveCommandGroup(200);
+                _cmdMgr.RemoveCommandGroup(201);
             }
             _cmdMgr = null;
             _app = null;
@@ -268,7 +268,16 @@ namespace UretimOSKesim
             // davrandırır ve olası önbellek kaynaklı tutarsızlığı KESİN olarak
             // ortadan kaldırır. DisconnectFromSW()'deki RemoveCommandGroup çağrısı
             // da AYNI değerle güncellenmiştir.
-            const int GRUP_ID = 200;
+            //
+            // TEKRARLANDI (kullanıcı raporu: "Nesting'e Gönder" ribbon'da hiç
+            // çıkmadı — DLL kesinlikle güncel olmasına rağmen, bkz. Reçete
+            // Ağacı'ndaki yeni "Nestinge Ekle" butonunun ÇALIŞMASI bunu
+            // kanıtladı): 12 komut hâlâ GRUP_ID=200'ün SolidWorks önbelleğinde
+            // sıkışmış kaldı, 13.'sü (ID_NESTING_GONDER) hiç görünmedi — TAM
+            // OLARAK yukarıdaki "KESİN TANI #5" senaryosunun AYNISI. GRUP_ID
+            // 201'e taşındı; DisconnectFromSW()'deki RemoveCommandGroup de
+            // AYNI değerle güncellendi.
+            const int GRUP_ID = 201;
             const int ID_KESIM = 101;
             const int ID_ETIKET = 102;
             const int ID_TEKNIK_OLUSTUR = 103;
