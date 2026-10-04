@@ -158,6 +158,19 @@ namespace UretimOSKesim
         // Kullanıcı isteği: "Reçete ağacı ekranına nesting yap tuşu ekle" —
         // kesim payı hesaplaması için (bkz. NestingYapCalistir).
         private JArray _cncTakimlari = new JArray();
+
+        // Kullanıcı isteği: "her yarımamülün sağına nestinge ekle diye bir
+        // sekme ekle burada kalınlık ve renge göre parçaları ayır ayırırken
+        // atanan alt kalem varsa buna göre ayrım yap yoksa manuel malzeme
+        // girişi yap yada atanan malzemeye dahil et tuşu ekle" — NESTİNG
+        // KUYRUĞU: grup anahtarı → o gruba (➕ Nestinge Ekle ile) eklenmiş
+        // Panel (plaka) düğümleri. Grup anahtarı, düğümün ZATEN eşleştiği
+        // hammadde kartının kodu (MevcutKod — kalınlık+renk/malzeme o karta
+        // bağlı olduğu için OTOMATİK ayrım sağlar) ya da (eşleşme yoksa)
+        // kullanıcının MalzemeGrubuSor'da girdiği/seçtiği serbest metin
+        // etiket. BİLEREK diske YAZILMAZ (BilesenDugumu'nun aksine) — bu
+        // sadece bir oturumluk çalışma kuyruğu, kalıcı reçete verisi değil.
+        private readonly Dictionary<string, List<BilesenDugumu>> _nestingKuyrugu = new Dictionary<string, List<BilesenDugumu>>();
         // "hatlar" (hat adı → makine listesi) VE "ayarlar" (saatlikIscilikUcreti
         // dahil), storage.js'teki AYNI basit obje anahtarları — id'li kayıt
         // DİZİSİ olmadıkları için _urunler vb. gibi JArray değil JObject.
@@ -646,41 +659,132 @@ namespace UretimOSKesim
             if (gerekliYukseklik > Height) Height = Math.Min(gerekliYukseklik, calismaAlani.Height);
         }
 
-        // ── NESTING YAP (bu ağaçtan DOĞRUDAN, teknik resim onayı ZORUNLU
-        // OLMADAN) ────────────────────────────────────────────────────────────
-        // Kullanıcı isteği: "Reçete ağacı ekranına nesting yap tuşu ekle
-        // burada seçilen teknik resimleri olanları kullanalım, teknik resim
-        // yoksa ölçüye göre yerleşim yap, grain de eklensin, ayrıca aynı
-        // bağlantıyı normal tuşa da bağla" — NestingGonderPaneli'nin
-        // "SolidWorks'te Nestle" butonu daha önce SADECE onaylı teknik
-        // resmi olan (Manifest.Bul ile) satırları işaretlenebilir yapıyordu;
-        // bu istek üzerine O KISIT KALDIRILDI (bkz. NestingGonderPaneli.cs
-        // ItemCheck/SeciliOlanlariGonder) — "normal tuş" budur, aynı
-        // NestingHesaplayici/NestingYerlesimOlusturucu BURADA da kullanılır.
-        //
-        // Aday satırlar: bu ağaçta "Panel (Plaka)" sınıfına atanmış, dahil
-        // edilmiş (AktarimaDahil) ve TaslakBoyMm/EnMm'si olan TÜM düğümler —
-        // bu alanlar ZATEN her satırda (onaylı teknik resim olsun olmasın)
-        // SolidWorks ölçüsünden veya elle doldurulmuş durumda (bkz.
-        // BilesenDugumu.TaslakBoyMm/EnMm tanımındaki NOT), bu yüzden "teknik
-        // resim yoksa ölçüye göre yerleşim yap" isteği EK KOD GEREKTİRMEDİ.
+        // ── NESTİNGE EKLE (her yarımamül satırının kendi butonu) ─────────────
+        // Kullanıcı isteği: "her yarımamülün sağına nestinge ekle diye bir
+        // sekme ekle burada kalınlık ve renge göre parçaları ayır ayırırken
+        // atanan alt kalem varsa buna göre ayrım yap yoksa manuel malzeme
+        // girişi yap yada atanan malzemeye dahil et tuşu ekle". Bu yarımamülün
+        // "Panel (Plaka)" sınıflı alt kalemini (varsa) kuyruğa ekler — grup
+        // anahtarı o panelin ZATEN eşleştiği hammadde kartının kodudur
+        // (MevcutKod — bu kart kendi kalınlığını/rengini/malzemesini taşıdığı
+        // için OTOMATİK doğru ayrımı sağlar, bkz. NestingGonderPaneli.cs'teki
+        // AYNI "FARKLI KALINLIK/MALZEME = FARKLI NESTING" gerekçesi). Eşleşme
+        // yoksa MalzemeGrubuSor ile manuel bir grup adı girilir/seçilir.
+        private void NestingeEkleTiklandi(BilesenDugumu yarimamulDugumu)
+        {
+            var plakaCocuk = yarimamulDugumu.Cocuklar.FirstOrDefault(c => c.Sinif == "plaka" && c.TaslakBoyMm > 0 && c.TaslakEnMm > 0);
+            if (plakaCocuk == null)
+            {
+                MessageBox.Show("'" + yarimamulDugumu.GosterimAdi + "' altında ölçüsü olan bir 'Panel (Plaka)' alt kalemi yok — nesting'e eklenemez.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (_nestingKuyrugu.Values.Any(liste => liste.Contains(plakaCocuk)))
+            {
+                MessageBox.Show("'" + plakaCocuk.GosterimAdi + "' zaten nesting kuyruğunda.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string grupAnahtari = !string.IsNullOrWhiteSpace(plakaCocuk.MevcutKod) ? plakaCocuk.MevcutKod : MalzemeGrubuSor();
+            if (string.IsNullOrWhiteSpace(grupAnahtari)) return; // vazgeçildi
+
+            if (!_nestingKuyrugu.TryGetValue(grupAnahtari, out var grupListesi))
+            {
+                grupListesi = new List<BilesenDugumu>();
+                _nestingKuyrugu[grupAnahtari] = grupListesi;
+            }
+            grupListesi.Add(plakaCocuk);
+
+            _durumEtiketi.ForeColor = Color.DarkGreen;
+            _durumEtiketi.Text = "✓ '" + plakaCocuk.GosterimAdi + "' nesting kuyruğuna eklendi — '" + grupAnahtari + "' grubu, " +
+                "kuyrukta toplam " + _nestingKuyrugu.Values.Sum(l => l.Count) + " parça.";
+        }
+
+        // Eşleşen hammaddesi olmayan bir panel için: yeni bir malzeme/kalınlık
+        // grubu adı girilir, VEYA kuyrukta zaten var olan bir gruba dahil
+        // edilir ("atanan malzemeye dahil et" isteği). null = vazgeçildi.
+        private string MalzemeGrubuSor()
+        {
+            string sonuc = null;
+            using (var dlg = new Form
+            {
+                Text = "Malzeme Grubu", Width = 440, Height = 280, FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = Tema.TabanFont
+            })
+            {
+                var ustEtiket = new Label
+                {
+                    Text = "Bu panelin eşleşmiş bir hammaddesi yok — kalınlık/malzemeye göre hangi nesting grubuna gireceğini belirtin:",
+                    Dock = DockStyle.Top, Height = 54, Padding = new Padding(10, 8, 10, 0)
+                };
+
+                var yeniEtiket = new Label { Text = "Yeni grup adı (ör. '18mm Beyaz'):", Dock = DockStyle.Top, Height = 20, Padding = new Padding(10, 4, 10, 0) };
+                var yeniPanel = new Panel { Dock = DockStyle.Top, Height = 30, Padding = new Padding(10, 2, 10, 0) };
+                var yeniKutu = new TextBox { Dock = DockStyle.Fill };
+                yeniPanel.Controls.Add(yeniKutu);
+
+                var dahilEtiket = new Label { Text = "— veya — mevcut gruba dahil et:", Dock = DockStyle.Top, Height = 20, Padding = new Padding(10, 8, 10, 0) };
+                var grupPanel = new Panel { Dock = DockStyle.Top, Height = 30, Padding = new Padding(10, 2, 10, 0) };
+                var grupKutu = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+                grupKutu.Items.AddRange(_nestingKuyrugu.Keys.ToArray());
+                grupPanel.Controls.Add(grupKutu);
+                if (grupKutu.Items.Count == 0) { dahilEtiket.Enabled = false; grupKutu.Enabled = false; }
+
+                var altBtnPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
+                var tamamBtn = new Button { Text = "Tamam", Width = 90, Height = 30, Left = 240, Top = 7 };
+                Tema.BirincilButon(tamamBtn);
+                var vazgecBtn = new Button { Text = "Vazgeç", Width = 90, Height = 30, Left = 340, Top = 7 };
+                Tema.IkincilButon(vazgecBtn);
+                altBtnPanel.Controls.Add(tamamBtn);
+                altBtnPanel.Controls.Add(vazgecBtn);
+
+                tamamBtn.Click += (s, e) =>
+                {
+                    if (grupKutu.SelectedItem is string seciliGrup && !string.IsNullOrWhiteSpace(seciliGrup))
+                        sonuc = seciliGrup;
+                    else if (!string.IsNullOrWhiteSpace(yeniKutu.Text))
+                        sonuc = yeniKutu.Text.Trim();
+                    else
+                    {
+                        MessageBox.Show("Yeni bir grup adı girin veya mevcut bir gruptan seçin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    dlg.DialogResult = DialogResult.OK;
+                };
+                vazgecBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
+
+                dlg.Controls.Add(altBtnPanel);
+                dlg.Controls.Add(grupPanel);
+                dlg.Controls.Add(dahilEtiket);
+                dlg.Controls.Add(yeniPanel);
+                dlg.Controls.Add(yeniEtiket);
+                dlg.Controls.Add(ustEtiket);
+                dlg.AcceptButton = tamamBtn;
+                dlg.CancelButton = vazgecBtn;
+                if (dlg.ShowDialog(this) != DialogResult.OK) return null;
+            }
+            return sonuc;
+        }
+
+        // ── NESTING YAP (nesting kuyruğundaki HER grup için AYRI bir
+        // yerleştirme çalıştırır — farklı kalınlık/malzemeler ASLA aynı
+        // plakaya karıştırılmaz) ─────────────────────────────────────────────
+        // Kullanıcı isteği: "burada seçilen teknik resimleri olanları
+        // kullanalım, teknik resim yoksa ölçüye göre yerleşim yap, grain de
+        // eklensin, ayrıca aynı bağlantıyı normal tuşa da bağla" —
+        // NestingGonderPaneli'nin "SolidWorks'te Nestle" butonu daha önce
+        // SADECE onaylı teknik resmi olan satırları işaretlenebilir
+        // yapıyordu; bu istek üzerine O KISIT KALDIRILDI (bkz.
+        // NestingGonderPaneli.cs ItemCheck/SeciliOlanlariGonder) — "normal
+        // tuş" budur, aynı NestingHesaplayici/NestingYerlesimOlusturucu
+        // BURADA da kullanılır. Ölçü kaynağı TaslakBoyMm/EnMm'dir — bu
+        // alanlar ZATEN her satırda (onaylı teknik resim olsun olmasın)
+        // SolidWorks ölçüsünden veya elle doldurulmuş durumda.
         private async System.Threading.Tasks.Task NestingYapCalistir()
         {
-            var adaylar = new List<BilesenDugumu>();
-            void Topla(List<BilesenDugumu> liste)
+            if (_nestingKuyrugu.Count == 0 || _nestingKuyrugu.Values.All(l => l.Count == 0))
             {
-                foreach (var d in liste)
-                {
-                    if (d.AktarimaDahil && d.Sinif == "plaka" && d.TaslakBoyMm > 0 && d.TaslakEnMm > 0)
-                        adaylar.Add(d);
-                    Topla(d.Cocuklar);
-                }
-            }
-            Topla(_bilesenKokListesi ?? new List<BilesenDugumu>());
-
-            if (adaylar.Count == 0)
-            {
-                MessageBox.Show("Ağaçta 'Panel (Plaka)' sınıfında, dahil edilmiş (işaretli) ve ölçüsü olan hiçbir satır yok.",
+                MessageBox.Show("Nesting kuyruğu boş — önce yarımamül satırlarındaki '➕ Nestinge Ekle' butonuyla parça ekleyin.",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -709,53 +813,62 @@ namespace UretimOSKesim
             Application.DoEvents();
 
             var (kesimPayi, kenarBosluk) = KesimPayiVeKenarBosluguHesapla();
-
-            // Grain: bu ağaçta ayrı bir alan tutulmuyor (bkz. BilesenDugumu) —
-            // gerçek bir SolidWorks bileşenine karşılık gelen düğümler için
-            // KesimListesiCikarici/NestingGonderPaneli'deki AYNI özel alandan
-            // (OzelAlanlar.TAHIL_YONU) doğrudan okunur; sentetik/yer tutucu
-            // düğümlerde (Model==null) bilinmiyor demektir — TAHMİN EDİLMEZ,
-            // kilitsiz (döndürülebilir) varsayılır.
-            var parcaGirdileri = adaylar.Select(d => new NestingParcaGirdi
-            {
-                Ad = d.GosterimAdi,
-                En = d.TaslakEnMm,
-                Boy = d.TaslakBoyMm,
-                Adet = Math.Max(1, d.Miktar),
-                GrainKilitli = d.Model != null && !string.IsNullOrWhiteSpace(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.TAHIL_YONU)),
-                YmKod = d.MevcutKod ?? ""
-            }).ToList();
-
-            var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri);
-
-            if (sonuc.Plakalar.Count == 0)
-            {
-                _durumEtiketi.ForeColor = Color.DarkRed;
-                _durumEtiketi.Text = "Hiçbir parça yerleştirilemedi.";
-                MessageBox.Show(string.Join("\r\n", sonuc.YerlesemeyenUyarilari), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
             string kod = Path.GetFileNameWithoutExtension(_hedefModel.GetPathName());
             if (string.IsNullOrWhiteSpace(kod)) kod = "NESTING";
 
-            _durumEtiketi.Text = sonuc.Plakalar.Count + " plaka için SolidWorks'te sketch oluşturuluyor…";
-            Application.DoEvents();
-
             var olusturucu = new NestingYerlesimOlusturucu(_app);
-            var dosyalar = olusturucu.Olustur(sonuc, plakaEn, plakaBoy, kod, cikisKlasoru, partSablon);
+            var tumRaporSatirlari = new List<string>();
+            int toplamDosya = 0, toplamPlaka = 0;
 
-            var raporSatirlari = new List<string> { sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya başarıyla oluşturuldu (SolidWorks'te açık bırakıldı):" };
-            raporSatirlari.AddRange(dosyalar);
-            if (sonuc.YerlesemeyenUyarilari.Count > 0) { raporSatirlari.Add(""); raporSatirlari.Add("UYARILAR:"); raporSatirlari.AddRange(sonuc.YerlesemeyenUyarilari); }
-            if (olusturucu.Uyarilar.Count > 0) { raporSatirlari.Add(""); raporSatirlari.AddRange(olusturucu.Uyarilar); }
+            foreach (var grup in _nestingKuyrugu)
+            {
+                if (grup.Value.Count == 0) continue;
 
-            _durumEtiketi.ForeColor = dosyalar.Count > 0 ? Color.DarkGreen : Color.DarkRed;
-            _durumEtiketi.Text = dosyalar.Count + "/" + sonuc.Plakalar.Count + " plaka SolidWorks'te oluşturuldu.";
+                // Grain: gerçek bir SolidWorks bileşenine karşılık gelen
+                // düğümler için KesimListesiCikarici/NestingGonderPaneli'deki
+                // AYNI özel alandan (OzelAlanlar.TAHIL_YONU) doğrudan okunur;
+                // sentetik/yer tutucu düğümlerde (Model==null) bilinmiyor
+                // demektir — TAHMİN EDİLMEZ, kilitsiz varsayılır.
+                var parcaGirdileri = grup.Value.Select(d => new NestingParcaGirdi
+                {
+                    Ad = d.GosterimAdi,
+                    En = d.TaslakEnMm,
+                    Boy = d.TaslakBoyMm,
+                    Adet = Math.Max(1, d.Miktar),
+                    GrainKilitli = d.Model != null && !string.IsNullOrWhiteSpace(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.TAHIL_YONU)),
+                    YmKod = d.MevcutKod ?? ""
+                }).ToList();
 
-            MessageBox.Show(string.Join("\r\n", raporSatirlari) +
-                "\r\n\r\nDXF almak için: açılan parçada sketch'i düzenleme moduna girip Dosya > Farklı Kaydet'te DXF/DWG seçin.",
-                "ÜretimOS", MessageBoxButtons.OK, dosyalar.Count > 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri);
+                if (sonuc.Plakalar.Count == 0)
+                {
+                    tumRaporSatirlari.Add("'" + grup.Key + "' grubu: hiçbir parça yerleştirilemedi — " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
+                    continue;
+                }
+
+                string grupDosyaKodu = kod + "_" + GuvenliDosyaAdi(grup.Key);
+                var dosyalar = olusturucu.Olustur(sonuc, plakaEn, plakaBoy, grupDosyaKodu, cikisKlasoru, partSablon);
+                toplamDosya += dosyalar.Count;
+                toplamPlaka += sonuc.Plakalar.Count;
+                tumRaporSatirlari.Add("'" + grup.Key + "': " + sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya.");
+                if (sonuc.YerlesemeyenUyarilari.Count > 0)
+                    tumRaporSatirlari.Add("    UYARI: " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
+                if (olusturucu.Uyarilar.Count > 0)
+                    tumRaporSatirlari.Add("    UYARI: " + string.Join(" ", olusturucu.Uyarilar));
+            }
+
+            _durumEtiketi.ForeColor = toplamDosya > 0 ? Color.DarkGreen : Color.DarkRed;
+            _durumEtiketi.Text = toplamDosya + " dosya, " + toplamPlaka + " plaka SolidWorks'te oluşturuldu (" + _nestingKuyrugu.Count + " malzeme grubu).";
+
+            MessageBox.Show(string.Join("\r\n", tumRaporSatirlari) +
+                "\r\n\r\nDXF almak için: açılan her parçada sketch'i düzenleme moduna girip Dosya > Farklı Kaydet'te DXF/DWG seçin.",
+                "ÜretimOS", MessageBoxButtons.OK, toplamDosya > 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        private static string GuvenliDosyaAdi(string metin)
+        {
+            foreach (char c in Path.GetInvalidFileNameChars()) metin = metin.Replace(c, '_');
+            return metin.Replace(" ", "_");
         }
 
         // Basit modal: hazır 2 boyut butonu + manuel Boy×En — NestingGonderPaneli.
@@ -1813,6 +1926,15 @@ namespace UretimOSKesim
                     var rotaBtnSatir = new Button { Text = "⚙ Rota", AutoSize = true, Margin = new Padding(3) };
                     rotaBtnSatir.Click += async (s, e) => await RotaSecVeyaOlusturDialogAc(dugum.Sinif, rotaKarti);
                     satir.Controls.Add(rotaBtnSatir);
+                }
+
+                // Kullanıcı isteği: "her yarımamülün sağına nestinge ekle
+                // diye bir sekme ekle" — bkz. NestingeEkleTiklandi.
+                if (dugum.Sinif == "yarimamul")
+                {
+                    var nestingeEkleBtn = new Button { Text = "➕ Nestinge Ekle", AutoSize = true, Margin = new Padding(3) };
+                    nestingeEkleBtn.Click += (s, e) => NestingeEkleTiklandi(dugum);
+                    satir.Controls.Add(nestingeEkleBtn);
                 }
 
                 // Kullanıcı isteği: "reçete oluşturduğumuz her kalemin teknik
