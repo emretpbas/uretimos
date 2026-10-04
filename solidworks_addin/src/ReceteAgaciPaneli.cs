@@ -852,16 +852,14 @@ namespace UretimOSKesim
                         string.Equals(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.DELIKLER_ONAYLANDI), "evet", StringComparison.OrdinalIgnoreCase);
                     if (deliklerOnaylandi)
                     {
-                        var (delikler, formlar) = DelikFormCikarici.Cikar(d.Model, d.TaslakKalinlikMm);
-                        girdi.Delikler = delikler.Select(dl => (x: dl.XMm, y: dl.YMm, cap: dl.CapMm)).ToList();
-                        // Kullanıcı isteği: "ne delik ne kanal çıktı" — dairesel
-                        // olmayan formlar (cep/kesik/kanal) da AYNI onay
-                        // kapısından (deliklerOnaylandi) dahil edilir.
-                        girdi.Formlar = formlar.Select(f => f.NoktalarXY.Select(nokta => (x: nokta[0], y: nokta[1])).ToList()).ToList();
-                        // Kullanıcı isteği: "gerçek dış hattı çiz" — kenarına
-                        // kertik/çentik işlenmiş parçalarda düz dikdörtgen
-                        // yerine gerçek silüet. AYNI onay kapısı.
-                        girdi.DisHat = DelikFormCikarici.DisHatCikar(d.Model).Select(nokta => (x: nokta[0], y: nokta[1])).ToList();
+                        // Delikler, formlar (cep/kesik/kanal — "ne delik ne kanal
+                        // çıktı") ve gerçek dış hat ("gerçek dış hattı çiz") AYNI
+                        // çerçevede tek seferde çıkarılır, nesting'in X=En,
+                        // Y=Boy beklentisine hizalanır.
+                        var geometri = DelikFormCikarici.GeometriCikar(d.Model, d.TaslakKalinlikMm).EnBoyaHizala(girdi.En, girdi.Boy);
+                        girdi.Delikler = geometri.NestingDelikleri();
+                        girdi.Formlar = geometri.NestingFormlari();
+                        girdi.DisHat = geometri.NestingDisHatti();
                     }
                     parcaGirdileri.Add(girdi);
                 }

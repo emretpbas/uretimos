@@ -55,10 +55,13 @@ namespace UretimOSKesim
         public bool DeliklerOnaylandi;
 
         // YENİ: parçanın gerçek dış hattı (kertik/çentik dahil, bkz.
-        // DelikFormCikarici.DisHatCikar) — Delikler/Formlar ile AYNI onay
+        // DelikFormCikarici.GeometriCikar) — Delikler/Formlar ile AYNI onay
         // kapısına (DeliklerOnaylandi) tabidir; boşsa (çıkarım yapılmadı/
         // başarısız) nesting düz dikdörtgene geri düşer.
         public List<double[]> DisHat = new List<double[]>();
+        // Delikler/Formlar/DisHat'ın kaynağı + çerçeve boyutu (nesting'de
+        // En/Boy'a hizalamak için, bkz. ParcaGeometrisi.EnBoyaHizala).
+        public ParcaGeometrisi Geometri = new ParcaGeometrisi();
 
         // YENİ: operasyon bazlı takım/parametre atamaları (bkz. CncOperasyonu.cs,
         // CncYerlesimPaneli.cs "Operasyonlar" sekmesi). Yalnızca DeliklerOnaylandi
@@ -209,10 +212,11 @@ namespace UretimOSKesim
                 CamKenarIsleme = OzelAlanOku(modelDoc, OzelAlanlar.CAM_KENAR_ISLEME) ?? ""
             };
 
-            var (delikler, formlar) = DelikFormCikarici.Cikar(modelDoc, kalinlik);
+            satir.Geometri = DelikFormCikarici.GeometriCikar(modelDoc, kalinlik);
+            var delikler = satir.Geometri.Delikler;
             satir.Delikler = delikler;
-            satir.Formlar = formlar;
-            satir.DisHat = DelikFormCikarici.DisHatCikar(modelDoc);
+            satir.Formlar = satir.Geometri.Formlar;
+            satir.DisHat = satir.Geometri.DisHat;
             if (delikler.Count > 0 && !satir.DeliklerOnaylandi)
             {
                 _uyarilar.Add($"'{bilesen.Name2}' için {delikler.Count} delik OTOMATİK tespit edildi ama " +

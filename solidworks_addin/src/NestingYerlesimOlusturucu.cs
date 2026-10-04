@@ -83,7 +83,7 @@ namespace UretimOSKesim
                     // KULLANICI RAPORU: "parçalarda yaptığım değişiklikler ne
                     // ölçüsel ne formsal olarak değişmiyor" — kenarına kertik/
                     // çentik işlenmiş parçalar artık düz dikdörtgen DEĞİL,
-                    // DelikFormCikarici.DisHatCikar'ın çıkardığı GERÇEK dış hat
+                    // DelikFormCikarici.GeometriCikar'ın çıkardığı GERÇEK dış hat
                     // olarak çizilir. Çıkarım yapılmadıysa/başarısızsa (DisHat
                     // boş — TAHMİN EDİLMEZ) düz dikdörtgene GERİ DÜŞÜLÜR.
                     if (oge.DisHat.Count >= 3)

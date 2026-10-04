@@ -279,9 +279,11 @@ namespace UretimOSKesim
         {
             try
             {
-                var (delikler, formlar) = DelikFormCikarici.Cikar(_hedefModel, _kalinlikMm);
+                // Önizleme X=En, Y=Boy çiziyor — geometri çerçevesi ona hizalanır.
+                var geometri = DelikFormCikarici.GeometriCikar(_hedefModel, _kalinlikMm).EnBoyaHizala(_enMm, _boyMm);
+                var delikler = geometri.Delikler;
                 _delikler = delikler;
-                _formlar = formlar;
+                _formlar = geometri.Formlar;
                 _delikListesi.Items.Clear();
                 if (delikler.Count == 0)
                 {

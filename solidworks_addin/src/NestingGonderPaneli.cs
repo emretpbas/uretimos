@@ -518,17 +518,22 @@ namespace UretimOSKesim
             // Delikler SADECE DeliklerOnaylandi=true ise dahil edilir — AYNI
             // onay kapısı ParcaNesnesiOlustur'da (ÜretimOS'a gönderme yolu)
             // da kullanılıyor (bkz. o metottaki NOT).
-            var parcaGirdileri = secilenler.Select(s => new NestingParcaGirdi
+            var parcaGirdileri = secilenler.Select(s =>
             {
-                Ad = s.Desc,
-                En = s.Width,
-                Boy = s.Lenght,
-                Adet = s.Qty,
-                GrainKilitli = !string.IsNullOrWhiteSpace(s.TahilYonu),
-                YmKod = s.SapCode ?? "",
-                Delikler = s.DeliklerOnaylandi ? s.Delikler.Select(d => (x: d.XMm, y: d.YMm, cap: d.CapMm)).ToList() : new List<(double, double, double)>(),
-                Formlar = s.DeliklerOnaylandi ? s.Formlar.Select(f => f.NoktalarXY.Select(n => (x: n[0], y: n[1])).ToList()).ToList() : new List<List<(double, double)>>(),
-                DisHat = s.DeliklerOnaylandi ? s.DisHat.Select(n => (x: n[0], y: n[1])).ToList() : new List<(double, double)>()
+                // Geometri çerçevesi nesting'in X=En, Y=Boy beklentisine hizalanır.
+                var geometri = s.DeliklerOnaylandi ? s.Geometri.EnBoyaHizala(s.Width, s.Lenght) : new ParcaGeometrisi();
+                return new NestingParcaGirdi
+                {
+                    Ad = s.Desc,
+                    En = s.Width,
+                    Boy = s.Lenght,
+                    Adet = s.Qty,
+                    GrainKilitli = !string.IsNullOrWhiteSpace(s.TahilYonu),
+                    YmKod = s.SapCode ?? "",
+                    Delikler = geometri.NestingDelikleri(),
+                    Formlar = geometri.NestingFormlari(),
+                    DisHat = geometri.NestingDisHatti()
+                };
             }).ToList();
 
             var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri);

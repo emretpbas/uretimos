@@ -25,7 +25,7 @@ namespace UretimOSKesim
         public List<List<(double x, double y)>> Formlar = new List<List<(double, double)>>();
         // Kullanıcı isteği: "parçanın gerçek dış hattını çiz" — parçanın
         // kenarına işlenmiş kertik/çentik gibi DÜZENSİZ dış sınırı (bkz.
-        // DelikFormCikarici.DisHatCikar). Boş ise (çıkarım yapılmadı/
+        // DelikFormCikarici.GeometriCikar). Boş ise (çıkarım yapılmadı/
         // başarısız) nesting çıktısında düz bir dikdörtgene (En×Boy) GERİ
         // DÜŞÜLÜR — bu TAHMİN DEĞİL, açık bir varsayılan davranıştır.
         public List<(double x, double y)> DisHat = new List<(double, double)>();
