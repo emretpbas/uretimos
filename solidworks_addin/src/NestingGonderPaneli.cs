@@ -92,7 +92,16 @@ namespace UretimOSKesim
             _aktifBelge = aktifBelge;
             _app = app;
             Text = "Nesting'e Gönder (ÜretimOS)";
-            Width = 900; Height = 640;
+            // Kullanıcı raporu ("sayfanın yarısı gözükmüyor") — ReceteAgaciPaneli.
+            // KurulumYap'taki AYNI düzeltme: sabit 900×640 piksel yerine ekranın
+            // çalışma alanına göre boyutlanma + DPI ölçekleme (bkz. o dosyadaki
+            // AYNI gerekçe).
+            AutoScaleMode = AutoScaleMode.Dpi;
+            var calismaAlani = Screen.FromPoint(Cursor.Position).WorkingArea;
+            Width = Math.Min((int)(calismaAlani.Width * 0.92), calismaAlani.Width);
+            Height = Math.Min((int)(calismaAlani.Height * 0.90), calismaAlani.Height);
+            MinimumSize = new Size(Math.Min(760, calismaAlani.Width), Math.Min(480, calismaAlani.Height));
+            MaximumSize = calismaAlani.Size;
             StartPosition = FormStartPosition.CenterScreen;
             ArayuzuKur();
             Load += async (s, e) => await VerileriYukleVeListele();
