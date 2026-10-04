@@ -14,6 +14,9 @@ namespace UretimOSKesim
         public int Adet = 1;
         public bool GrainKilitli; // true ise ASLA döndürülmez (desen/tahıl yönü)
         public string YmKod;
+        // Kullanıcı isteği: "nestingdeki parçanın üzerine yarımamül kodu ve
+        // adı, ayrıca solidworks parça adını da yazalım" — etiket sketch'i için.
+        public string SwParcaAdi;
         // Parçanın KENDİ (döndürülmemiş) yerel çerçevesinde, sol-alt (0,0)
         // referanslı delik merkezleri + çapı (mm) — page_nesting.js'teki
         // satir.delikler ile AYNI veri şekli (bkz. buildDxf/delikKoordDonustur).
@@ -39,6 +42,7 @@ namespace UretimOSKesim
         public double W, H;   // mm, yerleşmiş (olası 90° döndürülmüş) ölçü
         public bool Rotated;
         public string YmKod;
+        public string SwParcaAdi;
         // Delik merkezleri, PLAKANIN mutlak koordinat sisteminde (X,Y'ye göre
         // ZATEN ofsetlenmiş) + çapı (mm) — rotated ise page_nesting.js'teki
         // delikKoordDonustur ile AYNI dönüşüm (dx,dy)->(dy, origW-dx) uygulanır.
@@ -82,7 +86,7 @@ namespace UretimOSKesim
     {
         private class Item
         {
-            public string Ad; public double W, H; public bool GrainKilitli; public string YmKod;
+            public string Ad; public double W, H; public bool GrainKilitli; public string YmKod; public string SwParcaAdi;
             // OrigW: rotated=true olduğunda delik koordinatlarını doğru
             // dönüştürebilmek için parçanın orijinal (döndürülmemiş) genişliği
             // (page_nesting.js'teki item.origW ile AYNI amaç).
@@ -104,7 +108,7 @@ namespace UretimOSKesim
             var items = new List<Item>();
             foreach (var p in parcalar)
                 for (int k = 0; k < Math.Max(1, p.Adet); k++)
-                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, OrigW = p.En, Delikler = p.Delikler, Formlar = p.Formlar, DisHat = p.DisHat });
+                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, SwParcaAdi = p.SwParcaAdi, OrigW = p.En, Delikler = p.Delikler, Formlar = p.Formlar, DisHat = p.DisHat });
             items = items.OrderByDescending(i => i.W * i.H).ToList();
 
             double usableW = plakaEn - 2 * kenarBosluk;
@@ -163,6 +167,7 @@ namespace UretimOSKesim
                         H = pl.H,
                         Rotated = pl.Rotated,
                         YmKod = pl.Item.YmKod,
+                        SwParcaAdi = pl.Item.SwParcaAdi,
                         Delikler = delikler,
                         Formlar = formlar,
                         DisHat = disHat

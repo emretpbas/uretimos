@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -58,6 +59,75 @@ namespace UretimOSKesim
             return uretilenDosyalar;
         }
 
+        // Kullanıcı isteği: "nestingdeki parçanın üzerine yarımamül kodu ve
+        // adı, ayrıca solidworks parça adını da yazalım". Yazılar kesim
+        // sketch'ine DEĞİL, ayrı bir "ETIKETLER" sketch'ine konur — CAM/DXF
+        // tarafında kesim konturu sanılmasın, gerekirse tek tıkla
+        // gizlenebilsin/silinebilsin. Her parçanın ortasına 3 satır: YM kodu,
+        // ad, SolidWorks parça adı. Yazı yüksekliği parçanın kısa kenarına
+        // göre ölçeklenir. Etiket başarısız olsa bile plaka yine kaydedilir.
+        private const double KARAKTER_EN_ORANI = 0.7; // ortalama harf genişliği / yazı yüksekliği (tahmini)
+
+        private void EtiketSketchiOlustur(ModelDoc2 belge, NestingPlakaSonucu plaka, int plakaNo)
+        {
+            try
+            {
+                belge.ClearSelection2(true);
+                belge.Extension.SelectByID2("Top Plane", "PLANE", 0, 0, 0, false, 0, null, 0);
+                belge.SketchManager.InsertSketch(true);
+
+                foreach (var oge in plaka.Yerlesenler)
+                {
+                    var satirlar = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(oge.YmKod)) satirlar.Add(oge.YmKod);
+                    if (!string.IsNullOrWhiteSpace(oge.Ad) && oge.Ad != oge.YmKod) satirlar.Add(oge.Ad);
+                    if (!string.IsNullOrWhiteSpace(oge.SwParcaAdi) && oge.SwParcaAdi != oge.Ad) satirlar.Add("SW: " + oge.SwParcaAdi);
+                    if (satirlar.Count == 0) continue;
+
+                    // Yazı yüksekliği: kısa kenarın 1/10'u (en çok 30 mm), AYRICA
+                    // en uzun satır parça genişliğinin %90'ına sığacak kadar.
+                    double kisaKenar = Math.Min(oge.W, oge.H);
+                    int enUzunSatir = satirlar.Max(t => t.Length);
+                    double yaziMm = Math.Min(30.0, kisaKenar / 10.0);
+                    yaziMm = Math.Min(yaziMm, oge.W * 0.9 / Math.Max(1, enUzunSatir * KARAKTER_EN_ORANI));
+                    yaziMm = Math.Max(4.0, yaziMm);
+                    double satirAraligiMm = yaziMm * 1.5;
+                    double ortaX = oge.X + oge.W / 2.0;
+                    double ustY = oge.Y + oge.H / 2.0 + satirAraligiMm * (satirlar.Count - 1) / 2.0;
+
+                    for (int i = 0; i < satirlar.Count; i++)
+                    {
+                        // Sol-alt hizalı yazı: yaklaşık genişliğin yarısı kadar
+                        // sola kaydırılarak parça ortasına getirilir.
+                        double tahminiGenislik = satirlar[i].Length * yaziMm * KARAKTER_EN_ORANI;
+                        double x = ortaX - tahminiGenislik / 2.0;
+                        double y = ustY - i * satirAraligiMm - yaziMm / 2.0;
+                        // Son iki parametre YÜZDE: genişlik çarpanı 100, harf
+                        // aralığı 100. (KULLANICI RAPORU: "yazılar okunmuyor" —
+                        // harf aralığı 0 verilmişti, tüm harfler üst üste
+                        // biniyordu.)
+                        var yazi = belge.InsertSketchText(x * MM_TO_M, y * MM_TO_M, 0, satirlar[i], 0, 0, 0, 100, 100) as SketchText;
+                        if (yazi == null) continue;
+                        var bicim = yazi.GetTextFormat() as TextFormat;
+                        if (bicim != null)
+                        {
+                            bicim.CharHeight = yaziMm * MM_TO_M;
+                            yazi.SetTextFormat(false, bicim);
+                        }
+                    }
+                }
+
+                belge.SketchManager.InsertSketch(true);
+                var etiketSketchi = belge.FeatureByPositionReverse(0) as Feature;
+                if (etiketSketchi != null) etiketSketchi.Name = "ETIKETLER";
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet($"NestingYerlesimOlusturucu.EtiketSketchiOlustur(plaka={plakaNo}) HATA (plaka yine kaydedilecek): " + ex);
+                try { if (belge.SketchManager.ActiveSketch != null) belge.SketchManager.InsertSketch(true); } catch { }
+            }
+        }
+
         private string PlakaOlustur(NestingPlakaSonucu plaka, int plakaNo, double plakaEn, double plakaBoy, string kod, string cikisKlasoru, string partSablonYolu)
         {
             try
@@ -68,6 +138,14 @@ namespace UretimOSKesim
 
                 belge.Extension.SelectByID2("Top Plane", "PLANE", 0, 0, 0, false, 0, null, 0);
                 belge.SketchManager.InsertSketch(true);
+
+                // AddToDB: çizilen öğeler SolidWorks'ün yakalama/çıkarım
+                // (snap/inference) mantığından GEÇMEDEN doğrudan eklenir —
+                // aksi halde dış hattaki/yaylardaki birbirine yakın noktalar
+                // yakındaki çizgilere yapışıp şekli bozabiliyor ve yüzlerce
+                // öğede çizim belirgin şekilde yavaşlıyor.
+                belge.SketchManager.AddToDB = true;
+                belge.SketchManager.DisplayWhenAdded = false;
 
                 // Plaka sınırı — referans, kesilmeyecek (CAM operatörü bunu
                 // AltiYuzKutuOlusturucu'daki panel dikdörtgenlerinden ayırt
@@ -80,6 +158,8 @@ namespace UretimOSKesim
                 // kararlaştırılmış (döndürülmüş veya düz) W×H boyutu çizilir.
                 foreach (var oge in plaka.Yerlesenler)
                 {
+                    Tanilama.Kaydet($"NestingYerlesimOlusturucu plaka={plakaNo} '{oge.Ad}': X={oge.X} Y={oge.Y} W={oge.W} H={oge.H} " +
+                        $"rotated={oge.Rotated} dishat={oge.DisHat.Count} delik={oge.Delikler.Count} form={oge.Formlar.Count}");
                     // KULLANICI RAPORU: "parçalarda yaptığım değişiklikler ne
                     // ölçüsel ne formsal olarak değişmiyor" — kenarına kertik/
                     // çentik işlenmiş parçalar artık düz dikdörtgen DEĞİL,
@@ -140,7 +220,11 @@ namespace UretimOSKesim
                     }
                 }
 
+                belge.SketchManager.AddToDB = false;
+                belge.SketchManager.DisplayWhenAdded = true;
                 belge.SketchManager.InsertSketch(true); // sketch'i kapat
+
+                EtiketSketchiOlustur(belge, plaka, plakaNo);
 
                 string dosyaKodu = kod + "_NESTING_PLAKA" + plakaNo;
                 KesimListesiCikarici.OzelAlanYaz(belge, OzelAlanlar.AD, dosyaKodu);

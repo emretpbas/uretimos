@@ -38,6 +38,9 @@ namespace UretimOSKesim
         public List<FormBilgisi> Formlar = new List<FormBilgisi>();
         public List<double[]> DisHat = new List<double[]>(); // [[x,y], ...] — kapalı, ilk nokta tekrarlanmaz
         public double GenislikMm, YukseklikMm;
+        // Parçanın referans yüze dik doğrultudaki kalınlığı (mm) — ona
+        // paralel düz yüzlerin en uzak iki seviyesi arası. 0 = bilinmiyor.
+        public double KalinlikMm;
 
         // Çerçevenin X ekseni parçanın hangi ölçüsüne (En mi Boy mu) denk
         // geliyor, geometriden bilinemez — En/Boy farklı kaynaklardan
@@ -62,7 +65,8 @@ namespace UretimOSKesim
                 Formlar = Formlar.Select(f => new FormBilgisi { NoktalarXY = f.NoktalarXY.Select(Cevir).ToList() }).ToList(),
                 DisHat = DisHat.Select(Cevir).ToList(),
                 GenislikMm = YukseklikMm,
-                YukseklikMm = GenislikMm
+                YukseklikMm = GenislikMm,
+                KalinlikMm = KalinlikMm
             };
         }
 
@@ -156,6 +160,7 @@ namespace UretimOSKesim
                 if (govdelerObj == null || govdelerObj.Length == 0) return sonuc;
 
                 var delikAdaylari = new List<(DelikBilgisi delik, double[] eksenNoktasi, double[] eksenYonu)>();
+                var duzYuzler = new List<Face2>();
                 Face2 enBuyukDuzYuz = null;
                 double enBuyukAlanM2 = 0;
 
@@ -174,6 +179,7 @@ namespace UretimOSKesim
                         Surface yuzey = (Surface)yuz.GetSurface();
                         if (yuzey != null && yuzey.IsPlane())
                         {
+                            duzYuzler.Add(yuz);
                             double alan = yuz.GetArea();
                             if (alan > enBuyukAlanM2)
                             {
@@ -189,6 +195,12 @@ namespace UretimOSKesim
                 {
                     sonuc.GenislikMm = cerceve.GenislikMm;
                     sonuc.YukseklikMm = cerceve.YukseklikMm;
+                    var seviyeler = duzYuzler
+                        .Where(y => y.Normal is double[] n && n.Length >= 3 && cerceve.NormaleParalel(n))
+                        .Select(cerceve.Seviye)
+                        .Where(v => !double.IsNaN(v))
+                        .ToList();
+                    if (seviyeler.Count >= 2) sonuc.KalinlikMm = Math.Round(seviyeler.Max() - seviyeler.Min(), 2);
                 }
 
                 foreach (var (delik, eksenNoktasi, eksenYonu) in delikAdaylari)
@@ -213,7 +225,11 @@ namespace UretimOSKesim
                     sonuc.Delikler.Add(delik);
                 }
 
-                if (cerceve != null) LooplariCikar(enBuyukDuzYuz, cerceve, sonuc);
+                if (cerceve != null)
+                {
+                    LooplariCikar(enBuyukDuzYuz, cerceve, sonuc);
+                    TabanYuzleriniEkle(duzYuzler, enBuyukDuzYuz, cerceve, sonuc);
+                }
             }
             catch (Exception ex)
             {
@@ -230,7 +246,7 @@ namespace UretimOSKesim
         // verir — eğik modellenmiş bir parçada yaklaşık kalır.
         private class YuzeyCercevesi
         {
-            private int _u, _v;
+            private int _u, _v, _k;
             private double _minU, _minV;
             private double[] _normal;
             public double GenislikMm, YukseklikMm;
@@ -250,7 +266,7 @@ namespace UretimOSKesim
 
                 return new YuzeyCercevesi
                 {
-                    _u = u, _v = v,
+                    _u = u, _v = v, _k = k,
                     _minU = Math.Min(kutu[u], kutu[u + 3]),
                     _minV = Math.Min(kutu[v], kutu[v + 3]),
                     _normal = new[] { n[0] / boy, n[1] / boy, n[2] / boy },
@@ -264,6 +280,15 @@ namespace UretimOSKesim
                 Math.Round((p[_u] - _minU) * METRE_TO_MM, 2),
                 Math.Round((p[_v] - _minV) * METRE_TO_MM, 2)
             };
+
+            // Yüzün normal doğrultusundaki konumu (mm) — referansa paralel
+            // düz bir yüz için sınır kutusunun o eksendeki değeri (min≈max).
+            public double Seviye(Face2 yuz)
+            {
+                double[] kutu = yuz.GetBox() as double[];
+                if (kutu == null || kutu.Length < 6) return double.NaN;
+                return (kutu[_k] + kutu[_k + 3]) / 2.0 * METRE_TO_MM;
+            }
 
             public bool NormaleParalel(double[] yon)
             {
@@ -322,6 +347,76 @@ namespace UretimOSKesim
                 // taranmasını engellemesin — bu yüzey sessizce atlanır.
                 return null;
             }
+        }
+
+        // KULLANICI RAPORU: "kanal çizgisi de çıkmamış" — KÖK NEDEN: referans
+        // olarak EN BÜYÜK düz yüz seçiliyor; kanal/cep parçanın DİĞER
+        // yüzündeyse (ya da kenardan kenara uzanıp o yüzü bölüyorsa) kanalın
+        // açılmadığı taraf daha büyük kaldığı için o seçiliyor ve kanal hiçbir
+        // iç loop'ta görünmüyordu. ÇÖZÜM: kanal/cep TABANLARI aranır —
+        // referansa PARALEL olup parçanın iki dış yüzeyinin ARASINDA kalan
+        // her düz yüz bir kanal/cep tabanıdır; dış loop'u kanalın izi olarak
+        // forma eklenir. Delik çapındaki dairesel tabanlar (kör delik dibi)
+        // ve referans yüzde zaten iç loop olarak bulunmuş formlar tekrar
+        // eklenmez.
+        private static void TabanYuzleriniEkle(List<Face2> duzYuzler, Face2 referans, YuzeyCercevesi cerceve, ParcaGeometrisi sonuc)
+        {
+            try
+            {
+                var paraleller = new List<(Face2 yuz, double seviye)>();
+                foreach (var yuz in duzYuzler)
+                {
+                    double[] n = yuz.Normal as double[];
+                    if (n == null || n.Length < 3 || !cerceve.NormaleParalel(n)) continue;
+                    double seviye = cerceve.Seviye(yuz);
+                    if (!double.IsNaN(seviye)) paraleller.Add((yuz, seviye));
+                }
+                if (paraleller.Count < 3) return; // yalnızca ön + arka yüz var — kanal/cep yok
+
+                const double TOLERANS_MM = 0.05;
+                double altSeviye = paraleller.Min(p => p.seviye), ustSeviye = paraleller.Max(p => p.seviye);
+                int eklenen = 0;
+                foreach (var (yuz, seviye) in paraleller)
+                {
+                    if (yuz == referans) continue;
+                    if (seviye <= altSeviye + TOLERANS_MM || seviye >= ustSeviye - TOLERANS_MM) continue; // dış yüzey, taban değil
+
+                    object[] looplarObj = yuz.GetLoops() as object[];
+                    if (looplarObj == null) continue;
+                    foreach (Loop2 loop in looplarObj.Cast<Loop2>())
+                    {
+                        if (!loop.IsOuter()) continue;
+                        var noktalar = LoopNoktalari(loop, out bool hepsiDaire);
+                        if (noktalar.Count < 3) continue;
+                        var xy = noktalar.Select(cerceve.Izdusur).ToList();
+                        var kutu = SinirKutusu(xy);
+                        if (hepsiDaire)
+                        {
+                            double cap = Math.Max(kutu[2] - kutu[0], kutu[3] - kutu[1]);
+                            if (cap >= MIN_DELIK_CAP_MM && cap <= MAKS_DELIK_CAP_MM) continue; // kör delik dibi
+                        }
+                        if (sonuc.Formlar.Any(f => KutularAyni(SinirKutusu(f.NoktalarXY), kutu))) continue;
+                        sonuc.Formlar.Add(new FormBilgisi { NoktalarXY = xy });
+                        eklenen++;
+                    }
+                }
+                Tanilama.Kaydet($"DelikFormCikarici.TabanYuzleriniEkle: {paraleller.Count} paralel düz yüz, seviye {altSeviye:0.##}..{ustSeviye:0.##} mm, {eklenen} kanal/cep tabanı eklendi");
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("DelikFormCikarici.TabanYuzleriniEkle HATA (atlandi): " + ex.Message);
+            }
+        }
+
+        private static double[] SinirKutusu(List<double[]> xy) => new[]
+        {
+            xy.Min(n => n[0]), xy.Min(n => n[1]), xy.Max(n => n[0]), xy.Max(n => n[1])
+        };
+
+        private static bool KutularAyni(double[] a, double[] b)
+        {
+            for (int i = 0; i < 4; i++) if (Math.Abs(a[i] - b[i]) > 0.5) return false;
+            return true;
         }
 
         // Dış loop → DisHat; iç loop'lar → Formlar. Yalnızca yay/dairelerden

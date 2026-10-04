@@ -55,9 +55,9 @@ namespace UretimOSKesim
         public bool DeliklerOnaylandi;
 
         // YENİ: parçanın gerçek dış hattı (kertik/çentik dahil, bkz.
-        // DelikFormCikarici.GeometriCikar) — Delikler/Formlar ile AYNI onay
-        // kapısına (DeliklerOnaylandi) tabidir; boşsa (çıkarım yapılmadı/
-        // başarısız) nesting düz dikdörtgene geri düşer.
+        // DelikFormCikarici.GeometriCikar) — nesting sketch'i bunu onay
+        // kapısı OLMADAN kullanır; boşsa (çıkarım başarısız) nesting düz
+        // dikdörtgene geri düşer.
         public List<double[]> DisHat = new List<double[]>();
         // Delikler/Formlar/DisHat'ın kaynağı + çerçeve boyutu (nesting'de
         // En/Boy'a hizalamak için, bkz. ParcaGeometrisi.EnBoyaHizala).

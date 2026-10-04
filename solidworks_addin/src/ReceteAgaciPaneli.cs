@@ -62,7 +62,7 @@ namespace UretimOSKesim
         // başarı) BİLEREK değiştirilmedi — kullanıcı yalnızca "tekdüze"
         // genel görünümden ve fonttan şikayet etti, alışılmış hata/uyarı/
         // başarı renk dilini bozmak KAFA KARIŞTIRICI olurdu.
-        private static class Tema
+        internal static class Tema
         {
             // KULLANICI GERİ BİLDİRİMİ (2. tur): "biraz daha sofistike olsun
             // ayrıca yazılar kutuların içine tam otursun" — ilk sürümdeki
@@ -672,20 +672,30 @@ namespace UretimOSKesim
         // yoksa MalzemeGrubuSor ile manuel bir grup adı girilir/seçilir.
         private void NestingeEkleTiklandi(BilesenDugumu yarimamulDugumu)
         {
-            var plakaCocuk = yarimamulDugumu.Cocuklar.FirstOrDefault(c => c.Sinif == "plaka" && c.TaslakBoyMm > 0 && c.TaslakEnMm > 0);
-            if (plakaCocuk == null)
+            // GERÇEK KÖK NEDEN (kullanıcı raporu: "değişen birşey olmadı her
+            // şey aynı"): kuyruğa ÖNCEDEN "Panel (Plaka)" alt kalemi
+            // ekleniyordu — bu, elle eklenmiş SENTETİK bir düğümdür
+            // (ElleEklendi, Model=null), SolidWorks parçasıyla bağı YOKTUR.
+            // Bu yüzden nesting'de geometri (dış hat/delik/kanal) HİÇ
+            // okunamıyor, her parça anma ölçüsünden düz dikdörtgen
+            // çiziliyordu. Artık kuyruğa YARIMAMÜLÜN KENDİSİ (gerçek
+            // SolidWorks parçası) eklenir; plaka alt kalemi yalnızca malzeme
+            // grubunu belirler. Ölçü şartı da kaldırıldı ("hiçbir şekilde
+            // anma ölçüsü almasın") — ölçü nesting anında geometriden okunur.
+            if (yarimamulDugumu.Model == null)
             {
-                MessageBox.Show("'" + yarimamulDugumu.GosterimAdi + "' altında ölçüsü olan bir 'Panel (Plaka)' alt kalemi yok — nesting'e eklenemez.",
+                MessageBox.Show("'" + yarimamulDugumu.GosterimAdi + "' bir SolidWorks parçasına bağlı değil — geometrisi okunamayacağı için nesting'e eklenemez.",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            if (_nestingKuyrugu.Values.Any(liste => liste.Contains(plakaCocuk)))
+            if (_nestingKuyrugu.Values.Any(liste => liste.Contains(yarimamulDugumu)))
             {
-                MessageBox.Show("'" + plakaCocuk.GosterimAdi + "' zaten nesting kuyruğunda.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("'" + yarimamulDugumu.GosterimAdi + "' zaten nesting kuyruğunda.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            string grupAnahtari = !string.IsNullOrWhiteSpace(plakaCocuk.MevcutKod) ? plakaCocuk.MevcutKod : MalzemeGrubuSor();
+            var plakaCocuk = yarimamulDugumu.Cocuklar.FirstOrDefault(c => c.Sinif == "plaka");
+            string grupAnahtari = !string.IsNullOrWhiteSpace(plakaCocuk?.MevcutKod) ? plakaCocuk.MevcutKod : MalzemeGrubuSor();
             if (string.IsNullOrWhiteSpace(grupAnahtari)) return; // vazgeçildi
 
             if (!_nestingKuyrugu.TryGetValue(grupAnahtari, out var grupListesi))
@@ -693,10 +703,10 @@ namespace UretimOSKesim
                 grupListesi = new List<BilesenDugumu>();
                 _nestingKuyrugu[grupAnahtari] = grupListesi;
             }
-            grupListesi.Add(plakaCocuk);
+            grupListesi.Add(yarimamulDugumu);
 
             _durumEtiketi.ForeColor = Color.DarkGreen;
-            _durumEtiketi.Text = "✓ '" + plakaCocuk.GosterimAdi + "' nesting kuyruğuna eklendi — '" + grupAnahtari + "' grubu, " +
+            _durumEtiketi.Text = "✓ '" + yarimamulDugumu.GosterimAdi + "' nesting kuyruğuna eklendi — '" + grupAnahtari + "' grubu, " +
                 "kuyrukta toplam " + _nestingKuyrugu.Values.Sum(l => l.Count) + " parça.";
         }
 
@@ -789,198 +799,34 @@ namespace UretimOSKesim
                 return;
             }
 
-            if (!PlakaBoyutuSor(out double plakaBoy, out double plakaEn)) return;
+            // Kullanıcı isteği: "parçaları seçip nesting ribbon tuşuna basınca
+            // da aynı işlevi çalıştır" — plaka boyutu/klasör/geometri/yerleşim/
+            // rapor akışının TAMAMI artık NestingCalistirici'de; ribbon'daki
+            // seçim tabanlı nesting de AYNI kodu çağırır. Kuyruk zaten malzeme
+            // grubuna göre ayrılmış durumda (bkz. NestingeEkleTiklandi).
+            var gruplar = _nestingKuyrugu.ToDictionary(
+                g => g.Key,
+                g => g.Value.Select(d => new NestingParcaKaynagi
+                {
+                    Model = d.Model,
+                    Ad = d.GosterimAdi,
+                    YmKod = d.MevcutKod ?? "",
+                    Adet = Math.Max(1, d.Miktar),
+                    KalinlikMm = d.TaslakKalinlikMm
+                }).ToList());
 
-            string cikisKlasoru;
-            using (var klasorDlg = new FolderBrowserDialog { Description = "Nesting sonucu parça dosyalarının kaydedileceği klasör" })
-            {
-                if (klasorDlg.ShowDialog() != DialogResult.OK) return;
-                cikisKlasoru = klasorDlg.SelectedPath;
-            }
-
-            string partSablon = UretimOSAddin.SablonYoluBul(_app, "Part.prtdot", UretimOSAddin.PART_SABLON_YOLU);
-            if (!File.Exists(partSablon))
-            {
-                MessageBox.Show("Parça şablonu bulunamadı:\n" + partSablon +
-                    "\n\nBu, SolidWorks'ün kendi stok şablonudur — normalde 'Sistem Seçenekleri > Dosya " +
-                    "Konumları > Belge Şablonları' klasöründe hazır bulunur.",
-                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
+            var (kesimPayi, kenarBosluk) = NestingCalistirici.KesimPayiVeKenarBoslugu(_ayarlar, _cncTakimlari);
+            string kod = Path.GetFileNameWithoutExtension(_hedefModel.GetPathName());
 
             _durumEtiketi.ForeColor = Tema.MetinKoyu;
             _durumEtiketi.Text = "Nesting hesaplanıyor…";
             Application.DoEvents();
 
-            var (kesimPayi, kenarBosluk) = KesimPayiVeKenarBosluguHesapla();
-            string kod = Path.GetFileNameWithoutExtension(_hedefModel.GetPathName());
-            if (string.IsNullOrWhiteSpace(kod)) kod = "NESTING";
-
-            var olusturucu = new NestingYerlesimOlusturucu(_app);
-            var tumRaporSatirlari = new List<string>();
-            int toplamDosya = 0, toplamPlaka = 0;
-
-            foreach (var grup in _nestingKuyrugu)
-            {
-                if (grup.Value.Count == 0) continue;
-
-                // Grain: gerçek bir SolidWorks bileşenine karşılık gelen
-                // düğümler için KesimListesiCikarici/NestingGonderPaneli'deki
-                // AYNI özel alandan (OzelAlanlar.TAHIL_YONU) doğrudan okunur;
-                // sentetik/yer tutucu düğümlerde (Model==null) bilinmiyor
-                // demektir — TAHMİN EDİLMEZ, kilitsiz varsayılır.
-                // KULLANICI RAPORU: "parçaların üzerindeki delikler de
-                // çıkmadı" — delik verisi, DİĞER tüm delik tüketen yollarla
-                // (KesimListesiCikarici.MontajiGez, NestingGonderPaneli.
-                // ParcaNesnesiOlustur) AYNI onay kapısı/kaynaktan okunur:
-                // OzelAlanlar.DELIKLER_ONAYLANDI="evet" DEĞİLSE delikler HİÇ
-                // dahil edilmez (kullanıcı SolidWorks'te görsel karşılaştırıp
-                // onaylamadan CNC'ye/nesting'e TAHMİN ile gönderilmez).
-                var parcaGirdileri = new List<NestingParcaGirdi>();
-                foreach (var d in grup.Value)
-                {
-                    var girdi = new NestingParcaGirdi
-                    {
-                        Ad = d.GosterimAdi,
-                        En = d.TaslakEnMm,
-                        Boy = d.TaslakBoyMm,
-                        Adet = Math.Max(1, d.Miktar),
-                        GrainKilitli = d.Model != null && !string.IsNullOrWhiteSpace(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.TAHIL_YONU)),
-                        YmKod = d.MevcutKod ?? ""
-                    };
-                    bool deliklerOnaylandi = d.Model != null &&
-                        string.Equals(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.DELIKLER_ONAYLANDI), "evet", StringComparison.OrdinalIgnoreCase);
-                    if (deliklerOnaylandi)
-                    {
-                        // Delikler, formlar (cep/kesik/kanal — "ne delik ne kanal
-                        // çıktı") ve gerçek dış hat ("gerçek dış hattı çiz") AYNI
-                        // çerçevede tek seferde çıkarılır, nesting'in X=En,
-                        // Y=Boy beklentisine hizalanır.
-                        var geometri = DelikFormCikarici.GeometriCikar(d.Model, d.TaslakKalinlikMm).EnBoyaHizala(girdi.En, girdi.Boy);
-                        girdi.Delikler = geometri.NestingDelikleri();
-                        girdi.Formlar = geometri.NestingFormlari();
-                        girdi.DisHat = geometri.NestingDisHatti();
-                    }
-                    parcaGirdileri.Add(girdi);
-                }
-
-                var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri);
-                if (sonuc.Plakalar.Count == 0)
-                {
-                    tumRaporSatirlari.Add("'" + grup.Key + "' grubu: hiçbir parça yerleştirilemedi — " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
-                    continue;
-                }
-
-                string grupDosyaKodu = kod + "_" + GuvenliDosyaAdi(grup.Key);
-                var dosyalar = olusturucu.Olustur(sonuc, plakaEn, plakaBoy, grupDosyaKodu, cikisKlasoru, partSablon);
-                toplamDosya += dosyalar.Count;
-                toplamPlaka += sonuc.Plakalar.Count;
-                tumRaporSatirlari.Add("'" + grup.Key + "': " + sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya.");
-                if (sonuc.YerlesemeyenUyarilari.Count > 0)
-                    tumRaporSatirlari.Add("    UYARI: " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
-                if (olusturucu.Uyarilar.Count > 0)
-                    tumRaporSatirlari.Add("    UYARI: " + string.Join(" ", olusturucu.Uyarilar));
-            }
+            var (toplamDosya, toplamPlaka) = NestingCalistirici.Calistir(_app, this, kod, gruplar, kesimPayi, kenarBosluk);
 
             _durumEtiketi.ForeColor = toplamDosya > 0 ? Color.DarkGreen : Color.DarkRed;
-            _durumEtiketi.Text = toplamDosya + " dosya, " + toplamPlaka + " plaka SolidWorks'te oluşturuldu (" + _nestingKuyrugu.Count + " malzeme grubu).";
-
-            MessageBox.Show(string.Join("\r\n", tumRaporSatirlari) +
-                "\r\n\r\nDXF almak için: açılan her parçada sketch'i düzenleme moduna girip Dosya > Farklı Kaydet'te DXF/DWG seçin.",
-                "ÜretimOS", MessageBoxButtons.OK, toplamDosya > 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        }
-
-        private static string GuvenliDosyaAdi(string metin)
-        {
-            foreach (char c in Path.GetInvalidFileNameChars()) metin = metin.Replace(c, '_');
-            return metin.Replace(" ", "_");
-        }
-
-        // Basit modal: hazır 2 boyut butonu + manuel Boy×En — NestingGonderPaneli.
-        // PlakaBoyutuSec'teki AYNI iki hazır ölçü (kullanıcı isteği: "3660x1830
-        // ya da 2800x2100 ölçüsünde plakaya yada manuel giriş yapılarak").
-        private bool PlakaBoyutuSor(out double boy, out double en)
-        {
-            double sonucBoy = 0, sonucEn = 0;
-            bool tamam = false;
-            using (var dlg = new Form
-            {
-                Text = "Plaka Boyutu", Width = 420, Height = 200, FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = Tema.TabanFont
-            })
-            {
-                var ustEtiket = new Label { Text = "Nesting için plaka boyutu seçin:", Dock = DockStyle.Top, Height = 28, Padding = new Padding(10, 8, 10, 0) };
-                var hazirPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(10, 4, 10, 0), WrapContents = false };
-                var btn3660 = new Button { Text = "3660×1830 mm", Width = 130, Height = 28 };
-                var btn2800 = new Button { Text = "2800×2100 mm", Width = 130, Height = 28 };
-                hazirPanel.Controls.Add(btn3660);
-                hazirPanel.Controls.Add(btn2800);
-
-                var manuelPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(10, 4, 10, 0), WrapContents = false };
-                manuelPanel.Controls.Add(new Label { Text = "Manuel Boy×En (mm):", AutoSize = true, Margin = new Padding(0, 6, 4, 0) });
-                var boyKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 70 };
-                var enKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 70, Margin = new Padding(4, 0, 0, 0) };
-                manuelPanel.Controls.Add(boyKutu);
-                manuelPanel.Controls.Add(new Label { Text = "×", AutoSize = true, Margin = new Padding(2, 6, 2, 0) });
-                manuelPanel.Controls.Add(enKutu);
-
-                var altBtnPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
-                var tamamBtn = new Button { Text = "Tamam", Width = 90, Height = 30, Left = 220, Top = 7 };
-                Tema.BirincilButon(tamamBtn);
-                var vazgecBtn = new Button { Text = "Vazgeç", Width = 90, Height = 30, Left = 320, Top = 7 };
-                Tema.IkincilButon(vazgecBtn);
-                altBtnPanel.Controls.Add(tamamBtn);
-                altBtnPanel.Controls.Add(vazgecBtn);
-
-                btn3660.Click += (s, e) => { boyKutu.Value = 3660; enKutu.Value = 1830; };
-                btn2800.Click += (s, e) => { boyKutu.Value = 2800; enKutu.Value = 2100; };
-                tamamBtn.Click += (s, e) =>
-                {
-                    if (boyKutu.Value <= 0 || enKutu.Value <= 0)
-                    {
-                        MessageBox.Show("Geçerli bir boy/en girin (hazır bir boyut seçin veya manuel girin).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-                    sonucBoy = (double)boyKutu.Value; sonucEn = (double)enKutu.Value; tamam = true;
-                    dlg.DialogResult = DialogResult.OK;
-                };
-                vazgecBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
-
-                dlg.Controls.Add(manuelPanel);
-                dlg.Controls.Add(hazirPanel);
-                dlg.Controls.Add(ustEtiket);
-                dlg.Controls.Add(altBtnPanel);
-                dlg.AcceptButton = tamamBtn;
-                dlg.CancelButton = vazgecBtn;
-                dlg.ShowDialog(this);
-            }
-            boy = sonucBoy; en = sonucEn;
-            return tamam;
-        }
-
-        // page_nesting.js'teki kesimPayiHesapla'nın (CNC/Flat-Tabla/freze dalı)
-        // AYNI mantıkla C# portu — NestingGonderPaneli.cs'teki AYNI metot
-        // (bkz. o dosyadaki NOT, data.js'teki AYNI varsayılanlar).
-        private (double kesimPayi, double kenarBosluk) KesimPayiVeKenarBosluguHesapla()
-        {
-            const double VarsayilanFrezeKayipPayiMM = 3;
-            const double VarsayilanKenarBosluguMM = 10;
-
-            // _ayarlar/_cncTakimlari, ÜretimOS'a hiç bağlanılamadıysa NULL
-            // kalabilir (bkz. alanların tanımı) — bu düğme teknik resim
-            // onayı gerektirmediği gibi sunucu bağlantısı da ZORUNLU
-            // kılmaz, bu yüzden burada defansif null kontrolü yapılır.
-            double kenarBosluk = (double?)_ayarlar?["plakaKenarBosluguMM"] ?? VarsayilanKenarBosluguMM;
-
-            string frezeTakimId = (string)_ayarlar?["varsayilanFrezeTakimId"];
-            JObject takim = !string.IsNullOrEmpty(frezeTakimId)
-                ? _cncTakimlari?.OfType<JObject>().FirstOrDefault(k => (string)k["id"] == frezeTakimId)
-                : null;
-            double kesimPayi = (takim != null && (double?)takim["capMm"] > 0)
-                ? (double)takim["capMm"]
-                : ((double?)_ayarlar?["frezeKayipPayiMM"] ?? VarsayilanFrezeKayipPayiMM);
-
-            return (kesimPayi, kenarBosluk);
+            _durumEtiketi.Text = toplamDosya + " dosya, " + toplamPlaka + " plaka SolidWorks'te oluşturuldu (" + gruplar.Count + " malzeme grubu).";
+            await System.Threading.Tasks.Task.CompletedTask;
         }
 
         // ── VERİ YÜKLEME ─────────────────────────────────────────────────────
