@@ -133,14 +133,16 @@ namespace UretimOSKesim
             _liste.Columns.Add("Boy×En (mm)", 110);
             _liste.Columns.Add("Adet", 50);
             _liste.Columns.Add("Teknik Resim", 160);
-            // Teknik resmi OLMAYAN (Manifest.cs'te onay kaydı bulunmayan)
-            // satırlar İŞARETLENEMEZ — bkz. dosya başı mimari karar.
-            _liste.ItemCheck += (s, e) =>
-            {
-                var item = _liste.Items[e.Index];
-                if (item.Tag is KesimSatiri ks && Manifest.Bul(ks.ModelYolu) == null)
-                    e.NewValue = CheckState.Unchecked;
-            };
+            // Kullanıcı isteği: "Reçete ağacı ekranına nesting yap tuşu ekle
+            // ... teknik resim yoksa ölçüye göre yerleşim yap ... ayrıca
+            // aynı bağlantıyı normal tuşa da bağla" — ESKİDEN burada teknik
+            // resmi OLMAYAN satırlar hiç İŞARETLENEMİYORDU (ÜretimOS'a
+            // gönderme ile AYNI kısıt kullanılıyordu). Artık TÜM satırlar
+            // işaretlenebilir; onay kısıtı SADECE ÜretimOS'a gönderen yolda
+            // (bkz. SeciliOlanlariGonder) uygulanıyor — "SolidWorks'te
+            // Nestle" onaysız (gri) satırları da ölçüsüne göre kullanır.
+            // Gri renk (bkz. VerileriYukleVeListele) görsel ipucu olarak
+            // KALIYOR, sadece işaretlemeyi ENGELLEMİYOR.
 
             _durumEtiketi = new Label { Dock = DockStyle.Top, Height = 24, Padding = new Padding(8, 4, 8, 4), ForeColor = Color.DarkBlue };
             _sonucKutusu = new TextBox { Dock = DockStyle.Bottom, Height = 90, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
@@ -292,13 +294,27 @@ namespace UretimOSKesim
 
         private async System.Threading.Tasks.Task SeciliOlanlariGonder()
         {
-            var secilenler = _liste.Items.Cast<ListViewItem>()
+            var tumSecilenler = _liste.Items.Cast<ListViewItem>()
                 .Where(i => i.Checked)
                 .Select(i => (KesimSatiri)i.Tag)
                 .ToList();
-            if (!secilenler.Any())
+            if (!tumSecilenler.Any())
             {
                 MessageBox.Show("Hiç parça seçilmedi.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // ÜretimOS'a gönderme yolu, dosya başı mimari karar gereği
+            // SADECE onaylı teknik resmi olan parçaları kabul eder — işaretleme
+            // artık serbest olduğu için (bkz. ArayuzuKur'daki NOT) bu kısıt
+            // burada, gönderim anında uygulanır.
+            var secilenler = tumSecilenler.Where(s => Manifest.Bul(s.ModelYolu) != null).ToList();
+            int onaysızAtlanan = tumSecilenler.Count - secilenler.Count;
+            if (!secilenler.Any())
+            {
+                MessageBox.Show("Seçilen hiçbir parçanın onaylı teknik resmi yok — ÜretimOS'a gönderme bunu gerektirir. " +
+                    "(Teknik resmi onaylanmadan nestlemek isterseniz 'SolidWorks'te Nestle' butonunu kullanın.)",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -306,6 +322,8 @@ namespace UretimOSKesim
             _durumEtiketi.Text = "Gönderiliyor…";
             var sonucSatirlari = new List<string>();
             var eslenemeyenler = new List<string>();
+            if (onaysızAtlanan > 0)
+                eslenemeyenler.Add(onaysızAtlanan + " seçili parça, onaylı teknik resmi olmadığı için ÜretimOS'a gönderilmedi (atlandı).");
 
             // ── GRUPLAMA: malzeme koduna (PLAKA_KODU) göre — bkz. dosya başı
             // "FARKLI KALINLIK/MALZEME = FARKLI NESTING" notu. Malzeme kodu

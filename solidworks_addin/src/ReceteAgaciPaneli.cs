@@ -155,6 +155,9 @@ namespace UretimOSKesim
         private UretimOSApiClient _istemci;
 
         private JArray _urunler, _yarimamuller, _altMontajlar, _paketler, _hammaddeler, _receteler, _rotalar;
+        // Kullanıcı isteği: "Reçete ağacı ekranına nesting yap tuşu ekle" —
+        // kesim payı hesaplaması için (bkz. NestingYapCalistir).
+        private JArray _cncTakimlari = new JArray();
         // "hatlar" (hat adı → makine listesi) VE "ayarlar" (saatlikIscilikUcreti
         // dahil), storage.js'teki AYNI basit obje anahtarları — id'li kayıt
         // DİZİSİ olmadıkları için _urunler vb. gibi JArray değil JObject.
@@ -595,9 +598,21 @@ namespace UretimOSKesim
             _teknikResimOnaylaBtn = new Button { Text = "✓ Teknik Resmi Onayla ve ÜretimOS'a Yükle", Dock = DockStyle.Right, Enabled = false };
             Tema.BirincilButon(_teknikResimOnaylaBtn);
             _teknikResimOnaylaBtn.Click += async (s, e) => await TeknikResimOnaylaVeYukleCalistir();
+            // Kullanıcı isteği: "Reçete ağacı ekranına nesting yap tuşu ekle
+            // burada seçilen teknik resimleri olanları kullanalım, teknik
+            // resim yoksa ölçüye göre yerleşim yap, grain de eklensin" —
+            // bkz. NestingYapCalistir. Teknik resim onayı burada ZORUNLU
+            // DEĞİL (NestingGonderPaneli'nin web'e gönderme yolundan farklı
+            // olarak) — onaylıysa yine kullanılır, yoksa bu ağaçta ZATEN
+            // takip edilen TaslakBoyMm/EnMm (SolidWorks ölçüsü veya elle
+            // girilmiş taslak) ile devam edilir.
+            var nestingYapBtn = new Button { Text = "📐 Nesting Yap", Dock = DockStyle.Right };
+            Tema.IkincilButon(nestingYapBtn);
+            nestingYapBtn.Click += async (s, e) => await NestingYapCalistir();
             altPanel.Controls.Add(_durumEtiketi);
             altPanel.Controls.Add(solidworksKaydetBtn);
             altPanel.Controls.Add(_teknikResimOnaylaBtn);
+            altPanel.Controls.Add(nestingYapBtn);
             altPanel.Controls.Add(_kaydetBtn);
             altPanel.Controls.Add(xmlDisaAktarBtn);
 
@@ -629,6 +644,205 @@ namespace UretimOSKesim
                 (Height - ClientSize.Height); // pencere başlık çubuğu/kenarlık payı
             int gerekliYukseklik = sabitDikeyAlan + satirYuksekligi * 30;
             if (gerekliYukseklik > Height) Height = Math.Min(gerekliYukseklik, calismaAlani.Height);
+        }
+
+        // ── NESTING YAP (bu ağaçtan DOĞRUDAN, teknik resim onayı ZORUNLU
+        // OLMADAN) ────────────────────────────────────────────────────────────
+        // Kullanıcı isteği: "Reçete ağacı ekranına nesting yap tuşu ekle
+        // burada seçilen teknik resimleri olanları kullanalım, teknik resim
+        // yoksa ölçüye göre yerleşim yap, grain de eklensin, ayrıca aynı
+        // bağlantıyı normal tuşa da bağla" — NestingGonderPaneli'nin
+        // "SolidWorks'te Nestle" butonu daha önce SADECE onaylı teknik
+        // resmi olan (Manifest.Bul ile) satırları işaretlenebilir yapıyordu;
+        // bu istek üzerine O KISIT KALDIRILDI (bkz. NestingGonderPaneli.cs
+        // ItemCheck/SeciliOlanlariGonder) — "normal tuş" budur, aynı
+        // NestingHesaplayici/NestingYerlesimOlusturucu BURADA da kullanılır.
+        //
+        // Aday satırlar: bu ağaçta "Panel (Plaka)" sınıfına atanmış, dahil
+        // edilmiş (AktarimaDahil) ve TaslakBoyMm/EnMm'si olan TÜM düğümler —
+        // bu alanlar ZATEN her satırda (onaylı teknik resim olsun olmasın)
+        // SolidWorks ölçüsünden veya elle doldurulmuş durumda (bkz.
+        // BilesenDugumu.TaslakBoyMm/EnMm tanımındaki NOT), bu yüzden "teknik
+        // resim yoksa ölçüye göre yerleşim yap" isteği EK KOD GEREKTİRMEDİ.
+        private async System.Threading.Tasks.Task NestingYapCalistir()
+        {
+            var adaylar = new List<BilesenDugumu>();
+            void Topla(List<BilesenDugumu> liste)
+            {
+                foreach (var d in liste)
+                {
+                    if (d.AktarimaDahil && d.Sinif == "plaka" && d.TaslakBoyMm > 0 && d.TaslakEnMm > 0)
+                        adaylar.Add(d);
+                    Topla(d.Cocuklar);
+                }
+            }
+            Topla(_bilesenKokListesi ?? new List<BilesenDugumu>());
+
+            if (adaylar.Count == 0)
+            {
+                MessageBox.Show("Ağaçta 'Panel (Plaka)' sınıfında, dahil edilmiş (işaretli) ve ölçüsü olan hiçbir satır yok.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (!PlakaBoyutuSor(out double plakaBoy, out double plakaEn)) return;
+
+            string cikisKlasoru;
+            using (var klasorDlg = new FolderBrowserDialog { Description = "Nesting sonucu parça dosyalarının kaydedileceği klasör" })
+            {
+                if (klasorDlg.ShowDialog() != DialogResult.OK) return;
+                cikisKlasoru = klasorDlg.SelectedPath;
+            }
+
+            string partSablon = UretimOSAddin.SablonYoluBul(_app, "Part.prtdot", UretimOSAddin.PART_SABLON_YOLU);
+            if (!File.Exists(partSablon))
+            {
+                MessageBox.Show("Parça şablonu bulunamadı:\n" + partSablon +
+                    "\n\nBu, SolidWorks'ün kendi stok şablonudur — normalde 'Sistem Seçenekleri > Dosya " +
+                    "Konumları > Belge Şablonları' klasöründe hazır bulunur.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
+            _durumEtiketi.Text = "Nesting hesaplanıyor…";
+            Application.DoEvents();
+
+            var (kesimPayi, kenarBosluk) = KesimPayiVeKenarBosluguHesapla();
+
+            // Grain: bu ağaçta ayrı bir alan tutulmuyor (bkz. BilesenDugumu) —
+            // gerçek bir SolidWorks bileşenine karşılık gelen düğümler için
+            // KesimListesiCikarici/NestingGonderPaneli'deki AYNI özel alandan
+            // (OzelAlanlar.TAHIL_YONU) doğrudan okunur; sentetik/yer tutucu
+            // düğümlerde (Model==null) bilinmiyor demektir — TAHMİN EDİLMEZ,
+            // kilitsiz (döndürülebilir) varsayılır.
+            var parcaGirdileri = adaylar.Select(d => new NestingParcaGirdi
+            {
+                Ad = d.GosterimAdi,
+                En = d.TaslakEnMm,
+                Boy = d.TaslakBoyMm,
+                Adet = Math.Max(1, d.Miktar),
+                GrainKilitli = d.Model != null && !string.IsNullOrWhiteSpace(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.TAHIL_YONU)),
+                YmKod = d.MevcutKod ?? ""
+            }).ToList();
+
+            var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri);
+
+            if (sonuc.Plakalar.Count == 0)
+            {
+                _durumEtiketi.ForeColor = Color.DarkRed;
+                _durumEtiketi.Text = "Hiçbir parça yerleştirilemedi.";
+                MessageBox.Show(string.Join("\r\n", sonuc.YerlesemeyenUyarilari), "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string kod = Path.GetFileNameWithoutExtension(_hedefModel.GetPathName());
+            if (string.IsNullOrWhiteSpace(kod)) kod = "NESTING";
+
+            _durumEtiketi.Text = sonuc.Plakalar.Count + " plaka için SolidWorks'te sketch oluşturuluyor…";
+            Application.DoEvents();
+
+            var olusturucu = new NestingYerlesimOlusturucu(_app);
+            var dosyalar = olusturucu.Olustur(sonuc, plakaEn, plakaBoy, kod, cikisKlasoru, partSablon);
+
+            var raporSatirlari = new List<string> { sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya başarıyla oluşturuldu (SolidWorks'te açık bırakıldı):" };
+            raporSatirlari.AddRange(dosyalar);
+            if (sonuc.YerlesemeyenUyarilari.Count > 0) { raporSatirlari.Add(""); raporSatirlari.Add("UYARILAR:"); raporSatirlari.AddRange(sonuc.YerlesemeyenUyarilari); }
+            if (olusturucu.Uyarilar.Count > 0) { raporSatirlari.Add(""); raporSatirlari.AddRange(olusturucu.Uyarilar); }
+
+            _durumEtiketi.ForeColor = dosyalar.Count > 0 ? Color.DarkGreen : Color.DarkRed;
+            _durumEtiketi.Text = dosyalar.Count + "/" + sonuc.Plakalar.Count + " plaka SolidWorks'te oluşturuldu.";
+
+            MessageBox.Show(string.Join("\r\n", raporSatirlari) +
+                "\r\n\r\nDXF almak için: açılan parçada sketch'i düzenleme moduna girip Dosya > Farklı Kaydet'te DXF/DWG seçin.",
+                "ÜretimOS", MessageBoxButtons.OK, dosyalar.Count > 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        // Basit modal: hazır 2 boyut butonu + manuel Boy×En — NestingGonderPaneli.
+        // PlakaBoyutuSec'teki AYNI iki hazır ölçü (kullanıcı isteği: "3660x1830
+        // ya da 2800x2100 ölçüsünde plakaya yada manuel giriş yapılarak").
+        private bool PlakaBoyutuSor(out double boy, out double en)
+        {
+            double sonucBoy = 0, sonucEn = 0;
+            bool tamam = false;
+            using (var dlg = new Form
+            {
+                Text = "Plaka Boyutu", Width = 420, Height = 200, FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = Tema.TabanFont
+            })
+            {
+                var ustEtiket = new Label { Text = "Nesting için plaka boyutu seçin:", Dock = DockStyle.Top, Height = 28, Padding = new Padding(10, 8, 10, 0) };
+                var hazirPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(10, 4, 10, 0), WrapContents = false };
+                var btn3660 = new Button { Text = "3660×1830 mm", Width = 130, Height = 28 };
+                var btn2800 = new Button { Text = "2800×2100 mm", Width = 130, Height = 28 };
+                hazirPanel.Controls.Add(btn3660);
+                hazirPanel.Controls.Add(btn2800);
+
+                var manuelPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(10, 4, 10, 0), WrapContents = false };
+                manuelPanel.Controls.Add(new Label { Text = "Manuel Boy×En (mm):", AutoSize = true, Margin = new Padding(0, 6, 4, 0) });
+                var boyKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 70 };
+                var enKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 70, Margin = new Padding(4, 0, 0, 0) };
+                manuelPanel.Controls.Add(boyKutu);
+                manuelPanel.Controls.Add(new Label { Text = "×", AutoSize = true, Margin = new Padding(2, 6, 2, 0) });
+                manuelPanel.Controls.Add(enKutu);
+
+                var altBtnPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
+                var tamamBtn = new Button { Text = "Tamam", Width = 90, Height = 30, Left = 220, Top = 7 };
+                Tema.BirincilButon(tamamBtn);
+                var vazgecBtn = new Button { Text = "Vazgeç", Width = 90, Height = 30, Left = 320, Top = 7 };
+                Tema.IkincilButon(vazgecBtn);
+                altBtnPanel.Controls.Add(tamamBtn);
+                altBtnPanel.Controls.Add(vazgecBtn);
+
+                btn3660.Click += (s, e) => { boyKutu.Value = 3660; enKutu.Value = 1830; };
+                btn2800.Click += (s, e) => { boyKutu.Value = 2800; enKutu.Value = 2100; };
+                tamamBtn.Click += (s, e) =>
+                {
+                    if (boyKutu.Value <= 0 || enKutu.Value <= 0)
+                    {
+                        MessageBox.Show("Geçerli bir boy/en girin (hazır bir boyut seçin veya manuel girin).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    sonucBoy = (double)boyKutu.Value; sonucEn = (double)enKutu.Value; tamam = true;
+                    dlg.DialogResult = DialogResult.OK;
+                };
+                vazgecBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
+
+                dlg.Controls.Add(manuelPanel);
+                dlg.Controls.Add(hazirPanel);
+                dlg.Controls.Add(ustEtiket);
+                dlg.Controls.Add(altBtnPanel);
+                dlg.AcceptButton = tamamBtn;
+                dlg.CancelButton = vazgecBtn;
+                dlg.ShowDialog(this);
+            }
+            boy = sonucBoy; en = sonucEn;
+            return tamam;
+        }
+
+        // page_nesting.js'teki kesimPayiHesapla'nın (CNC/Flat-Tabla/freze dalı)
+        // AYNI mantıkla C# portu — NestingGonderPaneli.cs'teki AYNI metot
+        // (bkz. o dosyadaki NOT, data.js'teki AYNI varsayılanlar).
+        private (double kesimPayi, double kenarBosluk) KesimPayiVeKenarBosluguHesapla()
+        {
+            const double VarsayilanFrezeKayipPayiMM = 3;
+            const double VarsayilanKenarBosluguMM = 10;
+
+            // _ayarlar/_cncTakimlari, ÜretimOS'a hiç bağlanılamadıysa NULL
+            // kalabilir (bkz. alanların tanımı) — bu düğme teknik resim
+            // onayı gerektirmediği gibi sunucu bağlantısı da ZORUNLU
+            // kılmaz, bu yüzden burada defansif null kontrolü yapılır.
+            double kenarBosluk = (double?)_ayarlar?["plakaKenarBosluguMM"] ?? VarsayilanKenarBosluguMM;
+
+            string frezeTakimId = (string)_ayarlar?["varsayilanFrezeTakimId"];
+            JObject takim = !string.IsNullOrEmpty(frezeTakimId)
+                ? _cncTakimlari?.OfType<JObject>().FirstOrDefault(k => (string)k["id"] == frezeTakimId)
+                : null;
+            double kesimPayi = (takim != null && (double?)takim["capMm"] > 0)
+                ? (double)takim["capMm"]
+                : ((double?)_ayarlar?["frezeKayipPayiMM"] ?? VarsayilanFrezeKayipPayiMM);
+
+            return (kesimPayi, kenarBosluk);
         }
 
         // ── VERİ YÜKLEME ─────────────────────────────────────────────────────
@@ -680,6 +894,7 @@ namespace UretimOSKesim
                     _hammaddeler = JArray.Parse(await _istemci.Getir("hammaddeler") ?? "[]");
                     _receteler = JArray.Parse(await _istemci.Getir("receteler") ?? "[]");
                     _rotalar = JArray.Parse(await _istemci.Getir("rotalar") ?? "[]");
+                    _cncTakimlari = JArray.Parse(await _istemci.Getir("cncTakimlari") ?? "[]");
                     _hatlar = JObject.Parse(await _istemci.Getir("hatlar") ?? "{}");
                     // data.js'teki VARSAYILAN_AYARLAR.saatlikIscilikUcreti = 500 ile
                     // AYNI varsayılan — sunucuda "ayarlar" hiç yazılmamışsa (ilk
@@ -5129,6 +5344,7 @@ namespace UretimOSKesim
                 _hammaddeler = JArray.Parse(await _istemci.Getir("hammaddeler") ?? "[]");
                 _receteler = JArray.Parse(await _istemci.Getir("receteler") ?? "[]");
                 _rotalar = JArray.Parse(await _istemci.Getir("rotalar") ?? "[]");
+                _cncTakimlari = JArray.Parse(await _istemci.Getir("cncTakimlari") ?? "[]");
                 _hatlar = JObject.Parse(await _istemci.Getir("hatlar") ?? "{}");
                 _ayarlar = JObject.Parse(await _istemci.Getir("ayarlar") ?? "{}");
                 _verilerYuklendi = true;
