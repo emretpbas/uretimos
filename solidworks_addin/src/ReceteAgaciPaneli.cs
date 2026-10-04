@@ -858,6 +858,10 @@ namespace UretimOSKesim
                         // olmayan formlar (cep/kesik/kanal) da AYNI onay
                         // kapısından (deliklerOnaylandi) dahil edilir.
                         girdi.Formlar = formlar.Select(f => f.NoktalarXY.Select(nokta => (x: nokta[0], y: nokta[1])).ToList()).ToList();
+                        // Kullanıcı isteği: "gerçek dış hattı çiz" — kenarına
+                        // kertik/çentik işlenmiş parçalarda düz dikdörtgen
+                        // yerine gerçek silüet. AYNI onay kapısı.
+                        girdi.DisHat = DelikFormCikarici.DisHatCikar(d.Model).Select(nokta => (x: nokta[0], y: nokta[1])).ToList();
                     }
                     parcaGirdileri.Add(girdi);
                 }

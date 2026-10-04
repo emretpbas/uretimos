@@ -183,6 +183,74 @@ namespace UretimOSKesim
             }
         }
 
+        // Kullanıcı isteği: "parçanın gerçek dış hattını çiz" — nesting
+        // sketch'inde her parçanın HER ZAMAN düz bir dikdörtgen (Boy×En)
+        // olarak çizilmesi yerine, kenarına kertik/çentik işlenmiş
+        // parçalarda GERÇEK silüeti yansıtabilmek için. AYNI "en büyük düz
+        // yüzey" bulma mantığı ve AYNI loop/kenar gezme kodu (bkz.
+        // FormlariCikar) kullanılır — TEK FARK: IsOuter() DEĞİL yerine
+        // IsOuter() OLAN (parçanın kendi dış sınırı) loop alınır. Boş liste
+        // dönerse (çıkarım başarısız/güvenilmezse) çağıran taraf düz
+        // dikdörtgene GERİ DÜŞMELİDİR — burada TAHMİN EDİLMEZ.
+        public static List<double[]> DisHatCikar(ModelDoc2 modelDoc)
+        {
+            var disHat = new List<double[]>();
+            try
+            {
+                var partDoc = modelDoc as PartDoc;
+                if (partDoc == null) return disHat;
+
+                object[] govdelerObj = (object[])partDoc.GetBodies2((int)swBodyType_e.swSolidBody, true);
+                if (govdelerObj == null || govdelerObj.Length == 0) return disHat;
+
+                Face2 enBuyukDuzYuz = null;
+                double enBuyukAlanM2 = 0;
+                foreach (Body2 govde in govdelerObj.Cast<Body2>())
+                {
+                    object[] yuzeylerObj = (object[])govde.GetFaces();
+                    if (yuzeylerObj == null) continue;
+                    foreach (Face2 yuz in yuzeylerObj.Cast<Face2>())
+                    {
+                        Surface yuzey = (Surface)yuz.GetSurface();
+                        if (yuzey != null && yuzey.IsPlane())
+                        {
+                            double alan = yuz.GetArea();
+                            if (alan > enBuyukAlanM2) { enBuyukAlanM2 = alan; enBuyukDuzYuz = yuz; }
+                        }
+                    }
+                }
+                if (enBuyukDuzYuz == null) return disHat;
+
+                object[] looplarObj = (object[])enBuyukDuzYuz.GetLoops();
+                if (looplarObj == null) return disHat;
+
+                foreach (Loop2 loop in looplarObj.Cast<Loop2>())
+                {
+                    if (!loop.IsOuter()) continue; // SADECE dış sınır — parçanın kendi silüeti
+                    object[] kenarlarObj = (object[])loop.GetEdges();
+                    if (kenarlarObj == null || kenarlarObj.Length == 0) continue;
+
+                    foreach (Edge kenar in kenarlarObj.Cast<Edge>())
+                    {
+                        // v1 YAKLAŞIKLAMASI: FormlariCikar'daki AYNI not —
+                        // her kenarın yalnızca BAŞLANGIÇ noktası alınır.
+                        Vertex bas = (Vertex)kenar.IGetStartVertex();
+                        if (bas == null) continue;
+                        double[] nokta = (double[])bas.GetPoint();
+                        if (nokta == null || nokta.Length < 2) continue;
+                        disHat.Add(new[] { Math.Round(nokta[0] * METRE_TO_MM, 2), Math.Round(nokta[1] * METRE_TO_MM, 2) });
+                    }
+                    break; // bir düz yüzde yalnızca BİR dış loop olur
+                }
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("DelikFormCikarici.DisHatCikar HATA (yakalandi, bos liste donduruldu): " + ex.Message);
+                return new List<double[]>();
+            }
+            return disHat;
+        }
+
         private static void FormlariCikar(Face2 duzYuz, List<FormBilgisi> formlar)
         {
             try

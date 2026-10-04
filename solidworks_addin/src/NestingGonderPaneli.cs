@@ -527,7 +527,8 @@ namespace UretimOSKesim
                 GrainKilitli = !string.IsNullOrWhiteSpace(s.TahilYonu),
                 YmKod = s.SapCode ?? "",
                 Delikler = s.DeliklerOnaylandi ? s.Delikler.Select(d => (x: d.XMm, y: d.YMm, cap: d.CapMm)).ToList() : new List<(double, double, double)>(),
-                Formlar = s.DeliklerOnaylandi ? s.Formlar.Select(f => f.NoktalarXY.Select(n => (x: n[0], y: n[1])).ToList()).ToList() : new List<List<(double, double)>>()
+                Formlar = s.DeliklerOnaylandi ? s.Formlar.Select(f => f.NoktalarXY.Select(n => (x: n[0], y: n[1])).ToList()).ToList() : new List<List<(double, double)>>(),
+                DisHat = s.DeliklerOnaylandi ? s.DisHat.Select(n => (x: n[0], y: n[1])).ToList() : new List<(double, double)>()
             }).ToList();
 
             var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri);

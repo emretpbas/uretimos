@@ -54,6 +54,12 @@ namespace UretimOSKesim
         public List<FormBilgisi> Formlar = new List<FormBilgisi>();
         public bool DeliklerOnaylandi;
 
+        // YENİ: parçanın gerçek dış hattı (kertik/çentik dahil, bkz.
+        // DelikFormCikarici.DisHatCikar) — Delikler/Formlar ile AYNI onay
+        // kapısına (DeliklerOnaylandi) tabidir; boşsa (çıkarım yapılmadı/
+        // başarısız) nesting düz dikdörtgene geri düşer.
+        public List<double[]> DisHat = new List<double[]>();
+
         // YENİ: operasyon bazlı takım/parametre atamaları (bkz. CncOperasyonu.cs,
         // CncYerlesimPaneli.cs "Operasyonlar" sekmesi). Yalnızca DeliklerOnaylandi
         // true ise dışa aktarıma dahil edilir (aynı onay kapısı, delikler
@@ -206,6 +212,7 @@ namespace UretimOSKesim
             var (delikler, formlar) = DelikFormCikarici.Cikar(modelDoc, kalinlik);
             satir.Delikler = delikler;
             satir.Formlar = formlar;
+            satir.DisHat = DelikFormCikarici.DisHatCikar(modelDoc);
             if (delikler.Count > 0 && !satir.DeliklerOnaylandi)
             {
                 _uyarilar.Add($"'{bilesen.Name2}' için {delikler.Count} delik OTOMATİK tespit edildi ama " +

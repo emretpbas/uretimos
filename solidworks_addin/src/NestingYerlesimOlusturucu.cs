@@ -80,9 +80,27 @@ namespace UretimOSKesim
                 // kararlaştırılmış (döndürülmüş veya düz) W×H boyutu çizilir.
                 foreach (var oge in plaka.Yerlesenler)
                 {
-                    belge.SketchManager.CreateCornerRectangle(
-                        oge.X * MM_TO_M, oge.Y * MM_TO_M, 0,
-                        (oge.X + oge.W) * MM_TO_M, (oge.Y + oge.H) * MM_TO_M, 0);
+                    // KULLANICI RAPORU: "parçalarda yaptığım değişiklikler ne
+                    // ölçüsel ne formsal olarak değişmiyor" — kenarına kertik/
+                    // çentik işlenmiş parçalar artık düz dikdörtgen DEĞİL,
+                    // DelikFormCikarici.DisHatCikar'ın çıkardığı GERÇEK dış hat
+                    // olarak çizilir. Çıkarım yapılmadıysa/başarısızsa (DisHat
+                    // boş — TAHMİN EDİLMEZ) düz dikdörtgene GERİ DÜŞÜLÜR.
+                    if (oge.DisHat.Count >= 3)
+                    {
+                        for (int i = 0; i < oge.DisHat.Count; i++)
+                        {
+                            var p1 = oge.DisHat[i];
+                            var p2 = oge.DisHat[(i + 1) % oge.DisHat.Count];
+                            belge.SketchManager.CreateLine(p1.x * MM_TO_M, p1.y * MM_TO_M, 0, p2.x * MM_TO_M, p2.y * MM_TO_M, 0);
+                        }
+                    }
+                    else
+                    {
+                        belge.SketchManager.CreateCornerRectangle(
+                            oge.X * MM_TO_M, oge.Y * MM_TO_M, 0,
+                            (oge.X + oge.W) * MM_TO_M, (oge.Y + oge.H) * MM_TO_M, 0);
+                    }
 
                     // KULLANICI RAPORU: "parçaların üzerindeki delikler de
                     // çıkmadı" — delik merkezleri NestingHesaplayici'de ZATEN

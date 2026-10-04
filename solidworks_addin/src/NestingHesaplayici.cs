@@ -23,6 +23,12 @@ namespace UretimOSKesim
         // Her form, parçanın KENDİ yerel çerçevesinde kapalı bir nokta
         // dizisidir (ilk nokta son noktaya KAPANMALI — çağıran ekler).
         public List<List<(double x, double y)>> Formlar = new List<List<(double, double)>>();
+        // Kullanıcı isteği: "parçanın gerçek dış hattını çiz" — parçanın
+        // kenarına işlenmiş kertik/çentik gibi DÜZENSİZ dış sınırı (bkz.
+        // DelikFormCikarici.DisHatCikar). Boş ise (çıkarım yapılmadı/
+        // başarısız) nesting çıktısında düz bir dikdörtgene (En×Boy) GERİ
+        // DÜŞÜLÜR — bu TAHMİN DEĞİL, açık bir varsayılan davranıştır.
+        public List<(double x, double y)> DisHat = new List<(double, double)>();
     }
 
     // Bir plaka üzerinde yerleşmiş TEK bir parça örneği (kesilmiş kopya).
@@ -40,6 +46,9 @@ namespace UretimOSKesim
         // Formlar, AYNI şekilde plakanın mutlak koordinatına dönüştürülmüş
         // (rotasyon dahil) kapalı nokta dizileri.
         public List<List<(double x, double y)>> Formlar = new List<List<(double, double)>>();
+        // Plakanın mutlak koordinatına dönüştürülmüş GERÇEK dış hat (varsa) —
+        // boşsa W×H dikdörtgenine geri düşülür (bkz. NestingParcaGirdi.DisHat).
+        public List<(double x, double y)> DisHat = new List<(double, double)>();
     }
 
     public class NestingPlakaSonucu
@@ -80,6 +89,7 @@ namespace UretimOSKesim
             public double OrigW;
             public List<(double x, double y, double cap)> Delikler;
             public List<List<(double x, double y)>> Formlar;
+            public List<(double x, double y)> DisHat;
         }
 
         private class Placed
@@ -94,7 +104,7 @@ namespace UretimOSKesim
             var items = new List<Item>();
             foreach (var p in parcalar)
                 for (int k = 0; k < Math.Max(1, p.Adet); k++)
-                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, OrigW = p.En, Delikler = p.Delikler, Formlar = p.Formlar });
+                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, OrigW = p.En, Delikler = p.Delikler, Formlar = p.Formlar, DisHat = p.DisHat });
             items = items.OrderByDescending(i => i.W * i.H).ToList();
 
             double usableW = plakaEn - 2 * kenarBosluk;
@@ -137,6 +147,13 @@ namespace UretimOSKesim
                             return (x: mutlakX + dx, y: mutlakY + dy);
                         }).ToList())
                         .ToList();
+                    var disHat = (pl.Item.DisHat ?? new List<(double, double)>())
+                        .Select(nokta =>
+                        {
+                            var (dx, dy) = pl.Rotated ? (nokta.y, pl.Item.OrigW - nokta.x) : (nokta.x, nokta.y);
+                            return (x: mutlakX + dx, y: mutlakY + dy);
+                        })
+                        .ToList();
                     plaka.Yerlesenler.Add(new NestingYerlesimOgesi
                     {
                         Ad = pl.Item.Ad,
@@ -147,7 +164,8 @@ namespace UretimOSKesim
                         Rotated = pl.Rotated,
                         YmKod = pl.Item.YmKod,
                         Delikler = delikler,
-                        Formlar = formlar
+                        Formlar = formlar,
+                        DisHat = disHat
                     });
                 }
                 sonuc.Plakalar.Add(plaka);
