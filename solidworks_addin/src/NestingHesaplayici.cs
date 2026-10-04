@@ -18,6 +18,11 @@ namespace UretimOSKesim
         // referanslı delik merkezleri + çapı (mm) — page_nesting.js'teki
         // satir.delikler ile AYNI veri şekli (bkz. buildDxf/delikKoordDonustur).
         public List<(double x, double y, double cap)> Delikler = new List<(double, double, double)>();
+        // Kullanıcı isteği: "ne delik ne kanal çıktı" — dairesel OLMAYAN
+        // formlar (cep/kesik/kanal — bkz. DelikFormCikarici.FormBilgisi).
+        // Her form, parçanın KENDİ yerel çerçevesinde kapalı bir nokta
+        // dizisidir (ilk nokta son noktaya KAPANMALI — çağıran ekler).
+        public List<List<(double x, double y)>> Formlar = new List<List<(double, double)>>();
     }
 
     // Bir plaka üzerinde yerleşmiş TEK bir parça örneği (kesilmiş kopya).
@@ -32,6 +37,9 @@ namespace UretimOSKesim
         // ZATEN ofsetlenmiş) + çapı (mm) — rotated ise page_nesting.js'teki
         // delikKoordDonustur ile AYNI dönüşüm (dx,dy)->(dy, origW-dx) uygulanır.
         public List<(double x, double y, double cap)> Delikler = new List<(double, double, double)>();
+        // Formlar, AYNI şekilde plakanın mutlak koordinatına dönüştürülmüş
+        // (rotasyon dahil) kapalı nokta dizileri.
+        public List<List<(double x, double y)>> Formlar = new List<List<(double, double)>>();
     }
 
     public class NestingPlakaSonucu
@@ -71,6 +79,7 @@ namespace UretimOSKesim
             // (page_nesting.js'teki item.origW ile AYNI amaç).
             public double OrigW;
             public List<(double x, double y, double cap)> Delikler;
+            public List<List<(double x, double y)>> Formlar;
         }
 
         private class Placed
@@ -85,7 +94,7 @@ namespace UretimOSKesim
             var items = new List<Item>();
             foreach (var p in parcalar)
                 for (int k = 0; k < Math.Max(1, p.Adet); k++)
-                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, OrigW = p.En, Delikler = p.Delikler });
+                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, OrigW = p.En, Delikler = p.Delikler, Formlar = p.Formlar });
             items = items.OrderByDescending(i => i.W * i.H).ToList();
 
             double usableW = plakaEn - 2 * kenarBosluk;
@@ -121,6 +130,13 @@ namespace UretimOSKesim
                             return (x: mutlakX + dx, y: mutlakY + dy, cap: d.cap);
                         })
                         .ToList();
+                    var formlar = (pl.Item.Formlar ?? new List<List<(double, double)>>())
+                        .Select(form => form.Select(nokta =>
+                        {
+                            var (dx, dy) = pl.Rotated ? (nokta.y, pl.Item.OrigW - nokta.x) : (nokta.x, nokta.y);
+                            return (x: mutlakX + dx, y: mutlakY + dy);
+                        }).ToList())
+                        .ToList();
                     plaka.Yerlesenler.Add(new NestingYerlesimOgesi
                     {
                         Ad = pl.Item.Ad,
@@ -130,7 +146,8 @@ namespace UretimOSKesim
                         H = pl.H,
                         Rotated = pl.Rotated,
                         YmKod = pl.Item.YmKod,
-                        Delikler = delikler
+                        Delikler = delikler,
+                        Formlar = formlar
                     });
                 }
                 sonuc.Plakalar.Add(plaka);

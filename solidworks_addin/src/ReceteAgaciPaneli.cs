@@ -852,8 +852,12 @@ namespace UretimOSKesim
                         string.Equals(KesimListesiCikarici.OzelAlanOku(d.Model, OzelAlanlar.DELIKLER_ONAYLANDI), "evet", StringComparison.OrdinalIgnoreCase);
                     if (deliklerOnaylandi)
                     {
-                        var (delikler, _) = DelikFormCikarici.Cikar(d.Model, d.TaslakKalinlikMm);
+                        var (delikler, formlar) = DelikFormCikarici.Cikar(d.Model, d.TaslakKalinlikMm);
                         girdi.Delikler = delikler.Select(dl => (x: dl.XMm, y: dl.YMm, cap: dl.CapMm)).ToList();
+                        // Kullanıcı isteği: "ne delik ne kanal çıktı" — dairesel
+                        // olmayan formlar (cep/kesik/kanal) da AYNI onay
+                        // kapısından (deliklerOnaylandi) dahil edilir.
+                        girdi.Formlar = formlar.Select(f => f.NoktalarXY.Select(nokta => (x: nokta[0], y: nokta[1])).ToList()).ToList();
                     }
                     parcaGirdileri.Add(girdi);
                 }

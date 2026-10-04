@@ -102,6 +102,24 @@ namespace UretimOSKesim
                             delik.x * MM_TO_M, delik.y * MM_TO_M, 0,
                             (delik.x + r) * MM_TO_M, delik.y * MM_TO_M, 0);
                     }
+
+                    // KULLANICI RAPORU: "ne delik ne kanal çıktı" — dairesel
+                    // OLMAYAN formlar (cep/kesik/kanal, bkz. DelikFormCikarici.
+                    // FormBilgisi) kapalı bir nokta dizisi olarak CreateLine ile
+                    // (ardışık noktaları birleştirip son noktayı ilkine kapatarak)
+                    // çizilir — CreateCircle'daki AYNI GÜVENİLİRLİK UYARISI
+                    // geçerli (bu projede İLK KEZ kullanılan, henüz gerçek
+                    // derlemede doğrulanmamış bir çağrı).
+                    foreach (var form in oge.Formlar)
+                    {
+                        if (form.Count < 2) continue;
+                        for (int i = 0; i < form.Count; i++)
+                        {
+                            var p1 = form[i];
+                            var p2 = form[(i + 1) % form.Count];
+                            belge.SketchManager.CreateLine(p1.x * MM_TO_M, p1.y * MM_TO_M, 0, p2.x * MM_TO_M, p2.y * MM_TO_M, 0);
+                        }
+                    }
                 }
 
                 belge.SketchManager.InsertSketch(true); // sketch'i kapat
