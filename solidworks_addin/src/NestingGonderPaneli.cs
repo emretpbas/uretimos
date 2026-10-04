@@ -60,15 +60,19 @@ namespace UretimOSKesim
     public class NestingGonderPaneli : Form
     {
         private readonly ModelDoc2 _aktifBelge;
+        private readonly ISldWorks _app;
         private UretimOSApiClient _istemci;
         private JArray _hammaddeler = new JArray();
         private JArray _kesimIhtiyaclari = new JArray();
+        private JArray _cncTakimlari = new JArray();
+        private JObject _ayarlar = new JObject();
         private List<KesimSatiri> _satirlar = new List<KesimSatiri>();
 
         private ListView _liste;
         private Label _durumEtiketi;
         private Button _gonderBtn;
         private Button _yenileBtn;
+        private Button _solidworksteNestleBtn;
         private TextBox _sonucKutusu;
 
         // Kullanıcı isteği: "3660x1830 ya da 2800x2100 ölçüsünde plakaya...
@@ -83,9 +87,10 @@ namespace UretimOSKesim
         private double? _manuelPlakaBoy, _manuelPlakaEn;
         private Label _manuelPlakaEtiketi;
 
-        public NestingGonderPaneli(ModelDoc2 aktifBelge)
+        public NestingGonderPaneli(ModelDoc2 aktifBelge, ISldWorks app)
         {
             _aktifBelge = aktifBelge;
+            _app = app;
             Text = "Nesting'e Gönder (ÜretimOS)";
             Width = 900; Height = 640;
             StartPosition = FormStartPosition.CenterScreen;
@@ -156,11 +161,19 @@ namespace UretimOSKesim
             _manuelPlakaEtiketi = new Label { Dock = DockStyle.Top, Height = 20, Padding = new Padding(8, 0, 8, 4), ForeColor = Color.DarkGreen };
 
             var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
-            _gonderBtn = new Button { Text = "Seçilenleri Nesting'e Gönder", Width = 220, Height = 30, Left = 8, Top = 7, Enabled = false };
+            _gonderBtn = new Button { Text = "Seçilenleri Nesting'e Gönder (ÜretimOS Web)", Width = 260, Height = 30, Left = 8, Top = 7, Enabled = false };
             _gonderBtn.Click += async (s, e) => await SeciliOlanlariGonder();
-            _yenileBtn = new Button { Text = "Yenile", Width = 90, Height = 30, Left = 236, Top = 7 };
+            // Kullanıcı isteği: "üretimosta istemiyorum solidde oluşturu
+            // düzenleyip dxf alacağız optimize edilmiş nesting çıktısını" —
+            // yukarıdaki butonun aksine bu, ÜretimOS'a HİÇBİR ŞEY GÖNDERMEZ;
+            // yerleştirmeyi burada (NestingHesaplayici) hesaplayıp SolidWorks'te
+            // düzenlenebilir bir sketch/parça olarak üretir (bkz. SolidWorksteNestle).
+            _solidworksteNestleBtn = new Button { Text = "SolidWorks'te Nestle (Sketch Oluştur)", Width = 260, Height = 30, Left = 276, Top = 7, Enabled = false };
+            _solidworksteNestleBtn.Click += async (s, e) => await SolidWorksteNestle();
+            _yenileBtn = new Button { Text = "Yenile", Width = 90, Height = 30, Left = 544, Top = 7 };
             _yenileBtn.Click += async (s, e) => await VerileriYukleVeListele();
             altPanel.Controls.Add(_gonderBtn);
+            altPanel.Controls.Add(_solidworksteNestleBtn);
             altPanel.Controls.Add(_yenileBtn);
 
             Controls.Add(_sonucKutusu);
@@ -188,6 +201,7 @@ namespace UretimOSKesim
         private async System.Threading.Tasks.Task VerileriYukleVeListele()
         {
             _gonderBtn.Enabled = false;
+            _solidworksteNestleBtn.Enabled = false;
             _durumEtiketi.ForeColor = Color.DarkBlue;
             _durumEtiketi.Text = "Montaj taranıyor…";
             _liste.Items.Clear();
@@ -222,6 +236,14 @@ namespace UretimOSKesim
                 _liste.Items.Add(item);
             }
 
+            // "SolidWorks'te Nestle" ÜretimOS'a bağlı DEĞİLDİR (kullanıcı isteği:
+            // "üretimosta istemiyorum") — SolidWorks taraması tek başına yeterli,
+            // bu yüzden sunucu denemesinden ÖNCE etkinleştirilir. Sunucuya
+            // bağlanılabilirse kesim payı/kenar boşluğu ÜretimOS ayarlarından
+            // (web Nesting sayfasıyla TUTARLI olsun diye) okunur; bağlanılamazsa
+            // SolidWorksteNestle kendi (data.js'teki AYNI) varsayılanlarına düşer.
+            _solidworksteNestleBtn.Enabled = _satirlar.Count > 0;
+
             _durumEtiketi.Text = _satirlar.Count + " parça bulundu — ÜretimOS'a bağlanılıyor…";
 
             var ayar = BaglantiAyarlari.Yukle();
@@ -229,7 +251,7 @@ namespace UretimOSKesim
             {
                 BaglantiAyarlari.OrnekDosyaOlustur();
                 _durumEtiketi.ForeColor = Color.DarkOrange;
-                _durumEtiketi.Text = "Yerel bağlantı ayarı yok. Örnek dosya oluşturuldu: " + BaglantiAyarlari.DosyaYoluGoster();
+                _durumEtiketi.Text = "Yerel bağlantı ayarı yok (ÜretimOS'a gönderme devre dışı, ama SolidWorks'te Nestle yine kullanılabilir). Örnek dosya oluşturuldu: " + BaglantiAyarlari.DosyaYoluGoster();
                 return;
             }
 
@@ -240,11 +262,13 @@ namespace UretimOSKesim
                 if (!girisBasarili)
                 {
                     _durumEtiketi.ForeColor = Color.DarkRed;
-                    _durumEtiketi.Text = "ÜretimOS'a giriş başarısız — " + BaglantiAyarlari.DosyaYoluGoster() + " içindeki bilgileri kontrol edin.";
+                    _durumEtiketi.Text = "ÜretimOS'a giriş başarısız — " + BaglantiAyarlari.DosyaYoluGoster() + " içindeki bilgileri kontrol edin. (SolidWorks'te Nestle yine kullanılabilir.)";
                     return;
                 }
                 _hammaddeler = JArray.Parse(await _istemci.Getir("hammaddeler") ?? "[]");
                 _kesimIhtiyaclari = JArray.Parse(await _istemci.Getir("kesimIhtiyaclari") ?? "[]");
+                _cncTakimlari = JArray.Parse(await _istemci.Getir("cncTakimlari") ?? "[]");
+                _ayarlar = JObject.Parse(await _istemci.Getir("ayarlar") ?? "{}");
                 _durumEtiketi.ForeColor = Color.DarkGreen;
                 _durumEtiketi.Text = _satirlar.Count + " parça bulundu, ÜretimOS'a bağlandı — onaylı teknik resmi olanları seçip gönderebilirsiniz.";
                 _gonderBtn.Enabled = true;
@@ -388,6 +412,139 @@ namespace UretimOSKesim
             if (basarili && eslenemeyenler.Count == 0)
             {
                 MessageBox.Show("Gönderildi. ÜretimOS'ta Kesim Optimizasyonu sayfasından nesting'i çalıştırıp DXF indirebilirsiniz.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        // page_nesting.js'teki kesimPayiHesapla'nın (CNC/Flat-Tabla/freze dalı
+        // — bu panel sadece panel malzemesi nestler, lineer testere DEĞİL)
+        // AYNI mantıkla C# portu: önce ÜretimOS'taki varsayılan freze takımının
+        // çapı, o seçili değilse ayarlar.frezeKayipPayiMM, O DA yoksa (sunucuya
+        // hiç bağlanılamadıysa) data.js'teki VARSAYILAN_AYARLAR sabiti (TAHMİN
+        // DEĞİL, web'in kendi varsayılanı — bkz. o dosyadaki aynı satır).
+        private (double kesimPayi, double kenarBosluk) KesimPayiVeKenarBosluguHesapla()
+        {
+            const double VarsayilanFrezeKayipPayiMM = 3;
+            const double VarsayilanKenarBosluguMM = 10;
+
+            double kenarBosluk = (double?)_ayarlar["plakaKenarBosluguMM"] ?? VarsayilanKenarBosluguMM;
+
+            string frezeTakimId = (string)_ayarlar["varsayilanFrezeTakimId"];
+            JObject takim = !string.IsNullOrEmpty(frezeTakimId)
+                ? _cncTakimlari.OfType<JObject>().FirstOrDefault(k => (string)k["id"] == frezeTakimId)
+                : null;
+            double kesimPayi = (takim != null && (double?)takim["capMm"] > 0)
+                ? (double)takim["capMm"]
+                : ((double?)_ayarlar["frezeKayipPayiMM"] ?? VarsayilanFrezeKayipPayiMM);
+
+            return (kesimPayi, kenarBosluk);
+        }
+
+        // Kullanıcı isteği: "üretimosta istemiyorum solidde oluşturu
+        // düzenleyip dxf alacağız optimize edilmiş nesting çıktısını" —
+        // ÜretimOS'a HİÇBİR ŞEY GÖNDERMEZ. Seçili parçaları, yukarıda
+        // seçilmiş plaka boyutuna, NestingHesaplayici (page_nesting.js ile
+        // AYNI skyline algoritması) ile yerleştirir; her plaka için AYRI,
+        // SolidWorks'te AÇIK kalan, düzenlenebilir bir sketch/parça üretir.
+        private async System.Threading.Tasks.Task SolidWorksteNestle()
+        {
+            if (!_manuelPlakaBoy.HasValue || !_manuelPlakaEn.HasValue)
+            {
+                MessageBox.Show("Önce yukarıdan bir plaka boyutu seçin (hazır buton veya manuel Boy×En).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var secilenler = _liste.Items.Cast<ListViewItem>()
+                .Where(i => i.Checked)
+                .Select(i => (KesimSatiri)i.Tag)
+                .ToList();
+            if (!secilenler.Any())
+            {
+                MessageBox.Show("Hiç parça seçilmedi.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string cikisKlasoru;
+            using (var klasorDlg = new FolderBrowserDialog { Description = "Nesting sonucu parça dosyalarının kaydedileceği klasör" })
+            {
+                if (klasorDlg.ShowDialog() != DialogResult.OK) return;
+                cikisKlasoru = klasorDlg.SelectedPath;
+            }
+
+            string partSablon = UretimOSAddin.SablonYoluBul(_app, "Part.prtdot", UretimOSAddin.PART_SABLON_YOLU);
+            if (!System.IO.File.Exists(partSablon))
+            {
+                MessageBox.Show("Parça şablonu bulunamadı:\n" + partSablon +
+                    "\n\nBu, SolidWorks'ün kendi stok şablonudur — normalde 'Sistem Seçenekleri > Dosya " +
+                    "Konumları > Belge Şablonları' klasöründe hazır bulunur.",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            _solidworksteNestleBtn.Enabled = false;
+            _durumEtiketi.ForeColor = Color.DarkBlue;
+            _durumEtiketi.Text = "Nesting hesaplanıyor…";
+            Application.DoEvents();
+
+            var (kesimPayi, kenarBosluk) = KesimPayiVeKenarBosluguHesapla();
+
+            var parcaGirdileri = secilenler.Select(s => new NestingParcaGirdi
+            {
+                Ad = s.Desc,
+                En = s.Width,
+                Boy = s.Lenght,
+                Adet = s.Qty,
+                GrainKilitli = !string.IsNullOrWhiteSpace(s.TahilYonu),
+                YmKod = s.SapCode ?? ""
+            }).ToList();
+
+            var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri);
+
+            if (sonuc.Plakalar.Count == 0)
+            {
+                _durumEtiketi.ForeColor = Color.DarkRed;
+                _durumEtiketi.Text = "Hiçbir parça yerleştirilemedi.";
+                _sonucKutusu.Text = string.Join("\r\n", sonuc.YerlesemeyenUyarilari);
+                _solidworksteNestleBtn.Enabled = true;
+                return;
+            }
+
+            string kod = System.IO.Path.GetFileNameWithoutExtension(_aktifBelge.GetPathName());
+            if (string.IsNullOrWhiteSpace(kod)) kod = "NESTING";
+
+            _durumEtiketi.Text = sonuc.Plakalar.Count + " plaka için SolidWorks'te sketch oluşturuluyor…";
+            Application.DoEvents();
+
+            var olusturucu = new NestingYerlesimOlusturucu(_app);
+            var dosyalar = olusturucu.Olustur(sonuc, _manuelPlakaEn.Value, _manuelPlakaBoy.Value, kod, cikisKlasoru, partSablon);
+
+            var raporSatirlari = new List<string>();
+            raporSatirlari.Add(sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya başarıyla oluşturuldu (SolidWorks'te AÇIK bırakıldı):");
+            raporSatirlari.AddRange(dosyalar);
+            if (sonuc.YerlesemeyenUyarilari.Count > 0)
+            {
+                raporSatirlari.Add("");
+                raporSatirlari.Add("UYARILAR:");
+                raporSatirlari.AddRange(sonuc.YerlesemeyenUyarilari);
+            }
+            if (olusturucu.Uyarilar.Count > 0)
+            {
+                raporSatirlari.Add("");
+                raporSatirlari.AddRange(olusturucu.Uyarilar);
+            }
+            raporSatirlari.Add("");
+            raporSatirlari.Add("DXF almak için: SolidWorks'te açılan parçada sketch'i düzenleme moduna girip " +
+                "Dosya > Farklı Kaydet'te dosya tipini DXF/DWG seçin (SolidWorks'ün kendi, standart sketch-DXF dışa aktarımı).");
+            _sonucKutusu.Text = string.Join("\r\n", raporSatirlari);
+
+            _durumEtiketi.ForeColor = dosyalar.Count > 0 ? Color.DarkGreen : Color.DarkRed;
+            _durumEtiketi.Text = dosyalar.Count + "/" + sonuc.Plakalar.Count + " plaka SolidWorks'te oluşturuldu.";
+            _solidworksteNestleBtn.Enabled = true;
+
+            if (dosyalar.Count > 0)
+            {
+                MessageBox.Show(dosyalar.Count + " plaka SolidWorks'te oluşturuldu ve açık bırakıldı. " +
+                    "Düzenleyip DXF olarak dışa aktarabilirsiniz (sketch düzenleme modunda Dosya > Farklı Kaydet > DXF/DWG).",
                     "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }

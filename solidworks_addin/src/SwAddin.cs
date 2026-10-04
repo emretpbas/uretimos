@@ -544,10 +544,12 @@ namespace UretimOSKesim
             grup.AddCommandItem2(
                 "Nesting'e Gönder (ÜretimOS)", -1,
                 "Aktif montajda, onaylı bir teknik resmi OLAN (bkz. '2) Teknik Resmi Onayla') parçaları " +
-                "kutucuklarla seçtirir; seçilenleri malzeme koduna (= kalınlık+malzeme) göre otomatik " +
-                "gruplayıp ÜretimOS'un kesim ihtiyacı satırlarına gönderir — her grup kendi nesting'ine " +
-                "gider. DXF çıktısı ÜretimOS'ta 'Kesim Optimizasyonu' sayfasından (Nesting Çalıştır → " +
-                "DXF İndir) alınır.",
+                "kutucuklarla seçtirir; bir plaka boyutu (hazır 3660×1830/2800×2100 veya manuel) seçip " +
+                "İKİ yoldan biriyle devam edilir: 'Seçilenleri Nesting'e Gönder' malzeme koduna göre " +
+                "gruplayıp ÜretimOS'un kesim ihtiyacı satırlarına gönderir (yerleştirme web'de yapılır); " +
+                "'SolidWorks'te Nestle' ise ÜretimOS'a HİÇ göndermeden, yerleştirmeyi burada hesaplayıp " +
+                "SolidWorks'te düzenlenebilir bir sketch/parça olarak üretir (DXF, sketch düzenleme " +
+                "modunda Dosya > Farklı Kaydet ile alınır).",
                 "Nesting'e Gönder", 12, "NestingGonderAcCalistir", "PaketOlusturEtkinMi",
                 ID_NESTING_GONDER, itemTipi);
             Tanilama.Kaydet("13. AddCommandItem2 tamamlandi");
@@ -1572,7 +1574,7 @@ namespace UretimOSKesim
             }
 
             Tanilama.Kaydet("NestingGonderAcCalistir: " + hedefModel.GetPathName());
-            var panel = new NestingGonderPaneli(hedefModel);
+            var panel = new NestingGonderPaneli(hedefModel, _app);
             _acikNestingGonderPaneli = panel;
             panel.FormClosed += (s, e) => { if (ReferenceEquals(_acikNestingGonderPaneli, panel)) _acikNestingGonderPaneli = null; };
             panel.Show();
