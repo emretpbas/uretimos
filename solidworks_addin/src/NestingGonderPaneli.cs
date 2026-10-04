@@ -71,6 +71,18 @@ namespace UretimOSKesim
         private Button _yenileBtn;
         private TextBox _sonucKutusu;
 
+        // Kullanıcı isteği: "3660x1830 ya da 2800x2100 ölçüsünde plakaya...
+        // manuel giriş yapılarak" — malzeme (plaka) kodu SolidWorks'te hiç
+        // atanmamış (URETIMOS_PLAKA_KODU boş) parçalar için, tam stok kodunu
+        // bilmeye gerek kalmadan hızlı bir boyut seçimi. Bu, MİMARİ KARARI
+        // (dosya başı not) BOZMAZ: hesap/yerleştirme YİNE ÜretimOS web
+        // Nesting sayfasında yapılır — burada SADECE hangi plaka hammadde
+        // kartına (boy×en eşleşmesiyle) gönderileceği seçilir, TAHMİN/yeni
+        // hammadde OLUŞTURMA yapılmaz (eşleşen kart yoksa reddedilir, bkz.
+        // SeciliOlanlariGonder).
+        private double? _manuelPlakaBoy, _manuelPlakaEn;
+        private Label _manuelPlakaEtiketi;
+
         public NestingGonderPaneli(ModelDoc2 aktifBelge)
         {
             _aktifBelge = aktifBelge;
@@ -119,6 +131,30 @@ namespace UretimOSKesim
             _durumEtiketi = new Label { Dock = DockStyle.Top, Height = 24, Padding = new Padding(8, 4, 8, 4), ForeColor = Color.DarkBlue };
             _sonucKutusu = new TextBox { Dock = DockStyle.Bottom, Height = 90, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
 
+            // ── Malzeme kodu atanmamış parçalar için hızlı plaka boyutu ─────
+            var plakaPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top, Height = 38, FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false, Padding = new Padding(8, 6, 8, 0)
+            };
+            plakaPanel.Controls.Add(new Label { Text = "Malzeme kodu atanmamış parçalar için plaka boyutu:", AutoSize = true, Margin = new Padding(0, 6, 8, 0) });
+            var btn3660 = new Button { Text = "3660×1830 mm", Width = 115, Height = 26 };
+            btn3660.Click += (s, e) => PlakaBoyutuSec(3660, 1830);
+            var btn2800 = new Button { Text = "2800×2100 mm", Width = 115, Height = 26 };
+            btn2800.Click += (s, e) => PlakaBoyutuSec(2800, 2100);
+            var manuelBoyKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 65, Margin = new Padding(14, 4, 2, 0) };
+            var manuelEnKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 65, Margin = new Padding(2, 4, 2, 0) };
+            var manuelUygulaBtn = new Button { Text = "Manuel Uygula", Width = 100, Height = 26, Margin = new Padding(6, 0, 0, 0) };
+            manuelUygulaBtn.Click += (s, e) => PlakaBoyutuSec((double)manuelBoyKutu.Value, (double)manuelEnKutu.Value);
+            plakaPanel.Controls.Add(btn3660);
+            plakaPanel.Controls.Add(btn2800);
+            plakaPanel.Controls.Add(new Label { Text = "Boy×En:", AutoSize = true, Margin = new Padding(12, 6, 2, 0) });
+            plakaPanel.Controls.Add(manuelBoyKutu);
+            plakaPanel.Controls.Add(new Label { Text = "×", AutoSize = true, Margin = new Padding(2, 6, 2, 0) });
+            plakaPanel.Controls.Add(manuelEnKutu);
+            plakaPanel.Controls.Add(manuelUygulaBtn);
+            _manuelPlakaEtiketi = new Label { Dock = DockStyle.Top, Height = 20, Padding = new Padding(8, 0, 8, 4), ForeColor = Color.DarkGreen };
+
             var altPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
             _gonderBtn = new Button { Text = "Seçilenleri Nesting'e Gönder", Width = 220, Height = 30, Left = 8, Top = 7, Enabled = false };
             _gonderBtn.Click += async (s, e) => await SeciliOlanlariGonder();
@@ -130,8 +166,23 @@ namespace UretimOSKesim
             Controls.Add(_sonucKutusu);
             Controls.Add(altPanel);
             Controls.Add(_liste);
+            Controls.Add(_manuelPlakaEtiketi);
+            Controls.Add(plakaPanel);
             Controls.Add(_durumEtiketi);
             Controls.Add(ustHint);
+        }
+
+        private void PlakaBoyutuSec(double boy, double en)
+        {
+            if (boy <= 0 || en <= 0)
+            {
+                MessageBox.Show("Geçerli bir boy/en girin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            _manuelPlakaBoy = boy;
+            _manuelPlakaEn = en;
+            _manuelPlakaEtiketi.Text = "Seçili plaka boyutu: " + boy.ToString("0") + "×" + en.ToString("0") +
+                " mm — malzeme kodu ATANMAMIŞ seçili parçalar, Gönder'de bu boyuta eşleşen bir plaka hammaddesine yönlendirilecek.";
         }
 
         private async System.Threading.Tasks.Task VerileriYukleVeListele()
@@ -224,30 +275,62 @@ namespace UretimOSKesim
             var eslenemeyenler = new List<string>();
 
             // ── GRUPLAMA: malzeme koduna (PLAKA_KODU) göre — bkz. dosya başı
-            // "FARKLI KALINLIK/MALZEME = FARKLI NESTING" notu.
-            var gruplar = secilenler.GroupBy(s => (s.Material ?? "").Trim());
+            // "FARKLI KALINLIK/MALZEME = FARKLI NESTING" notu. Malzeme kodu
+            // ATANMAMIŞ ama kullanıcı bu ekranda bir plaka boyutu seçmişse
+            // (bkz. PlakaBoyutuSec), bu parçalar kod yerine o boyuta göre
+            // (__MANUEL__ anahtarıyla) ayrı gruplanır.
+            const string ManuelGrupAnahtari = "__MANUEL__";
+            var gruplar = secilenler.GroupBy(s => string.IsNullOrWhiteSpace(s.Material)
+                ? (_manuelPlakaBoy.HasValue && _manuelPlakaEn.HasValue ? ManuelGrupAnahtari : "")
+                : s.Material.Trim());
 
             var yeniSatirlar = new List<object>();
             var guncellenenSatirlar = new List<object>();
 
             foreach (var grup in gruplar)
             {
-                if (string.IsNullOrWhiteSpace(grup.Key))
+                JObject hammadde;
+                string grupEtiketi;
+
+                if (grup.Key == ManuelGrupAnahtari)
+                {
+                    double boy = _manuelPlakaBoy.Value, en = _manuelPlakaEn.Value;
+                    const double Tolerans = 0.5;
+                    hammadde = _hammaddeler.OfType<JObject>().FirstOrDefault(h =>
+                    {
+                        if ((string)h["tip"] != "plaka") return false;
+                        double hBoy = (double?)h["boy"] ?? 0, hEn = (double?)h["en"] ?? 0;
+                        return (Math.Abs(hBoy - boy) < Tolerans && Math.Abs(hEn - en) < Tolerans) ||
+                               (Math.Abs(hBoy - en) < Tolerans && Math.Abs(hEn - boy) < Tolerans);
+                    });
+                    grupEtiketi = boy.ToString("0") + "×" + en.ToString("0") + " mm (manuel seçim)";
+                    if (hammadde == null)
+                    {
+                        eslenemeyenler.Add(grup.Count() + " parça — malzeme kodu atanmamış, seçtiğiniz " + grupEtiketi +
+                            " boyutunda bir plaka hammaddesi ÜretimOS'ta bulunamadı (TAHMİN EDİLMEDİ). " +
+                            "Önce Hammaddeler sayfasından bu boyutta bir plaka tanımlayın.");
+                        continue;
+                    }
+                }
+                else if (string.IsNullOrWhiteSpace(grup.Key))
                 {
                     eslenemeyenler.Add(grup.Count() + " parça — malzeme (plaka) kodu ATANMAMIŞ, hangi plakaya kesileceği bilinmiyor. " +
-                        "SolidWorks'te URETIMOS_PLAKA_KODU özel alanını doldurup tekrar deneyin.");
+                        "SolidWorks'te URETIMOS_PLAKA_KODU özel alanını doldurun, ya da yukarıdan bir plaka boyutu seçip tekrar deneyin.");
                     continue;
                 }
-
-                JObject hammadde = _hammaddeler
-                    .OfType<JObject>()
-                    .FirstOrDefault(h => (string)h["tip"] == "plaka" &&
-                        string.Equals((string)h["stokKodu"], grup.Key, StringComparison.OrdinalIgnoreCase));
-                if (hammadde == null)
+                else
                 {
-                    eslenemeyenler.Add(grup.Count() + " parça — '" + grup.Key + "' kodlu bir plaka hammaddesi ÜretimOS'ta bulunamadı " +
-                        "(TAHMİN EDİLMEDİ). Önce Hammaddeler sayfasından bu kodu tanımlayın.");
-                    continue;
+                    grupEtiketi = grup.Key;
+                    hammadde = _hammaddeler
+                        .OfType<JObject>()
+                        .FirstOrDefault(h => (string)h["tip"] == "plaka" &&
+                            string.Equals((string)h["stokKodu"], grup.Key, StringComparison.OrdinalIgnoreCase));
+                    if (hammadde == null)
+                    {
+                        eslenemeyenler.Add(grup.Count() + " parça — '" + grup.Key + "' kodlu bir plaka hammaddesi ÜretimOS'ta bulunamadı " +
+                            "(TAHMİN EDİLMEDİ). Önce Hammaddeler sayfasından bu kodu tanımlayın.");
+                        continue;
+                    }
                 }
                 string hammaddeId = (string)hammadde["id"];
 
@@ -263,7 +346,7 @@ namespace UretimOSKesim
                     foreach (var p in yeniParcalar) mevcutParcalar.Add(JObject.FromObject(p));
                     acikSatir["parcalar"] = mevcutParcalar;
                     guncellenenSatirlar.Add(acikSatir);
-                    sonucSatirlari.Add("'" + grup.Key + "' — " + grup.Count() + " parça MEVCUT açık kesim satırına eklendi.");
+                    sonucSatirlari.Add("'" + grupEtiketi + "' — " + grup.Count() + " parça MEVCUT açık kesim satırına eklendi.");
                 }
                 else
                 {
@@ -279,7 +362,7 @@ namespace UretimOSKesim
                         ["olusturmaTarihi"] = DateTime.Now.ToString("yyyy-MM-dd")
                     };
                     yeniSatirlar.Add(yeniSatir);
-                    sonucSatirlari.Add("'" + grup.Key + "' — " + grup.Count() + " parça için YENİ kesim satırı açıldı.");
+                    sonucSatirlari.Add("'" + grupEtiketi + "' — " + grup.Count() + " parça için YENİ kesim satırı açıldı.");
                 }
             }
 
