@@ -475,12 +475,6 @@ namespace UretimOSKesim
         // SolidWorks'te AÇIK kalan, düzenlenebilir bir sketch/parça üretir.
         private async System.Threading.Tasks.Task SolidWorksteNestle()
         {
-            if (!_manuelPlakaBoy.HasValue || !_manuelPlakaEn.HasValue)
-            {
-                MessageBox.Show("Önce yukarıdan bir plaka boyutu seçin (hazır buton veya manuel Boy×En).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
             var secilenler = _liste.Items.Cast<ListViewItem>()
                 .Where(i => i.Checked)
                 .Select(i => (KesimSatiri)i.Tag)
@@ -490,6 +484,14 @@ namespace UretimOSKesim
                 MessageBox.Show("Hiç parça seçilmedi.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            // Kullanıcı isteği: "kenar mesafelerini ve freze bıçak
+            // mesafelerini ayarlamak için nesting modülüne eklemeler yap" —
+            // Reçete Ağacı/ribbon ile AYNI ayar penceresi; yukarıda seçilmiş
+            // plaka boyutu (varsa) önerilen değer olarak gelir.
+            var (ufKesimPayi, ufKenarBosluk) = KesimPayiVeKenarBosluguHesapla();
+            if (!NestingCalistirici.NestingAyarlariSor(this, ufKesimPayi, ufKenarBosluk, _manuelPlakaBoy, _manuelPlakaEn, out var nestingAyari)) return;
+            PlakaBoyutuSec(nestingAyari.PlakaBoyMm, nestingAyari.PlakaEnMm);
 
             string cikisKlasoru;
             using (var klasorDlg = new FolderBrowserDialog { Description = "Nesting sonucu parça dosyalarının kaydedileceği klasör" })
@@ -513,7 +515,7 @@ namespace UretimOSKesim
             _durumEtiketi.Text = "Nesting hesaplanıyor…";
             Application.DoEvents();
 
-            var (kesimPayi, kenarBosluk) = KesimPayiVeKenarBosluguHesapla();
+            double kesimPayi = nestingAyari.BicakMesafesiMm, kenarBosluk = nestingAyari.KenarBoslukMm;
 
             // KULLANICI İSTEĞİ: "onaya gerek yok tüm yüzeydeki delikleri
             // nesting çizimine ekle" — SolidWorks nesting sketch'ine delik/

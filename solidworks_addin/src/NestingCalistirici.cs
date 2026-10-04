@@ -9,6 +9,46 @@ using SolidWorks.Interop.sldworks;
 
 namespace UretimOSKesim
 {
+    // Kullanıcının nesting penceresinde girdiği plaka boyutu, kenar boşluğu
+    // ve iki parça arası freze bıçak mesafesi — %LOCALAPPDATA%\UretimOSKesim\
+    // nesting_ayarlari.json'da saklanır, bir sonraki nesting'de hazır gelir.
+    public class NestingAyarlari
+    {
+        public double PlakaBoyMm, PlakaEnMm;
+        public double KenarBoslukMm;
+        public double BicakMesafesiMm;
+
+        private static string DosyaYolu => Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "UretimOSKesim", "nesting_ayarlari.json");
+
+        public static NestingAyarlari Yukle()
+        {
+            try
+            {
+                if (!File.Exists(DosyaYolu)) return null;
+                return Newtonsoft.Json.JsonConvert.DeserializeObject<NestingAyarlari>(File.ReadAllText(DosyaYolu));
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("NestingAyarlari.Yukle HATA (yok sayıldı): " + ex.Message);
+                return null;
+            }
+        }
+
+        public void Kaydet()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(DosyaYolu));
+                File.WriteAllText(DosyaYolu, Newtonsoft.Json.JsonConvert.SerializeObject(this, Newtonsoft.Json.Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("NestingAyarlari.Kaydet HATA (yok sayıldı): " + ex.Message);
+            }
+        }
+    }
+
     // Nesting'e girecek TEK bir SolidWorks parçası. Ölçü TAŞIMAZ — kullanıcı
     // isteği: "hiçbir şekilde anma ölçüsü almasın nesting yerleşiminde
     // tamamen parça çizimi üzerinden işlem yapılsın". Boyut, dış hat, delik
@@ -37,8 +77,11 @@ namespace UretimOSKesim
 
         // Dönüş: (oluşturulan dosya sayısı, plaka sayısı); kullanıcı
         // vazgeçtiyse (0, 0).
+        // varsayilanKesimPayi/varsayilanKenarBosluk: ÜretimOS'tan gelen
+        // değerler — yalnızca pencerede ilk öneri olarak kullanılır, asıl
+        // değerler kullanıcının pencerede onayladıklarıdır.
         public static (int dosya, int plaka) Calistir(ISldWorks app, IWin32Window sahip, string kod,
-            Dictionary<string, List<NestingParcaKaynagi>> gruplar, double kesimPayi, double kenarBosluk)
+            Dictionary<string, List<NestingParcaKaynagi>> gruplar, double varsayilanKesimPayi, double varsayilanKenarBosluk)
         {
             if (gruplar == null || gruplar.Values.All(l => l.Count == 0))
             {
@@ -46,7 +89,9 @@ namespace UretimOSKesim
                 return (0, 0);
             }
 
-            if (!PlakaBoyutuSor(sahip, out double plakaBoy, out double plakaEn)) return (0, 0);
+            if (!NestingAyarlariSor(sahip, varsayilanKesimPayi, varsayilanKenarBosluk, null, null, out var ayar)) return (0, 0);
+            double plakaBoy = ayar.PlakaBoyMm, plakaEn = ayar.PlakaEnMm;
+            double kesimPayi = ayar.BicakMesafesiMm, kenarBosluk = ayar.KenarBoslukMm;
 
             string cikisKlasoru;
             using (var klasorDlg = new FolderBrowserDialog { Description = "Nesting sonucu parça dosyalarının kaydedileceği klasör" })
@@ -89,7 +134,8 @@ namespace UretimOSKesim
                 var dosyalar = olusturucu.Olustur(sonuc, plakaEn, plakaBoy, grupDosyaKodu, cikisKlasoru, partSablon);
                 toplamDosya += dosyalar.Count;
                 toplamPlaka += sonuc.Plakalar.Count;
-                rapor.Add("'" + grup.Key + "': " + sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya.");
+                rapor.Add("'" + grup.Key + "': " + sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya " +
+                    $"(kenar boşluğu {kenarBosluk:0.#} mm, bıçak mesafesi {kesimPayi:0.#} mm).");
                 if (sonuc.YerlesemeyenUyarilari.Count > 0)
                     rapor.Add("    UYARI: " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
                 if (olusturucu.Uyarilar.Count > 0)
@@ -149,66 +195,121 @@ namespace UretimOSKesim
             return metin.Replace(" ", "_");
         }
 
-        // Basit modal: hazır 2 boyut butonu + manuel Boy×En — NestingGonderPaneli.
-        // PlakaBoyutuSec'teki AYNI iki hazır ölçü (kullanıcı isteği: "3660x1830
-        // ya da 2800x2100 ölçüsünde plakaya yada manuel giriş yapılarak").
-        public static bool PlakaBoyutuSor(IWin32Window sahip, out double boy, out double en)
+        // Kullanıcı isteği: "kenar mesafelerini ve freze bıçak mesafelerini
+        // (iki parça arası) ayarlamak için nesting modülüne eklemeler yap" —
+        // plaka boyutu penceresi artık kenar boşluğu ve iki parça arası freze
+        // bıçak mesafesini de sorar. İlk açılışta ÜretimOS ayarlarından gelen
+        // değerler (varsayilanKesimPayi/varsayilanKenarBosluk) gösterilir;
+        // kullanıcının girdiği değerler NestingAyarlari ile yerel olarak
+        // saklanıp bir sonraki nesting'de hazır gelir.
+        public static bool NestingAyarlariSor(IWin32Window sahip, double varsayilanKesimPayi, double varsayilanKenarBosluk,
+            double? onerilenBoy, double? onerilenEn, out NestingAyarlari sonuc)
         {
-            double sonucBoy = 0, sonucEn = 0;
-            bool tamam = false;
+            var kayitli = NestingAyarlari.Yukle();
+            sonuc = null;
+            NestingAyarlari secilen = null;
+
             using (var dlg = new Form
             {
-                Text = "Plaka Boyutu", Width = 420, Height = 200, FormBorderStyle = FormBorderStyle.FixedDialog,
+                Text = "Nesting Ayarları", Width = 470, Height = 330, FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = ReceteAgaciPaneli.Tema.TabanFont
             })
             {
-                var ustEtiket = new Label { Text = "Nesting için plaka boyutu seçin:", Dock = DockStyle.Top, Height = 28, Padding = new Padding(10, 8, 10, 0) };
-                var hazirPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(10, 4, 10, 0), WrapContents = false };
-                var btn3660 = new Button { Text = "3660×1830 mm", Width = 130, Height = 28 };
-                var btn2800 = new Button { Text = "2800×2100 mm", Width = 130, Height = 28 };
+                var tablo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(10, 10, 10, 0) };
+                tablo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
+                tablo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+                NumericUpDown Sayi(decimal deger, int ondalik) => new NumericUpDown
+                {
+                    Maximum = 10000, Minimum = 0, DecimalPlaces = ondalik, Width = 90,
+                    Increment = ondalik > 0 ? 0.5m : 1m, Value = Math.Max(0, Math.Min(10000, deger))
+                };
+                void Satir(string etiket, Control kontrol)
+                {
+                    tablo.RowCount++;
+                    tablo.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+                    tablo.Controls.Add(new Label { Text = etiket, AutoSize = true, Margin = new Padding(0, 7, 6, 0) });
+                    tablo.Controls.Add(kontrol);
+                }
+
+                var hazirPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+                var btn3660 = new Button { Text = "3660×1830", Width = 90, Height = 26 };
+                var btn2800 = new Button { Text = "2800×2100", Width = 90, Height = 26 };
                 hazirPanel.Controls.Add(btn3660);
                 hazirPanel.Controls.Add(btn2800);
 
-                var manuelPanel = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(10, 4, 10, 0), WrapContents = false };
-                manuelPanel.Controls.Add(new Label { Text = "Manuel Boy×En (mm):", AutoSize = true, Margin = new Padding(0, 6, 4, 0) });
-                var boyKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 70 };
-                var enKutu = new NumericUpDown { Maximum = 10000, Minimum = 0, DecimalPlaces = 0, Width = 70, Margin = new Padding(4, 0, 0, 0) };
-                manuelPanel.Controls.Add(boyKutu);
-                manuelPanel.Controls.Add(new Label { Text = "×", AutoSize = true, Margin = new Padding(2, 6, 2, 0) });
-                manuelPanel.Controls.Add(enKutu);
+                double ilkBoy = onerilenBoy ?? kayitli?.PlakaBoyMm ?? 0;
+                double ilkEn = onerilenEn ?? kayitli?.PlakaEnMm ?? 0;
+                var boyKutu = Sayi((decimal)ilkBoy, 0);
+                var enKutu = Sayi((decimal)ilkEn, 0);
+                var kenarKutu = Sayi((decimal)(kayitli?.KenarBoslukMm ?? varsayilanKenarBosluk), 1);
+                var bicakKutu = Sayi((decimal)(kayitli?.BicakMesafesiMm ?? varsayilanKesimPayi), 1);
+
+                Satir("Hazır plaka boyutu:", hazirPanel);
+                Satir("Plaka Boy (mm):", boyKutu);
+                Satir("Plaka En (mm):", enKutu);
+                Satir("Kenar boşluğu — plaka kenarından (mm):", kenarKutu);
+                Satir("Freze bıçak mesafesi — iki parça arası (mm):", bicakKutu);
+
+                var ipucu = new Label
+                {
+                    Text = $"ÜretimOS varsayılanı: kenar {varsayilanKenarBosluk:0.#} mm, bıçak {varsayilanKesimPayi:0.#} mm. " +
+                           "Girdiğiniz değerler bir sonraki nesting için hatırlanır.",
+                    Dock = DockStyle.Bottom, Height = 40, Padding = new Padding(10, 4, 10, 0), ForeColor = Color.DimGray
+                };
 
                 var altBtnPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
-                var tamamBtn = new Button { Text = "Tamam", Width = 90, Height = 30, Left = 220, Top = 7 };
+                var varsayilanBtn = new Button { Text = "ÜretimOS Varsayılanı", Width = 140, Height = 30, Left = 10, Top = 7 };
+                var tamamBtn = new Button { Text = "Tamam", Width = 90, Height = 30, Left = 260, Top = 7 };
                 ReceteAgaciPaneli.Tema.BirincilButon(tamamBtn);
-                var vazgecBtn = new Button { Text = "Vazgeç", Width = 90, Height = 30, Left = 320, Top = 7 };
+                var vazgecBtn = new Button { Text = "Vazgeç", Width = 90, Height = 30, Left = 358, Top = 7 };
                 ReceteAgaciPaneli.Tema.IkincilButon(vazgecBtn);
+                altBtnPanel.Controls.Add(varsayilanBtn);
                 altBtnPanel.Controls.Add(tamamBtn);
                 altBtnPanel.Controls.Add(vazgecBtn);
 
                 btn3660.Click += (s, e) => { boyKutu.Value = 3660; enKutu.Value = 1830; };
                 btn2800.Click += (s, e) => { boyKutu.Value = 2800; enKutu.Value = 2100; };
+                varsayilanBtn.Click += (s, e) =>
+                {
+                    kenarKutu.Value = (decimal)varsayilanKenarBosluk;
+                    bicakKutu.Value = (decimal)varsayilanKesimPayi;
+                };
                 tamamBtn.Click += (s, e) =>
                 {
-                    if (boyKutu.Value <= 0 || enKutu.Value <= 0)
+                    double boy = (double)boyKutu.Value, en = (double)enKutu.Value, kenar = (double)kenarKutu.Value;
+                    if (boy <= 0 || en <= 0)
                     {
-                        MessageBox.Show("Geçerli bir boy/en girin (hazır bir boyut seçin veya manuel girin).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show(dlg, "Geçerli bir plaka boy/en girin (hazır bir boyut seçin veya elle girin).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return;
                     }
-                    sonucBoy = (double)boyKutu.Value; sonucEn = (double)enKutu.Value; tamam = true;
+                    if (2 * kenar >= Math.Min(boy, en))
+                    {
+                        MessageBox.Show(dlg, "Kenar boşluğu plakaya göre çok büyük — plakada yerleşim alanı kalmıyor.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    secilen = new NestingAyarlari
+                    {
+                        PlakaBoyMm = boy, PlakaEnMm = en,
+                        KenarBoslukMm = kenar, BicakMesafesiMm = (double)bicakKutu.Value
+                    };
                     dlg.DialogResult = DialogResult.OK;
                 };
                 vazgecBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
 
-                dlg.Controls.Add(manuelPanel);
-                dlg.Controls.Add(hazirPanel);
-                dlg.Controls.Add(ustEtiket);
+                dlg.Controls.Add(tablo);
+                dlg.Controls.Add(ipucu);
                 dlg.Controls.Add(altBtnPanel);
                 dlg.AcceptButton = tamamBtn;
                 dlg.CancelButton = vazgecBtn;
                 dlg.ShowDialog(sahip);
             }
-            boy = sonucBoy; en = sonucEn;
-            return tamam;
+
+            if (secilen == null) return false;
+            secilen.Kaydet();
+            Tanilama.Kaydet($"Nesting ayarları: plaka {secilen.PlakaBoyMm}x{secilen.PlakaEnMm}, kenar {secilen.KenarBoslukMm} mm, bıçak {secilen.BicakMesafesiMm} mm");
+            sonuc = secilen;
+            return true;
         }
 
         // page_nesting.js'teki kesimPayiHesapla'nın (CNC/Flat-Tabla/freze dalı)

@@ -124,7 +124,11 @@ namespace UretimOSKesim
             var kalan = new List<Item>(items);
             while (kalan.Count > 0)
             {
-                var (placed, remaining) = PackOnePlaka(usableW, usableH, kalan, kesimPayi);
+                // Bıçak payı her parçanın sağına/üstüne ekleniyor (PackOnePlaka) —
+                // plaka kenarına dayanan SON parçanın arkasında kesilecek komşu
+                // olmadığı için bu pay kullanılabilir alana eklenir; aksi halde
+                // kenar boşluğuna tam sığan parça "sığmadı" sayılıyordu.
+                var (placed, remaining) = PackOnePlaka(usableW + kesimPayi, usableH + kesimPayi, kalan, kesimPayi);
                 if (placed.Count == 0)
                 {
                     sonuc.YerlesemeyenUyarilari.Add(kalan.Count + " parça kopyası hiçbir plakaya sığmadı (plaka veya parça ölçüsünü, ya da kenar boşluğu/kesim payını kontrol edin).");
