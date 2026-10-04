@@ -3542,6 +3542,7 @@ namespace UretimOSKesim
             bool basarili;
             try
             {
+                Tanilama.Kaydet($"KartApiyaKaydet: API'ye gönderiliyor, koleksiyon={koleksiyonAnahtari}, thread={System.Threading.Thread.CurrentThread.ManagedThreadId}");
                 basarili = await _istemci.ToplukaEkleGuncelle(koleksiyonAnahtari,
                     new List<object> { yeniKart }, new List<object>());
             }
@@ -3550,7 +3551,19 @@ namespace UretimOSKesim
                 Tanilama.Kaydet("KartApiyaKaydet HATA: " + ex);
                 basarili = false;
             }
+            Tanilama.Kaydet($"KartApiyaKaydet: API yanıtı basarili={basarili}, thread={System.Threading.Thread.CurrentThread.ManagedThreadId}, InvokeRequired={InvokeRequired}");
 
+            // AnaPencerede: bkz. tanımındaki NOT — "await" sonrası kod BAZEN
+            // yanlış iş parçacığında çalışıyor; aşağıdaki MessageBox ve
+            // _durumEtiketi erişimi de kapsamda (kullanıcı raporu: "1 parça
+            // daha yarımamül tanımlarken kilitlendi ve kapandı").
+            bool sonuc = false;
+            AnaPencerede(() => sonuc = KartKaydetSonucunuUygula(basarili, koleksiyonAnahtari, yeniKart));
+            return sonuc;
+        }
+
+        private bool KartKaydetSonucunuUygula(bool basarili, string koleksiyonAnahtari, JObject yeniKart)
+        {
             if (!basarili)
             {
                 // KESİN TANI (bkz. api.php CAD_ENT_YAZILABILIR): "cad_entegrasyon"
@@ -3612,17 +3625,25 @@ namespace UretimOSKesim
                 Tanilama.Kaydet("KartApiyaGuncelle HATA: " + ex);
                 basarili = false;
             }
-            if (!basarili)
+            Tanilama.Kaydet($"KartApiyaGuncelle: API yanıtı basarili={basarili}, thread={System.Threading.Thread.CurrentThread.ManagedThreadId}, InvokeRequired={InvokeRequired}");
+
+            // AnaPencerede: KartApiyaKaydet'teki AYNI gerekçe.
+            bool sonuc = false;
+            AnaPencerede(() =>
             {
-                MessageBox.Show("Kart güncellenemedi (sunucu reddetti).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _durumEtiketi.ForeColor = Color.DarkRed;
-                _durumEtiketi.Text = "Kart güncellenemedi.";
-                return false;
-            }
-            PaletiFiltrele();
-            _durumEtiketi.ForeColor = Color.DarkGreen;
-            _durumEtiketi.Text = $"✓ Kart güncellendi: {(string)kart["ad"]}";
-            return true;
+                if (!basarili)
+                {
+                    MessageBox.Show("Kart güncellenemedi (sunucu reddetti).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _durumEtiketi.ForeColor = Color.DarkRed;
+                    _durumEtiketi.Text = "Kart güncellenemedi.";
+                    return;
+                }
+                PaletiFiltrele();
+                _durumEtiketi.ForeColor = Color.DarkGreen;
+                _durumEtiketi.Text = $"✓ Kart güncellendi: {(string)kart["ad"]}";
+                sonuc = true;
+            });
+            return sonuc;
         }
 
         // "✎ Düzenle" — bileşen ağacındaki bir satırın eşleştiği kartı
@@ -3751,10 +3772,13 @@ namespace UretimOSKesim
         {
             if (string.IsNullOrEmpty(dugum.Sinif)) return false;
             string yeniKartTipi = dugum.Sinif;
+            Tanilama.Kaydet($"DugumeYeniKartOlusturVeEslestir: '{dugum.GosterimAdi}' tip={yeniKartTipi} sanal={dugum.Bilesen?.IsVirtual} — YeniKartDialog açılıyor");
             JObject yeniKart;
             using (var dlg = new YeniKartDialog(yeniKartTipi, _hammaddeler, dugum.GosterimAdi))
             {
-                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SonucKart == null) return false;
+                var dlgSonuc = dlg.ShowDialog(this);
+                Tanilama.Kaydet($"DugumeYeniKartOlusturVeEslestir: YeniKartDialog kapandı, sonuc={dlgSonuc}");
+                if (dlgSonuc != DialogResult.OK || dlg.SonucKart == null) return false;
                 yeniKart = dlg.SonucKart;
             }
             if (!await KartApiyaKaydet(yeniKartTipi, yeniKart)) return false;
@@ -3769,9 +3793,11 @@ namespace UretimOSKesim
                 dugum.GosterimAdi = (string)yeniKart["ad"] ?? dugum.GosterimAdi;
                 if (dugum.Model != null && !string.IsNullOrWhiteSpace(yeniOlusanKod))
                 {
+                    Tanilama.Kaydet($"DugumeYeniKartOlusturVeEslestir: URETIMOS_KOD yazılıyor '{yeniOlusanKod}'");
                     try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.KOD, yeniOlusanKod); }
                     catch (Exception ex) { Tanilama.Kaydet("DugumeYeniKartOlusturVeEslestir (URETIMOS_KOD yazılamadı) HATA: " + ex); }
                 }
+                Tanilama.Kaydet("DugumeYeniKartOlusturVeEslestir: ağaç yeniden çiziliyor");
                 BilesenAgaciniCiz();
             });
             return true;
@@ -3875,7 +3901,9 @@ namespace UretimOSKesim
                 secimDlg.Controls.Add(ortaPanel);
                 secimDlg.Controls.Add(vazgecBtn);
                 secimDlg.Controls.Add(bilgi);
+                Tanilama.Kaydet($"DugumEslestirmeSeciciAc: '{dugum.GosterimAdi}' için seçim penceresi açılıyor");
                 secim = secimDlg.ShowDialog(this);
+                Tanilama.Kaydet($"DugumEslestirmeSeciciAc: seçim={secim}");
             }
 
             if (secim == DialogResult.Yes) await DugumeYeniKartOlusturVeEslestir(dugum);
