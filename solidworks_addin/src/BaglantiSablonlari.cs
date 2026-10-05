@@ -60,6 +60,17 @@ namespace UretimOSKesim
         public double SagOfsetMm = 32;
         // Ardışık elemanlar arası aralıklar; eksikse son değer tekrar eder.
         public List<double> AraliklarMm = new List<double> { 224 };
+        // Kullanıcı isteği: "bu eklentiye 3d model eklemek için bir tuş
+        // ekleyelim ayrıca bu modeli kütüphane için bir yere kaydedelim".
+        // Model kütüphane klasörüne kopyalanır, burada yalnızca dosya adı
+        // tutulur (bkz. BaglantiSablonKutuphanesi.ModelKlasoru). Modelin
+        // orijini = bağlantı elemanının merkezi (birleşim düzleminde, gövde
+        // kalınlığının ortasında); X birleşim boyunca, Y gövde paneline doğru,
+        // Z gövdenin iç yüzüne doğru.
+        public string ModelDosyasi;
+
+        public string ModelYolu() =>
+            string.IsNullOrWhiteSpace(ModelDosyasi) ? null : Path.Combine(BaglantiSablonKutuphanesi.ModelKlasoru, ModelDosyasi);
 
         public BaglantiSablonu Kopya() =>
             JsonConvert.DeserializeObject<BaglantiSablonu>(JsonConvert.SerializeObject(this));
@@ -103,6 +114,31 @@ namespace UretimOSKesim
     {
         public static string DosyaYolu => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UretimOSKesim", "baglanti_sablonlari.json");
+
+        public static string ModelKlasoru => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ÜretimOS", "Bağlantı Modelleri");
+
+        // Seçilen 3B modeli kütüphane klasörüne kopyalar, kütüphanedeki dosya
+        // adını döndürür. Aynı adda farklı bir dosya varsa _2, _3 … eklenir.
+        // NOT: .SLDASM kopyalanırken alt parçaları KOPYALANMAZ — montaj
+        // modelleri için alt parçalar aynı klasöre ayrıca konmalı.
+        public static string ModeliKutuphaneyeKopyala(string kaynak)
+        {
+            Directory.CreateDirectory(ModelKlasoru);
+            string ad = Path.GetFileNameWithoutExtension(kaynak), uzanti = Path.GetExtension(kaynak);
+            string hedef = Path.Combine(ModelKlasoru, ad + uzanti);
+            if (string.Equals(Path.GetFullPath(kaynak), Path.GetFullPath(hedef), StringComparison.OrdinalIgnoreCase))
+                return Path.GetFileName(hedef);
+            for (int i = 2; File.Exists(hedef); i++)
+            {
+                if (new FileInfo(hedef).Length == new FileInfo(kaynak).Length &&
+                    File.ReadAllBytes(hedef).SequenceEqual(File.ReadAllBytes(kaynak)))
+                    return Path.GetFileName(hedef); // aynı dosya zaten kütüphanede
+                hedef = Path.Combine(ModelKlasoru, $"{ad}_{i}{uzanti}");
+            }
+            File.Copy(kaynak, hedef);
+            return Path.GetFileName(hedef);
+        }
 
         public static List<BaglantiSablonu> Yukle()
         {
