@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -58,6 +59,107 @@ namespace UretimOSKesim
             return uretilenDosyalar;
         }
 
+        // Kullanıcı isteği: "nestingdeki parçanın üzerine yarımamül kodu ve
+        // adı, ayrıca solidworks parça adını da yazalım". Yazılar kesim
+        // sketch'ine DEĞİL, ayrı bir "ETIKETLER" sketch'ine konur — CAM/DXF
+        // tarafında kesim konturu sanılmasın, gerekirse tek tıkla
+        // gizlenebilsin/silinebilsin. Her parçanın ortasına 3 satır: YM kodu,
+        // ad, SolidWorks parça adı. Yazı yüksekliği parçanın kısa kenarına
+        // göre ölçeklenir. Etiket başarısız olsa bile plaka yine kaydedilir.
+        private const double KARAKTER_EN_ORANI = 0.7; // ortalama harf genişliği / yazı yüksekliği (tahmini)
+
+        private void EtiketSketchiOlustur(ModelDoc2 belge, NestingPlakaSonucu plaka, int plakaNo)
+        {
+            try
+            {
+                belge.ClearSelection2(true);
+                belge.Extension.SelectByID2("Top Plane", "PLANE", 0, 0, 0, false, 0, null, 0);
+                belge.SketchManager.InsertSketch(true);
+
+                foreach (var oge in plaka.Yerlesenler)
+                {
+                    var satirlar = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(oge.YmKod)) satirlar.Add(oge.YmKod);
+                    if (!string.IsNullOrWhiteSpace(oge.Ad) && oge.Ad != oge.YmKod) satirlar.Add(oge.Ad);
+                    if (!string.IsNullOrWhiteSpace(oge.SwParcaAdi) && oge.SwParcaAdi != oge.Ad) satirlar.Add("SW: " + oge.SwParcaAdi);
+                    if (satirlar.Count == 0) continue;
+
+                    // Kullanıcı isteği: "parça ismi ve tüm yazılar uzun kenara
+                    // göre hizalanıp parça ölçüsüne sığdırılsın". Yazı yönü =
+                    // parçanın uzun kenarının plakadaki yönü; okunaklı kalsın
+                    // diye (-90°, 90°] aralığına çevrilir (baş aşağı yazı yok).
+                    bool enUzun = oge.ParcaEn >= oge.ParcaBoy;
+                    double uzunKenar = enUzun ? oge.ParcaEn : oge.ParcaBoy;
+                    double kisaKenar = enUzun ? oge.ParcaBoy : oge.ParcaEn;
+                    double yaziAci = oge.AciDerece + (enUzun ? 0 : 90);
+                    yaziAci = ((yaziAci % 360) + 360) % 360;
+                    if (yaziAci > 90 && yaziAci <= 270) yaziAci -= 180;
+                    else if (yaziAci > 270) yaziAci -= 360;
+
+                    // Sığdırma: en uzun satır uzun kenarın %90'ına, tüm satırlar
+                    // (satır aralığı dahil) kısa kenarın %80'ine sığmalı; en çok
+                    // 30 mm. 3 mm'nin altına düşüyorsa alttaki satır (önce "SW:",
+                    // sonra ad) atılır — YM kodu her zaman kalır ve ne kadar
+                    // küçük olursa olsun parçanın İÇİNDE kalır.
+                    double yaziMm;
+                    while (true)
+                    {
+                        int enUzunSatir = satirlar.Max(t => t.Length);
+                        double satirSayisiYuksekligi = 1.0 + 1.5 * (satirlar.Count - 1);
+                        yaziMm = Math.Min(30.0, uzunKenar * 0.9 / Math.Max(1, enUzunSatir * KARAKTER_EN_ORANI));
+                        yaziMm = Math.Min(yaziMm, kisaKenar * 0.8 / satirSayisiYuksekligi);
+                        if (yaziMm >= 3.0 || satirlar.Count == 1) break;
+                        satirlar.RemoveAt(satirlar.Count - 1);
+                    }
+                    double satirAraligiMm = yaziMm * 1.5;
+
+                    // Yazının kendi ekseninde: u = yazı yönü, v = yazıya dik
+                    // (yukarı). Satırlar parça merkezine göre ortalanır.
+                    double rad = yaziAci * Math.PI / 180.0;
+                    double ux = Math.Cos(rad), uy = Math.Sin(rad);
+                    double vx = -uy, vy = ux;
+                    double ustOfset = satirAraligiMm * (satirlar.Count - 1) / 2.0;
+
+                    for (int i = 0; i < satirlar.Count; i++)
+                    {
+                        // Sol-alt hizalı yazı: yaklaşık genişliğin yarısı kadar
+                        // yazı yönünün tersine kaydırılarak merkeze getirilir.
+                        double tahminiGenislik = satirlar[i].Length * yaziMm * KARAKTER_EN_ORANI;
+                        double dikOfset = ustOfset - i * satirAraligiMm - yaziMm / 2.0;
+                        double x = oge.MerkezX - ux * tahminiGenislik / 2.0 + vx * dikOfset;
+                        double y = oge.MerkezY - uy * tahminiGenislik / 2.0 + vy * dikOfset;
+                        // Son iki parametre YÜZDE: genişlik çarpanı 100, harf
+                        // aralığı 100. (KULLANICI RAPORU: "yazılar okunmuyor" —
+                        // harf aralığı 0 verilmişti, tüm harfler üst üste
+                        // biniyordu.)
+                        var yazi = belge.InsertSketchText(x * MM_TO_M, y * MM_TO_M, 0, satirlar[i], 0, 0, 0, 100, 100) as SketchText;
+                        if (yazi == null) continue;
+                        var bicim = yazi.GetTextFormat() as TextFormat;
+                        if (bicim != null)
+                        {
+                            bicim.CharHeight = yaziMm * MM_TO_M;
+                            // GÜVENİLİRLİK UYARISI: TextFormat.Escapement (yazı
+                            // açısı, radyan) bu projede İLK KEZ kullanılıyor —
+                            // yazının ekleme noktası etrafında döndüğü
+                            // varsayıldı; gerçek SolidWorks'te doğrulanmalı.
+                            bicim.Escapement = rad;
+                            yazi.SetTextFormat(false, bicim);
+                        }
+                    }
+                    Tanilama.Kaydet($"Nesting etiketi plaka={plakaNo} '{oge.Ad}': aci={yaziAci:0.#}° yazi={yaziMm:0.#}mm satir={satirlar.Count}");
+                }
+
+                belge.SketchManager.InsertSketch(true);
+                var etiketSketchi = belge.FeatureByPositionReverse(0) as Feature;
+                if (etiketSketchi != null) etiketSketchi.Name = "ETIKETLER";
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet($"NestingYerlesimOlusturucu.EtiketSketchiOlustur(plaka={plakaNo}) HATA (plaka yine kaydedilecek): " + ex);
+                try { if (belge.SketchManager.ActiveSketch != null) belge.SketchManager.InsertSketch(true); } catch { }
+            }
+        }
+
         private string PlakaOlustur(NestingPlakaSonucu plaka, int plakaNo, double plakaEn, double plakaBoy, string kod, string cikisKlasoru, string partSablonYolu)
         {
             try
@@ -68,6 +170,14 @@ namespace UretimOSKesim
 
                 belge.Extension.SelectByID2("Top Plane", "PLANE", 0, 0, 0, false, 0, null, 0);
                 belge.SketchManager.InsertSketch(true);
+
+                // AddToDB: çizilen öğeler SolidWorks'ün yakalama/çıkarım
+                // (snap/inference) mantığından GEÇMEDEN doğrudan eklenir —
+                // aksi halde dış hattaki/yaylardaki birbirine yakın noktalar
+                // yakındaki çizgilere yapışıp şekli bozabiliyor ve yüzlerce
+                // öğede çizim belirgin şekilde yavaşlıyor.
+                belge.SketchManager.AddToDB = true;
+                belge.SketchManager.DisplayWhenAdded = false;
 
                 // Plaka sınırı — referans, kesilmeyecek (CAM operatörü bunu
                 // AltiYuzKutuOlusturucu'daki panel dikdörtgenlerinden ayırt
@@ -80,10 +190,12 @@ namespace UretimOSKesim
                 // kararlaştırılmış (döndürülmüş veya düz) W×H boyutu çizilir.
                 foreach (var oge in plaka.Yerlesenler)
                 {
+                    Tanilama.Kaydet($"NestingYerlesimOlusturucu plaka={plakaNo} '{oge.Ad}': X={oge.X} Y={oge.Y} W={oge.W} H={oge.H} " +
+                        $"aci={oge.AciDerece:0.#} dishat={oge.DisHat.Count} delik={oge.Delikler.Count} form={oge.Formlar.Count}");
                     // KULLANICI RAPORU: "parçalarda yaptığım değişiklikler ne
                     // ölçüsel ne formsal olarak değişmiyor" — kenarına kertik/
                     // çentik işlenmiş parçalar artık düz dikdörtgen DEĞİL,
-                    // DelikFormCikarici.DisHatCikar'ın çıkardığı GERÇEK dış hat
+                    // DelikFormCikarici.GeometriCikar'ın çıkardığı GERÇEK dış hat
                     // olarak çizilir. Çıkarım yapılmadıysa/başarısızsa (DisHat
                     // boş — TAHMİN EDİLMEZ) düz dikdörtgene GERİ DÜŞÜLÜR.
                     if (oge.DisHat.Count >= 3)
@@ -140,7 +252,11 @@ namespace UretimOSKesim
                     }
                 }
 
+                belge.SketchManager.AddToDB = false;
+                belge.SketchManager.DisplayWhenAdded = true;
                 belge.SketchManager.InsertSketch(true); // sketch'i kapat
+
+                EtiketSketchiOlustur(belge, plaka, plakaNo);
 
                 string dosyaKodu = kod + "_NESTING_PLAKA" + plakaNo;
                 KesimListesiCikarici.OzelAlanYaz(belge, OzelAlanlar.AD, dosyaKodu);

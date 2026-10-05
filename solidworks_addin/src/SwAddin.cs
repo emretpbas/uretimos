@@ -581,15 +581,15 @@ namespace UretimOSKesim
             // kontrol ediyor, bkz. PaketOlusturCalistir/
             // TeknikResimOnaylaCalistir'deki "yanlış belge türü" uyarıları).
             Tanilama.Kaydet("Sekme kuruluyor - Parca");
-            SekmeKur(grup, (int)swDocumentTypes_e.swDocPART);
+            SekmeKur(grup, (int)swDocumentTypes_e.swDocPART, komutIdleri.Length);
             Tanilama.Kaydet("Sekme kuruldu - Parca");
 
             Tanilama.Kaydet("Sekme kuruluyor - Montaj");
-            SekmeKur(grup, (int)swDocumentTypes_e.swDocASSEMBLY);
+            SekmeKur(grup, (int)swDocumentTypes_e.swDocASSEMBLY, komutIdleri.Length);
             Tanilama.Kaydet("Sekme kuruldu - Montaj");
 
             Tanilama.Kaydet("Sekme kuruluyor - Cizim");
-            SekmeKur(grup, (int)swDocumentTypes_e.swDocDRAWING);
+            SekmeKur(grup, (int)swDocumentTypes_e.swDocDRAWING, komutIdleri.Length);
             Tanilama.Kaydet("Sekme kuruldu - Cizim");
 
             Tanilama.Kaydet("KomutlariKur bitti");
@@ -604,7 +604,7 @@ namespace UretimOSKesim
         // sayısı değiştiyse) ÖNCE KALDIRILIP TEMİZ oluşturuluyor —
         // CommandGroup'ta yaşadığımız kayıt defteri önbellek sorununun
         // aynısını burada da önlemek için (bkz. yukarıdaki KESİN TANI #5).
-        private void SekmeKur(ICommandGroup grup, int belgeTuru)
+        private void SekmeKur(ICommandGroup grup, int belgeTuru, int komutSayisi)
         {
             Tanilama.Kaydet($"GetCommandTab cagriliyor (belgeTuru={belgeTuru})");
             ICommandTab mevcutSekme = _cmdMgr.GetCommandTab(belgeTuru, "ÜretimOS");
@@ -635,7 +635,12 @@ namespace UretimOSKesim
             // eklenince bu sabit de GÜNCELLENMEZSE, komut menüde/araç
             // çubuğunda kayıtlı olsa bile sekmede HİÇ GÖRÜNMEZ (AddCommands
             // yalnızca bu dizideki ID'leri sekmeye ekler).
-            const int KOMUT_SAYISI = 12;
+            // TEKRARLANDI (kullanıcı raporu: "ribbonda nesting simgesi
+            // çıkmıyor"): 13. komut (Nesting'e Gönder) eklendiğinde sabit 12'de
+            // kalmıştı. Artık KomutlariKur'daki komutIdleri dizisinin
+            // uzunluğundan geliyor — yeni komut eklenince elle güncellemeye
+            // gerek yok.
+            int KOMUT_SAYISI = komutSayisi;
             int[] cmdIdleri = new int[KOMUT_SAYISI];
             int[] metinTipi = new int[KOMUT_SAYISI];
             for (int i = 0; i < KOMUT_SAYISI; i++)
@@ -1563,15 +1568,33 @@ namespace UretimOSKesim
             IModelDoc2 aktifBelge = (IModelDoc2)_app.ActiveDoc;
             if (aktifBelge == null)
             {
-                MessageBox.Show("Önce bir montaj açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Önce bir montaj veya parça açın.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Kullanıcı isteği: "parçaları seçip nesting ribbon tuşuna basınca
+            // da aynı işlevi çalıştır" — montajda bileşen SEÇİLİYSE (ya da
+            // tek başına bir parça açıksa) Reçete Ağacı'ndaki "Nesting Yap"
+            // ile AYNI akış (NestingCalistirici) doğrudan çalışır. Hiçbir şey
+            // seçili değilse eski "Nesting'e Gönder" penceresi açılır.
+            if (aktifBelge.GetType() == (int)swDocumentTypes_e.swDocPART)
+            {
+                SeciliParcalardanNestingYap((ModelDoc2)aktifBelge, new List<Component2>());
                 return;
             }
             if (aktifBelge.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
             {
-                MessageBox.Show("Nesting'e Gönder yalnızca montaj belgelerinde kullanılabilir.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Nesting yalnızca montaj veya parça belgelerinde kullanılabilir.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             ModelDoc2 hedefModel = (ModelDoc2)aktifBelge;
+
+            var seciliBilesenler = SeciliBilesenler(aktifBelge);
+            if (seciliBilesenler.Count > 0)
+            {
+                SeciliParcalardanNestingYap(hedefModel, seciliBilesenler);
+                return;
+            }
 
             var acikPanel = AcikNestingGonderPaneliniBul();
             if (acikPanel != null)
@@ -1587,6 +1610,120 @@ namespace UretimOSKesim
             _acikNestingGonderPaneli = panel;
             panel.FormClosed += (s, e) => { if (ReferenceEquals(_acikNestingGonderPaneli, panel)) _acikNestingGonderPaneli = null; };
             panel.Show();
+        }
+
+        // FeatureManager'da seçili bileşenler (parça veya alt montaj).
+        private static List<Component2> SeciliBilesenler(IModelDoc2 belge)
+        {
+            var liste = new List<Component2>();
+            var selMgr = (ISelectionMgr)belge.SelectionManager;
+            int adet = selMgr.GetSelectedObjectCount2(-1);
+            for (int i = 1; i <= adet; i++)
+            {
+                if (selMgr.GetSelectedObjectsComponent4(i, -1) is Component2 bilesen && !liste.Contains(bilesen))
+                    liste.Add(bilesen);
+            }
+            return liste;
+        }
+
+        // Seçili bileşenleri (alt montajlar açılarak) parçalara indirger, her
+        // farklı parça dosyası+konfigürasyonu için montajdaki TOPLAM adedi
+        // sayar, malzeme grubuna ayırır ve ortak nesting akışını çalıştırır.
+        // Malzeme grubu: parçanın URETIMOS_PLAKA_KODU özel alanı; yoksa
+        // geometriden okunan kalınlık ("18mm" gibi) — farklı kalınlıklar ASLA
+        // aynı plakaya karışmaz. secilenler boşsa belgenin kendisi (tek parça)
+        // nestlenir.
+        private void SeciliParcalardanNestingYap(ModelDoc2 belge, List<Component2> secilenler)
+        {
+            try
+            {
+                var parcalar = new Dictionary<string, (ModelDoc2 model, int adet)>(StringComparer.OrdinalIgnoreCase);
+                if (secilenler.Count == 0)
+                {
+                    parcalar[belge.GetPathName() ?? "parca"] = (belge, 1);
+                }
+                else
+                {
+                    var anahtarlar = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var yapraklar = new List<Component2>();
+                    foreach (var b in secilenler) ParcaBilesenleriniTopla(b, yapraklar);
+                    foreach (var b in yapraklar)
+                    {
+                        var model = b.GetModelDoc2() as ModelDoc2;
+                        if (model == null) continue;
+                        string anahtar = (model.GetPathName() ?? b.Name2) + "|" + b.ReferencedConfiguration;
+                        if (anahtarlar.Add(anahtar)) parcalar[anahtar] = (model, 0);
+                    }
+                    // Adet: seçilen parçanın montajdaki TÜM (baskılanmamış) örnekleri.
+                    var asm = belge as AssemblyDoc;
+                    object[] tumBilesenler = asm?.GetComponents(false) as object[];
+                    if (tumBilesenler != null)
+                    {
+                        foreach (Component2 b in tumBilesenler.Cast<Component2>())
+                        {
+                            if (b.IsSuppressed()) continue;
+                            var model = b.GetModelDoc2() as ModelDoc2;
+                            if (model == null) continue;
+                            string anahtar = (model.GetPathName() ?? b.Name2) + "|" + b.ReferencedConfiguration;
+                            if (parcalar.TryGetValue(anahtar, out var kayit)) parcalar[anahtar] = (kayit.model, kayit.adet + 1);
+                        }
+                    }
+                }
+
+                if (parcalar.Count == 0)
+                {
+                    MessageBox.Show("Seçimde nestlenebilecek bir parça bulunamadı (baskılanmış/yüklenmemiş olabilir).",
+                        "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var gruplar = new Dictionary<string, List<NestingParcaKaynagi>>();
+                foreach (var (model, adet) in parcalar.Values)
+                {
+                    var geometri = DelikFormCikarici.GeometriCikar(model, 0);
+                    string plakaKodu = KesimListesiCikarici.OzelAlanOku(model, OzelAlanlar.PLAKA_KODU);
+                    string grup = !string.IsNullOrWhiteSpace(plakaKodu)
+                        ? plakaKodu.Trim()
+                        : (geometri.KalinlikMm > 0 ? geometri.KalinlikMm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "mm" : "kalinlik_bilinmiyor");
+                    string swAdi = Path.GetFileNameWithoutExtension(model.GetPathName() ?? "");
+                    string ad = KesimListesiCikarici.OzelAlanOku(model, OzelAlanlar.AD);
+                    if (!gruplar.TryGetValue(grup, out var liste)) gruplar[grup] = liste = new List<NestingParcaKaynagi>();
+                    liste.Add(new NestingParcaKaynagi
+                    {
+                        Model = model,
+                        Ad = string.IsNullOrWhiteSpace(ad) ? swAdi : ad,
+                        YmKod = KesimListesiCikarici.OzelAlanOku(model, OzelAlanlar.KOD) ?? "",
+                        Adet = Math.Max(1, adet),
+                        KalinlikMm = geometri.KalinlikMm,
+                        Geometri = geometri
+                    });
+                }
+                Tanilama.Kaydet("SeciliParcalardanNestingYap: " + parcalar.Count + " farklı parça, " + gruplar.Count + " malzeme grubu (" + string.Join(", ", gruplar.Keys) + ")");
+
+                var (ayarlar, takimlar) = NestingCalistirici.AyarlariCek();
+                var (kesimPayi, kenarBosluk) = NestingCalistirici.KesimPayiVeKenarBoslugu(ayarlar, takimlar);
+                string kod = Path.GetFileNameWithoutExtension(belge.GetPathName() ?? "");
+                NestingCalistirici.Calistir(_app, null, kod, gruplar, kesimPayi, kenarBosluk);
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("SeciliParcalardanNestingYap HATA: " + ex);
+                MessageBox.Show("Nesting sırasında hata oluştu: " + ex.Message + "\n\nAyrıntı: Masaüstündeki uretimos_addin_log.txt",
+                    "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // Alt montaj seçildiyse içindeki tüm (baskılanmamış) parçalar.
+        private static void ParcaBilesenleriniTopla(Component2 bilesen, List<Component2> hedef)
+        {
+            if (bilesen == null || bilesen.IsSuppressed()) return;
+            object[] cocuklar = bilesen.GetChildren() as object[];
+            if (cocuklar == null || cocuklar.Length == 0)
+            {
+                hedef.Add(bilesen);
+                return;
+            }
+            foreach (Component2 c in cocuklar.Cast<Component2>()) ParcaBilesenleriniTopla(c, hedef);
         }
 
         // ── KOMUT: CNC YERLEŞİMİ (Biesse bSolid) ────────────────────────────

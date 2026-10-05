@@ -475,12 +475,6 @@ namespace UretimOSKesim
         // SolidWorks'te AÇIK kalan, düzenlenebilir bir sketch/parça üretir.
         private async System.Threading.Tasks.Task SolidWorksteNestle()
         {
-            if (!_manuelPlakaBoy.HasValue || !_manuelPlakaEn.HasValue)
-            {
-                MessageBox.Show("Önce yukarıdan bir plaka boyutu seçin (hazır buton veya manuel Boy×En).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
             var secilenler = _liste.Items.Cast<ListViewItem>()
                 .Where(i => i.Checked)
                 .Select(i => (KesimSatiri)i.Tag)
@@ -490,6 +484,14 @@ namespace UretimOSKesim
                 MessageBox.Show("Hiç parça seçilmedi.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            // Kullanıcı isteği: "kenar mesafelerini ve freze bıçak
+            // mesafelerini ayarlamak için nesting modülüne eklemeler yap" —
+            // Reçete Ağacı/ribbon ile AYNI ayar penceresi; yukarıda seçilmiş
+            // plaka boyutu (varsa) önerilen değer olarak gelir.
+            var (ufKesimPayi, ufKenarBosluk) = KesimPayiVeKenarBosluguHesapla();
+            if (!NestingCalistirici.NestingAyarlariSor(this, ufKesimPayi, ufKenarBosluk, _manuelPlakaBoy, _manuelPlakaEn, out var nestingAyari)) return;
+            PlakaBoyutuSec(nestingAyari.PlakaBoyMm, nestingAyari.PlakaEnMm);
 
             string cikisKlasoru;
             using (var klasorDlg = new FolderBrowserDialog { Description = "Nesting sonucu parça dosyalarının kaydedileceği klasör" })
@@ -513,25 +515,49 @@ namespace UretimOSKesim
             _durumEtiketi.Text = "Nesting hesaplanıyor…";
             Application.DoEvents();
 
-            var (kesimPayi, kenarBosluk) = KesimPayiVeKenarBosluguHesapla();
+            double kesimPayi = nestingAyari.BicakMesafesiMm, kenarBosluk = nestingAyari.KenarBoslukMm;
 
-            // Delikler SADECE DeliklerOnaylandi=true ise dahil edilir — AYNI
-            // onay kapısı ParcaNesnesiOlustur'da (ÜretimOS'a gönderme yolu)
-            // da kullanılıyor (bkz. o metottaki NOT).
-            var parcaGirdileri = secilenler.Select(s => new NestingParcaGirdi
+            // KULLANICI İSTEĞİ: "onaya gerek yok tüm yüzeydeki delikleri
+            // nesting çizimine ekle" — SolidWorks nesting sketch'ine delik/
+            // form/dış hat onay kapısı OLMADAN eklenir. ÜretimOS'a gönderme
+            // yolundaki (ParcaNesnesiOlustur) onay kapısı DEĞİŞMEDİ.
+            // KULLANICI İSTEĞİ: "hiçbir şekilde anma ölçüsü almasın nesting
+            // yerleşiminde tamamen parça çizimi üzerinden işlem yapılsın" —
+            // En/Boy, s.Width/s.Lenght (özel alan/denklem ölçüsü) yerine
+            // parçanın gerçek geometrisinden (s.Geometri) alınır. Geometrisi
+            // okunamayan parça anma ölçüsüne GERİ DÜŞMEZ, atlanır.
+            var atlananlar = secilenler
+                .Where(s => s.Geometri == null || s.Geometri.GenislikMm <= 0 || s.Geometri.YukseklikMm <= 0)
+                .Select(s => s.Desc + " (parça geometrisi okunamadı)")
+                .ToList();
+            var parcaGirdileri = secilenler
+                .Where(s => s.Geometri != null && s.Geometri.GenislikMm > 0 && s.Geometri.YukseklikMm > 0)
+                .Select(s =>
             {
-                Ad = s.Desc,
-                En = s.Width,
-                Boy = s.Lenght,
-                Adet = s.Qty,
-                GrainKilitli = !string.IsNullOrWhiteSpace(s.TahilYonu),
-                YmKod = s.SapCode ?? "",
-                Delikler = s.DeliklerOnaylandi ? s.Delikler.Select(d => (x: d.XMm, y: d.YMm, cap: d.CapMm)).ToList() : new List<(double, double, double)>(),
-                Formlar = s.DeliklerOnaylandi ? s.Formlar.Select(f => f.NoktalarXY.Select(n => (x: n[0], y: n[1])).ToList()).ToList() : new List<List<(double, double)>>(),
-                DisHat = s.DeliklerOnaylandi ? s.DisHat.Select(n => (x: n[0], y: n[1])).ToList() : new List<(double, double)>()
+                var geometri = s.Geometri;
+                Tanilama.Kaydet($"Nesting girdisi '{s.Desc}': geometri={geometri.GenislikMm}x{geometri.YukseklikMm} " +
+                    $"(anma ölçüsü {s.Width}x{s.Lenght} KULLANILMADI) | dishat={geometri.DisHat.Count} nokta, " +
+                    $"delik={geometri.NestingDelikleri().Count}/{geometri.Delikler.Count} (yuzeye dik/toplam), form={geometri.Formlar.Count}");
+                return new NestingParcaGirdi
+                {
+                    Ad = s.Desc,
+                    En = geometri.GenislikMm,
+                    Boy = geometri.YukseklikMm,
+                    Adet = s.Qty,
+                    GrainKilitli = !string.IsNullOrWhiteSpace(s.TahilYonu),
+                    YmKod = s.SapCode ?? "",
+                    SwParcaAdi = string.IsNullOrEmpty(s.ModelYolu) ? "" : System.IO.Path.GetFileNameWithoutExtension(s.ModelYolu),
+                    Delikler = geometri.NestingDelikleri(),
+                    Formlar = geometri.NestingFormlari(),
+                    DisHat = geometri.NestingDisHatti()
+                };
             }).ToList();
 
-            var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri);
+            foreach (var a in atlananlar) Tanilama.Kaydet("Nesting girdisi ATLANDI: " + a);
+            var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri,
+                nestingAyari.GrainYonuneUy, nestingAyari.EtkinSabitAci);
+            if (atlananlar.Count > 0)
+                sonuc.YerlesemeyenUyarilari.Insert(0, "ATLANAN parçalar: " + string.Join(", ", atlananlar));
 
             if (sonuc.Plakalar.Count == 0)
             {
