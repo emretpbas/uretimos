@@ -40,7 +40,11 @@ PageModules.cnc_takimlari = (() => {
     v: 'V Uç (Gravür/Pah)',
     ozel: 'Özel Profil'
   };
-  const TIP_ETIKET = { frezeleme: 'Frezeleme (Freze Bıçağı)', ebatlama: 'Ebatlama (Testere Bıçağı)' };
+  const TIP_ETIKET = { frezeleme: 'Frezeleme (Freze Bıçağı)', ebatlama: 'Ebatlama (Testere Bıçağı)', delik: 'Delik (Matkap/Havşa)' };
+  // Kullanıcı isteği: "biesse bsolid programlarındaki gerçek takımları aktar"
+  // — bu şirketin kendi bSolid dosyalarında TAM (delik boyunca)/YARIM (kör
+  // delik) ayrımı zaten var, buraya AYNEN taşındı (tahmin değil).
+  const DELIK_CINSI_ETIKET = { tam: 'Tam (Delik Boyunca)', yarim: 'Yarım (Kör Delik)', havsa: 'Havşa' };
   const takimTipiOku = (k) => k.takimTipi || 'frezeleme'; // geriye uyumluluk
 
   let searchTxt = '';
@@ -65,6 +69,7 @@ PageModules.cnc_takimlari = (() => {
             <button class="btn btn-sm tip-filter ${filterTip === 'hepsi' ? 'btn-blue' : ''}" data-tip="hepsi">Hepsi</button>
             <button class="btn btn-sm tip-filter ${filterTip === 'frezeleme' ? 'btn-blue' : ''}" data-tip="frezeleme">Frezeleme</button>
             <button class="btn btn-sm tip-filter ${filterTip === 'ebatlama' ? 'btn-blue' : ''}" data-tip="ebatlama">Ebatlama</button>
+            <button class="btn btn-sm tip-filter ${filterTip === 'delik' ? 'btn-blue' : ''}" data-tip="delik">Delik</button>
           </div>
           <div class="flex-gap" style="margin-left:auto;flex-wrap:wrap">
             <button class="btn btn-sm profil-filter ${filterProfil === 'hepsi' ? 'btn-blue' : ''}" data-profil="hepsi">Hepsi</button>
@@ -111,9 +116,11 @@ PageModules.cnc_takimlari = (() => {
           <tr>
             <td class="mono">${App.escapeHtml(k.kod || '')}</td>
             <td>${App.escapeHtml(k.ad || '')}${k.aktif === false ? ' <span class="pill" style="background:var(--bg);color:var(--text2)">pasif</span>' : ''}</td>
-            <td><span class="pill ${tip === 'ebatlama' ? 'pill-amber' : 'pill-blue'}">${tip === 'ebatlama' ? 'Ebatlama' : 'Frezeleme'}</span></td>
+            <td><span class="pill ${tip === 'ebatlama' ? 'pill-amber' : tip === 'delik' ? 'pill-green' : 'pill-blue'}">${tip === 'ebatlama' ? 'Ebatlama' : tip === 'delik' ? 'Delik' : 'Frezeleme'}</span></td>
             <td>${tip === 'ebatlama'
               ? App.escapeHtml(k.disYapisiAciklama || '—')
+              : tip === 'delik'
+              ? App.escapeHtml(DELIK_CINSI_ETIKET[k.delikCinsi] || k.delikCinsi || '—')
               : App.escapeHtml(PROFIL_ETIKET[k.profilTipi] || k.profilTipi || '—') +
                 (k.profilTipi === 'bull' && k.bullYaricapMm ? ' <span class="muted">(R' + App.fmt(k.bullYaricapMm, 1) + ')</span>' : '') +
                 (k.profilTipi === 'v' && k.vAcisiDerece ? ' <span class="muted">(' + App.fmt(k.vAcisiDerece, 0) + '°)</span>' : '')
@@ -121,6 +128,8 @@ PageModules.cnc_takimlari = (() => {
             <td class="r">${App.fmt(k.capMm, 2)}</td>
             <td class="r">${tip === 'ebatlama'
               ? (k.kalinlikMm ? App.fmt(k.kalinlikMm, 2) + ' (kerf)' : '—')
+              : tip === 'delik'
+              ? (k.maksDerinlikMm ? App.fmt(k.maksDerinlikMm, 1) + ' (maks. derinlik)' : '—')
               : (k.kesmeBoyuMm ? App.fmt(k.kesmeBoyuMm, 1) : '—')}</td>
             <td class="r">${k.sapCapMm ? App.fmt(k.sapCapMm, 1) : '—'}</td>
             <td class="r">${k.maxDevirRpm ? App.fmt(k.maxDevirRpm, 0) : '—'}</td>
@@ -155,6 +164,7 @@ PageModules.cnc_takimlari = (() => {
         <select class="fselect" id="f-tip">
           <option value="frezeleme" ${tip === 'frezeleme' ? 'selected' : ''}>${TIP_ETIKET.frezeleme}</option>
           <option value="ebatlama" ${tip === 'ebatlama' ? 'selected' : ''}>${TIP_ETIKET.ebatlama}</option>
+          <option value="delik" ${tip === 'delik' ? 'selected' : ''}>${TIP_ETIKET.delik}</option>
         </select>
       </div>
       <div class="frow">
@@ -203,6 +213,21 @@ PageModules.cnc_takimlari = (() => {
           <input class="finput" id="f-eb-dis" value="${App.escapeHtml(d.disYapisiAciklama || '')}" placeholder="örn. 60 dişli, melamin/PVC için ince diş"></div>
       </div>
 
+      <div id="f-delik-alanlari" style="${tip === 'delik' ? '' : 'display:none'}">
+        <div class="fhint" style="margin-bottom:8px">Matkap/havşa ucu — CNC Yerleşimi panelinde delme operasyonlarına atanacak takımlardır.</div>
+        <div class="frow">
+          <div class="fgroup"><label class="flbl">Çap (mm)</label><input class="finput" id="f-dl-cap" type="number" step="0.01" value="${tip === 'delik' ? (d.capMm || '') : ''}"></div>
+          <div class="fgroup"><label class="flbl">Maks. Çalışma Derinliği (mm)</label><input class="finput" id="f-dl-derinlik" type="number" step="0.1" value="${d.maksDerinlikMm || ''}"></div>
+          <div class="fgroup"><label class="flbl">Delik Cinsi</label>
+            <select class="fselect" id="f-dl-cinsi">
+              <option value="tam" ${d.delikCinsi === 'tam' ? 'selected' : ''}>${DELIK_CINSI_ETIKET.tam}</option>
+              <option value="yarim" ${d.delikCinsi === 'yarim' ? 'selected' : ''}>${DELIK_CINSI_ETIKET.yarim}</option>
+              <option value="havsa" ${d.delikCinsi === 'havsa' ? 'selected' : ''}>${DELIK_CINSI_ETIKET.havsa}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <div class="fgroup"><label class="flbl">Not</label><input class="finput" id="f-not" value="${App.escapeHtml(d.aciklama || '')}" placeholder="örn. üretici/model, hangi malzemeler için uygun"></div>
       <div class="fcheck"><input type="checkbox" id="f-aktif" ${d.aktif !== false ? 'checked' : ''}><label for="f-aktif">Aktif (takım seçicilerde görünür)</label></div>
     `;
@@ -213,6 +238,7 @@ PageModules.cnc_takimlari = (() => {
       const yeniTip = e.target.value;
       document.getElementById('f-frezeleme-alanlari').style.display = yeniTip === 'frezeleme' ? '' : 'none';
       document.getElementById('f-ebatlama-alanlari').style.display = yeniTip === 'ebatlama' ? '' : 'none';
+      document.getElementById('f-delik-alanlari').style.display = yeniTip === 'delik' ? '' : 'none';
     };
     document.getElementById('f-profil').onchange = (e) => {
       document.getElementById('f-bull-row').style.display = e.target.value === 'bull' ? '' : 'none';
@@ -226,7 +252,17 @@ PageModules.cnc_takimlari = (() => {
       if (!kod || !ad) { App.toast('Kod ve ad zorunlu', 'err'); return; }
 
       let kayit;
-      if (takimTipi === 'ebatlama') {
+      if (takimTipi === 'delik') {
+        const capMm = parseFloat(document.getElementById('f-dl-cap').value);
+        if (!capMm || capMm <= 0) { App.toast('Delik takımı için geçerli bir çap (>0) zorunlu', 'err'); return; }
+        kayit = {
+          id: d.id || App.uid('CNCT'), takimTipi, kod, ad, capMm,
+          maksDerinlikMm: parseFloat(document.getElementById('f-dl-derinlik').value) || null,
+          delikCinsi: document.getElementById('f-dl-cinsi').value,
+          aciklama: document.getElementById('f-not').value.trim(),
+          aktif: document.getElementById('f-aktif').checked
+        };
+      } else if (takimTipi === 'ebatlama') {
         const capMm = parseFloat(document.getElementById('f-eb-cap').value) || null;
         const kalinlikMm = parseFloat(document.getElementById('f-eb-kalinlik').value);
         if (!kalinlikMm || kalinlikMm <= 0) { App.toast('Ebatlama takımı için geçerli bir kalınlık/kesim payı (>0) zorunlu', 'err'); return; }
