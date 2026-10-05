@@ -207,29 +207,37 @@ namespace UretimOSKesim
         {
             var mu = (MathUtility)app.GetMathUtility();
             int acilan = 0;
-            foreach (var d in plan.Delikler)
+            // KULLANICI TESTİ: yüz seçildi ama "sketch açılamadı" — SolidWorks,
+            // penceresi AKTİF olmayan (montajın içinden yüklenmiş) parçada
+            // sketch açmıyor. Her parça kendi penceresinde açılıp aktif edilir,
+            // delikleri açılır; pencereyi biz açtıysak kapatılır (montaj
+            // referansı yüzünden belge bellekte kalır, değişiklik montajla
+            // birlikte kaydedilir), sonra montaja dönülir.
+            foreach (var grup in plan.Delikler.GroupBy(d => d.GovdeyeMi))
             {
-                var belge = (ModelDoc2)(d.GovdeyeMi ? plan.Govde : plan.Karsi).GetModelDoc2();
-                bool tamam = DelikKes(mu, belge, d, sablonAdi, out string hata);
-                if (!tamam && hata == YUZ_SECILEMEDI)
-                {
-                    // Montajın içinden yüklenmiş ama penceresi olmayan parçada
-                    // seçim başarısız olabilir — parça açılıp bir kez daha denenir.
-                    int h = 0, w = 0;
+                var bilesen = grup.Key ? plan.Govde : plan.Karsi;
+                var belge = (ModelDoc2)bilesen.GetModelDoc2();
+                bool zatenGorunur = belge.Visible;
+                int h = 0, w = 0;
+                if (!zatenGorunur)
                     app.OpenDoc6(belge.GetPathName(), (int)swDocumentTypes_e.swDocPART, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref h, ref w);
-                    tamam = DelikKes(mu, belge, d, sablonAdi, out hata);
-                    int e = 0;
-                    app.ActivateDoc3(montaj.GetTitle(), false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref e);
+                app.ActivateDoc3(belge.GetTitle(), false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref h);
+                Tanilama.Kaydet($"BaglantiUygulayici.Uygula: '{belge.GetTitle()}' aktif edildi (zatenGorunur={zatenGorunur}, aktif={(app.ActiveDoc as ModelDoc2)?.GetTitle()})");
+                foreach (var d in grup)
+                {
+                    if (DelikKes(mu, belge, d, sablonAdi, out string hata)) acilan++;
+                    else uyarilar.Add(d.Aciklama + ": " + hata);
                 }
-                if (tamam) acilan++;
-                else uyarilar.Add(d.Aciklama + ": " + hata);
+                try { belge.EditRebuild3(); } catch { }
+                if (!zatenGorunur) app.CloseDoc(belge.GetTitle());
             }
+            int e = 0;
+            app.ActivateDoc3(montaj.GetTitle(), false, (int)swRebuildOnActivation_e.swRebuildActiveDoc, ref e);
             try { montaj.EditRebuild3(); } catch { }
             Tanilama.Kaydet($"BaglantiUygulayici.Uygula: {acilan}/{plan.Delikler.Count} delik açıldı");
             return acilan;
         }
 
-        private const string YUZ_SECILEMEDI = "yüz seçilemedi";
 
         private static bool DelikKes(MathUtility mu, ModelDoc2 belge, PlanlananDelik d, string sablonAdi, out string hata)
         {
@@ -240,7 +248,7 @@ namespace UretimOSKesim
                 var yuz = HedefYuzBul(YuzleriOku(mu, belge, null), d.MerkezParca, d.NormalParca, d.CapMm * MM / 2);
                 if (yuz == null) { hata = "hedef yüz bulunamadı"; return false; }
                 belge.ClearSelection2(true);
-                if (!((Entity)yuz).Select4(false, null)) { hata = YUZ_SECILEMEDI; return false; }
+                if (!((Entity)yuz).Select4(false, null)) { hata = "yüz seçilemedi"; return false; }
                 sm.InsertSketch(true);
                 var sketch = sm.ActiveSketch as Sketch;
                 if (sketch == null) { hata = "sketch açılamadı"; return false; }
