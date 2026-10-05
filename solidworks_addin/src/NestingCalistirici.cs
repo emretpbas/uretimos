@@ -103,7 +103,19 @@ namespace UretimOSKesim
                 return (0, 0);
             }
 
-            if (!NestingAyarlariSor(sahip, varsayilanKesimPayi, varsayilanKenarBosluk, null, null, out var ayar)) return (0, 0);
+            // Geometri ayar penceresinden ÖNCE çıkarılır — pencere her parçayı
+            // En/Boy/Kalınlık ile listeleyip parça başına yön sorabilsin.
+            var grupGirdileri = new List<(string grup, List<NestingParcaGirdi> girdiler, List<string> atlananlar)>();
+            foreach (var grup in gruplar)
+            {
+                if (grup.Value.Count == 0) continue;
+                var (girdiler, atlananlar) = GirdileriOlustur(grup.Value);
+                foreach (var g in girdiler) g.Grup = grup.Key;
+                grupGirdileri.Add((grup.Key, girdiler, atlananlar));
+            }
+
+            if (!NestingAyarlariSor(sahip, varsayilanKesimPayi, varsayilanKenarBosluk, null, null,
+                grupGirdileri.SelectMany(g => g.girdiler).ToList(), out var ayar)) return (0, 0);
             double plakaBoy = ayar.PlakaBoyMm, plakaEn = ayar.PlakaEnMm;
             double kesimPayi = ayar.BicakMesafesiMm, kenarBosluk = ayar.KenarBoslukMm;
 
@@ -129,26 +141,24 @@ namespace UretimOSKesim
             var rapor = new List<string>();
             int toplamDosya = 0, toplamPlaka = 0;
 
-            foreach (var grup in gruplar)
+            foreach (var (grupAdi, parcaGirdileri, atlananlar) in grupGirdileri)
             {
-                if (grup.Value.Count == 0) continue;
-                var (parcaGirdileri, atlananlar) = GirdileriOlustur(grup.Value);
                 if (atlananlar.Count > 0)
-                    rapor.Add("'" + grup.Key + "' grubunda ATLANAN parçalar: " + string.Join(", ", atlananlar));
+                    rapor.Add("'" + grupAdi + "' grubunda ATLANAN parçalar: " + string.Join(", ", atlananlar));
                 if (parcaGirdileri.Count == 0) continue;
 
                 var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri, ayar.GrainYonuneUy, ayar.EtkinSabitAci);
                 if (sonuc.Plakalar.Count == 0)
                 {
-                    rapor.Add("'" + grup.Key + "' grubu: hiçbir parça yerleştirilemedi — " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
+                    rapor.Add("'" + grupAdi + "' grubu: hiçbir parça yerleştirilemedi — " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
                     continue;
                 }
 
-                string grupDosyaKodu = kod + "_" + GuvenliDosyaAdi(grup.Key);
+                string grupDosyaKodu = kod + "_" + GuvenliDosyaAdi(grupAdi);
                 var dosyalar = olusturucu.Olustur(sonuc, plakaEn, plakaBoy, grupDosyaKodu, cikisKlasoru, partSablon);
                 toplamDosya += dosyalar.Count;
                 toplamPlaka += sonuc.Plakalar.Count;
-                rapor.Add("'" + grup.Key + "': " + sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya " +
+                rapor.Add("'" + grupAdi + "': " + sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya " +
                     $"(kenar boşluğu {kenarBosluk:0.#} mm, bıçak mesafesi {kesimPayi:0.#} mm, {ayar.YonlendirmeAciklamasi}).");
                 if (sonuc.YerlesemeyenUyarilari.Count > 0)
                     rapor.Add("    UYARI: " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
@@ -188,6 +198,7 @@ namespace UretimOSKesim
                     Ad = p.Ad,
                     En = geometri.GenislikMm,
                     Boy = geometri.YukseklikMm,
+                    KalinlikMm = geometri.KalinlikMm > 0 ? geometri.KalinlikMm : p.KalinlikMm,
                     Adet = Math.Max(1, p.Adet),
                     GrainKilitli = !string.IsNullOrWhiteSpace(KesimListesiCikarici.OzelAlanOku(p.Model, OzelAlanlar.TAHIL_YONU)),
                     YmKod = p.YmKod ?? "",
@@ -217,20 +228,29 @@ namespace UretimOSKesim
         // kullanıcının girdiği değerler NestingAyarlari ile yerel olarak
         // saklanıp bir sonraki nesting'de hazır gelir.
         public static bool NestingAyarlariSor(IWin32Window sahip, double varsayilanKesimPayi, double varsayilanKenarBosluk,
-            double? onerilenBoy, double? onerilenEn, out NestingAyarlari sonuc)
+            double? onerilenBoy, double? onerilenEn, IList<NestingParcaGirdi> parcalar, out NestingAyarlari sonuc)
         {
             var kayitli = NestingAyarlari.Yukle();
             sonuc = null;
             NestingAyarlari secilen = null;
+            bool listeVar = parcalar != null && parcalar.Count > 0;
 
+            // KULLANICI RAPORU (ekran görüntüsü): etiketler ve Tamam/Vazgeç
+            // düğmeleri kesiliyordu — pencere büyütüldü, boyutlandırılabilir
+            // yapıldı, düğmeler sağa sabitlendi.
             using (var dlg = new Form
             {
-                Text = "Nesting Ayarları", Width = 470, Height = 420, FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = ReceteAgaciPaneli.Tema.TabanFont
+                Text = "Nesting Ayarları", Width = listeVar ? 1050 : 560, Height = listeVar ? 780 : 470,
+                MinimumSize = new Size(560, 470), FormBorderStyle = FormBorderStyle.Sizable,
+                StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = listeVar, Font = ReceteAgaciPaneli.Tema.TabanFont
             })
             {
-                var tablo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(10, 10, 10, 0) };
-                tablo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
+                var tablo = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    ColumnCount = 2, Padding = new Padding(10, 10, 10, 0)
+                };
+                tablo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 360));
                 tablo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
                 NumericUpDown Sayi(decimal deger, int ondalik) => new NumericUpDown
@@ -289,23 +309,110 @@ namespace UretimOSKesim
                 aciAktifKutu.CheckedChanged += (s, e) => YonKutulariniGuncelle();
                 YonKutulariniGuncelle();
 
-                Satir("Grain yönüne uy:", grainKutu);
-                Satir("Sabit açı kullan (saat yönü tersi +):", aciPanel);
+                Satir(listeVar ? "Grain yönüne uy (tüm parçalar):" : "Grain yönüne uy:", grainKutu);
+                Satir(listeVar ? "Sabit açı kullan — tüm parçalar (saat yönü tersi +):" : "Sabit açı kullan (saat yönü tersi +):", aciPanel);
+
+                // Kullanıcı isteği: "seçilen her parçayı nesting ayarlarında
+                // listele ... parça - en - boy - kalınlık ölçüsü olsun, her
+                // satırda grain yönüne uy kutucuğu ve sabit açı kullan kutucuğu".
+                // Üstteki genel kutucuklar değişince tüm satırlara uygulanır;
+                // satırda yapılan değişiklik yalnızca o parçayı etkiler.
+                DataGridView grid = null;
+                GroupBox gridKutu = null;
+                if (listeVar)
+                {
+                    grid = new DataGridView
+                    {
+                        Dock = DockStyle.Fill, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AllowUserToResizeRows = false,
+                        RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.CellSelect, MultiSelect = false,
+                        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, BackgroundColor = SystemColors.Window,
+                        EditMode = DataGridViewEditMode.EditOnEnter
+                    };
+                    DataGridViewTextBoxColumn Metin(string ad, string baslik, float agirlik, bool sayi)
+                    {
+                        var k = new DataGridViewTextBoxColumn { Name = ad, HeaderText = baslik, ReadOnly = true, FillWeight = agirlik, SortMode = DataGridViewColumnSortMode.NotSortable };
+                        if (sayi) k.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+                        return k;
+                    }
+                    grid.Columns.Add(Metin("grup", "Malzeme", 90, false));
+                    grid.Columns.Add(Metin("parca", "Parça", 220, false));
+                    grid.Columns.Add(Metin("adet", "Adet", 40, true));
+                    grid.Columns.Add(Metin("en", "En (mm)", 55, true));
+                    grid.Columns.Add(Metin("boy", "Boy (mm)", 55, true));
+                    grid.Columns.Add(Metin("kalinlik", "Kalınlık (mm)", 60, true));
+                    grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "grain", HeaderText = "Grain yönüne uy", FillWeight = 60, SortMode = DataGridViewColumnSortMode.NotSortable });
+                    grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "sabit", HeaderText = "Sabit açı kullan", FillWeight = 60, SortMode = DataGridViewColumnSortMode.NotSortable });
+                    var aciKolon = Metin("aci", "Açı (°)", 45, true);
+                    aciKolon.ReadOnly = false;
+                    grid.Columns.Add(aciKolon);
+                    grid.Columns["grup"].Visible = parcalar.Any(p => !string.IsNullOrEmpty(p.Grup));
+
+                    foreach (var p in parcalar)
+                    {
+                        bool grain = !p.GrainKilitli && (p.GrainYonuneUy ?? grainKutu.Checked);
+                        bool sabit = !p.GrainKilitli && (p.SabitAciKullan ?? aciAktifKutu.Checked);
+                        double aci = p.SabitAciKullan.HasValue ? p.SabitAciDerece : (double)aciKutu.Value;
+                        int r = grid.Rows.Add(p.Grup ?? "", p.Ad + (p.GrainKilitli ? "  (desen yönü kilitli — döndürülmez)" : ""),
+                            Math.Max(1, p.Adet), p.En.ToString("0.#"), p.Boy.ToString("0.#"),
+                            p.KalinlikMm > 0 ? p.KalinlikMm.ToString("0.#") : "—", grain, sabit, aci.ToString("0.#"));
+                        grid.Rows[r].Tag = p;
+                    }
+
+                    void SatirDurumu(DataGridViewRow satir)
+                    {
+                        var p = (NestingParcaGirdi)satir.Tag;
+                        bool sabit = satir.Cells["sabit"].Value is bool b && b;
+                        void Ayarla(string kolon, bool saltOkunur)
+                        {
+                            var hucre = satir.Cells[kolon];
+                            hucre.ReadOnly = saltOkunur;
+                            hucre.Style.BackColor = saltOkunur ? Color.Gainsboro : SystemColors.Window;
+                            hucre.Style.ForeColor = saltOkunur ? Color.Gray : SystemColors.ControlText;
+                        }
+                        // Sabit açı satırda da Grain'den önceliklidir.
+                        Ayarla("grain", p.GrainKilitli || sabit);
+                        Ayarla("sabit", p.GrainKilitli);
+                        Ayarla("aci", p.GrainKilitli || !sabit);
+                    }
+                    foreach (DataGridViewRow satir in grid.Rows) SatirDurumu(satir);
+
+                    grid.CurrentCellDirtyStateChanged += (s, e) =>
+                    {
+                        if (grid.IsCurrentCellDirty && grid.CurrentCell is DataGridViewCheckBoxCell)
+                            grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                    };
+                    grid.CellValueChanged += (s, e) => { if (e.RowIndex >= 0) SatirDurumu(grid.Rows[e.RowIndex]); };
+
+                    void TumSatirlara(string kolon, object deger)
+                    {
+                        grid.EndEdit();
+                        foreach (DataGridViewRow satir in grid.Rows)
+                            if (!((NestingParcaGirdi)satir.Tag).GrainKilitli) satir.Cells[kolon].Value = deger;
+                    }
+                    grainKutu.CheckedChanged += (s, e) => TumSatirlara("grain", grainKutu.Checked);
+                    aciAktifKutu.CheckedChanged += (s, e) => TumSatirlara("sabit", aciAktifKutu.Checked);
+                    aciKutu.ValueChanged += (s, e) => TumSatirlara("aci", aciKutu.Value.ToString("0.#"));
+
+                    gridKutu = new GroupBox { Text = $"Seçilen parçalar ({parcalar.Count})", Dock = DockStyle.Fill, Padding = new Padding(8) };
+                    gridKutu.Controls.Add(grid);
+                }
 
                 var ipucu = new Label
                 {
                     Text = $"ÜretimOS varsayılanı: kenar {varsayilanKenarBosluk:0.#} mm, bıçak {varsayilanKesimPayi:0.#} mm. " +
                            "Girdiğiniz değerler bir sonraki nesting için hatırlanır. Parçada desen yönü " +
                            "(URETIMOS_TAHIL_YONU) tanımlıysa o parça her modda döndürülmeden yerleşir.",
-                    Dock = DockStyle.Bottom, Height = 56, Padding = new Padding(10, 4, 10, 0), ForeColor = Color.DimGray
+                    Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(10, 4, 10, 0), ForeColor = Color.DimGray
                 };
 
-                var altBtnPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
-                var varsayilanBtn = new Button { Text = "ÜretimOS Varsayılanı", Width = 140, Height = 30, Left = 10, Top = 7 };
-                var tamamBtn = new Button { Text = "Tamam", Width = 90, Height = 30, Left = 260, Top = 7 };
+                var altBtnPanel = new Panel { Dock = DockStyle.Bottom, Height = 48, Width = dlg.ClientSize.Width };
+                var varsayilanBtn = new Button { Text = "ÜretimOS Varsayılanı", AutoSize = true, MinimumSize = new Size(170, 32), Left = 10, Top = 8, Anchor = AnchorStyles.Left | AnchorStyles.Top };
+                var tamamBtn = new Button { Text = "Tamam", AutoSize = true, MinimumSize = new Size(110, 32), Top = 8, Anchor = AnchorStyles.Right | AnchorStyles.Top };
                 ReceteAgaciPaneli.Tema.BirincilButon(tamamBtn);
-                var vazgecBtn = new Button { Text = "Vazgeç", Width = 90, Height = 30, Left = 358, Top = 7 };
+                var vazgecBtn = new Button { Text = "Vazgeç", AutoSize = true, MinimumSize = new Size(110, 32), Top = 8, Anchor = AnchorStyles.Right | AnchorStyles.Top };
                 ReceteAgaciPaneli.Tema.IkincilButon(vazgecBtn);
+                vazgecBtn.Left = altBtnPanel.Width - 12 - vazgecBtn.MinimumSize.Width;
+                tamamBtn.Left = vazgecBtn.Left - 8 - tamamBtn.MinimumSize.Width;
                 altBtnPanel.Controls.Add(varsayilanBtn);
                 altBtnPanel.Controls.Add(tamamBtn);
                 altBtnPanel.Controls.Add(vazgecBtn);
@@ -330,6 +437,37 @@ namespace UretimOSKesim
                         MessageBox.Show(dlg, "Kenar boşluğu plakaya göre çok büyük — plakada yerleşim alanı kalmıyor.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return;
                     }
+                    if (grid != null)
+                    {
+                        grid.EndEdit();
+                        var satirAyarlari = new List<(NestingParcaGirdi p, bool grain, bool sabit, double aci)>();
+                        foreach (DataGridViewRow satir in grid.Rows)
+                        {
+                            var p = (NestingParcaGirdi)satir.Tag;
+                            bool sabit = satir.Cells["sabit"].Value is bool b1 && b1;
+                            bool grain = satir.Cells["grain"].Value is bool b2 && b2;
+                            string aciMetni = Convert.ToString(satir.Cells["aci"].Value ?? "0").Trim().Replace(',', '.');
+                            if (!double.TryParse(aciMetni, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double aci)
+                                || aci < -180 || aci > 180)
+                            {
+                                if (!sabit || p.GrainKilitli) aci = 0;
+                                else
+                                {
+                                    MessageBox.Show(dlg, $"'{p.Ad}' için açı -180 ile 180 arasında bir sayı olmalı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                    grid.CurrentCell = satir.Cells["aci"];
+                                    return;
+                                }
+                            }
+                            satirAyarlari.Add((p, grain, sabit, aci));
+                        }
+                        foreach (var (p, grain, sabit, aci) in satirAyarlari)
+                        {
+                            p.GrainYonuneUy = grain;
+                            p.SabitAciKullan = sabit;
+                            p.SabitAciDerece = aci;
+                            Tanilama.Kaydet($"Nesting parça yönü '{p.Ad}': {(p.GrainKilitli ? "desen kilitli (0°)" : sabit ? $"sabit açı {aci:0.#}°" : grain ? "grain" : "serbest")}");
+                        }
+                    }
                     secilen = new NestingAyarlari
                     {
                         PlakaBoyMm = boy, PlakaEnMm = en,
@@ -342,6 +480,9 @@ namespace UretimOSKesim
                 };
                 vazgecBtn.Click += (s, e) => dlg.DialogResult = DialogResult.Cancel;
 
+                // Dock sırası: SON eklenen ÖNCE yerleşir — alt panel, ipucu ve
+                // üst tablo kenarlara oturur, parça listesi kalan alanı doldurur.
+                if (gridKutu != null) dlg.Controls.Add(gridKutu);
                 dlg.Controls.Add(tablo);
                 dlg.Controls.Add(ipucu);
                 dlg.Controls.Add(altBtnPanel);

@@ -132,19 +132,26 @@ namespace UretimOSKesim
                         // aralığı 100. (KULLANICI RAPORU: "yazılar okunmuyor" —
                         // harf aralığı 0 verilmişti, tüm harfler üst üste
                         // biniyordu.)
-                        var yazi = belge.InsertSketchText(x * MM_TO_M, y * MM_TO_M, 0, satirlar[i], 0, 0, 0, 100, 100) as SketchText;
-                        if (yazi == null) continue;
+                        // KULLANICI RAPORU: "yazılar kocaman çıkmış" — açı
+                        // TextFormat.Escapement ile verildiğinde SetTextFormat
+                        // biçimi uygulamadı (yazı yatay ve varsayılan boyda
+                        // kaldı). SolidWorks API yardımındaki "Insert Text at
+                        // Angle" örneğinin yolu kullanılır: açı, metnin içine
+                        // <rDERECE>…</r> etiketiyle verilir; biçimde yalnızca
+                        // yükseklik ayarlanır.
+                        int aciTam = (int)Math.Round(yaziAci);
+                        string metin = aciTam == 0 ? satirlar[i] : "<r" + aciTam + ">" + satirlar[i] + "</r>";
+                        var yazi = belge.InsertSketchText(x * MM_TO_M, y * MM_TO_M, 0, metin, 0, 0, 0, 100, 100) as SketchText;
+                        if (yazi == null) { Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}': InsertSketchText null döndü"); continue; }
                         var bicim = yazi.GetTextFormat() as TextFormat;
+                        bool bicimTamam = false;
                         if (bicim != null)
                         {
                             bicim.CharHeight = yaziMm * MM_TO_M;
-                            // GÜVENİLİRLİK UYARISI: TextFormat.Escapement (yazı
-                            // açısı, radyan) bu projede İLK KEZ kullanılıyor —
-                            // yazının ekleme noktası etrafında döndüğü
-                            // varsayıldı; gerçek SolidWorks'te doğrulanmalı.
-                            bicim.Escapement = rad;
-                            yazi.SetTextFormat(false, bicim);
+                            bicimTamam = yazi.SetTextFormat(false, bicim);
                         }
+                        if (!bicimTamam)
+                            Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}' satır {i + 1}: SetTextFormat BAŞARISIZ (bicim={(bicim == null ? "null" : "var")}) — yazı varsayılan boyda kalır");
                     }
                     Tanilama.Kaydet($"Nesting etiketi plaka={plakaNo} '{oge.Ad}': aci={yaziAci:0.#}° yazi={yaziMm:0.#}mm satir={satirlar.Count}");
                 }

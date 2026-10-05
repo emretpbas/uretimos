@@ -13,6 +13,16 @@ namespace UretimOSKesim
         public double En, Boy; // mm
         public int Adet = 1;
         public bool GrainKilitli; // true ise ASLA döndürülmez (desen/tahıl yönü)
+        // Nesting Ayarları penceresindeki parça listesinden PARÇA BAŞINA
+        // yönlendirme (kullanıcı isteği: "her satırda grain yönüne uy
+        // kutucuğu ve sabit açı kullan kutucuğu"). null ise Hesapla'ya
+        // verilen genel ayar kullanılır.
+        public bool? GrainYonuneUy;
+        public bool? SabitAciKullan;
+        public double SabitAciDerece;
+        // Yalnızca pencerede gösterim için.
+        public double KalinlikMm;
+        public string Grup;
         public string YmKod;
         // Kullanıcı isteği: "nestingdeki parçanın üzerine yarımamül kodu ve
         // adı, ayrıca solidworks parça adını da yazalım" — etiket sketch'i için.
@@ -105,6 +115,7 @@ namespace UretimOSKesim
         private class Item
         {
             public string Ad; public double W, H; public bool GrainKilitli; public string YmKod; public string SwParcaAdi;
+            public bool GrainYonuneUy; public double? SabitAci; // genel ayar + parça ayarı birleşmiş hali
             // OrigW: rotated=true olduğunda delik koordinatlarını doğru
             // dönüştürebilmek için parçanın orijinal (döndürülmemiş) genişliği
             // (page_nesting.js'teki item.origW ile AYNI amaç).
@@ -156,12 +167,12 @@ namespace UretimOSKesim
             };
         }
 
-        private static List<Yon> AdayYonler(Item item, bool grainYonuneUy, double? sabitAciDerece)
+        private static List<Yon> AdayYonler(Item item)
         {
             if (item.GrainKilitli) return new List<Yon> { YonHesapla(item.W, item.H, 0) };
-            if (sabitAciDerece.HasValue) return new List<Yon> { YonHesapla(item.W, item.H, sabitAciDerece.Value) };
+            if (item.SabitAci.HasValue) return new List<Yon> { YonHesapla(item.W, item.H, item.SabitAci.Value) };
             // -90: eski yerleştiricinin 90° dönüşüyle AYNI yön (saat yönünde).
-            if (grainYonuneUy) return new List<Yon> { YonHesapla(item.W, item.H, item.W > item.H + 0.001 ? -90 : 0) };
+            if (item.GrainYonuneUy) return new List<Yon> { YonHesapla(item.W, item.H, item.W > item.H + 0.001 ? -90 : 0) };
             return new List<Yon> { YonHesapla(item.W, item.H, 0), YonHesapla(item.W, item.H, -90) };
         }
 
@@ -170,8 +181,14 @@ namespace UretimOSKesim
         {
             var items = new List<Item>();
             foreach (var p in parcalar)
+            {
+                bool grain = p.GrainYonuneUy ?? grainYonuneUy;
+                double? sabitAci = p.SabitAciKullan.HasValue
+                    ? (p.SabitAciKullan.Value ? p.SabitAciDerece : (double?)null)
+                    : sabitAciDerece;
                 for (int k = 0; k < Math.Max(1, p.Adet); k++)
-                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, YmKod = p.YmKod, SwParcaAdi = p.SwParcaAdi, OrigW = p.En, Delikler = p.Delikler, Formlar = p.Formlar, DisHat = p.DisHat });
+                    items.Add(new Item { Ad = p.Ad, W = p.En, H = p.Boy, GrainKilitli = p.GrainKilitli, GrainYonuneUy = grain, SabitAci = sabitAci, YmKod = p.YmKod, SwParcaAdi = p.SwParcaAdi, OrigW = p.En, Delikler = p.Delikler, Formlar = p.Formlar, DisHat = p.DisHat });
+            }
             items = items.OrderByDescending(i => i.W * i.H).ToList();
 
             double usableW = plakaEn - 2 * kenarBosluk;
@@ -191,7 +208,7 @@ namespace UretimOSKesim
                 // plaka kenarına dayanan SON parçanın arkasında kesilecek komşu
                 // olmadığı için bu pay kullanılabilir alana eklenir; aksi halde
                 // kenar boşluğuna tam sığan parça "sığmadı" sayılıyordu.
-                var (placed, remaining) = PackOnePlaka(usableW + kesimPayi, usableH + kesimPayi, kalan, kesimPayi, grainYonuneUy, sabitAciDerece);
+                var (placed, remaining) = PackOnePlaka(usableW + kesimPayi, usableH + kesimPayi, kalan, kesimPayi);
                 if (placed.Count == 0)
                 {
                     sonuc.YerlesemeyenUyarilari.Add(kalan.Count + " parça kopyası hiçbir plakaya sığmadı (plaka veya parça ölçüsünü, ya da kenar boşluğu/kesim payını kontrol edin).");
@@ -258,8 +275,7 @@ namespace UretimOSKesim
             return sonuc;
         }
 
-        private static (List<Placed> placed, List<Item> remaining) PackOnePlaka(double W, double H, List<Item> items, double kerf,
-            bool grainYonuneUy, double? sabitAciDerece)
+        private static (List<Placed> placed, List<Item> remaining) PackOnePlaka(double W, double H, List<Item> items, double kerf)
         {
             var skyline = new List<SkylineSeg> { new SkylineSeg { X0 = 0, X1 = W, Y = 0 } };
             var placed = new List<Placed>();
@@ -328,7 +344,7 @@ namespace UretimOSKesim
                 // önce gelir — eski davranışla aynı).
                 (double x, double y)? pos = null;
                 Yon secilenYon = null;
-                foreach (var aday in AdayYonler(item, grainYonuneUy, sabitAciDerece))
+                foreach (var aday in AdayYonler(item))
                 {
                     var p = FindBestPosition(aday.W, aday.H);
                     if (p != null && (pos == null || p.Value.y < pos.Value.y - 0.001 ||
