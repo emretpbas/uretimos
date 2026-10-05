@@ -122,6 +122,13 @@ namespace UretimOSKesim
                 double[] e = Birim(Capraz(n, t));
 
                 double[] c = Merkez(alin.Noktalar);
+                // KULLANICI TESTİ: alında çentik/cep varsa (SWOOD Linco cepleri
+                // kenara açık) köşe noktalarının ortalaması kalınlık ortasından
+                // kayıyor, gövde yüzey delikleri yüzeyin düzleminden çıkıp
+                // "hedef yüz bulunamadı" oluyordu. Kalınlık ortası iki büyük
+                // yüzün tam ortasına oturtulur.
+                double ortaT = (seviyeler.Max() + seviyeler.Min()) / 2;
+                c = Topla(c, Olcek(t, ortaT - Nokta(c, t)));
                 double[] cB = Merkez(karsiYuz.Noktalar);
                 double isaret = Nokta(Fark(cB, c), t) >= 0 ? 1 : -1;
                 if (sec.IcYuzTers) isaret = -isaret;
@@ -169,6 +176,9 @@ namespace UretimOSKesim
                         string ad = $"Eleman {k + 1} {TurAdi(d.Tur)} Ø{d.CapMm:0.#}×{d.DerinlikMm:0.#}";
                         if (yuz == null)
                         {
+                            var ayniYon = hedef.Yuzler.Where(y => Nokta(y.NParca, normalParca) > 0.999).ToList();
+                            Tanilama.Kaydet($"BaglantiUygulayici: {ad} hedef yüz yok — aynı yönlü {ayniYon.Count} yüz, düzleme uzaklıklar (mm): " +
+                                string.Join(", ", ayniYon.Select(y => (Nokta(Fark(merkezParca, y.PParca), y.NParca) / MM).ToString("0.##"))));
                             plan.Uyarilar.Add(ad + ": hedef yüz bulunamadı — atlandı.");
                             continue;
                         }
