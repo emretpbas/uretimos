@@ -226,7 +226,7 @@ namespace UretimOSKesim
             if (_cmdMgr != null)
             {
                 // CommandGroup ID, KomutlariKur() içindeki GRUP_ID ile AYNI olmalı.
-                _cmdMgr.RemoveCommandGroup(201);
+                _cmdMgr.RemoveCommandGroup(202);
             }
             _cmdMgr = null;
             _app = null;
@@ -277,7 +277,9 @@ namespace UretimOSKesim
             // OLARAK yukarıdaki "KESİN TANI #5" senaryosunun AYNISI. GRUP_ID
             // 201'e taşındı; DisconnectFromSW()'deki RemoveCommandGroup de
             // AYNI değerle güncellendi.
-            const int GRUP_ID = 201;
+            // TEKRARLANDI: 14. komut (Bağlantı Şablonları) için AYNI önlem —
+            // GRUP_ID 202'ye taşındı, DisconnectFromSW() de güncellendi.
+            const int GRUP_ID = 202;
             const int ID_KESIM = 101;
             const int ID_ETIKET = 102;
             const int ID_TEKNIK_OLUSTUR = 103;
@@ -309,10 +311,15 @@ namespace UretimOSKesim
             // page_nesting.js akışından (web'de "Nesting Çalıştır" → "DXF
             // İndir") alınır — orada HİÇBİR DEĞİŞİKLİK gerekmedi.
             const int ID_NESTING_GONDER = 113;
+            // KOMUT 14 — kullanıcı isteği: "üretimosa da bu delik ve bağlantı
+            // şablonlarını ekleyebileceğimiz bir eklenti yazalım" (bkz.
+            // BaglantiSablonuPaneli.cs).
+            const int ID_BAGLANTI_SABLON = 114;
             int[] komutIdleri = new int[] {
                 ID_KESIM, ID_ETIKET, ID_TEKNIK_OLUSTUR, ID_TEKNIK_ONAYLA, ID_SWOOD_PAKET,
                 ID_MONTAJ_SEMASI_OLUSTUR, ID_MONTAJ_SEMASI_ONAYLA, ID_RECETE_AGACI, ID_CNC_YERLESIM,
-                ID_ALTI_YUZ_KUTU, ID_KUTU_FRAME_YERLESTIR, ID_TEKNIK_GONDER_KAPAT, ID_NESTING_GONDER
+                ID_ALTI_YUZ_KUTU, ID_KUTU_FRAME_YERLESTIR, ID_TEKNIK_GONDER_KAPAT, ID_NESTING_GONDER,
+                ID_BAGLANTI_SABLON
             };
 
             bool eskisiniYokSay = false;
@@ -563,6 +570,16 @@ namespace UretimOSKesim
                 ID_NESTING_GONDER, itemTipi);
             Tanilama.Kaydet("13. AddCommandItem2 tamamlandi");
 
+            Tanilama.Kaydet("14. AddCommandItem2 cagriliyor");
+            grup.AddCommandItem2(
+                "Bağlantı Şablonları (ÜretimOS)", -1,
+                "Delik ve bağlantı şablonlarını (ör. Linco + Dufix, kavela) tanımlar ve montajda seçili, " +
+                "birbirine dayanan İKİ panele uygular: birleşimi otomatik bulur, delikleri her iki parçada " +
+                "gerçek kesim olarak açar. Şablonlar bu bilgisayarda saklanır.",
+                "Bağlantı Şablonları", 13, "BaglantiSablonuAcCalistir", "PaketOlusturEtkinMi",
+                ID_BAGLANTI_SABLON, itemTipi);
+            Tanilama.Kaydet("14. AddCommandItem2 tamamlandi");
+
             Tanilama.Kaydet("HasToolbar/HasMenu ayarlaniyor");
             grup.HasToolbar = true;
             grup.HasMenu = true;
@@ -687,14 +704,15 @@ namespace UretimOSKesim
                 "UretimOSKesim", "ikonlar");
             Directory.CreateDirectory(klasor);
 
+            // NOT: "_v10" — 14 kareli şerit (Bağlantı Şablonları eklendi).
             // NOT: dosya adı "_v9" oldu (v8'den) — 12 kareli şeritten 13
             // kareli şeride geçildi ("Nesting'e Gönder" eklendi); "dosya
             // zaten var" kontrolü eski 12 kareli dosyayı YENİDEN KULLANMASIN
             // diye (aksi halde 13. komutun ikonu boş/yanlış kalır) — bkz.
             // önceki sürümler için verilen aynı gerekçe.
-            string yol20 = Path.Combine(klasor, "komutlar_v9_20.png");
-            string yol32 = Path.Combine(klasor, "komutlar_v9_32.png");
-            string yol40 = Path.Combine(klasor, "komutlar_v9_40.png");
+            string yol20 = Path.Combine(klasor, "komutlar_v10_20.png");
+            string yol32 = Path.Combine(klasor, "komutlar_v10_32.png");
+            string yol40 = Path.Combine(klasor, "komutlar_v10_40.png");
 
             SeritIkonUret(yol20, 20);
             SeritIkonUret(yol32, 32);
@@ -708,12 +726,12 @@ namespace UretimOSKesim
         // Oluştur, 3=Teknik Resmi Onayla, 4=SWOOD Paketi, 5=Montaj Şeması
         // Oluştur, 6=Montaj Şemasını Onayla, 7=Reçete Ağacı, 8=CNC Yerleşimi,
         // 9=6 Yüz Kutu Oluştur, 10=Kutuyu Frame'e Yerleştir, 11=Teknik Resmi
-        // Kaydet/Gönder/Kapat, 12=Nesting'e Gönder.
+        // Kaydet/Gönder/Kapat, 12=Nesting'e Gönder, 13=Bağlantı Şablonları.
         private void SeritIkonUret(string dosyaYolu, int kareBoyutu)
         {
             if (File.Exists(dosyaYolu)) return;
 
-            int genislik = kareBoyutu * 13;
+            int genislik = kareBoyutu * 14;
             using (var bmp = new Bitmap(genislik, kareBoyutu))
             using (var g = Graphics.FromImage(bmp))
             {
@@ -731,12 +749,29 @@ namespace UretimOSKesim
                 KutuFrameYerlestirIkonuCiz(g, kareBoyutu * 10, kareBoyutu);
                 TeknikResimGonderKapatIkonuCiz(g, kareBoyutu * 11, kareBoyutu);
                 NestingGonderIkonuCiz(g, kareBoyutu * 12, kareBoyutu);
+                BaglantiSablonIkonuCiz(g, kareBoyutu * 13, kareBoyutu);
                 bmp.Save(dosyaYolu, ImageFormat.Png);
             }
         }
 
         // 12: Nesting'e Gönder — mor zemin, plaka üzerine dizilmiş küçük
         // dikdörtgenler (nested panel yerleşimini çağrıştırır).
+        // 13: Bağlantı Şablonları — turuncu zemin, köşede birleşen iki panel
+        // ve birleşimdeki iki delik.
+        private void BaglantiSablonIkonuCiz(Graphics g, int x, int s)
+        {
+            g.FillRectangle(Brushes.DarkOrange, x, 0, s, s);
+            float m = s * 0.15f, k = s * 0.2f;
+            g.FillRectangle(Brushes.White, x + m, m, s - 2 * m, k);          // yatay panel
+            g.FillRectangle(Brushes.White, x + m, m + k, k, s - 2 * m - k);  // dikey panel
+            float r = s * 0.07f;
+            using (var b = new SolidBrush(Color.DarkOrange))
+            {
+                g.FillEllipse(b, x + m + k * 0.5f - r, m + k + s * 0.12f, 2 * r, 2 * r);
+                g.FillEllipse(b, x + m + k * 0.5f - r, m + k + s * 0.36f, 2 * r, 2 * r);
+            }
+        }
+
         private void NestingGonderIkonuCiz(Graphics g, int x, int s)
         {
             g.FillRectangle(Brushes.MediumPurple, x, 0, s, s);
@@ -1731,6 +1766,26 @@ namespace UretimOSKesim
         // sıfırlama bölümüne yerleştir" — bkz. CncYerlesimPaneli.cs başındaki
         // kapsam notu (gerçek sağ-tık menüsü DEĞİL, kanıtlanmış komut şeridi
         // paterni; gerçek G-kodu/postprocessor HENÜZ üretilmez).
+        // ── KOMUT: BAĞLANTI ŞABLONLARI ──────────────────────────────────────
+        // Reçete Ağacı ile AYNI "modeless + zaten açıksa öne getir" deseni —
+        // panel açıkken montajda panel seçimi değiştirilip tekrar uygulanır.
+        private BaglantiSablonuPaneli _acikBaglantiPaneli;
+        public void BaglantiSablonuAcCalistir()
+        {
+            if (_acikBaglantiPaneli != null && !_acikBaglantiPaneli.IsDisposed)
+            {
+                _acikBaglantiPaneli.Activate();
+                if (_acikBaglantiPaneli.WindowState == FormWindowState.Minimized)
+                    _acikBaglantiPaneli.WindowState = FormWindowState.Normal;
+                return;
+            }
+            Tanilama.Kaydet("BaglantiSablonuAcCalistir");
+            var panel = new BaglantiSablonuPaneli(_app);
+            _acikBaglantiPaneli = panel;
+            panel.FormClosed += (s, e) => { if (ReferenceEquals(_acikBaglantiPaneli, panel)) _acikBaglantiPaneli = null; };
+            panel.Show();
+        }
+
         public void CncYerlesimAcCalistir()
         {
             ModelDoc2 hedefModel = HedefModelBul("CNC yerleşimi");
