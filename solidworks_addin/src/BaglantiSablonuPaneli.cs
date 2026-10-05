@@ -43,7 +43,7 @@ namespace UretimOSKesim
         private readonly List<BirlesimAyari> _birlesimler = new List<BirlesimAyari>();
         private BirlesimAyari _aktifBirlesim;
         private ModelDoc2 _montaj;
-        private List<Body2> _onizleme = new List<Body2>();
+        private List<BaglantiUygulayici.OnizlemeGovdesi> _onizleme = new List<BaglantiUygulayici.OnizlemeGovdesi>();
         private readonly Timer _onizlemeZamanlayici = new Timer { Interval = 450 };
         private bool _yukleniyor;
 
@@ -119,35 +119,47 @@ namespace UretimOSKesim
         // ════ BİRLEŞİMLER SEKMESİ ═══════════════════════════════════════════
         private void BirlesimSekmesiniKur(TabPage sayfa)
         {
-            var ana = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(8) };
+            // KULLANICI İSTEĞİ: "biraz düzen gerekli" — birleşim satırı kesiliyordu,
+            // ayarlarla düğmeler arasında büyük boşluk vardı. Satırlar: birleşim
+            // düğmeleri (alt alta sarılır) / işlem düğmeleri / ayarlar (kendi
+            // yüksekliği) / alt düğmeler / sonuç (kalan alan).
+            var ana = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, ColumnCount = 1, Padding = new Padding(8) };
+            ana.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            ana.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ana.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ana.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             ana.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             ana.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            ana.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            ana.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
             sayfa.Controls.Add(ana);
 
-            // Üst satır: birleşim düğmeleri + ekle/kaldır
-            var ust = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoSize = true };
-            ust.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            ust.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            _birlesimSeridi = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = false, Height = 44, BorderStyle = BorderStyle.FixedSingle };
-            ust.Controls.Add(_birlesimSeridi, 0, 0);
-            var ustButonlar = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+            _birlesimSeridi = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true,
+                MinimumSize = new Size(0, 34), BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(2)
+            };
+            ana.Controls.Add(_birlesimSeridi, 0, 0);
+
+            var ustButonlar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
             ustButonlar.Controls.Add(Buton("🔎 Seçili Panellerin Birleşimlerini Bul", (s, e) => SeciliPanellerdenBul()));
             ustButonlar.Controls.Add(Buton("+ Seçili Yüzeyleri Ekle", (s, e) => SeciliYuzeyleriEkle()));
-            ustButonlar.Controls.Add(Buton("− Kaldır", (s, e) =>
+            ustButonlar.Controls.Add(Buton("− Seçili Birleşimi Kaldır", (s, e) =>
             {
                 if (_aktifBirlesim == null) return;
                 _birlesimler.Remove(_aktifBirlesim);
                 _aktifBirlesim = _birlesimler.LastOrDefault();
                 BirlesimSeridiniYenile();
-                OnizlemeIste();
+                OnizlemeYenile();
             }));
-            ust.Controls.Add(ustButonlar, 1, 0);
-            ana.Controls.Add(ust, 0, 0);
+            ustButonlar.Controls.Add(Buton("Tümünü Temizle", (s, e) =>
+            {
+                _birlesimler.Clear(); _aktifBirlesim = null;
+                BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
+                BirlesimSeridiniYenile();
+            }));
+            ana.Controls.Add(ustButonlar, 0, 1);
 
             // Seçili birleşimin ayarları
-            _bAyarlar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoScroll = true, Padding = new Padding(0, 8, 0, 0) };
+            _bAyarlar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoSize = true, Padding = new Padding(0, 8, 0, 0) };
             _bAyarlar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
             _bAyarlar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             void Satir(string etiket, Control k)
@@ -193,7 +205,7 @@ namespace UretimOSKesim
             foreach (var cb in new[] { _bGovdeTers, _bIcYuzTers, _bYonTers }) cb.CheckedChanged += (s, e) => BirlesimAyariDegisti();
             secenekler.Controls.AddRange(new Control[] { _bGovdeTers, _bIcYuzTers, _bYonTers });
             Satir("Yön", secenekler);
-            ana.Controls.Add(_bAyarlar, 0, 1);
+            ana.Controls.Add(_bAyarlar, 0, 2);
 
             // Alt düğmeler
             var alt = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
@@ -205,10 +217,10 @@ namespace UretimOSKesim
             var uygula = Buton("✓ Tümünü Uygula", (s, e) => TumunuUygula());
             uygula.Font = new Font(Font, FontStyle.Bold);
             alt.Controls.Add(uygula);
-            ana.Controls.Add(alt, 0, 2);
+            ana.Controls.Add(alt, 0, 3);
 
             _sonucKutu = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
-            ana.Controls.Add(_sonucKutu, 0, 3);
+            ana.Controls.Add(_sonucKutu, 0, 4);
         }
 
         private void SablonKutusunuDoldur()

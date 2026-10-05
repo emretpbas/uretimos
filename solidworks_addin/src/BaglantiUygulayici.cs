@@ -441,67 +441,69 @@ namespace UretimOSKesim
         private const int SARI = 0x0000FFFF;    // COLORREF (0x00BBGGRR) — R=255, G=255
         private const int TURUNCU = 0x000080FF; // R=255, G=128 — seçili birleşim
         private const int MAVI = 0x00FF9900;    // R=0, G=153, B=255 — diğer birleşimler
-        public static List<Body2> OnizlemeGoster(ISldWorks app, ModelDoc2 montaj, IEnumerable<BaglantiPlani> planlar, BaglantiPlani aktif = null)
+
+        // KULLANICI TESTİ: Display3(null, …) montajda hiçbir şey göstermedi —
+        // montajda geçici gövde bir BİLEŞENE bağlanarak gösterilir ve
+        // geometrisi o bileşenin parça koordinatında olmalı. Gövdeler gövde
+        // panelinin bileşenine bağlanır.
+        public class OnizlemeGovdesi { public Body2 Govde; public Component2 Bilesen; }
+
+        public static List<OnizlemeGovdesi> OnizlemeGoster(ISldWorks app, ModelDoc2 montaj, IEnumerable<BaglantiPlani> planlar, BaglantiPlani aktif = null)
         {
-            var govdeler = new List<Body2>();
+            var liste = new List<OnizlemeGovdesi>();
             var modeler = app.GetModeler() as Modeler;
-            if (modeler == null) return govdeler;
+            var mu = (MathUtility)app.GetMathUtility();
+            if (modeler == null) return liste;
             foreach (var plan in planlar)
             {
-                // Birleşimi belirginleştiren çubuk (iki panelin arasında renkli bant).
-                if (plan.CizgiBas != null && plan.CizgiSon != null)
+                var bilesen = plan.Govde;
+                var trTers = (bilesen?.Transform2 as MathTransform)?.Inverse() as MathTransform;
+                void Silindir(double[] tabanMontaj, double[] eksenMontaj, double yaricapM, double boyM, int renk)
                 {
                     try
                     {
-                        double[] yon = Fark(plan.CizgiSon, plan.CizgiBas);
-                        double boy = Math.Sqrt(Nokta(yon, yon));
-                        if (boy > 1e-6)
-                        {
-                            yon = Olcek(yon, 1 / boy);
-                            double[] prm = { plan.CizgiBas[0], plan.CizgiBas[1], plan.CizgiBas[2], yon[0], yon[1], yon[2], plan.CizgiYaricapM, boy };
-                            if (modeler.CreateBodyFromCyl(prm) is Body2 g)
-                            {
-                                g.Display3(null, ReferenceEquals(plan, aktif) ? TURUNCU : MAVI, (int)swTempBodySelectOptions_e.swTempBodySelectOptionNone);
-                                govdeler.Add(g);
-                            }
-                        }
-                    }
-                    catch (Exception ex) { Tanilama.Kaydet("BaglantiUygulayici.OnizlemeGoster çubuk HATA: " + ex.Message); }
-                }
-                foreach (var d in plan.Delikler)
-                {
-                    if (d.MerkezMontaj == null || d.EksenMontaj == null) continue;
-                    try
-                    {
-                        // Ağız yüzeyin 0,2 mm dışından başlasın ki panel yüzeyinin altında kalmasın.
-                        double[] taban = Topla(d.MerkezMontaj, Olcek(d.EksenMontaj, -0.0002));
-                        double[] prm = { taban[0], taban[1], taban[2], d.EksenMontaj[0], d.EksenMontaj[1], d.EksenMontaj[2],
-                                         d.CapMm * MM / 2, d.DerinlikMm * MM + 0.0002 };
+                        double[] t = Donustur(mu, tabanMontaj, trTers, nokta: true);
+                        double[] e = Birim(Donustur(mu, eksenMontaj, trTers, nokta: false));
+                        double[] prm = { t[0], t[1], t[2], e[0], e[1], e[2], yaricapM, boyM };
                         if (modeler.CreateBodyFromCyl(prm) is Body2 g)
                         {
-                            g.Display3(null, SARI, (int)swTempBodySelectOptions_e.swTempBodySelectOptionNone);
-                            govdeler.Add(g);
+                            int r = g.Display3(bilesen, renk, (int)swTempBodySelectOptions_e.swTempBodySelectOptionNone);
+                            liste.Add(new OnizlemeGovdesi { Govde = g, Bilesen = bilesen });
+                            if (liste.Count == 1) Tanilama.Kaydet($"BaglantiUygulayici.OnizlemeGoster: ilk gövde Display3 sonucu={r} bileşen={bilesen?.Name2}");
                         }
                     }
                     catch (Exception ex) { Tanilama.Kaydet("BaglantiUygulayici.OnizlemeGoster HATA: " + ex.Message); }
                 }
+
+                // Birleşimi belirginleştiren çubuk (iki panelin arasında renkli bant).
+                if (plan.CizgiBas != null && plan.CizgiSon != null)
+                {
+                    double[] yon = Fark(plan.CizgiSon, plan.CizgiBas);
+                    double boy = Math.Sqrt(Nokta(yon, yon));
+                    if (boy > 1e-6) Silindir(plan.CizgiBas, Olcek(yon, 1 / boy), plan.CizgiYaricapM, boy, ReferenceEquals(plan, aktif) ? TURUNCU : MAVI);
+                }
+                foreach (var d in plan.Delikler)
+                {
+                    if (d.MerkezMontaj == null || d.EksenMontaj == null) continue;
+                    // Ağız yüzeyin 0,2 mm dışından başlasın ki panel yüzeyinin altında kalmasın.
+                    Silindir(Topla(d.MerkezMontaj, Olcek(d.EksenMontaj, -0.0002)), d.EksenMontaj, d.CapMm * MM / 2, d.DerinlikMm * MM + 0.0002, SARI);
+                }
             }
             try { montaj.GraphicsRedraw2(); } catch { }
-            return govdeler;
+            return liste;
         }
 
-        public static void OnizlemeTemizle(ModelDoc2 montaj, List<Body2> govdeler)
+        public static void OnizlemeTemizle(ModelDoc2 montaj, List<OnizlemeGovdesi> liste)
         {
-            if (govdeler == null) return;
-            foreach (var g in govdeler)
+            if (liste == null) return;
+            foreach (var o in liste)
             {
-                try { g.Hide(montaj); } catch { }
-                try { System.Runtime.InteropServices.Marshal.ReleaseComObject(g); } catch { }
+                try { o.Govde.Hide(o.Bilesen); } catch { }
+                try { System.Runtime.InteropServices.Marshal.ReleaseComObject(o.Govde); } catch { }
             }
-            govdeler.Clear();
+            liste.Clear();
             try { montaj?.GraphicsRedraw2(); } catch { }
         }
-
 
         public static string TurAdi(DelikTuru tur) =>
             tur == DelikTuru.GovdeYuzey ? "gövde yüzey" : tur == DelikTuru.GovdeKenar ? "gövde kenar" : "karşı yüzey";
