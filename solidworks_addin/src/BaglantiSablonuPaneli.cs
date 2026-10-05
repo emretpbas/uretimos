@@ -155,6 +155,7 @@ namespace UretimOSKesim
                 BirlesimSeridiniYenile();
                 OnizlemeYenile();
             }));
+            ustButonlar.Controls.Add(Buton("🧹 Seçili Panellerdeki UOS Kesimlerini Sil", (s, e) => UosKesimleriniSil()));
             ustButonlar.Controls.Add(Buton("Tümünü Temizle", (s, e) =>
             {
                 _birlesimler.Clear(); _aktifBirlesim = null;
@@ -266,6 +267,29 @@ namespace UretimOSKesim
             _sonucKutu.Text = string.Join(System.Environment.NewLine, uyarilar);
             BirlesimSeridiniYenile();
             OnizlemeYenile();
+        }
+
+        private void UosKesimleriniSil()
+        {
+            var montaj = _app.ActiveDoc as ModelDoc2;
+            if (montaj == null || montaj.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY) { _sonucKutu.Text = "Aktif belge bir montaj olmalı."; return; }
+            var sm = montaj.SelectionManager as SelectionMgr;
+            int adet = sm?.GetSelectedObjectCount2(-1) ?? 0;
+            var paneller = new List<Component2>();
+            for (int i = 1; i <= adet; i++)
+                if (sm.GetSelectedObjectsComponent4(i, -1) is Component2 c && !paneller.Any(p => p.Name2 == c.Name2)) paneller.Add(c);
+            if (paneller.Count == 0) { _sonucKutu.Text = "Temizlenecek panelleri SolidWorks'te seçin (Ctrl ile birden fazla)."; return; }
+            if (MessageBox.Show(this, $"{paneller.Count} panelde adı 'UOS ' ile başlayan TÜM kesimler (sketch'leriyle) ve 'UOS Bağlantı' klasörleri silinecek:\n" +
+                    string.Join(", ", paneller.Select(p => p.Name2)) + "\n\nDevam edilsin mi?", "ÜretimOS — UOS Kesimlerini Sil",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
+            var uyarilar = new List<string>();
+            Cursor = Cursors.WaitCursor;
+            int silinen;
+            try { silinen = UosTemizleyici.Temizle(_app, montaj, paneller, uyarilar); }
+            finally { Cursor = Cursors.Default; }
+            uyarilar.Insert(0, $"{silinen} UOS kesimi silindi.");
+            _sonucKutu.Text = string.Join(System.Environment.NewLine, uyarilar);
         }
 
         private ModelDoc2 MontajiHazirla()

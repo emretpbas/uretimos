@@ -533,15 +533,22 @@ namespace UretimOSKesim
                     app.OpenDoc6(belge.GetPathName(), (int)swDocumentTypes_e.swDocPART, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref h, ref w);
                 app.ActivateDoc3(belge.GetTitle(), false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref h);
                 Tanilama.Kaydet($"BaglantiUygulayici.Uygula: '{belge.GetTitle()}' aktif edildi (zatenGorunur={zatenGorunur}, aktif={(app.ActiveDoc as ModelDoc2)?.GetTitle()})");
+                var buParcadakiler = new List<string>();
                 foreach (var d in grup)
                 {
                     if (DelikKes(mu, belge, d, sablonAdi, out string hata, out string ozellikAdi))
                     {
                         acilan++;
+                        buParcadakiler.Add(ozellikAdi);
                         kayit?.Kesimler.Add(new KayitliKesim { ParcaYolu = belge.GetPathName(), OzellikAdi = ozellikAdi });
                     }
                     else uyarilar.Add(d.Aciklama + ": " + hata);
                 }
+                // KULLANICI İSTEĞİ: parça ağacında her kesim ayrı satır olarak
+                // görünmesin — bu uygulamanın kesimleri tek bir "UOS Bağlantı"
+                // klasöründe toplanır (ağaç özelliği silinince klasör de silinir).
+                string klasor = KlasoreTopla(belge, buParcadakiler);
+                if (klasor != null) kayit?.Klasorler.Add(new KayitliKesim { ParcaYolu = belge.GetPathName(), OzellikAdi = klasor });
                 try { belge.EditRebuild3(); } catch { }
                 if (!zatenGorunur) app.CloseDoc(belge.GetTitle());
             }
@@ -553,6 +560,33 @@ namespace UretimOSKesim
             return acilan;
         }
 
+
+        // Verilen özellikleri (ardışık oluşturulmuş kesimler) seçip içine alan
+        // bir ağaç klasörü oluşturur; klasörün gerçek adını döndürür.
+        private static string KlasoreTopla(ModelDoc2 belge, List<string> ozellikler)
+        {
+            if (ozellikler.Count == 0) return null;
+            try
+            {
+                belge.ClearSelection2(true);
+                bool hepsi = true;
+                foreach (var ad in ozellikler)
+                    hepsi &= belge.Extension.SelectByID2(ad, "BODYFEATURE", 0, 0, 0, true, 0, null, 0);
+                if (!hepsi) Tanilama.Kaydet("BaglantiUygulayici.KlasoreTopla: bazı kesimler seçilemedi");
+                var klasor = belge.FeatureManager.InsertFeatureTreeFolder2((int)swFeatureTreeFolderType_e.swFeatureTreeFolder_Containing);
+                belge.ClearSelection2(true);
+                if (klasor == null) { Tanilama.Kaydet("BaglantiUygulayici.KlasoreTopla: klasör oluşturulamadı"); return null; }
+                try { klasor.Name = KLASOR_ADI; } catch { /* aynı adda klasör varsa SolidWorks'ün verdiği ad kalır */ }
+                return klasor.Name;
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("BaglantiUygulayici.KlasoreTopla HATA: " + ex.Message);
+                return null;
+            }
+        }
+
+        public const string KLASOR_ADI = "UOS Bağlantı";
 
         private static bool DelikKes(MathUtility mu, ModelDoc2 belge, PlanlananDelik d, string sablonAdi, out string hata, out string ozellikAdi)
         {

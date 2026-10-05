@@ -111,7 +111,8 @@ namespace UretimOSKesim
         public static void UrunleriSil(ISldWorks app, ModelDoc2 montaj, BaglantiKaydiVerisi veri, List<string> uyarilar)
         {
             int silinenKesim = 0, silinenBilesen = 0;
-            foreach (var grup in veri.Kesimler.GroupBy(k => k.ParcaYolu, StringComparer.OrdinalIgnoreCase))
+            var klasorler = veri.Klasorler ?? new List<KayitliKesim>();
+            foreach (var grup in veri.Kesimler.Concat(klasorler).GroupBy(k => k.ParcaYolu, StringComparer.OrdinalIgnoreCase))
             {
                 try
                 {
@@ -122,7 +123,7 @@ namespace UretimOSKesim
                     if (!zatenGorunur)
                         app.OpenDoc6(grup.Key, (int)swDocumentTypes_e.swDocPART, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref h, ref w);
                     app.ActivateDoc3(belge.GetTitle(), false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref h);
-                    foreach (var k in grup)
+                    foreach (var k in grup.Where(x => !klasorler.Contains(x)))
                     {
                         belge.ClearSelection2(true);
                         // Absorbed: kesimle birlikte onun sketch'i de silinir.
@@ -130,6 +131,13 @@ namespace UretimOSKesim
                             belge.Extension.DeleteSelection2((int)swDeleteSelectionOptions_e.swDelete_Absorbed))
                             silinenKesim++;
                         else uyarilar.Add($"Kesim bulunamadı/silinemedi: {k.OzellikAdi} ({System.IO.Path.GetFileName(grup.Key)})");
+                    }
+                    // Kesimler silinince boşalan klasörler.
+                    foreach (var k in grup.Where(x => klasorler.Contains(x)))
+                    {
+                        belge.ClearSelection2(true);
+                        if (belge.Extension.SelectByID2(k.OzellikAdi, "FTRFOLDER", 0, 0, 0, false, 0, null, 0))
+                            belge.Extension.DeleteSelection2(0);
                     }
                     try { belge.EditRebuild3(); } catch { }
                     if (!zatenGorunur) app.CloseDoc(belge.GetTitle());
@@ -157,11 +165,66 @@ namespace UretimOSKesim
         }
     }
 
+    // KULLANICI İSTEĞİ: eski denemelerden kalan, ağaç özelliğine bağlı
+    // olmayan "UOS …" kesimleri tek tek silmek zorunda kalınmasın — seçili
+    // panellerin parçalarındaki adı "UOS " ile başlayan tüm kesimler (sketch'leriyle)
+    // ve "UOS Bağlantı" klasörleri silinir.
+    public static class UosTemizleyici
+    {
+        public static int Temizle(ISldWorks app, ModelDoc2 montaj, List<Component2> paneller, List<string> uyarilar)
+        {
+            int toplam = 0;
+            foreach (var yol in paneller.Select(p => (p.GetModelDoc2() as ModelDoc2)?.GetPathName()).Where(y => !string.IsNullOrEmpty(y)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var belge = app.GetOpenDocumentByName(yol) as ModelDoc2;
+                    if (belge == null) continue;
+                    var kesimler = new List<string>();
+                    var klasorler = new List<string>();
+                    for (var f = belge.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                    {
+                        string ad = f.Name ?? "";
+                        if (f.GetTypeName2() == "FtrFolder") { if (ad.StartsWith(BaglantiUygulayici.KLASOR_ADI)) klasorler.Add(ad); }
+                        else if (ad.StartsWith("UOS ")) kesimler.Add(ad);
+                    }
+                    if (kesimler.Count == 0 && klasorler.Count == 0) continue;
+                    bool zatenGorunur = belge.Visible;
+                    int h = 0, w = 0;
+                    if (!zatenGorunur)
+                        app.OpenDoc6(yol, (int)swDocumentTypes_e.swDocPART, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref h, ref w);
+                    app.ActivateDoc3(belge.GetTitle(), false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref h);
+                    foreach (var ad in kesimler)
+                    {
+                        belge.ClearSelection2(true);
+                        if (belge.Extension.SelectByID2(ad, "BODYFEATURE", 0, 0, 0, false, 0, null, 0) &&
+                            belge.Extension.DeleteSelection2((int)swDeleteSelectionOptions_e.swDelete_Absorbed)) toplam++;
+                        else uyarilar.Add($"Silinemedi: {ad} ({System.IO.Path.GetFileName(yol)})");
+                    }
+                    foreach (var ad in klasorler)
+                    {
+                        belge.ClearSelection2(true);
+                        if (belge.Extension.SelectByID2(ad, "FTRFOLDER", 0, 0, 0, false, 0, null, 0)) belge.Extension.DeleteSelection2(0);
+                    }
+                    try { belge.EditRebuild3(); } catch { }
+                    if (!zatenGorunur) app.CloseDoc(belge.GetTitle());
+                }
+                catch (Exception ex) { uyarilar.Add("Temizleme hatası: " + ex.Message); }
+            }
+            int e = 0;
+            app.ActivateDoc3(montaj.GetTitle(), false, (int)swRebuildOnActivation_e.swRebuildActiveDoc, ref e);
+            try { montaj.EditRebuild3(); } catch { }
+            Tanilama.Kaydet($"UosTemizleyici: {paneller.Count} panelde {toplam} UOS kesimi silindi");
+            return toplam;
+        }
+    }
+
     // Ağaç özelliğinde saklanan veri (JSON).
     public class BaglantiKaydiVerisi
     {
         public List<KayitliBirlesim> Birlesimler = new List<KayitliBirlesim>();
         public List<KayitliKesim> Kesimler = new List<KayitliKesim>();
+        public List<KayitliKesim> Klasorler = new List<KayitliKesim>(); // parça ağacındaki "UOS Bağlantı" klasörleri
         public List<string> Bilesenler = new List<string>();
     }
 
