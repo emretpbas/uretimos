@@ -127,6 +127,8 @@ namespace UretimOSKesim
         private const double METRE_TO_MM = 1000.0;      // SolidWorks dahili birimi METREDİR
         private const double YAY_ADIM_RAD = Math.PI / 18; // yaylar ~10°'de bir noktayla çizilir
         private const int EGRI_ORNEK_SAYISI = 12;       // spline/elips gibi diğer eğriler için sabit örnek sayısı
+        private const double AYNI_DELIK_TOL_MM = 0.1;   // bu kadar yakın merkez + çap = aynı delik (bölünmüş silindir yüzü)
+        private const double DAIRE_UZERINDE_TOL_MM = 0.3; // loop noktası bir deliğin çemberi / parça kenarı üzerinde sayılır
 
         // Geriye dönük uyumluluk: delik + form (dış hat olmadan).
         public static (List<DelikBilgisi> delikler, List<FormBilgisi> formlar) Cikar(ModelDoc2 modelDoc, double kalinlikMm)
@@ -222,6 +224,24 @@ namespace UretimOSKesim
                     // "tüm boyu" (through-hole) say — CNC'de bu bilgi işleme
                     // stratejisini (tek taraf/çift taraf) doğrudan etkiler.
                     if (kalinlikMm > 0) delik.TumBoyu = delik.DerinlikMm >= kalinlikMm * 0.9;
+
+                    // KULLANICI RAPORU: "çap 18 deliklerin etrafında birçok nokta
+                    // ve çizgi var" — iç içe geçen / kenara taşan delikler
+                    // (Linco cebi: 3×Ø18) SolidWorks'te birden fazla silindir
+                    // yüzüne bölünüyor; her yüz ayrı delik sayılıyordu (log:
+                    // delik=18, gerçek 9). Aynı merkez + çaptaki adaylar tek
+                    // deliğe indirilir, derinlik en büyüğü olur.
+                    var ayni = sonuc.Delikler.FirstOrDefault(d =>
+                        d.YuzeyeDik == delik.YuzeyeDik &&
+                        Math.Abs(d.CapMm - delik.CapMm) < AYNI_DELIK_TOL_MM &&
+                        Math.Abs(d.XMm - delik.XMm) < AYNI_DELIK_TOL_MM &&
+                        Math.Abs(d.YMm - delik.YMm) < AYNI_DELIK_TOL_MM);
+                    if (ayni != null)
+                    {
+                        ayni.DerinlikMm = Math.Max(ayni.DerinlikMm, delik.DerinlikMm);
+                        ayni.TumBoyu = ayni.TumBoyu || delik.TumBoyu;
+                        continue;
+                    }
                     sonuc.Delikler.Add(delik);
                 }
 
@@ -315,6 +335,12 @@ namespace UretimOSKesim
                 var eksenNoktasi = new[] { parametreler[0], parametreler[1], parametreler[2] };
                 var eksenYonu = new[] { parametreler[3], parametreler[4], parametreler[5] };
 
+                // KULLANICI RAPORU: "arkalık kanalının başlangıcında ve sonundaki
+                // circle'da birçok nokta ve çizgi var" — kanalın yuvarlak ucu
+                // (yarım silindir) delik sanılıp tam daire olarak çiziliyor,
+                // kanal formunun yay noktalarıyla üst üste biniyordu.
+                if (TegetDuzYuzVar(yuz, eksenNoktasi, eksenYonu, parametreler[6])) return null;
+
                 // Derinlik: yüzün sınır kutusunun eksen yönündeki izdüşüm
                 // uzunluğu (kaba ama makul bir yaklaşıklama — bkz. dosya başı
                 // güvenilirlik notu).
@@ -347,6 +373,62 @@ namespace UretimOSKesim
                 // taranmasını engellemesin — bu yüzey sessizce atlanır.
                 return null;
             }
+        }
+
+        // Silindir yüzüne bir kenarla bağlı, eksene PARALEL ve eksenden tam
+        // yarıçap kadar uzakta (yani silindire TEĞET) düz bir yüz var mı?
+        // Varsa bu yüz bir kanal/cep ucunun yuvarlatmasıdır, delik değildir.
+        // Gerçek deliklerde (iç içe geçen Linco delikleri, kenara taşan
+        // delikler dahil) komşu düz yüzler silindiri teğet değil KESEREK
+        // karşılar — eksene uzaklıkları yarıçaptan küçüktür.
+        private static bool TegetDuzYuzVar(Face2 yuz, double[] eksenNoktasi, double[] eksenYonu, double yaricapM)
+        {
+            object[] kenarlar = yuz.GetEdges() as object[];
+            if (kenarlar == null) return false;
+            double eb = Math.Sqrt(eksenYonu[0] * eksenYonu[0] + eksenYonu[1] * eksenYonu[1] + eksenYonu[2] * eksenYonu[2]);
+            if (eb < 1e-9) return false;
+            foreach (Edge kenar in kenarlar.Cast<Edge>())
+            {
+                object[] komsular = kenar.GetTwoAdjacentFaces2() as object[];
+                if (komsular == null) continue;
+                foreach (Face2 komsu in komsular.OfType<Face2>())
+                {
+                    if (komsu == null || komsu.IsSame(yuz)) continue;
+                    Surface s = komsu.GetSurface() as Surface;
+                    if (s == null || !s.IsPlane()) continue;
+                    double[] p = s.PlaneParams as double[]; // [0..2]=normal, [3..5]=düzlem üzerinde nokta
+                    if (p == null || p.Length < 6) continue;
+                    double nb = Math.Sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+                    if (nb < 1e-9) continue;
+                    double eksenNormal = (p[0] * eksenYonu[0] + p[1] * eksenYonu[1] + p[2] * eksenYonu[2]) / (nb * eb);
+                    if (Math.Abs(eksenNormal) > 0.01) continue; // eksene paralel değil (delik dibi / panel yüzü)
+                    double uzaklik = Math.Abs(p[0] * (eksenNoktasi[0] - p[3]) + p[1] * (eksenNoktasi[1] - p[4]) + p[2] * (eksenNoktasi[2] - p[5])) / nb;
+                    if (Math.Abs(uzaklik - yaricapM) * METRE_TO_MM < 0.05) return true;
+                }
+            }
+            return false;
+        }
+
+        // Loop'un tüm noktaları ya bulunmuş bir deliğin çemberi üzerinde ya da
+        // parça çerçevesinin kenarında mı? Öyleyse loop, zaten delik olarak
+        // çizilen dairelerin birleşiminden ibarettir (Linco cebi: iç içe 3×Ø18,
+        // kenara açık) — form olarak TEKRAR eklenmez.
+        private static bool DeliklerdenIbaret(List<double[]> xy, ParcaGeometrisi sonuc)
+        {
+            var yuzDelikleri = sonuc.Delikler.Where(d => d.YuzeyeDik).ToList();
+            if (yuzDelikleri.Count == 0) return false;
+            bool enAzBirDaire = false;
+            foreach (var n in xy)
+            {
+                bool daireUzerinde = yuzDelikleri.Any(d =>
+                    Math.Abs(Math.Sqrt((n[0] - d.XMm) * (n[0] - d.XMm) + (n[1] - d.YMm) * (n[1] - d.YMm)) - d.CapMm / 2.0) < DAIRE_UZERINDE_TOL_MM);
+                if (daireUzerinde) { enAzBirDaire = true; continue; }
+                bool kenarda = sonuc.GenislikMm > 0 && sonuc.YukseklikMm > 0 &&
+                    (Math.Abs(n[0]) < DAIRE_UZERINDE_TOL_MM || Math.Abs(n[0] - sonuc.GenislikMm) < DAIRE_UZERINDE_TOL_MM ||
+                     Math.Abs(n[1]) < DAIRE_UZERINDE_TOL_MM || Math.Abs(n[1] - sonuc.YukseklikMm) < DAIRE_UZERINDE_TOL_MM);
+                if (!kenarda) return false;
+            }
+            return enAzBirDaire;
         }
 
         // KULLANICI RAPORU: "kanal çizgisi de çıkmamış" — KÖK NEDEN: referans
@@ -396,6 +478,7 @@ namespace UretimOSKesim
                             if (cap >= MIN_DELIK_CAP_MM && cap <= MAKS_DELIK_CAP_MM) continue; // kör delik dibi
                         }
                         if (sonuc.Formlar.Any(f => KutularAyni(SinirKutusu(f.NoktalarXY), kutu))) continue;
+                        if (DeliklerdenIbaret(xy, sonuc)) continue; // iç içe delik cebinin tabanı (Linco)
                         sonuc.Formlar.Add(new FormBilgisi { NoktalarXY = xy });
                         eklenen++;
                     }
@@ -454,6 +537,7 @@ namespace UretimOSKesim
                         double cap = Math.Max(xy.Max(n => n[0]) - xy.Min(n => n[0]), xy.Max(n => n[1]) - xy.Min(n => n[1]));
                         if (cap >= MIN_DELIK_CAP_MM && cap <= MAKS_DELIK_CAP_MM) continue;
                     }
+                    if (DeliklerdenIbaret(xy, sonuc)) continue; // iç içe delik cebinin izi (Linco)
                     sonuc.Formlar.Add(new FormBilgisi { NoktalarXY = xy });
                 }
                 catch (Exception ex)

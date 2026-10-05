@@ -133,25 +133,33 @@ namespace UretimOSKesim
                         // harf aralığı 0 verilmişti, tüm harfler üst üste
                         // biniyordu.)
                         // KULLANICI RAPORU: "yazılar kocaman çıkmış" — açı
-                        // TextFormat.Escapement ile verildiğinde SetTextFormat
-                        // biçimi uygulamadı (yazı yatay ve varsayılan boyda
-                        // kaldı). SolidWorks API yardımındaki "Insert Text at
-                        // Angle" örneğinin yolu kullanılır: açı, metnin içine
-                        // <rDERECE>…</r> etiketiyle verilir; biçimde yalnızca
-                        // yükseklik ayarlanır.
-                        int aciTam = (int)Math.Round(yaziAci);
-                        string metin = aciTam == 0 ? satirlar[i] : "<r" + aciTam + ">" + satirlar[i] + "</r>";
-                        var yazi = belge.InsertSketchText(x * MM_TO_M, y * MM_TO_M, 0, metin, 0, 0, 0, 100, 100) as SketchText;
+                        // Escapement ile verildiğinde biçim hiç uygulanmamıştı
+                        // (dönüş değeri kontrol edilmiyordu). BicimUygula artık
+                        // başarısızsa açısız tekrar dener, boy her durumda tutar.
+                        // KULLANICI RAPORU: "yazılar dikey değil ve okunmuyor,
+                        // parça resminden dışarı çıkmış" — <rN> etiketi her
+                        // KARAKTERİ ayrı döndürüyor, satır yatay kalıyordu
+                        // (harfler yan yatıp satır parçadan taşıyordu). Satır
+                        // yatay eklenir, açısı önce TextFormat.Escapement ile
+                        // verilir; geri okununca tutmamışsa yazı seçilip ekleme
+                        // noktası etrafında sketch döndürmesiyle çevrilir.
+                        var yazi = belge.InsertSketchText(x * MM_TO_M, y * MM_TO_M, 0, satirlar[i], 0, 0, 0, 100, 100) as SketchText;
                         if (yazi == null) { Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}': InsertSketchText null döndü"); continue; }
-                        var bicim = yazi.GetTextFormat() as TextFormat;
-                        bool bicimTamam = false;
-                        if (bicim != null)
-                        {
-                            bicim.CharHeight = yaziMm * MM_TO_M;
-                            bicimTamam = yazi.SetTextFormat(false, bicim);
-                        }
+                        bool bicimTamam = BicimUygula(yazi, yaziMm, rad);
+                        if (!bicimTamam && Math.Abs(rad) > 1e-6) bicimTamam = BicimUygula(yazi, yaziMm, 0); // açısız tekrar dene — en azından boy tutsun
                         if (!bicimTamam)
-                            Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}' satır {i + 1}: SetTextFormat BAŞARISIZ (bicim={(bicim == null ? "null" : "var")}) — yazı varsayılan boyda kalır");
+                            Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}' satır {i + 1}: SetTextFormat BAŞARISIZ — yazı varsayılan boyda kalır");
+
+                        string aciYolu = "yok";
+                        if (Math.Abs(rad) > 1e-6)
+                        {
+                            var okunan = yazi.GetTextFormat() as TextFormat;
+                            if (okunan != null && Math.Abs(okunan.Escapement - rad) < 0.01)
+                                aciYolu = "escapement";
+                            else
+                                aciYolu = SketchDondur(belge, yazi, x, y, rad) ? "dondurme" : "BASARISIZ";
+                        }
+                        if (i == 0) Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}': açı yolu={aciYolu}");
                     }
                     Tanilama.Kaydet($"Nesting etiketi plaka={plakaNo} '{oge.Ad}': aci={yaziAci:0.#}° yazi={yaziMm:0.#}mm satir={satirlar.Count}");
                 }
@@ -164,6 +172,39 @@ namespace UretimOSKesim
             {
                 Tanilama.Kaydet($"NestingYerlesimOlusturucu.EtiketSketchiOlustur(plaka={plakaNo}) HATA (plaka yine kaydedilecek): " + ex);
                 try { if (belge.SketchManager.ActiveSketch != null) belge.SketchManager.InsertSketch(true); } catch { }
+            }
+        }
+
+        private static bool BicimUygula(SketchText yazi, double yaziMm, double rad)
+        {
+            var bicim = yazi.GetTextFormat() as TextFormat;
+            if (bicim == null) return false;
+            bicim.CharHeight = yaziMm * MM_TO_M;
+            bicim.Escapement = rad;
+            return yazi.SetTextFormat(false, bicim);
+        }
+
+        // Escapement tutmadığında yedek yol: yazıyı seçip ekleme noktası
+        // (xMm, yMm) etrafında sketch döndürmesi (IModelDocExtension.
+        // RotateOrCopy, eksen Z) uygular.
+        private static bool SketchDondur(ModelDoc2 belge, SketchText yazi, double xMm, double yMm, double rad)
+        {
+            try
+            {
+                var varlik = yazi as Entity;
+                if (varlik == null) return false;
+                belge.ClearSelection2(true);
+                if (!varlik.Select4(false, null)) return false;
+                // RotateOrCopy void döner — sonucu doğrulanamaz; istisna
+                // atmadıysa uygulandı sayılır (log'da "dondurme").
+                belge.Extension.RotateOrCopy(false, 1, false, xMm * MM_TO_M, yMm * MM_TO_M, 0, 0, 0, 1, rad);
+                belge.ClearSelection2(true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("NestingYerlesimOlusturucu.SketchDondur HATA: " + ex.Message);
+                return false;
             }
         }
 
@@ -269,6 +310,14 @@ namespace UretimOSKesim
                 KesimListesiCikarici.OzelAlanYaz(belge, OzelAlanlar.AD, dosyaKodu);
 
                 string dosyaYolu = Path.Combine(cikisKlasoru, dosyaKodu + ".SLDPRT");
+                // KULLANICI TESTİ (log: SaveAs basarili=False hata=1): önceki
+                // nesting'in aynı adlı plakası SolidWorks'te hâlâ açıkken
+                // (aşağıdaki not: plaka bilerek açık bırakılıyor) üzerine
+                // kaydedilemiyordu. Açık olanı kapatmak kullanıcının o dosyadaki
+                // düzenlemelerini kaybettirebilir — bunun yerine sıradaki boş
+                // ad (_2, _3 …) seçilir.
+                for (int ek = 2; _app.GetOpenDocumentByName(dosyaYolu) != null && ek < 100; ek++)
+                    dosyaYolu = Path.Combine(cikisKlasoru, dosyaKodu + "_" + ek + ".SLDPRT");
                 int hata = 0, uyariKod = 0;
                 // SaveAs imzası: bkz. AltiYuzKutuOlusturucu.cs'teki AYNI NOT —
                 // gerçek derlemede CS7036 ile doğrulanmış 6 parametreli imza.
