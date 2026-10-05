@@ -43,6 +43,11 @@ namespace UretimOSKesim
         private readonly List<BirlesimAyari> _birlesimler = new List<BirlesimAyari>();
         private BirlesimAyari _aktifBirlesim;
         private ModelDoc2 _montaj;
+        // Düzenleme modu: ağaçtaki "UOS Bağlantı" özelliğinden açıldıysa o
+        // özellik ve eski verisi (uygulanınca eski ürünler silinip özellik
+        // güncellenir).
+        private Feature _duzenlenenOzellik;
+        private BaglantiKaydiVerisi _duzenlenenVeri;
         private List<BaglantiUygulayici.OnizlemeGovdesi> _onizleme = new List<BaglantiUygulayici.OnizlemeGovdesi>();
         private readonly Timer _onizlemeZamanlayici = new Timer { Interval = 450 };
         private bool _yukleniyor;
@@ -153,6 +158,7 @@ namespace UretimOSKesim
             ustButonlar.Controls.Add(Buton("Tümünü Temizle", (s, e) =>
             {
                 _birlesimler.Clear(); _aktifBirlesim = null;
+                DuzenlemeModundanCik();
                 BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
                 BirlesimSeridiniYenile();
             }));
@@ -435,17 +441,63 @@ namespace UretimOSKesim
             finally { Cursor = Cursors.Default; }
         }
 
+        // Ağaçtaki "UOS Bağlantı" özelliğinden (Özelliği Düzenle) çağrılır:
+        // birleşimler kayıtlı verisinden yeniden kurulur.
+        public void DuzenlemeyeAc(ModelDoc2 montaj, Feature ozellik, BaglantiKaydiVerisi veri)
+        {
+            if (_birlesimler.Count > 0 && !ReferenceEquals(_duzenlenenOzellik, ozellik) &&
+                MessageBox.Show(this, "Penceredeki birleşim listesi temizlenip seçilen bağlantı düzenlemeye açılsın mı?", "ÜretimOS",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
+            _birlesimler.Clear();
+            _montaj = montaj;
+            _duzenlenenOzellik = ozellik;
+            _duzenlenenVeri = veri;
+            var asm = montaj as AssemblyDoc;
+            var uyarilar = new List<string>();
+            foreach (var k in veri.Birlesimler)
+            {
+                var a = asm?.GetComponentByName(k.A);
+                var b = asm?.GetComponentByName(k.B);
+                if (a == null || b == null) { uyarilar.Add($"Bileşen bulunamadı: {k.A} / {k.B} — bu birleşim atlandı."); continue; }
+                _birlesimler.Add(new BirlesimAyari
+                {
+                    Secim = new BirlesimSecimi { A = a, B = b, N = k.N, P = k.P },
+                    SablonAdi = k.SablonAdi,
+                    Sablon = k.Sablon ?? _sablonlar.FirstOrDefault(x => x.Ad == k.SablonAdi)?.Kopya() ?? new BaglantiSablonu(),
+                    Sec = k.Sec ?? new BaglantiUygulamaSecenekleri()
+                });
+            }
+            _aktifBirlesim = _birlesimler.FirstOrDefault();
+            Text = $"ÜretimOS — Bağlantı Şablonları — DÜZENLENİYOR: {ozellik.Name}";
+            uyarilar.Insert(0, $"'{ozellik.Name}' düzenleniyor: {_birlesimler.Count} birleşim, {veri.Kesimler.Count} kesim, {veri.Bilesenler.Count} model. " +
+                               "Değiştirip 'Tümünü Uygula'ya basınca eski delikler/modeller silinip yenileri açılır.");
+            _sonucKutu.Text = string.Join(System.Environment.NewLine, uyarilar);
+            BirlesimSeridiniYenile();
+            OnizlemeYenile();
+            Activate();
+        }
+
+        private void DuzenlemeModundanCik()
+        {
+            _duzenlenenOzellik = null;
+            _duzenlenenVeri = null;
+            Text = "ÜretimOS — Bağlantı Şablonları";
+        }
+
         private void TumunuUygula()
         {
-            if (_birlesimler.Count == 0 || _montaj == null) { _sonucKutu.Text = "Önce birleşim yüzeylerini ekleyin."; return; }
+            if (_birlesimler.Count == 0 || _montaj == null) { _sonucKutu.Text = "Önce birleşimleri ekleyin."; return; }
+            bool duzenleme = _duzenlenenOzellik != null && _duzenlenenVeri != null;
             OnizlemeYenile();
             var uygulanabilir = _birlesimler.Where(b => b.SonPlan != null && b.SonPlan.Hata == null && b.SonPlan.Delikler.Count > 0).ToList();
+            if (uygulanabilir.Count == 0) { _sonucKutu.Text = "Uygulanabilir birleşim yok (önizleme sonuçlarına bakın)."; return; }
             int toplamDelik = uygulanabilir.Sum(b => b.SonPlan.Delikler.Count);
             int modelli = uygulanabilir.Count(b => b.SonPlan.ModelYolu != null);
-            string onay = $"{uygulanabilir.Count} birleşimde toplam {toplamDelik} delik gerçek kesim (CutExtrude) olarak açılacak" +
+            string onay = (duzenleme ? $"'{_duzenlenenOzellik.Name}' güncellenecek: önceki {_duzenlenenVeri.Kesimler.Count} kesim ve {_duzenlenenVeri.Bilesenler.Count} model silinip " : "") +
+                          $"{uygulanabilir.Count} birleşimde toplam {toplamDelik} delik gerçek kesim olarak açılacak" +
                           (modelli > 0 ? $", {modelli} birleşime 3B model yerleştirilecek" : "") +
-                          ".\nGeri almak için ilgili parçalarda 'UOS …' adlı kesimleri silin. Devam edilsin mi?";
-            if (uygulanabilir.Count == 0) { _sonucKutu.Text = "Uygulanabilir birleşim yok (önizleme sonuçlarına bakın)."; return; }
+                          ".\nHepsi ağaçta tek bir 'UOS Bağlantı' özelliğinde toplanır; o özelliği silmek hepsini siler. Devam edilsin mi?";
             if (MessageBox.Show(this, onay, "ÜretimOS — Bağlantı Uygula", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
             BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
@@ -453,17 +505,45 @@ namespace UretimOSKesim
             Cursor = Cursors.WaitCursor;
             try
             {
+                if (duzenleme)
+                {
+                    // Önce eski ürünler silinir, planlar temiz geometride yeniden hesaplanır.
+                    var silmeUyarilari = new List<string>();
+                    BaglantiOzelligi.UrunleriSil(_app, _montaj, _duzenlenenVeri, silmeUyarilari);
+                    satirlar.AddRange(silmeUyarilari.Select(u => "   ⚠ " + u));
+                    foreach (var b in uygulanabilir) b.SonPlan = BaglantiUygulayici.Hesapla(_app, b.Secim, b.Sablon, b.Sec);
+                    uygulanabilir = uygulanabilir.Where(b => b.SonPlan.Hata == null && b.SonPlan.Delikler.Count > 0).ToList();
+                }
+
+                var kayit = new BaglantiKaydiVerisi();
                 foreach (var b in uygulanabilir)
                 {
                     var uyarilar = new List<string>();
-                    int acilan = BaglantiUygulayici.Uygula(_app, _montaj, b.SonPlan, b.SablonAdi, uyarilar);
+                    int acilan = BaglantiUygulayici.Uygula(_app, _montaj, b.SonPlan, b.SablonAdi, uyarilar, kayit);
                     satirlar.Add($"{b.Secim.Ad}: ✓ {acilan}/{b.SonPlan.Delikler.Count} delik");
                     satirlar.AddRange(uyarilar.Select(u => "   ✗ " + u));
+                    kayit.Birlesimler.Add(new KayitliBirlesim
+                    {
+                        A = b.Secim.A.Name2, B = b.Secim.B.Name2, N = b.Secim.N, P = b.Secim.P,
+                        SablonAdi = b.SablonAdi, Sablon = b.Sablon, Sec = b.Sec
+                    });
+                }
+
+                if (duzenleme)
+                {
+                    bool tamam = BaglantiOzelligi.Guncelle(_montaj, _duzenlenenOzellik, kayit);
+                    satirlar.Add(tamam ? $"✓ '{_duzenlenenOzellik.Name}' güncellendi." : $"✗ '{_duzenlenenOzellik.Name}' güncellenemedi — log'a bakın.");
+                }
+                else
+                {
+                    var ozellik = BaglantiOzelligi.Ekle(_montaj, kayit);
+                    satirlar.Add(ozellik != null ? $"✓ Ağaca '{ozellik.Name}' eklendi — silmek tüm delik ve modelleri siler, sağ tık > Özelliği Düzenle ile değiştirilir."
+                                                 : "✗ Ağaç özelliği eklenemedi (eklenti COM kaydı güncel mi? RegAsm'ı yeniden çalıştırın). Delikler açıldı ama tek tek silinmeleri gerekir.");
                 }
             }
             finally { Cursor = Cursors.Default; }
-            // Uygulanan birleşimler listeden çıkar (geometri değişti, tekrar önizlenmesin).
             _birlesimler.RemoveAll(b => uygulanabilir.Contains(b));
+            if (duzenleme) { _birlesimler.Clear(); DuzenlemeModundanCik(); }
             _aktifBirlesim = _birlesimler.LastOrDefault();
             BirlesimSeridiniYenile();
             _sonucKutu.Text = string.Join(System.Environment.NewLine, satirlar);

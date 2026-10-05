@@ -248,7 +248,7 @@ namespace UretimOSKesim
         // Şablonun 3B modelini her elemanın çerçevesine yerleştirir. Eşleme
         // (mate) EKLENMEZ — bileşen konumuyla durur; panel taşınırsa bağlantı
         // yeniden uygulanmalı.
-        private static void ModelleriYerlestir(ISldWorks app, MathUtility mu, ModelDoc2 montaj, BaglantiPlani plan, List<string> uyarilar)
+        private static void ModelleriYerlestir(ISldWorks app, MathUtility mu, ModelDoc2 montaj, BaglantiPlani plan, List<string> uyarilar, BaglantiKaydiVerisi kayit)
         {
             if (string.IsNullOrEmpty(plan.ModelYolu) || plan.ElemanCerceveleri.Count == 0) return;
             if (!System.IO.File.Exists(plan.ModelYolu)) { uyarilar.Add("3B model dosyası bulunamadı: " + plan.ModelYolu); return; }
@@ -277,6 +277,7 @@ namespace UretimOSKesim
                         1, 0, 0, 0
                     };
                     bilesen.Transform2 = mu.CreateTransform(dizi) as MathTransform;
+                    kayit?.Bilesenler.Add(bilesen.Name2);
                     eklenen++;
                 }
                 Tanilama.Kaydet($"BaglantiUygulayici.ModelleriYerlestir: {eklenen}/{plan.ElemanCerceveleri.Count} model eklendi ({plan.ModelYolu})");
@@ -509,7 +510,10 @@ namespace UretimOSKesim
             tur == DelikTuru.GovdeYuzey ? "gövde yüzey" : tur == DelikTuru.GovdeKenar ? "gövde kenar" : "karşı yüzey";
 
         // Planı keser. Dönüş: açılan delik sayısı; başarısızlar uyarilar'a.
-        public static int Uygula(ISldWorks app, ModelDoc2 montaj, BaglantiPlani plan, string sablonAdi, List<string> uyarilar)
+        // kayit verilirse açılan her kesim (parça yolu + özellik adı) ve
+        // yerleştirilen her model (bileşen adı) ona eklenir — ağaçtaki
+        // "UOS Bağlantı" özelliği silinince bunlar da silinsin diye.
+        public static int Uygula(ISldWorks app, ModelDoc2 montaj, BaglantiPlani plan, string sablonAdi, List<string> uyarilar, BaglantiKaydiVerisi kayit = null)
         {
             var mu = (MathUtility)app.GetMathUtility();
             int acilan = 0;
@@ -531,7 +535,11 @@ namespace UretimOSKesim
                 Tanilama.Kaydet($"BaglantiUygulayici.Uygula: '{belge.GetTitle()}' aktif edildi (zatenGorunur={zatenGorunur}, aktif={(app.ActiveDoc as ModelDoc2)?.GetTitle()})");
                 foreach (var d in grup)
                 {
-                    if (DelikKes(mu, belge, d, sablonAdi, out string hata)) acilan++;
+                    if (DelikKes(mu, belge, d, sablonAdi, out string hata, out string ozellikAdi))
+                    {
+                        acilan++;
+                        kayit?.Kesimler.Add(new KayitliKesim { ParcaYolu = belge.GetPathName(), OzellikAdi = ozellikAdi });
+                    }
                     else uyarilar.Add(d.Aciklama + ": " + hata);
                 }
                 try { belge.EditRebuild3(); } catch { }
@@ -539,16 +547,17 @@ namespace UretimOSKesim
             }
             int e = 0;
             app.ActivateDoc3(montaj.GetTitle(), false, (int)swRebuildOnActivation_e.swRebuildActiveDoc, ref e);
-            ModelleriYerlestir(app, mu, montaj, plan, uyarilar);
+            ModelleriYerlestir(app, mu, montaj, plan, uyarilar, kayit);
             try { montaj.EditRebuild3(); } catch { }
             Tanilama.Kaydet($"BaglantiUygulayici.Uygula: {acilan}/{plan.Delikler.Count} delik açıldı");
             return acilan;
         }
 
 
-        private static bool DelikKes(MathUtility mu, ModelDoc2 belge, PlanlananDelik d, string sablonAdi, out string hata)
+        private static bool DelikKes(MathUtility mu, ModelDoc2 belge, PlanlananDelik d, string sablonAdi, out string hata, out string ozellikAdi)
         {
             hata = null;
+            ozellikAdi = null;
             var sm = belge.SketchManager;
             try
             {
@@ -578,6 +587,7 @@ namespace UretimOSKesim
                 }
                 if (ozellik == null) { hata = "kesim oluşturulamadı (FeatureCut4 null)"; return false; }
                 try { ozellik.Name = $"UOS {sablonAdi} {d.Aciklama}"; } catch { /* ad çakışırsa SolidWorks'ün verdiği ad kalır */ }
+                ozellikAdi = ozellik.Name; // çakışmada SolidWorks'ün verdiği GERÇEK ad (silerken bununla bulunur)
                 return true;
             }
             catch (Exception ex)

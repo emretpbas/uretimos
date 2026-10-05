@@ -181,6 +181,16 @@ namespace UretimOSKesim
 
                 KomutlariKur();
 
+                // "UOS Bağlantı" ağaç özelliği: düzenleme çağrısı (BaglantiOzelligi.Edit)
+                // için örnek erişimi + silinince ürünlerini temizlemek için montaj olayları.
+                Ornek = this;
+                try
+                {
+                    ((SldWorks)_app).ActiveModelDocChangeNotify += AktifBelgeDegisti;
+                    AktifBelgeDegisti();
+                }
+                catch (Exception ex) { Tanilama.Kaydet("Bağlantı silme olayları kurulamadı: " + ex.Message); }
+
                 Tanilama.Kaydet("=== ConnectToSW basariyla bitti ===");
                 return true;
             }
@@ -223,6 +233,9 @@ namespace UretimOSKesim
 
         public bool DisconnectFromSW()
         {
+            try { if (_app != null) ((SldWorks)_app).ActiveModelDocChangeNotify -= AktifBelgeDegisti; } catch { }
+            _dinlenenMontajlar.Clear();
+            Ornek = null;
             if (_cmdMgr != null)
             {
                 // CommandGroup ID, KomutlariKur() içindeki GRUP_ID ile AYNI olmalı.
@@ -1766,6 +1779,92 @@ namespace UretimOSKesim
         // sıfırlama bölümüne yerleştir" — bkz. CncYerlesimPaneli.cs başındaki
         // kapsam notu (gerçek sağ-tık menüsü DEĞİL, kanıtlanmış komut şeridi
         // paterni; gerçek G-kodu/postprocessor HENÜZ üretilmez).
+        // ── "UOS BAĞLANTI" AĞAÇ ÖZELLİĞİ ────────────────────────────────────
+        // Kullanıcı isteği: "feature managerda bu sekmeyi sildiğimizde tüm
+        // operasyonlar ve delikler 3d modeller silinsin (örnek swood
+        // connectors)". Makro özelliğin kendisine silme bildirimi gelmez;
+        // montajın DeleteSelectionPreNotify olayında seçili özelliklerden
+        // bizimkilerin verisi okunur, silme gerçekleşince (DeleteItemNotify)
+        // kısa bir gecikmeyle kayıtlı kesimler ve bileşenler silinir.
+        // Silme iptal edilirse DeleteItemNotify gelmez, bekleyenler bir
+        // sonraki silmede atılır.
+        public static UretimOSAddin Ornek;
+        private readonly List<AssemblyDoc> _dinlenenMontajlar = new List<AssemblyDoc>();
+        private readonly List<(ModelDoc2 montaj, string ad, BaglantiKaydiVerisi veri)> _silinecekBaglantilar =
+            new List<(ModelDoc2, string, BaglantiKaydiVerisi)>();
+        private Timer _baglantiSilmeZamanlayici;
+
+        private int AktifBelgeDegisti()
+        {
+            try
+            {
+                if (!(_app?.ActiveDoc is AssemblyDoc asm) || _dinlenenMontajlar.Contains(asm)) return 0;
+                var montaj = (ModelDoc2)asm;
+                asm.DeleteSelectionPreNotify += () => BaglantiSilmeOncesi(montaj);
+                asm.DeleteItemNotify += (tur, ad) => { BaglantiSilmeSonrasi(); return 0; };
+                _dinlenenMontajlar.Add(asm);
+                Tanilama.Kaydet("Bağlantı silme olayları dinleniyor: " + montaj.GetTitle());
+            }
+            catch (Exception ex) { Tanilama.Kaydet("AktifBelgeDegisti HATA: " + ex.Message); }
+            return 0;
+        }
+
+        private int BaglantiSilmeOncesi(ModelDoc2 montaj)
+        {
+            try
+            {
+                _silinecekBaglantilar.Clear();
+                var sm = montaj.SelectionManager as SelectionMgr;
+                int adet = sm?.GetSelectedObjectCount2(-1) ?? 0;
+                for (int i = 1; i <= adet; i++)
+                {
+                    if (!(sm.GetSelectedObject6(i, -1) is Feature f)) continue;
+                    var veri = BaglantiOzelligi.Oku(f);
+                    if (veri != null) _silinecekBaglantilar.Add((montaj, f.Name, veri));
+                }
+                if (_silinecekBaglantilar.Count > 0)
+                    Tanilama.Kaydet("Silinecek bağlantı özellikleri: " + string.Join(", ", _silinecekBaglantilar.Select(x => x.ad)));
+            }
+            catch (Exception ex) { Tanilama.Kaydet("BaglantiSilmeOncesi HATA: " + ex.Message); }
+            return 0;
+        }
+
+        private void BaglantiSilmeSonrasi()
+        {
+            if (_silinecekBaglantilar.Count == 0) return;
+            if (_baglantiSilmeZamanlayici == null)
+            {
+                _baglantiSilmeZamanlayici = new Timer { Interval = 300 };
+                _baglantiSilmeZamanlayici.Tick += (s, e) =>
+                {
+                    _baglantiSilmeZamanlayici.Stop();
+                    var liste = _silinecekBaglantilar.ToList();
+                    _silinecekBaglantilar.Clear();
+                    foreach (var (montaj, ad, veri) in liste)
+                    {
+                        var uyarilar = new List<string>();
+                        BaglantiOzelligi.UrunleriSil(_app, montaj, veri, uyarilar);
+                        Tanilama.Kaydet($"'{ad}' silindi → ürünleri temizlendi" + (uyarilar.Count > 0 ? ": " + string.Join(" | ", uyarilar) : ""));
+                    }
+                };
+            }
+            _baglantiSilmeZamanlayici.Stop();
+            _baglantiSilmeZamanlayici.Start();
+        }
+
+        // BaglantiOzelligi.Edit'ten çağrılır (ağaçta sağ tık > Özelliği Düzenle).
+        public void BaglantiOzelliginiDuzenle(ModelDoc2 montaj, Feature ozellik)
+        {
+            var veri = BaglantiOzelligi.Oku(ozellik);
+            if (montaj == null || veri == null)
+            {
+                MessageBox.Show("Bağlantı özelliğinin verisi okunamadı.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            BaglantiSablonuAcCalistir();
+            _acikBaglantiPaneli?.DuzenlemeyeAc(montaj, ozellik, veri);
+        }
+
         // ── KOMUT: BAĞLANTI ŞABLONLARI ──────────────────────────────────────
         // Reçete Ağacı ile AYNI "modeless + zaten açıksa öne getir" deseni —
         // panel açıkken montajda panel seçimi değiştirilip tekrar uygulanır.
