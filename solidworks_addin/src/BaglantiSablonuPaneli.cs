@@ -48,8 +48,12 @@ namespace UretimOSKesim
             StartPosition = FormStartPosition.CenterScreen;
             TopMost = true;
 
-            var bolme = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 240 };
+            // KULLANICI TESTİ: liste pencerenin tamamını kaplıyor, düzenleyici
+            // görünmüyordu — SplitterDistance form boyutlanmadan verildiği için
+            // sıkışıyordu. Sol panel sabit genişlikte, mesafe Load'da verilir.
+            var bolme = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel1 };
             Controls.Add(bolme);
+            Load += (s, e) => bolme.SplitterDistance = 240;
 
             // ── Sol: şablon listesi ─────────────────────────────────────────
             var sol = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Padding = new Padding(8) };
