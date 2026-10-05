@@ -71,6 +71,10 @@ namespace UretimOSKesim
         // boyunca (dizi yönü), Y gövde paneline doğru, Z gövdenin iç yüzüne doğru.
         public List<double[][]> ElemanCerceveleri = new List<double[][]>();
         public string ModelYolu; // şablonun 3B modeli (yoksa null)
+        // Önizlemede birleşimi belirginleştiren çubuk: birleşim düzleminde,
+        // gövde kalınlığının ortasında, birleşim boyunca (montaj koordinatı).
+        public double[] CizgiBas, CizgiSon;
+        public double CizgiYaricapM;
     }
 
     public static class BaglantiUygulayici
@@ -167,6 +171,9 @@ namespace UretimOSKesim
                 plan.BirlesimBoyuMm = Math.Round(boy / MM, 1);
                 if (boy < 1 * MM) { plan.Hata = "Birleşim boyu bulunamadı (paneller birleşim boyunca örtüşmüyor)."; return plan; }
                 double cE = Nokta(c, e);
+                plan.CizgiBas = Topla(c, Olcek(e, u0 - cE));
+                plan.CizgiSon = Topla(c, Olcek(e, u1 - cE));
+                plan.CizgiYaricapM = Math.Max(1 * MM, kalinlik * 0.35);
 
                 var konumlar = sablon.ElemanKonumlari(boy / MM);
                 plan.ElemanKonumlariMm = konumlar;
@@ -338,6 +345,72 @@ namespace UretimOSKesim
             }
         }
 
+        // KULLANICI İSTEĞİ: "yüzeyler birbirine bitişik olduğu için
+        // seçemiyorum" — üst üste binen temas yüzlerine tıklamak yerine seçili
+        // PANELLERİN diğer panellere dayandığı tüm alın birleşimleri bulunur.
+        // Yüz yüze bindirmeler (iki temas yüzü benzer büyüklükte) alınmaz.
+        public static List<BirlesimSecimi> BirlesimleriBul(ISldWorks app, ModelDoc2 montaj, List<Component2> secilenler, List<string> uyarilar)
+        {
+            var sonuc = new List<BirlesimSecimi>();
+            try
+            {
+                var mu = (MathUtility)app.GetMathUtility();
+                object[] tumu = ((AssemblyDoc)montaj).GetComponents(false) as object[];
+                if (tumu == null) return sonuc;
+                var adaylar = tumu.Cast<Component2>().Where(c => c != null && !c.IsSuppressed() && c.GetModelDoc2() is PartDoc).ToList();
+                var okunan = new Dictionary<string, Panel>();
+                Panel Oku(Component2 c)
+                {
+                    if (!okunan.TryGetValue(c.Name2, out var p)) okunan[c.Name2] = p = PanelOku(mu, c);
+                    return p;
+                }
+                foreach (var a in secilenler)
+                {
+                    var pa = Oku(a);
+                    if (pa == null) { uyarilar.Add(a.Name2 + ": parça gövdesi okunamadı."); continue; }
+                    double[] kutuA = a.GetBox(false, false) as double[];
+                    foreach (var c in adaylar)
+                    {
+                        if (c.Name2 == a.Name2) continue;
+                        // Hızlı ön eleme: kutular (1 mm payla) kesişmiyorsa temas yok.
+                        if (kutuA != null && c.GetBox(false, false) is double[] kutuC &&
+                            (kutuC[0] > Math.Max(kutuA[0], kutuA[3]) + 0.001 || Math.Max(kutuC[0], kutuC[3]) < Math.Min(kutuA[0], kutuA[3]) - 0.001 ||
+                             Math.Min(kutuC[1], kutuC[4]) > Math.Max(kutuA[1], kutuA[4]) + 0.001 || Math.Max(kutuC[1], kutuC[4]) < Math.Min(kutuA[1], kutuA[4]) - 0.001 ||
+                             Math.Min(kutuC[2], kutuC[5]) > Math.Max(kutuA[2], kutuA[5]) + 0.001 || Math.Max(kutuC[2], kutuC[5]) < Math.Min(kutuA[2], kutuA[5]) - 0.001))
+                            continue;
+                        var pc = Oku(c);
+                        if (pc == null) continue;
+                        foreach (var fa in pa.Yuzler)
+                        {
+                            double enIyi = 0; DuzYuz eslesen = null;
+                            var (u, v) = DuzlemEksenleri(fa.N);
+                            foreach (var fb in pc.Yuzler)
+                            {
+                                if (Nokta(fa.N, fb.N) > -0.999) continue;
+                                if (Math.Abs(Nokta(Fark(fb.P, fa.P), fa.N)) > DUZLEM_TOL_M) continue;
+                                double ou = Ortusme(fa.Noktalar, fb.Noktalar, u), ov = Ortusme(fa.Noktalar, fb.Noktalar, v);
+                                if (ou <= DUZLEM_TOL_M || ov <= DUZLEM_TOL_M) continue;
+                                if (ou * ov > enIyi) { enIyi = ou * ov; eslesen = fb; }
+                            }
+                            if (eslesen == null) continue;
+                            if (Math.Min(fa.Alan, eslesen.Alan) / Math.Max(fa.Alan, eslesen.Alan) > 0.7) continue; // yüz yüze bindirme
+                            bool zatenVar = sonuc.Any(b =>
+                                ((b.A.Name2 == a.Name2 && b.B.Name2 == c.Name2) || (b.A.Name2 == c.Name2 && b.B.Name2 == a.Name2)) &&
+                                Math.Abs(Nokta(b.N, fa.N)) > 0.999 && Math.Abs(Nokta(Fark(fa.P, b.P), b.N)) < DUZLEM_TOL_M);
+                            if (!zatenVar) sonuc.Add(new BirlesimSecimi { A = a, B = c, N = fa.N, P = fa.P });
+                        }
+                    }
+                }
+                Tanilama.Kaydet($"BaglantiUygulayici.BirlesimleriBul: {secilenler.Count} panel → {sonuc.Count} birleşim");
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("BaglantiUygulayici.BirlesimleriBul HATA: " + ex);
+                uyarilar.Add("Birleşim arama hatası: " + ex.Message);
+            }
+            return sonuc;
+        }
+
         // Montajdan seçilen yüzün geometrisinin hangi koordinatta döndüğü
         // (montaj mı, parça mı) bu ortamda doğrulanmadı — iki yorum da denenir.
         private static DuzYuz SeciliYuzuEsle(Panel panel, Face2 seciliYuz)
@@ -365,13 +438,36 @@ namespace UretimOSKesim
         // ── SolidWorks önizlemesi (sarı geçici gövdeler) ────────────────────
         // Her delik için geçici bir silindir gösterilir; modele hiçbir şey
         // eklenmez. Gövdeler OnizlemeTemizle ile gizlenir (pencere kapanınca da).
-        private const int SARI = 0x0000FFFF; // COLORREF (0x00BBGGRR) — R=255, G=255
-        public static List<Body2> OnizlemeGoster(ISldWorks app, ModelDoc2 montaj, IEnumerable<BaglantiPlani> planlar)
+        private const int SARI = 0x0000FFFF;    // COLORREF (0x00BBGGRR) — R=255, G=255
+        private const int TURUNCU = 0x000080FF; // R=255, G=128 — seçili birleşim
+        private const int MAVI = 0x00FF9900;    // R=0, G=153, B=255 — diğer birleşimler
+        public static List<Body2> OnizlemeGoster(ISldWorks app, ModelDoc2 montaj, IEnumerable<BaglantiPlani> planlar, BaglantiPlani aktif = null)
         {
             var govdeler = new List<Body2>();
             var modeler = app.GetModeler() as Modeler;
             if (modeler == null) return govdeler;
             foreach (var plan in planlar)
+            {
+                // Birleşimi belirginleştiren çubuk (iki panelin arasında renkli bant).
+                if (plan.CizgiBas != null && plan.CizgiSon != null)
+                {
+                    try
+                    {
+                        double[] yon = Fark(plan.CizgiSon, plan.CizgiBas);
+                        double boy = Math.Sqrt(Nokta(yon, yon));
+                        if (boy > 1e-6)
+                        {
+                            yon = Olcek(yon, 1 / boy);
+                            double[] prm = { plan.CizgiBas[0], plan.CizgiBas[1], plan.CizgiBas[2], yon[0], yon[1], yon[2], plan.CizgiYaricapM, boy };
+                            if (modeler.CreateBodyFromCyl(prm) is Body2 g)
+                            {
+                                g.Display3(null, ReferenceEquals(plan, aktif) ? TURUNCU : MAVI, (int)swTempBodySelectOptions_e.swTempBodySelectOptionNone);
+                                govdeler.Add(g);
+                            }
+                        }
+                    }
+                    catch (Exception ex) { Tanilama.Kaydet("BaglantiUygulayici.OnizlemeGoster çubuk HATA: " + ex.Message); }
+                }
                 foreach (var d in plan.Delikler)
                 {
                     if (d.MerkezMontaj == null || d.EksenMontaj == null) continue;
@@ -389,6 +485,7 @@ namespace UretimOSKesim
                     }
                     catch (Exception ex) { Tanilama.Kaydet("BaglantiUygulayici.OnizlemeGoster HATA: " + ex.Message); }
                 }
+            }
             try { montaj.GraphicsRedraw2(); } catch { }
             return govdeler;
         }

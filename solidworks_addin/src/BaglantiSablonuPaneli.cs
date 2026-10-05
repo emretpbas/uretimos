@@ -133,6 +133,7 @@ namespace UretimOSKesim
             _birlesimSeridi = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = false, Height = 44, BorderStyle = BorderStyle.FixedSingle };
             ust.Controls.Add(_birlesimSeridi, 0, 0);
             var ustButonlar = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+            ustButonlar.Controls.Add(Buton("🔎 Seçili Panellerin Birleşimlerini Bul", (s, e) => SeciliPanellerdenBul()));
             ustButonlar.Controls.Add(Buton("+ Seçili Yüzeyleri Ekle", (s, e) => SeciliYuzeyleriEkle()));
             ustButonlar.Controls.Add(Buton("− Kaldır", (s, e) =>
             {
@@ -219,27 +220,79 @@ namespace UretimOSKesim
             BirlesimAyarlariniGoster();
         }
 
-        private void SeciliYuzeyleriEkle()
+        // Seçili PANELLER (bileşenler; herhangi bir yüzüne/kenarına tıklanmış
+        // ya da ağaçtan seçilmiş olabilir) diğer panellere dayandığı tüm
+        // birleşimleriyle listeye eklenir.
+        private void SeciliPanellerdenBul()
+        {
+            var montaj = MontajiHazirla();
+            if (montaj == null) return;
+            var sm = montaj.SelectionManager as SelectionMgr;
+            int adet = sm?.GetSelectedObjectCount2(-1) ?? 0;
+            var paneller = new List<Component2>();
+            for (int i = 1; i <= adet; i++)
+                if (sm.GetSelectedObjectsComponent4(i, -1) is Component2 c && !paneller.Any(p => p.Name2 == c.Name2)) paneller.Add(c);
+            if (paneller.Count == 0)
+            {
+                _sonucKutu.Text = "SolidWorks'te en az bir panel seçin (modelde paneline ya da ağaçta adına tıklayın; birden fazlası için Ctrl).";
+                return;
+            }
+            var uyarilar = new List<string>();
+            Cursor = Cursors.WaitCursor;
+            List<BirlesimSecimi> bulunan;
+            try { bulunan = BaglantiUygulayici.BirlesimleriBul(_app, montaj, paneller, uyarilar); }
+            finally { Cursor = Cursors.Default; }
+            int eklenen = bulunan.Count(b => BirlesimEkle(b));
+            uyarilar.Insert(0, $"{paneller.Count} panelde {bulunan.Count} birleşim bulundu, {eklenen} yeni birleşim eklendi." +
+                (bulunan.Count == 0 ? " (Seçili paneller başka bir panele alından dayanmıyor olabilir.)" : ""));
+            _sonucKutu.Text = string.Join(System.Environment.NewLine, uyarilar);
+            BirlesimSeridiniYenile();
+            OnizlemeYenile();
+        }
+
+        private ModelDoc2 MontajiHazirla()
         {
             var montaj = _app.ActiveDoc as ModelDoc2;
             if (montaj == null || montaj.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
             {
                 _sonucKutu.Text = "Aktif belge bir montaj olmalı.";
-                return;
+                return null;
             }
             if (_montaj != null && !ReferenceEquals(_montaj, montaj) && _birlesimler.Count > 0)
             {
                 if (MessageBox.Show(this, "Başka bir montaja geçtiniz — mevcut birleşim listesi temizlensin mi?", "ÜretimOS",
-                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return null;
                 BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
                 _birlesimler.Clear();
             }
             _montaj = montaj;
+            return montaj;
+        }
 
+        // Aynı panel çifti + aynı düzlem zaten listede değilse ekler.
+        private bool BirlesimEkle(BirlesimSecimi secim)
+        {
+            bool ayni = _birlesimler.Any(b =>
+                ((b.Secim.A.Name2 == secim.A.Name2 && b.Secim.B.Name2 == secim.B.Name2) || (b.Secim.A.Name2 == secim.B.Name2 && b.Secim.B.Name2 == secim.A.Name2)) &&
+                Math.Abs(b.Secim.N[0] * (secim.P[0] - b.Secim.P[0]) + b.Secim.N[1] * (secim.P[1] - b.Secim.P[1]) + b.Secim.N[2] * (secim.P[2] - b.Secim.P[2])) < 0.0001);
+            if (ayni) return false;
+            var sablon = _aktifBirlesim != null ? _sablonlar.FirstOrDefault(s => s.Ad == _aktifBirlesim.SablonAdi) : null;
+            sablon = sablon ?? _secili ?? _sablonlar.FirstOrDefault();
+            if (sablon == null) return false;
+            var yeni = new BirlesimAyari { Secim = secim, SablonAdi = sablon.Ad, Sablon = sablon.Kopya() };
+            _birlesimler.Add(yeni);
+            _aktifBirlesim = yeni;
+            return true;
+        }
+
+        private void SeciliYuzeyleriEkle()
+        {
+            var montaj = MontajiHazirla();
+            if (montaj == null) return;
             var sm = montaj.SelectionManager as SelectionMgr;
             int adet = sm?.GetSelectedObjectCount2(-1) ?? 0;
             var mesajlar = new List<string>();
-            int eklenen = 0;
+            int eklenen = 0, yuzSayisi = 0;
             Cursor = Cursors.WaitCursor;
             try
             {
@@ -249,28 +302,20 @@ namespace UretimOSKesim
                     var yuz = sm.GetSelectedObject6(i, -1) as Face2;
                     var bilesen = sm.GetSelectedObjectsComponent4(i, -1) as Component2;
                     if (yuz == null || bilesen == null) continue;
+                    yuzSayisi++;
                     var secim = BaglantiUygulayici.YuzdenBirlesimBul(_app, montaj, bilesen, yuz, out string hata);
                     if (secim == null) { mesajlar.Add($"Yüzey {i} ({bilesen.Name2}): {hata}"); continue; }
-                    bool ayni = _birlesimler.Any(b =>
-                        ((b.Secim.A.Name2 == secim.A.Name2 && b.Secim.B.Name2 == secim.B.Name2) || (b.Secim.A.Name2 == secim.B.Name2 && b.Secim.B.Name2 == secim.A.Name2)) &&
-                        Math.Abs(b.Secim.N[0] * (secim.P[0] - b.Secim.P[0]) + b.Secim.N[1] * (secim.P[1] - b.Secim.P[1]) + b.Secim.N[2] * (secim.P[2] - b.Secim.P[2])) < 0.0001);
-                    if (ayni) { mesajlar.Add($"Yüzey {i}: {secim.Ad} zaten listede."); continue; }
-                    var sablon = _aktifBirlesim != null ? _sablonlar.FirstOrDefault(s => s.Ad == _aktifBirlesim.SablonAdi) : null;
-                    sablon = sablon ?? _secili ?? _sablonlar.FirstOrDefault();
-                    if (sablon == null) { mesajlar.Add("Kütüphanede şablon yok."); break; }
-                    var yeni = new BirlesimAyari { Secim = secim, SablonAdi = sablon.Ad, Sablon = sablon.Kopya() };
-                    _birlesimler.Add(yeni);
-                    _aktifBirlesim = yeni;
-                    eklenen++;
+                    if (BirlesimEkle(secim)) eklenen++;
+                    else mesajlar.Add($"Yüzey {i}: {secim.Ad} zaten listede.");
                 }
             }
             finally { Cursor = Cursors.Default; }
-            if (adet == 0 || (eklenen == 0 && mesajlar.Count == 0))
-                mesajlar.Add("SolidWorks'te birleşim yüzeyi seçili değil. Panellerin birbirine dayandığı yüzeye tıklayın (birden fazlası için Ctrl).");
+            if (yuzSayisi == 0)
+                mesajlar.Add("SolidWorks'te birleşim yüzeyi seçili değil. Yüzeyler bitişik olduğu için seçmek zorsa paneli seçip '🔎 Seçili Panellerin Birleşimlerini Bul'u kullanın.");
             mesajlar.Insert(0, $"{eklenen} birleşim eklendi.");
             _sonucKutu.Text = string.Join(System.Environment.NewLine, mesajlar);
             BirlesimSeridiniYenile();
-            OnizlemeIste();
+            OnizlemeYenile();
         }
 
         private void BirlesimSeridiniYenile()
@@ -285,12 +330,12 @@ namespace UretimOSKesim
                     Appearance = Appearance.Button, AutoSize = true, Checked = ReferenceEquals(b, _aktifBirlesim),
                     Text = $"{i + 1}  {b.Secim.Ad}  [{b.SablonAdi}]", Margin = new Padding(3), Padding = new Padding(4, 2, 4, 2)
                 };
-                rb.CheckedChanged += (s, e) => { if (rb.Checked && !_yukleniyor) { _aktifBirlesim = b; BirlesimAyarlariniGoster(); } };
+                rb.CheckedChanged += (s, e) => { if (rb.Checked && !_yukleniyor) { _aktifBirlesim = b; BirlesimAyarlariniGoster(); OnizlemeYenile(); } };
                 _birlesimSeridi.Controls.Add(rb);
             }
             if (_birlesimler.Count == 0)
                 _birlesimSeridi.Controls.Add(new Label { AutoSize = true, ForeColor = Color.DimGray, Padding = new Padding(4, 8, 0, 0),
-                    Text = "SolidWorks'te panellerin birleştiği yüzeyleri seçip '+ Seçili Yüzeyleri Ekle'ye basın." });
+                    Text = "Panelleri seçip '🔎 Seçili Panellerin Birleşimlerini Bul'a basın (seçili birleşim turuncu, diğerleri mavi gösterilir)." });
             _birlesimSeridi.ResumeLayout();
             BirlesimAyarlariniGoster();
         }
@@ -359,7 +404,7 @@ namespace UretimOSKesim
             {
                 foreach (var b in _birlesimler) b.SonPlan = BaglantiUygulayici.Hesapla(_app, b.Secim, b.Sablon, b.Sec);
                 BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
-                _onizleme = BaglantiUygulayici.OnizlemeGoster(_app, _montaj, _birlesimler.Where(b => b.SonPlan?.Hata == null).Select(b => b.SonPlan));
+                _onizleme = BaglantiUygulayici.OnizlemeGoster(_app, _montaj, _birlesimler.Where(b => b.SonPlan?.Hata == null).Select(b => b.SonPlan), _aktifBirlesim?.SonPlan);
                 if (_aktifBirlesim != null) { _yukleniyor = true; BilgiYaz(_aktifBirlesim); _yukleniyor = false; }
                 _sonucKutu.Text = string.Join(System.Environment.NewLine, _birlesimler.Select((b, i) =>
                 {
