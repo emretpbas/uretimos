@@ -66,7 +66,7 @@ namespace UretimOSKesim
         // gizlenebilsin/silinebilsin. Her parçanın ortasına 3 satır: YM kodu,
         // ad, SolidWorks parça adı. Yazı yüksekliği parçanın kısa kenarına
         // göre ölçeklenir. Etiket başarısız olsa bile plaka yine kaydedilir.
-        private const double KARAKTER_EN_ORANI = 0.7; // ortalama harf genişliği / yazı yüksekliği (tahmini)
+        private const double KARAKTER_EN_ORANI = 0.85; // harf genişliği / yazı yüksekliği — ekran görüntüsünden ~0,8 ölçüldü, pay bırakıldı
 
         private void EtiketSketchiOlustur(ModelDoc2 belge, NestingPlakaSonucu plaka, int plakaNo)
         {
@@ -96,71 +96,74 @@ namespace UretimOSKesim
                     if (yaziAci > 90 && yaziAci <= 270) yaziAci -= 180;
                     else if (yaziAci > 270) yaziAci -= 360;
 
-                    // Sığdırma: en uzun satır uzun kenarın %90'ına, tüm satırlar
-                    // (satır aralığı dahil) kısa kenarın %80'ine sığmalı; en çok
-                    // 30 mm. 3 mm'nin altına düşüyorsa alttaki satır (önce "SW:",
-                    // sonra ad) atılır — YM kodu her zaman kalır ve ne kadar
-                    // küçük olursa olsun parçanın İÇİNDE kalır.
-                    double yaziMm;
-                    while (true)
+                    // KULLANICI İSTEĞİ: "tamamen parçanın büyüklüğüne göre font
+                    // büyüklüğü ayarlansın" — üst sınır (eski 30 mm) yok; en uzun
+                    // satır uzun kenarın %85'ine, tüm satırlar (satır aralığı
+                    // dahil) kısa kenarın %60'ına sığar. 3 mm'nin altına düşerse
+                    // alttaki satırlar atılır, YM kodu her zaman kalır.
+                    double YaziBoyu(double boyKenar, double enKenar)
                     {
                         int enUzunSatir = satirlar.Max(t => t.Length);
                         double satirSayisiYuksekligi = 1.0 + 1.5 * (satirlar.Count - 1);
-                        yaziMm = Math.Min(30.0, uzunKenar * 0.9 / Math.Max(1, enUzunSatir * KARAKTER_EN_ORANI));
-                        yaziMm = Math.Min(yaziMm, kisaKenar * 0.8 / satirSayisiYuksekligi);
+                        return Math.Min(boyKenar * 0.85 / Math.Max(1, enUzunSatir * KARAKTER_EN_ORANI),
+                                        enKenar * 0.6 / satirSayisiYuksekligi);
+                    }
+                    double yaziMm;
+                    while (true)
+                    {
+                        yaziMm = YaziBoyu(uzunKenar, kisaKenar);
                         if (yaziMm >= 3.0 || satirlar.Count == 1) break;
                         satirlar.RemoveAt(satirlar.Count - 1);
                     }
-                    double satirAraligiMm = yaziMm * 1.5;
 
-                    // Yazının kendi ekseninde: u = yazı yönü, v = yazıya dik
-                    // (yukarı). Satırlar parça merkezine göre ortalanır.
+                    // KULLANICI RAPORU (iki kez): Escapement ile açı verildiğinde
+                    // SolidWorks biçimi kabul etmiş görünüyor (geri okununca
+                    // açı/boy doğru) ama ekranda yazı YATAY ve VARSAYILAN boyda
+                    // kalıyor; <rN> etiketi ise harfleri tek tek döndürüyor.
+                    // Bu yüzden: yazı yatay eklenir, yalnızca boyu verilir, sonra
+                    // seçilip ekleme noktası etrafında sketch döndürmesiyle
+                    // (RotateOrCopy) çevrilir. Döndürme yapılamazsa yazı yatay
+                    // bırakılır ve parçanın PLAKADAKİ genişliğine sığacak
+                    // boyda, yatay ortalanmış olarak yeniden konumlanır.
                     double rad = yaziAci * Math.PI / 180.0;
-                    double ux = Math.Cos(rad), uy = Math.Sin(rad);
-                    double vx = -uy, vy = ux;
-                    double ustOfset = satirAraligiMm * (satirlar.Count - 1) / 2.0;
-
+                    bool dondurulebilir = true;
+                    string aciYolu = Math.Abs(rad) < 1e-6 ? "yatay" : "dondurme";
                     for (int i = 0; i < satirlar.Count; i++)
                     {
-                        // Sol-alt hizalı yazı: yaklaşık genişliğin yarısı kadar
-                        // yazı yönünün tersine kaydırılarak merkeze getirilir.
-                        double tahminiGenislik = satirlar[i].Length * yaziMm * KARAKTER_EN_ORANI;
-                        double dikOfset = ustOfset - i * satirAraligiMm - yaziMm / 2.0;
-                        double x = oge.MerkezX - ux * tahminiGenislik / 2.0 + vx * dikOfset;
-                        double y = oge.MerkezY - uy * tahminiGenislik / 2.0 + vy * dikOfset;
+                        double boy = yaziMm, a = dondurulebilir ? rad : 0;
+                        if (!dondurulebilir) boy = YaziYatayBoyu(oge, satirlar);
+                        var (x, y) = SatirKonumu(oge, satirlar, i, boy, a);
+                        // Döndürme parça merkezi etrafında yapılır: yazı, döndürülünce
+                        // (x, y)'ye gelecek noktaya (x0, y0) yatay eklenir. Böylece
+                        // döndürmenin GERÇEKTEN uygulandığı ekleme noktasının yer
+                        // değiştirmesinden doğrulanabilir (RotateOrCopy void döner).
+                        double cos = Math.Cos(-a), sin = Math.Sin(-a);
+                        double x0 = oge.MerkezX + (x - oge.MerkezX) * cos - (y - oge.MerkezY) * sin;
+                        double y0 = oge.MerkezY + (x - oge.MerkezX) * sin + (y - oge.MerkezY) * cos;
+                        if (Math.Abs(a) < 1e-6) { x0 = x; y0 = y; }
                         // Son iki parametre YÜZDE: genişlik çarpanı 100, harf
-                        // aralığı 100. (KULLANICI RAPORU: "yazılar okunmuyor" —
-                        // harf aralığı 0 verilmişti, tüm harfler üst üste
-                        // biniyordu.)
-                        // KULLANICI RAPORU: "yazılar kocaman çıkmış" — açı
-                        // Escapement ile verildiğinde biçim hiç uygulanmamıştı
-                        // (dönüş değeri kontrol edilmiyordu). BicimUygula artık
-                        // başarısızsa açısız tekrar dener, boy her durumda tutar.
-                        // KULLANICI RAPORU: "yazılar dikey değil ve okunmuyor,
-                        // parça resminden dışarı çıkmış" — <rN> etiketi her
-                        // KARAKTERİ ayrı döndürüyor, satır yatay kalıyordu
-                        // (harfler yan yatıp satır parçadan taşıyordu). Satır
-                        // yatay eklenir, açısı önce TextFormat.Escapement ile
-                        // verilir; geri okununca tutmamışsa yazı seçilip ekleme
-                        // noktası etrafında sketch döndürmesiyle çevrilir.
-                        var yazi = belge.InsertSketchText(x * MM_TO_M, y * MM_TO_M, 0, satirlar[i], 0, 0, 0, 100, 100) as SketchText;
+                        // aralığı 100 (0 verilince harfler üst üste biniyordu).
+                        var yazi = belge.InsertSketchText(x0 * MM_TO_M, y0 * MM_TO_M, 0, satirlar[i], 0, 0, 0, 100, 100) as SketchText;
                         if (yazi == null) { Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}': InsertSketchText null döndü"); continue; }
-                        bool bicimTamam = BicimUygula(yazi, yaziMm, rad);
-                        if (!bicimTamam && Math.Abs(rad) > 1e-6) bicimTamam = BicimUygula(yazi, yaziMm, 0); // açısız tekrar dene — en azından boy tutsun
-                        if (!bicimTamam)
+                        if (!BoyUygula(yazi, boy))
                             Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}' satır {i + 1}: SetTextFormat BAŞARISIZ — yazı varsayılan boyda kalır");
+                        if (Math.Abs(a) < 1e-6) continue;
+                        if (SketchDondur(belge, yazi, oge.MerkezX, oge.MerkezY, a) &&
+                            yazi.GetCoordinates() is double[] k && k.Length >= 2 &&
+                            Math.Abs(k[0] / MM_TO_M - x) < 0.5 && Math.Abs(k[1] / MM_TO_M - y) < 0.5) continue;
 
-                        string aciYolu = "yok";
-                        if (Math.Abs(rad) > 1e-6)
-                        {
-                            var okunan = yazi.GetTextFormat() as TextFormat;
-                            if (okunan != null && Math.Abs(okunan.Escapement - rad) < 0.01)
-                                aciYolu = "escapement";
-                            else
-                                aciYolu = SketchDondur(belge, yazi, x, y, rad) ? "dondurme" : "BASARISIZ";
-                        }
-                        if (i == 0) Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}': açı yolu={aciYolu}");
+                        // Döndürülemedi: bu ve sonraki satırlar yatay.
+                        var okunanK = yazi.GetCoordinates() as double[];
+                        Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}': döndürme doğrulanamadı — beklenen ({x:0.#}, {y:0.#}) mm, okunan " +
+                            (okunanK != null && okunanK.Length >= 2 ? $"({okunanK[0] / MM_TO_M:0.#}, {okunanK[1] / MM_TO_M:0.#})" : "yok") + " — yatay yazıya geçiliyor");
+                        dondurulebilir = false;
+                        aciYolu = "BASARISIZ → yatay";
+                        boy = YaziYatayBoyu(oge, satirlar);
+                        var (yx, yy) = SatirKonumu(oge, satirlar, i, boy, 0);
+                        try { yazi.SetCoordinates(yx * MM_TO_M, yy * MM_TO_M, 0); } catch { }
+                        BoyUygula(yazi, boy);
                     }
+                    Tanilama.Kaydet($"Nesting etiketi '{oge.Ad}': açı yolu={aciYolu}");
                     Tanilama.Kaydet($"Nesting etiketi plaka={plakaNo} '{oge.Ad}': aci={yaziAci:0.#}° yazi={yaziMm:0.#}mm satir={satirlar.Count}");
                 }
 
@@ -175,18 +178,40 @@ namespace UretimOSKesim
             }
         }
 
-        private static bool BicimUygula(SketchText yazi, double yaziMm, double rad)
+        private static bool BoyUygula(SketchText yazi, double yaziMm)
         {
             var bicim = yazi.GetTextFormat() as TextFormat;
             if (bicim == null) return false;
             bicim.CharHeight = yaziMm * MM_TO_M;
-            bicim.Escapement = rad;
             return yazi.SetTextFormat(false, bicim);
         }
 
-        // Escapement tutmadığında yedek yol: yazıyı seçip ekleme noktası
-        // (xMm, yMm) etrafında sketch döndürmesi (IModelDocExtension.
-        // RotateOrCopy, eksen Z) uygular.
+        // Döndürme yapılamadığında yatay yazı boyu: parçanın plakadaki sınır
+        // kutusuna (W yatay, H dikey) göre.
+        private static double YaziYatayBoyu(NestingYerlesimOgesi oge, List<string> satirlar)
+        {
+            int enUzunSatir = satirlar.Max(t => t.Length);
+            double satirSayisiYuksekligi = 1.0 + 1.5 * (satirlar.Count - 1);
+            return Math.Max(1.0, Math.Min(oge.W * 0.85 / Math.Max(1, enUzunSatir * KARAKTER_EN_ORANI),
+                                          oge.H * 0.6 / satirSayisiYuksekligi));
+        }
+
+        // i. satırın sol-alt ekleme noktası (mm, plaka): satırlar parça
+        // merkezine göre ortalanır; u = yazı yönü, v = yazıya dik (yukarı).
+        private static (double x, double y) SatirKonumu(NestingYerlesimOgesi oge, List<string> satirlar, int i, double yaziMm, double rad)
+        {
+            double ux = Math.Cos(rad), uy = Math.Sin(rad), vx = -uy, vy = ux;
+            double satirAraligiMm = yaziMm * 1.5;
+            double ustOfset = satirAraligiMm * (satirlar.Count - 1) / 2.0;
+            double tahminiGenislik = satirlar[i].Length * yaziMm * KARAKTER_EN_ORANI;
+            double dikOfset = ustOfset - i * satirAraligiMm - yaziMm / 2.0;
+            return (oge.MerkezX - ux * tahminiGenislik / 2.0 + vx * dikOfset,
+                    oge.MerkezY - uy * tahminiGenislik / 2.0 + vy * dikOfset);
+        }
+
+        // Yazıyı seçip (xMm, yMm) noktası etrafında sketch döndürmesi
+        // (IModelDocExtension.RotateOrCopy, eksen Z) uygular. Sonuç çağıran
+        // tarafta ekleme noktasının yeni konumundan doğrulanır.
         private static bool SketchDondur(ModelDoc2 belge, SketchText yazi, double xMm, double yMm, double rad)
         {
             try

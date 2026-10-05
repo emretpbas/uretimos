@@ -94,7 +94,7 @@ namespace UretimOSKesim
         // varsayilanKesimPayi/varsayilanKenarBosluk: ÜretimOS'tan gelen
         // değerler — yalnızca pencerede ilk öneri olarak kullanılır, asıl
         // değerler kullanıcının pencerede onayladıklarıdır.
-        public static (int dosya, int plaka) Calistir(ISldWorks app, IWin32Window sahip, string kod,
+        public static (int dosya, int plaka) Calistir(ISldWorks app, IWin32Window sahip, string kod, string kaynakBelgeYolu,
             Dictionary<string, List<NestingParcaKaynagi>> gruplar, double varsayilanKesimPayi, double varsayilanKenarBosluk)
         {
             if (gruplar == null || gruplar.Values.All(l => l.Count == 0))
@@ -119,12 +119,19 @@ namespace UretimOSKesim
             double plakaBoy = ayar.PlakaBoyMm, plakaEn = ayar.PlakaEnMm;
             double kesimPayi = ayar.BicakMesafesiMm, kenarBosluk = ayar.KenarBoslukMm;
 
-            string cikisKlasoru;
-            using (var klasorDlg = new FolderBrowserDialog { Description = "Nesting sonucu parça dosyalarının kaydedileceği klasör" })
+            // KULLANICI İSTEĞİ: "nesting ile oluşan kayıt montaj klasörüyle aynı
+            // yere kaydolsun" — montaj/parça kaydedilmişse plaka dosyaları onun
+            // klasörüne yazılır; hiç kaydedilmemişse (yol yok) klasör sorulur.
+            string cikisKlasoru = string.IsNullOrWhiteSpace(kaynakBelgeYolu) ? null : Path.GetDirectoryName(kaynakBelgeYolu);
+            if (string.IsNullOrEmpty(cikisKlasoru) || !Directory.Exists(cikisKlasoru))
             {
-                if (klasorDlg.ShowDialog(sahip) != DialogResult.OK) return (0, 0);
-                cikisKlasoru = klasorDlg.SelectedPath;
+                using (var klasorDlg = new FolderBrowserDialog { Description = "Montaj henüz kaydedilmemiş — nesting plaka dosyalarının kaydedileceği klasör" })
+                {
+                    if (klasorDlg.ShowDialog(sahip) != DialogResult.OK) return (0, 0);
+                    cikisKlasoru = klasorDlg.SelectedPath;
+                }
             }
+            Tanilama.Kaydet("NestingCalistirici: çıkış klasörü = " + cikisKlasoru);
 
             string partSablon = UretimOSAddin.SablonYoluBul(app, "Part.prtdot", UretimOSAddin.PART_SABLON_YOLU);
             if (!File.Exists(partSablon))

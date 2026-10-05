@@ -822,7 +822,7 @@ namespace UretimOSKesim
             _durumEtiketi.Text = "Nesting hesaplanıyor…";
             Application.DoEvents();
 
-            var (toplamDosya, toplamPlaka) = NestingCalistirici.Calistir(_app, this, kod, gruplar, kesimPayi, kenarBosluk);
+            var (toplamDosya, toplamPlaka) = NestingCalistirici.Calistir(_app, this, kod, _hedefModel.GetPathName(), gruplar, kesimPayi, kenarBosluk);
 
             _durumEtiketi.ForeColor = toplamDosya > 0 ? Color.DarkGreen : Color.DarkRed;
             _durumEtiketi.Text = toplamDosya + " dosya, " + toplamPlaka + " plaka SolidWorks'te oluşturuldu (" + gruplar.Count + " malzeme grubu).";

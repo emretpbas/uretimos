@@ -1738,7 +1738,7 @@ namespace UretimOSKesim
                 var (ayarlar, takimlar) = NestingCalistirici.AyarlariCek();
                 var (kesimPayi, kenarBosluk) = NestingCalistirici.KesimPayiVeKenarBoslugu(ayarlar, takimlar);
                 string kod = Path.GetFileNameWithoutExtension(belge.GetPathName() ?? "");
-                NestingCalistirici.Calistir(_app, null, kod, gruplar, kesimPayi, kenarBosluk);
+                NestingCalistirici.Calistir(_app, null, kod, belge.GetPathName(), gruplar, kesimPayi, kenarBosluk);
             }
             catch (Exception ex)
             {
