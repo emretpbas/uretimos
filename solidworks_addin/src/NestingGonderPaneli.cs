@@ -554,7 +554,8 @@ namespace UretimOSKesim
             }).ToList();
 
             foreach (var a in atlananlar) Tanilama.Kaydet("Nesting girdisi ATLANDI: " + a);
-            var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri);
+            var sonuc = NestingHesaplayici.Hesapla(_manuelPlakaEn.Value, _manuelPlakaBoy.Value, kenarBosluk, kesimPayi, parcaGirdileri,
+                nestingAyari.GrainYonuneUy, nestingAyari.EtkinSabitAci);
             if (atlananlar.Count > 0)
                 sonuc.YerlesemeyenUyarilari.Insert(0, "ATLANAN parçalar: " + string.Join(", ", atlananlar));
 

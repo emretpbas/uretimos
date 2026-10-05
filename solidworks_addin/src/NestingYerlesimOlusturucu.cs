@@ -84,24 +84,50 @@ namespace UretimOSKesim
                     if (!string.IsNullOrWhiteSpace(oge.SwParcaAdi) && oge.SwParcaAdi != oge.Ad) satirlar.Add("SW: " + oge.SwParcaAdi);
                     if (satirlar.Count == 0) continue;
 
-                    // Yazı yüksekliği: kısa kenarın 1/10'u (en çok 30 mm), AYRICA
-                    // en uzun satır parça genişliğinin %90'ına sığacak kadar.
-                    double kisaKenar = Math.Min(oge.W, oge.H);
-                    int enUzunSatir = satirlar.Max(t => t.Length);
-                    double yaziMm = Math.Min(30.0, kisaKenar / 10.0);
-                    yaziMm = Math.Min(yaziMm, oge.W * 0.9 / Math.Max(1, enUzunSatir * KARAKTER_EN_ORANI));
-                    yaziMm = Math.Max(4.0, yaziMm);
+                    // Kullanıcı isteği: "parça ismi ve tüm yazılar uzun kenara
+                    // göre hizalanıp parça ölçüsüne sığdırılsın". Yazı yönü =
+                    // parçanın uzun kenarının plakadaki yönü; okunaklı kalsın
+                    // diye (-90°, 90°] aralığına çevrilir (baş aşağı yazı yok).
+                    bool enUzun = oge.ParcaEn >= oge.ParcaBoy;
+                    double uzunKenar = enUzun ? oge.ParcaEn : oge.ParcaBoy;
+                    double kisaKenar = enUzun ? oge.ParcaBoy : oge.ParcaEn;
+                    double yaziAci = oge.AciDerece + (enUzun ? 0 : 90);
+                    yaziAci = ((yaziAci % 360) + 360) % 360;
+                    if (yaziAci > 90 && yaziAci <= 270) yaziAci -= 180;
+                    else if (yaziAci > 270) yaziAci -= 360;
+
+                    // Sığdırma: en uzun satır uzun kenarın %90'ına, tüm satırlar
+                    // (satır aralığı dahil) kısa kenarın %80'ine sığmalı; en çok
+                    // 30 mm. 3 mm'nin altına düşüyorsa alttaki satır (önce "SW:",
+                    // sonra ad) atılır — YM kodu her zaman kalır ve ne kadar
+                    // küçük olursa olsun parçanın İÇİNDE kalır.
+                    double yaziMm;
+                    while (true)
+                    {
+                        int enUzunSatir = satirlar.Max(t => t.Length);
+                        double satirSayisiYuksekligi = 1.0 + 1.5 * (satirlar.Count - 1);
+                        yaziMm = Math.Min(30.0, uzunKenar * 0.9 / Math.Max(1, enUzunSatir * KARAKTER_EN_ORANI));
+                        yaziMm = Math.Min(yaziMm, kisaKenar * 0.8 / satirSayisiYuksekligi);
+                        if (yaziMm >= 3.0 || satirlar.Count == 1) break;
+                        satirlar.RemoveAt(satirlar.Count - 1);
+                    }
                     double satirAraligiMm = yaziMm * 1.5;
-                    double ortaX = oge.X + oge.W / 2.0;
-                    double ustY = oge.Y + oge.H / 2.0 + satirAraligiMm * (satirlar.Count - 1) / 2.0;
+
+                    // Yazının kendi ekseninde: u = yazı yönü, v = yazıya dik
+                    // (yukarı). Satırlar parça merkezine göre ortalanır.
+                    double rad = yaziAci * Math.PI / 180.0;
+                    double ux = Math.Cos(rad), uy = Math.Sin(rad);
+                    double vx = -uy, vy = ux;
+                    double ustOfset = satirAraligiMm * (satirlar.Count - 1) / 2.0;
 
                     for (int i = 0; i < satirlar.Count; i++)
                     {
                         // Sol-alt hizalı yazı: yaklaşık genişliğin yarısı kadar
-                        // sola kaydırılarak parça ortasına getirilir.
+                        // yazı yönünün tersine kaydırılarak merkeze getirilir.
                         double tahminiGenislik = satirlar[i].Length * yaziMm * KARAKTER_EN_ORANI;
-                        double x = ortaX - tahminiGenislik / 2.0;
-                        double y = ustY - i * satirAraligiMm - yaziMm / 2.0;
+                        double dikOfset = ustOfset - i * satirAraligiMm - yaziMm / 2.0;
+                        double x = oge.MerkezX - ux * tahminiGenislik / 2.0 + vx * dikOfset;
+                        double y = oge.MerkezY - uy * tahminiGenislik / 2.0 + vy * dikOfset;
                         // Son iki parametre YÜZDE: genişlik çarpanı 100, harf
                         // aralığı 100. (KULLANICI RAPORU: "yazılar okunmuyor" —
                         // harf aralığı 0 verilmişti, tüm harfler üst üste
@@ -112,9 +138,15 @@ namespace UretimOSKesim
                         if (bicim != null)
                         {
                             bicim.CharHeight = yaziMm * MM_TO_M;
+                            // GÜVENİLİRLİK UYARISI: TextFormat.Escapement (yazı
+                            // açısı, radyan) bu projede İLK KEZ kullanılıyor —
+                            // yazının ekleme noktası etrafında döndüğü
+                            // varsayıldı; gerçek SolidWorks'te doğrulanmalı.
+                            bicim.Escapement = rad;
                             yazi.SetTextFormat(false, bicim);
                         }
                     }
+                    Tanilama.Kaydet($"Nesting etiketi plaka={plakaNo} '{oge.Ad}': aci={yaziAci:0.#}° yazi={yaziMm:0.#}mm satir={satirlar.Count}");
                 }
 
                 belge.SketchManager.InsertSketch(true);
@@ -159,7 +191,7 @@ namespace UretimOSKesim
                 foreach (var oge in plaka.Yerlesenler)
                 {
                     Tanilama.Kaydet($"NestingYerlesimOlusturucu plaka={plakaNo} '{oge.Ad}': X={oge.X} Y={oge.Y} W={oge.W} H={oge.H} " +
-                        $"rotated={oge.Rotated} dishat={oge.DisHat.Count} delik={oge.Delikler.Count} form={oge.Formlar.Count}");
+                        $"aci={oge.AciDerece:0.#} dishat={oge.DisHat.Count} delik={oge.Delikler.Count} form={oge.Formlar.Count}");
                     // KULLANICI RAPORU: "parçalarda yaptığım değişiklikler ne
                     // ölçüsel ne formsal olarak değişmiyor" — kenarına kertik/
                     // çentik işlenmiş parçalar artık düz dikdörtgen DEĞİL,

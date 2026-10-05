@@ -17,6 +17,20 @@ namespace UretimOSKesim
         public double PlakaBoyMm, PlakaEnMm;
         public double KenarBoslukMm;
         public double BicakMesafesiMm;
+        // Yönlendirme (bkz. NestingHesaplayici dosya başı notu). Eski kayıt
+        // dosyasında bu alanlar yoksa alan başlangıç değerleri kullanılır:
+        // grain varsayılan olarak AÇIK.
+        public bool GrainYonuneUy = true;
+        public bool SabitAciKullan;
+        public double SabitAciDerece;
+
+        [Newtonsoft.Json.JsonIgnore]
+        public double? EtkinSabitAci => SabitAciKullan ? SabitAciDerece : (double?)null;
+
+        [Newtonsoft.Json.JsonIgnore]
+        public string YonlendirmeAciklamasi => SabitAciKullan
+            ? $"sabit açı {SabitAciDerece:0.#}°"
+            : (GrainYonuneUy ? "grain yönüne uy (parça boyu → plaka boyu)" : "serbest (0°/90°)");
 
         private static string DosyaYolu => Path.Combine(
             System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "UretimOSKesim", "nesting_ayarlari.json");
@@ -123,7 +137,7 @@ namespace UretimOSKesim
                     rapor.Add("'" + grup.Key + "' grubunda ATLANAN parçalar: " + string.Join(", ", atlananlar));
                 if (parcaGirdileri.Count == 0) continue;
 
-                var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri);
+                var sonuc = NestingHesaplayici.Hesapla(plakaEn, plakaBoy, kenarBosluk, kesimPayi, parcaGirdileri, ayar.GrainYonuneUy, ayar.EtkinSabitAci);
                 if (sonuc.Plakalar.Count == 0)
                 {
                     rapor.Add("'" + grup.Key + "' grubu: hiçbir parça yerleştirilemedi — " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
@@ -135,7 +149,7 @@ namespace UretimOSKesim
                 toplamDosya += dosyalar.Count;
                 toplamPlaka += sonuc.Plakalar.Count;
                 rapor.Add("'" + grup.Key + "': " + sonuc.Plakalar.Count + " plaka, " + dosyalar.Count + " dosya " +
-                    $"(kenar boşluğu {kenarBosluk:0.#} mm, bıçak mesafesi {kesimPayi:0.#} mm).");
+                    $"(kenar boşluğu {kenarBosluk:0.#} mm, bıçak mesafesi {kesimPayi:0.#} mm, {ayar.YonlendirmeAciklamasi}).");
                 if (sonuc.YerlesemeyenUyarilari.Count > 0)
                     rapor.Add("    UYARI: " + string.Join(" ", sonuc.YerlesemeyenUyarilari));
                 if (olusturucu.Uyarilar.Count > 0)
@@ -211,7 +225,7 @@ namespace UretimOSKesim
 
             using (var dlg = new Form
             {
-                Text = "Nesting Ayarları", Width = 470, Height = 330, FormBorderStyle = FormBorderStyle.FixedDialog,
+                Text = "Nesting Ayarları", Width = 470, Height = 420, FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Font = ReceteAgaciPaneli.Tema.TabanFont
             })
             {
@@ -251,11 +265,39 @@ namespace UretimOSKesim
                 Satir("Kenar boşluğu — plaka kenarından (mm):", kenarKutu);
                 Satir("Freze bıçak mesafesi — iki parça arası (mm):", bicakKutu);
 
+                // Kullanıcı isteği: "grain kutucuğu işaretli olduğunda parçanın
+                // boy tarafı plakanın boy tarafına hizalı olsun, işaret
+                // kaldırıldığında her türlü açı ve yerleşim; birde açı girilsin,
+                // bunu aktif etmek için bir kutucuk daha olsun".
+                var grainKutu = new CheckBox { Text = "parça boyu → plaka boyu", AutoSize = true, Margin = new Padding(0, 6, 0, 0), Checked = kayitli?.GrainYonuneUy ?? true };
+                var aciAktifKutu = new CheckBox { Text = "", AutoSize = true, Margin = new Padding(0, 6, 4, 0), Checked = kayitli?.SabitAciKullan ?? false };
+                var aciKutu = new NumericUpDown
+                {
+                    Minimum = -180, Maximum = 180, DecimalPlaces = 1, Increment = 1m, Width = 70,
+                    Value = (decimal)Math.Max(-180, Math.Min(180, kayitli?.SabitAciDerece ?? 0))
+                };
+                var aciPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+                aciPanel.Controls.Add(aciAktifKutu);
+                aciPanel.Controls.Add(aciKutu);
+                aciPanel.Controls.Add(new Label { Text = "°", AutoSize = true, Margin = new Padding(2, 7, 0, 0) });
+                void YonKutulariniGuncelle()
+                {
+                    // Sabit açı Grain'den önceliklidir — açık iken Grain pasif.
+                    aciKutu.Enabled = aciAktifKutu.Checked;
+                    grainKutu.Enabled = !aciAktifKutu.Checked;
+                }
+                aciAktifKutu.CheckedChanged += (s, e) => YonKutulariniGuncelle();
+                YonKutulariniGuncelle();
+
+                Satir("Grain yönüne uy:", grainKutu);
+                Satir("Sabit açı kullan (saat yönü tersi +):", aciPanel);
+
                 var ipucu = new Label
                 {
                     Text = $"ÜretimOS varsayılanı: kenar {varsayilanKenarBosluk:0.#} mm, bıçak {varsayilanKesimPayi:0.#} mm. " +
-                           "Girdiğiniz değerler bir sonraki nesting için hatırlanır.",
-                    Dock = DockStyle.Bottom, Height = 40, Padding = new Padding(10, 4, 10, 0), ForeColor = Color.DimGray
+                           "Girdiğiniz değerler bir sonraki nesting için hatırlanır. Parçada desen yönü " +
+                           "(URETIMOS_TAHIL_YONU) tanımlıysa o parça her modda döndürülmeden yerleşir.",
+                    Dock = DockStyle.Bottom, Height = 56, Padding = new Padding(10, 4, 10, 0), ForeColor = Color.DimGray
                 };
 
                 var altBtnPanel = new Panel { Dock = DockStyle.Bottom, Height = 44 };
@@ -291,7 +333,10 @@ namespace UretimOSKesim
                     secilen = new NestingAyarlari
                     {
                         PlakaBoyMm = boy, PlakaEnMm = en,
-                        KenarBoslukMm = kenar, BicakMesafesiMm = (double)bicakKutu.Value
+                        KenarBoslukMm = kenar, BicakMesafesiMm = (double)bicakKutu.Value,
+                        GrainYonuneUy = grainKutu.Checked,
+                        SabitAciKullan = aciAktifKutu.Checked,
+                        SabitAciDerece = (double)aciKutu.Value
                     };
                     dlg.DialogResult = DialogResult.OK;
                 };
@@ -307,7 +352,7 @@ namespace UretimOSKesim
 
             if (secilen == null) return false;
             secilen.Kaydet();
-            Tanilama.Kaydet($"Nesting ayarları: plaka {secilen.PlakaBoyMm}x{secilen.PlakaEnMm}, kenar {secilen.KenarBoslukMm} mm, bıçak {secilen.BicakMesafesiMm} mm");
+            Tanilama.Kaydet($"Nesting ayarları: plaka {secilen.PlakaBoyMm}x{secilen.PlakaEnMm}, kenar {secilen.KenarBoslukMm} mm, bıçak {secilen.BicakMesafesiMm} mm, yön: {secilen.YonlendirmeAciklamasi}");
             sonuc = secilen;
             return true;
         }

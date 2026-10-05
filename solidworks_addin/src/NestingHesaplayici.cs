@@ -39,8 +39,14 @@ namespace UretimOSKesim
     {
         public string Ad;
         public double X, Y;   // mm, plakanın sol-alt köşesinden, kenar boşluğu DAHİL mutlak konum
-        public double W, H;   // mm, yerleşmiş (olası 90° döndürülmüş) ölçü
-        public bool Rotated;
+        public double W, H;   // mm, yerleşmiş (döndürülmüş) halin sınırlayıcı kutusu
+        public bool Rotated;  // AciDerece != 0
+        // Parçanın plakadaki dönüş açısı (derece, saat yönünün TERSİ pozitif)
+        // ve döndürülmemiş ölçüsü + plakadaki merkezi — etiket yazısını
+        // parçanın uzun kenarına paralel yazıp sığdırmak için.
+        public double AciDerece;
+        public double ParcaEn, ParcaBoy;
+        public double MerkezX, MerkezY;
         public string YmKod;
         public string SwParcaAdi;
         // Delik merkezleri, PLAKANIN mutlak koordinat sisteminde (X,Y'ye göre
@@ -78,9 +84,21 @@ namespace UretimOSKesim
     // satır çevrildi (bkz. page_nesting.js satır ~511-651).
     //
     // TEK YÜZEY KURALI (AYNI, bkz. page_nesting.js dosya başı notu): parça
-    // GrainKilitli DEĞİLSE sadece 90° DÖNDÜRÜLÜR (Rotated bayrağı), ASLA
-    // ayna/flip edilmez — bir delik hangi yönde yerleşirse yerleşsin HER
-    // ZAMAN plakanın aynı (üst) yüzeyinde kalır.
+    // yalnızca DÖNDÜRÜLÜR, ASLA ayna/flip edilmez — bir delik hangi yönde
+    // yerleşirse yerleşsin HER ZAMAN plakanın aynı (üst) yüzeyinde kalır.
+    //
+    // YÖNLENDİRME (kullanıcı isteği: "grain kutucuğu işaretli olduğunda
+    // parçanın boy tarafı plakanın boy tarafına hizalı olsun, işaret
+    // kaldırıldığında her türlü açı ve yerleşim; açı kutucuğu aktifse girilen
+    // açıya göre yerleşsin"):
+    //   - GrainKilitli (parçada URETIMOS_TAHIL_YONU dolu) → her modda 0°.
+    //   - sabitAciDerece verilmişse → diğer tüm parçalar o açıyla.
+    //   - grainYonuneUy → parçanın UZUN kenarı plakanın Boy (Y) eksenine.
+    //   - ikisi de yoksa → 0° ve 90° denenir, daha alttaki/soldaki seçilir.
+    //     (Skyline yerleştirici sınırlayıcı kutu ile çalıştığı için 180°/270°
+    //     0°/90° ile AYNI kutuyu verir — ayrıca denenmez.)
+    // Plaka koordinatı: X = plaka En, Y = plaka Boy (bkz. NestingYerlesim-
+    // Olusturucu'daki plaka dikdörtgeni).
     // ════════════════════════════════════════════════════════════════════════
     public static class NestingHesaplayici
     {
@@ -96,14 +114,59 @@ namespace UretimOSKesim
             public List<(double x, double y)> DisHat;
         }
 
+        // Bir parçanın tek bir dönüş açısındaki hali: döndürülmüş En×Boy
+        // dikdörtgeninin sınırlayıcı kutusu (W×H) ve kutuyu (0,0)'a oturtmak
+        // için gereken kaydırma (MinX/MinY).
+        private class Yon
+        {
+            public double Aci, W, H, MinX, MinY;
+        }
+
         private class Placed
         {
-            public Item Item; public double X, Y, W, H; public bool Rotated;
+            public Item Item; public double X, Y; public Yon Yon;
         }
 
         private class SkylineSeg { public double X0, X1, Y; }
 
-        public static NestingSonucu Hesapla(double plakaEn, double plakaBoy, double kenarBosluk, double kesimPayi, List<NestingParcaGirdi> parcalar)
+        // 90'ın katlarında sin/cos'u TAM değerle kullanır — kayan nokta
+        // artıkları (ör. 6e-17) koordinatlara sızmasın, eski 90° dönüşümüyle
+        // (dx,dy)->(dy, origW-dx) birebir aynı sonuç çıksın.
+        private static (double x, double y) Dondur(double x, double y, double aciDerece)
+        {
+            double a = ((aciDerece % 360) + 360) % 360;
+            if (Math.Abs(a) < 1e-9) return (x, y);
+            if (Math.Abs(a - 90) < 1e-9) return (-y, x);
+            if (Math.Abs(a - 180) < 1e-9) return (-x, -y);
+            if (Math.Abs(a - 270) < 1e-9) return (y, -x);
+            double r = a * Math.PI / 180.0, c = Math.Cos(r), s = Math.Sin(r);
+            return (x * c - y * s, x * s + y * c);
+        }
+
+        private static Yon YonHesapla(double en, double boy, double aciDerece)
+        {
+            var koseler = new[] { Dondur(0, 0, aciDerece), Dondur(en, 0, aciDerece), Dondur(en, boy, aciDerece), Dondur(0, boy, aciDerece) };
+            double minX = koseler.Min(k => k.x), minY = koseler.Min(k => k.y);
+            return new Yon
+            {
+                Aci = aciDerece,
+                MinX = minX, MinY = minY,
+                W = koseler.Max(k => k.x) - minX,
+                H = koseler.Max(k => k.y) - minY
+            };
+        }
+
+        private static List<Yon> AdayYonler(Item item, bool grainYonuneUy, double? sabitAciDerece)
+        {
+            if (item.GrainKilitli) return new List<Yon> { YonHesapla(item.W, item.H, 0) };
+            if (sabitAciDerece.HasValue) return new List<Yon> { YonHesapla(item.W, item.H, sabitAciDerece.Value) };
+            // -90: eski yerleştiricinin 90° dönüşüyle AYNI yön (saat yönünde).
+            if (grainYonuneUy) return new List<Yon> { YonHesapla(item.W, item.H, item.W > item.H + 0.001 ? -90 : 0) };
+            return new List<Yon> { YonHesapla(item.W, item.H, 0), YonHesapla(item.W, item.H, -90) };
+        }
+
+        public static NestingSonucu Hesapla(double plakaEn, double plakaBoy, double kenarBosluk, double kesimPayi, List<NestingParcaGirdi> parcalar,
+            bool grainYonuneUy = false, double? sabitAciDerece = null)
         {
             var items = new List<Item>();
             foreach (var p in parcalar)
@@ -128,7 +191,7 @@ namespace UretimOSKesim
                 // plaka kenarına dayanan SON parçanın arkasında kesilecek komşu
                 // olmadığı için bu pay kullanılabilir alana eklenir; aksi halde
                 // kenar boşluğuna tam sığan parça "sığmadı" sayılıyordu.
-                var (placed, remaining) = PackOnePlaka(usableW + kesimPayi, usableH + kesimPayi, kalan, kesimPayi);
+                var (placed, remaining) = PackOnePlaka(usableW + kesimPayi, usableH + kesimPayi, kalan, kesimPayi, grainYonuneUy, sabitAciDerece);
                 if (placed.Count == 0)
                 {
                     sonuc.YerlesemeyenUyarilari.Add(kalan.Count + " parça kopyası hiçbir plakaya sığmadı (plaka veya parça ölçüsünü, ya da kenar boşluğu/kesim payını kontrol edin).");
@@ -138,38 +201,50 @@ namespace UretimOSKesim
                 foreach (var pl in placed)
                 {
                     double mutlakX = pl.X + kenarBosluk, mutlakY = pl.Y + kenarBosluk;
-                    // page_nesting.js'teki delikKoordDonustur ile AYNI dönüşüm:
-                    // rotated ise (dx,dy) -> (dy, origW-dx), sonra plakadaki
-                    // mutlak konuma (kenar boşluğu dahil) ofsetlenir.
+                    var yon = pl.Yon;
+                    // Parçanın yerel noktası (x,y) → açıyla döndür → kutuyu
+                    // (0,0)'a oturt → plakadaki mutlak konuma (kenar boşluğu
+                    // dahil) ofsetle. -90°'de page_nesting.js'teki
+                    // delikKoordDonustur ile AYNI sonuç: (dx,dy) -> (dy, origW-dx).
+                    (double x, double y) Donustur(double x, double y)
+                    {
+                        var (rx, ry) = Dondur(x, y, yon.Aci);
+                        return (mutlakX + rx - yon.MinX, mutlakY + ry - yon.MinY);
+                    }
                     var delikler = (pl.Item.Delikler ?? new List<(double, double, double)>())
                         .Select(d =>
                         {
-                            var (dx, dy) = pl.Rotated ? (d.y, pl.Item.OrigW - d.x) : (d.x, d.y);
-                            return (x: mutlakX + dx, y: mutlakY + dy, cap: d.cap);
+                            var (x, y) = Donustur(d.x, d.y);
+                            return (x, y, cap: d.cap);
                         })
                         .ToList();
                     var formlar = (pl.Item.Formlar ?? new List<List<(double, double)>>())
-                        .Select(form => form.Select(nokta =>
-                        {
-                            var (dx, dy) = pl.Rotated ? (nokta.y, pl.Item.OrigW - nokta.x) : (nokta.x, nokta.y);
-                            return (x: mutlakX + dx, y: mutlakY + dy);
-                        }).ToList())
+                        .Select(form => form.Select(nokta => Donustur(nokta.x, nokta.y)).ToList())
                         .ToList();
                     var disHat = (pl.Item.DisHat ?? new List<(double, double)>())
-                        .Select(nokta =>
-                        {
-                            var (dx, dy) = pl.Rotated ? (nokta.y, pl.Item.OrigW - nokta.x) : (nokta.x, nokta.y);
-                            return (x: mutlakX + dx, y: mutlakY + dy);
-                        })
+                        .Select(nokta => Donustur(nokta.x, nokta.y))
                         .ToList();
+                    // Dış hat çıkarılamadıysa çizici W×H kutusunu dikdörtgen
+                    // olarak çizer — 90'ın katı OLMAYAN açıda bu kutu parçanın
+                    // kendisi değildir, bu yüzden döndürülmüş En×Boy
+                    // dikdörtgeninin 4 köşesi dış hat olarak verilir.
+                    bool dikAci = Math.Abs(Math.IEEERemainder(yon.Aci, 90)) < 1e-9;
+                    if (disHat.Count < 3 && !dikAci)
+                        disHat = new List<(double x, double y)> { Donustur(0, 0), Donustur(pl.Item.W, 0), Donustur(pl.Item.W, pl.Item.H), Donustur(0, pl.Item.H) };
+                    var merkez = Donustur(pl.Item.W / 2.0, pl.Item.H / 2.0);
                     plaka.Yerlesenler.Add(new NestingYerlesimOgesi
                     {
                         Ad = pl.Item.Ad,
                         X = mutlakX,
                         Y = mutlakY,
-                        W = pl.W,
-                        H = pl.H,
-                        Rotated = pl.Rotated,
+                        W = yon.W,
+                        H = yon.H,
+                        Rotated = Math.Abs(yon.Aci) > 1e-9,
+                        AciDerece = yon.Aci,
+                        ParcaEn = pl.Item.W,
+                        ParcaBoy = pl.Item.H,
+                        MerkezX = merkez.x,
+                        MerkezY = merkez.y,
                         YmKod = pl.Item.YmKod,
                         SwParcaAdi = pl.Item.SwParcaAdi,
                         Delikler = delikler,
@@ -183,7 +258,8 @@ namespace UretimOSKesim
             return sonuc;
         }
 
-        private static (List<Placed> placed, List<Item> remaining) PackOnePlaka(double W, double H, List<Item> items, double kerf)
+        private static (List<Placed> placed, List<Item> remaining) PackOnePlaka(double W, double H, List<Item> items, double kerf,
+            bool grainYonuneUy, double? sabitAciDerece)
         {
             var skyline = new List<SkylineSeg> { new SkylineSeg { X0 = 0, X1 = W, Y = 0 } };
             var placed = new List<Placed>();
@@ -248,21 +324,21 @@ namespace UretimOSKesim
 
             foreach (var item in items)
             {
-                var pos = FindBestPosition(item.W, item.H);
-                bool rotated = false;
-                if (!item.GrainKilitli)
+                // Adaylar sırayla denenir; eşitlikte ÖNCEKİ aday kalır (0°
+                // önce gelir — eski davranışla aynı).
+                (double x, double y)? pos = null;
+                Yon secilenYon = null;
+                foreach (var aday in AdayYonler(item, grainYonuneUy, sabitAciDerece))
                 {
-                    var posRot = FindBestPosition(item.H, item.W);
-                    if (posRot != null && (pos == null || posRot.Value.y < pos.Value.y - 0.001 ||
-                        (Math.Abs(posRot.Value.y - pos.Value.y) < 0.001 && posRot.Value.x < pos.Value.x)))
-                    { pos = posRot; rotated = true; }
+                    var p = FindBestPosition(aday.W, aday.H);
+                    if (p != null && (pos == null || p.Value.y < pos.Value.y - 0.001 ||
+                        (Math.Abs(p.Value.y - pos.Value.y) < 0.001 && p.Value.x < pos.Value.x)))
+                    { pos = p; secilenYon = aday; }
                 }
                 if (pos != null)
                 {
-                    double w = rotated ? item.H : item.W;
-                    double h = rotated ? item.W : item.H;
-                    PlaceAt(pos.Value.x, pos.Value.y, w, h);
-                    placed.Add(new Placed { Item = item, X = pos.Value.x, Y = pos.Value.y, W = w, H = h, Rotated = rotated });
+                    PlaceAt(pos.Value.x, pos.Value.y, secilenYon.W, secilenYon.H);
+                    placed.Add(new Placed { Item = item, X = pos.Value.x, Y = pos.Value.y, Yon = secilenYon });
                 }
                 else
                 {
