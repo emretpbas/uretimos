@@ -147,7 +147,14 @@ namespace UretimOSKesim
                 if (File.Exists(DosyaYolu))
                 {
                     var liste = JsonConvert.DeserializeObject<List<BaglantiSablonu>>(File.ReadAllText(DosyaYolu));
-                    if (liste != null) return liste;
+                    if (liste != null)
+                    {
+                        // Sonradan eklenen varsayılan şablonlar (ör. Minifix, Rafix)
+                        // kayıtlı kütüphanede o adla yoksa eklenir.
+                        foreach (var v in Varsayilanlar())
+                            if (!liste.Any(s => string.Equals(s.Ad, v.Ad, StringComparison.OrdinalIgnoreCase))) liste.Add(v);
+                        return liste;
+                    }
                 }
             }
             catch (Exception ex)
@@ -179,6 +186,40 @@ namespace UretimOSKesim
                     new DelikTanimi { Tur = DelikTuru.GovdeYuzey, OfsetMm = 20, CapMm = 18, DerinlikMm = 14.5 },
                     new DelikTanimi { Tur = DelikTuru.GovdeYuzey, OfsetMm = 34, CapMm = 18, DerinlikMm = 14.5 },
                     new DelikTanimi { Tur = DelikTuru.KarsiYuzey, OfsetMm = 0,  CapMm = 10, DerinlikMm = 12 },
+                },
+                Mod = DiziModu.Soldan, ElemanSayisi = 2, SolOfsetMm = 32, SagOfsetMm = 32,
+                AraliklarMm = new List<double> { 224 }
+            },
+            // Kullanıcı isteği: "bağlantı şablonlarına minifix ve rafix
+            // şablonlarını da ekleyelim". Ölçüler kullanıcının SWOOD Connectors
+            // kütüphanesinden (Assemblages.efiass): "Minifiks" / "BELLONA YENİ
+            // Minifix" — DE 15, PE 14, DecE 34, DCG 8 (alındaki gövde deliği,
+            // DecCG 9 = kalınlık ortası), DPG 10 × PPG 11 (karşı panel).
+            // Alın deliğinin derinliği eksantriğe ulaşacak şekilde 34 mm.
+            new BaglantiSablonu
+            {
+                Ad = "Minifix 15",
+                Aciklama = "Minifix Ø15×14 (kenardan 34), alında Ø8×34, karşı panelde Ø10×11 — SWOOD 'Minifiks' kaydıyla aynı.",
+                Delikler = new List<DelikTanimi>
+                {
+                    new DelikTanimi { Tur = DelikTuru.GovdeYuzey, OfsetMm = 34, CapMm = 15, DerinlikMm = 14 },
+                    new DelikTanimi { Tur = DelikTuru.GovdeKenar, OfsetMm = 0,  CapMm = 8,  DerinlikMm = 34 },
+                    new DelikTanimi { Tur = DelikTuru.KarsiYuzey, OfsetMm = 0,  CapMm = 10, DerinlikMm = 11 },
+                },
+                Mod = DiziModu.Soldan, ElemanSayisi = 2, SolOfsetMm = 32, SagOfsetMm = 32,
+                AraliklarMm = new List<double> { 224 }
+            },
+            // SWOOD "RAFİX" kaydı: DE 20, PE 14, DecE 9,5, DTG 2,5 × PTG 5,
+            // DecTG 9 (kalınlık ortası). DTG 2,5 kütüphanedeki değerdir —
+            // Rafix pimi için küçük görünüyor, kullanıcı kontrol etmeli.
+            new BaglantiSablonu
+            {
+                Ad = "Rafix 20",
+                Aciklama = "Rafix Ø20×14 (kenardan 9,5), karşı panelde Ø2,5×5 — SWOOD 'RAFİX' kaydıyla aynı; karşı delik çapını kontrol edin.",
+                Delikler = new List<DelikTanimi>
+                {
+                    new DelikTanimi { Tur = DelikTuru.GovdeYuzey, OfsetMm = 9.5, CapMm = 20,  DerinlikMm = 14 },
+                    new DelikTanimi { Tur = DelikTuru.KarsiYuzey, OfsetMm = 0,   CapMm = 2.5, DerinlikMm = 5 },
                 },
                 Mod = DiziModu.Soldan, ElemanSayisi = 2, SolOfsetMm = 32, SagOfsetMm = 32,
                 AraliklarMm = new List<double> { 224 }
