@@ -70,7 +70,10 @@ namespace UretimOSKesim
         // Orijin birleşim düzleminde, gövde kalınlığının ortasında; X birleşim
         // boyunca (dizi yönü), Y gövde paneline doğru, Z gövdenin iç yüzüne doğru.
         public List<double[][]> ElemanCerceveleri = new List<double[][]>();
-        public string ModelYolu; // şablonun 3B modeli (yoksa null)
+        // ElemanCerceveleri ile paralel: o elemanın 3B modeli (yoksa null).
+        // Bileşik şablonda (Minifix + Kavela) her eksenin modeli farklıdır.
+        public List<string> ElemanModelYollari = new List<string>();
+        public bool ModelVar => ElemanModelYollari.Any(y => y != null);
         // Önizlemede birleşimi belirginleştiren çubuk: birleşim düzleminde,
         // gövde kalınlığının ortasında, birleşim boyunca (montaj koordinatı).
         public double[] CizgiBas, CizgiSon;
@@ -99,15 +102,17 @@ namespace UretimOSKesim
             public List<DuzYuz> Yuzler = new List<DuzYuz>();
         }
 
-        public static BaglantiPlani Hesapla(ISldWorks app, Component2 c1, Component2 c2, BaglantiSablonu sablon, BaglantiUygulamaSecenekleri sec) =>
-            HesaplaIc(app, c1, c2, null, null, sablon, sec);
+        // kutuphane: bileşik şablonun eksen adlarını (Minifix, Kavela …)
+        // çözmek için; bileşik olmayan şablonda kullanılmaz.
+        public static BaglantiPlani Hesapla(ISldWorks app, Component2 c1, Component2 c2, BaglantiSablonu sablon, BaglantiUygulamaSecenekleri sec, IEnumerable<BaglantiSablonu> kutuphane = null) =>
+            HesaplaIc(app, c1, c2, null, null, sablon, sec, kutuphane);
 
-        public static BaglantiPlani Hesapla(ISldWorks app, BirlesimSecimi b, BaglantiSablonu sablon, BaglantiUygulamaSecenekleri sec) =>
-            HesaplaIc(app, b.A, b.B, b.N, b.P, sablon, sec);
+        public static BaglantiPlani Hesapla(ISldWorks app, BirlesimSecimi b, BaglantiSablonu sablon, BaglantiUygulamaSecenekleri sec, IEnumerable<BaglantiSablonu> kutuphane = null) =>
+            HesaplaIc(app, b.A, b.B, b.N, b.P, sablon, sec, kutuphane);
 
-        private static BaglantiPlani HesaplaIc(ISldWorks app, Component2 c1, Component2 c2, double[] secN, double[] secP, BaglantiSablonu sablon, BaglantiUygulamaSecenekleri sec)
+        private static BaglantiPlani HesaplaIc(ISldWorks app, Component2 c1, Component2 c2, double[] secN, double[] secP, BaglantiSablonu sablon, BaglantiUygulamaSecenekleri sec, IEnumerable<BaglantiSablonu> kutuphane)
         {
-            var plan = new BaglantiPlani { ModelYolu = sablon.ModelYolu() };
+            var plan = new BaglantiPlani();
             try
             {
                 var mu = (MathUtility)app.GetMathUtility();
@@ -175,28 +180,45 @@ namespace UretimOSKesim
                 plan.CizgiSon = Topla(c, Olcek(e, u1 - cE));
                 plan.CizgiYaricapM = Math.Max(1 * MM, kalinlik * 0.35);
 
-                var konumlar = sablon.ElemanKonumlari(boy / MM);
-                plan.ElemanKonumlariMm = konumlar;
+                var elemanlar = sablon.Elemanlar(boy / MM);
+                plan.ElemanKonumlariMm = elemanlar.Select(x => x.Konum).ToList();
+                // Bileşik şablonda her eksenin elemanı kütüphaneden çözülür.
+                var eksenSablonlari = new Dictionary<int, BaglantiSablonu>();
+                BaglantiSablonu ElemanSablonu(int eksen)
+                {
+                    if (!eksenSablonlari.TryGetValue(eksen, out var s))
+                    {
+                        eksenSablonlari[eksen] = s = sablon.EksenSablonu(eksen, kutuphane);
+                        if (s == null && sablon.BilesikMi && !string.IsNullOrWhiteSpace(sablon.Eksenler[eksen]))
+                            plan.Uyarilar.Add($"C{eksen + 1}: '{sablon.Eksenler[eksen]}' şablonu kütüphanede yok — eksen atlandı.");
+                    }
+                    return s;
+                }
                 // Model çerçevesi: Y gövdeye doğru (-n), Z iç yüze doğru, X = Y×Z
                 // (sağ el); X dizi yönünün tersine düşerse X ve Z birlikte çevrilir.
                 double[] yEks = Olcek(n, -1), zEks = tIc, xEks = Birim(Capraz(yEks, zEks));
                 double[] diziYonu = sec.YonTers ? Olcek(e, -1) : e;
                 if (Nokta(xEks, diziYonu) < 0) { xEks = Olcek(xEks, -1); zEks = Olcek(zEks, -1); }
-                foreach (var km in konumlar)
+                foreach (var (km, eksen) in elemanlar)
                 {
-                    if (km < 0 || km > boy / MM) continue;
+                    var es = ElemanSablonu(eksen);
+                    if (es == null || km < 0 || km > boy / MM) continue;
                     double uk = sec.YonTers ? u1 - km * MM : u0 + km * MM;
                     plan.ElemanCerceveleri.Add(new[] { Topla(c, Olcek(e, uk - cE)), xEks, yEks, zEks });
+                    plan.ElemanModelYollari.Add(es.ModelYolu());
                 }
-                for (int k = 0; k < konumlar.Count; k++)
+                for (int k = 0; k < elemanlar.Count; k++)
                 {
-                    foreach (var d in sablon.Delikler)
+                    var es = ElemanSablonu(elemanlar[k].Eksen);
+                    if (es == null) continue;
+                    string elemanAdi = sablon.BilesikMi ? $"C{elemanlar[k].Eksen + 1} {es.Ad}" : $"Eleman {k + 1}";
+                    foreach (var d in es.Delikler)
                     {
                         if (d.CapMm <= 0 || d.DerinlikMm <= 0) continue;
-                        double konumMm = konumlar[k] + d.XMm;
+                        double konumMm = elemanlar[k].Konum + d.XMm;
                         if (konumMm < 0 || konumMm > boy / MM)
                         {
-                            plan.Uyarilar.Add($"Eleman {k + 1}: {d.Tur} Ø{d.CapMm} birleşim dışında ({konumMm:0.#} mm / {boy / MM:0.#} mm) — atlandı.");
+                            plan.Uyarilar.Add($"{elemanAdi}: {d.Tur} Ø{d.CapMm} birleşim dışında ({konumMm:0.#} mm / {boy / MM:0.#} mm) — atlandı.");
                             continue;
                         }
                         double u = sec.YonTers ? u1 - konumMm * MM : u0 + konumMm * MM;
@@ -218,7 +240,7 @@ namespace UretimOSKesim
                         var merkezParca = Donustur(mu, merkez, hedef.TrTers, nokta: true);
                         var normalParca = Birim(Donustur(mu, yuzNormali, hedef.TrTers, nokta: false));
                         var yuz = HedefYuzBul(hedef.Yuzler, merkezParca, normalParca, d.CapMm * MM / 2);
-                        string ad = $"Eleman {k + 1} {TurAdi(d.Tur)} Ø{d.CapMm:0.#}×{d.DerinlikMm:0.#}";
+                        string ad = $"{elemanAdi} {TurAdi(d.Tur)} Ø{d.CapMm:0.#}×{d.DerinlikMm:0.#}";
                         if (yuz == null)
                         {
                             var ayniYon = hedef.Yuzler.Where(y => Nokta(y.NParca, normalParca) > 0.999).ToList();
@@ -250,21 +272,31 @@ namespace UretimOSKesim
         // yeniden uygulanmalı.
         private static void ModelleriYerlestir(ISldWorks app, MathUtility mu, ModelDoc2 montaj, BaglantiPlani plan, List<string> uyarilar, BaglantiKaydiVerisi kayit)
         {
-            if (string.IsNullOrEmpty(plan.ModelYolu) || plan.ElemanCerceveleri.Count == 0) return;
-            if (!System.IO.File.Exists(plan.ModelYolu)) { uyarilar.Add("3B model dosyası bulunamadı: " + plan.ModelYolu); return; }
+            if (!plan.ModelVar) return;
             try
             {
-                bool montajMi = plan.ModelYolu.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase);
                 int h = 0, w = 0;
                 // AddComponent5 için model belleğe yüklenmiş olmalı.
-                app.OpenDoc6(plan.ModelYolu, montajMi ? (int)swDocumentTypes_e.swDocASSEMBLY : (int)swDocumentTypes_e.swDocPART,
-                    (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref h, ref w);
+                var yuklu = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var yol in plan.ElemanModelYollari.Where(y => y != null).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!System.IO.File.Exists(yol)) { uyarilar.Add("3B model dosyası bulunamadı: " + yol); continue; }
+                    bool montajMi = yol.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase);
+                    app.OpenDoc6(yol, montajMi ? (int)swDocumentTypes_e.swDocASSEMBLY : (int)swDocumentTypes_e.swDocPART,
+                        (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref h, ref w);
+                    yuklu.Add(yol);
+                }
+                if (yuklu.Count == 0) return;
                 app.ActivateDoc3(montaj.GetTitle(), false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref h);
                 var asm = (AssemblyDoc)montaj;
-                int eklenen = 0;
-                foreach (var cer in plan.ElemanCerceveleri)
+                int eklenen = 0, istenen = 0;
+                for (int i = 0; i < plan.ElemanCerceveleri.Count; i++)
                 {
-                    var bilesen = asm.AddComponent5(plan.ModelYolu, (int)swAddComponentConfigOptions_e.swAddComponentConfigOptions_CurrentSelectedConfig,
+                    string modelYolu = plan.ElemanModelYollari[i];
+                    if (modelYolu == null || !yuklu.Contains(modelYolu)) continue;
+                    istenen++;
+                    var cer = plan.ElemanCerceveleri[i];
+                    var bilesen = asm.AddComponent5(modelYolu, (int)swAddComponentConfigOptions_e.swAddComponentConfigOptions_CurrentSelectedConfig,
                         "", false, "", cer[0][0], cer[0][1], cer[0][2]);
                     if (bilesen == null) { uyarilar.Add("3B model eklenemedi (AddComponent5 null)."); continue; }
                     // MathTransform dizisi: [X ekseni, Y ekseni, Z ekseni, öteleme, ölçek, 0,0,0]
@@ -280,7 +312,7 @@ namespace UretimOSKesim
                     kayit?.Bilesenler.Add(bilesen.Name2);
                     eklenen++;
                 }
-                Tanilama.Kaydet($"BaglantiUygulayici.ModelleriYerlestir: {eklenen}/{plan.ElemanCerceveleri.Count} model eklendi ({plan.ModelYolu})");
+                Tanilama.Kaydet($"BaglantiUygulayici.ModelleriYerlestir: {eklenen}/{istenen} model eklendi ({string.Join(", ", yuklu.Select(System.IO.Path.GetFileName))})");
             }
             catch (Exception ex)
             {
@@ -612,14 +644,33 @@ namespace UretimOSKesim
 
                 // Kesim, sketch'in açıldığı yüzden malzemenin içine doğru
                 // gider; ters çıkarsa (null) yön çevrilip bir kez daha denenir.
+                double hacimOnce = Hacim(belge);
                 var ozellik = KesimYap(belge, d.DerinlikMm * MM, false);
                 if (ozellik == null)
                 {
+                    Tanilama.Kaydet($"BaglantiUygulayici.DelikKes: {d.Aciklama} ilk kesim null — yön çevrilip yeniden deneniyor");
                     var sk = belge.FeatureByPositionReverse(0) as Feature;
                     belge.ClearSelection2(true);
                     if (sk != null && sk.Select2(false, 0)) ozellik = KesimYap(belge, d.DerinlikMm * MM, true);
                 }
                 if (ozellik == null) { hata = "kesim oluşturulamadı (FeatureCut4 null)"; return false; }
+                // KULLANICI TESTİ: "uygulama yaptığımda ... yan tablanın
+                // kalınlığını 8mm ye düşürdü". Bir delik kesimi en fazla
+                // πr²·derinlik kadar malzeme götürür; fazlası (profil dışını
+                // kesmek gibi) parçayı bozar — kesim sketch'iyle birlikte silinir.
+                double hacimSonra = Hacim(belge);
+                double beklenen = Math.PI * Math.Pow(d.CapMm * MM / 2, 2) * d.DerinlikMm * MM;
+                if (hacimOnce > 0 && hacimSonra > 0 && hacimOnce - hacimSonra > beklenen * 1.2 + 1e-8)
+                {
+                    Tanilama.Kaydet($"BaglantiUygulayici.DelikKes: {d.Aciklama} beklenenden fazla malzeme kesti " +
+                                    $"({(hacimOnce - hacimSonra) * 1e9:0} mm³ > {beklenen * 1e9:0} mm³) — kesim geri alınıyor");
+                    belge.ClearSelection2(true);
+                    if (ozellik.Select2(false, 0))
+                        belge.Extension.DeleteSelection2((int)swDeleteSelectionOptions_e.swDelete_Absorbed);
+                    belge.ClearSelection2(true);
+                    hata = "kesim panelden delik hacminden fazla malzeme götürdü — geri alındı";
+                    return false;
+                }
                 try { ozellik.Name = $"UOS {sablonAdi} {d.Aciklama}"; } catch { /* ad çakışırsa SolidWorks'ün verdiği ad kalır */ }
                 ozellikAdi = ozellik.Name; // çakışmada SolidWorks'ün verdiği GERÇEK ad (silerken bununla bulunur)
                 return true;
@@ -633,13 +684,30 @@ namespace UretimOSKesim
             }
         }
 
+        // Parçanın tüm katı gövdelerinin hacmi (m³); okunamazsa 0.
+        private static double Hacim(ModelDoc2 belge)
+        {
+            try
+            {
+                double toplam = 0;
+                if ((belge as PartDoc)?.GetBodies2((int)swBodyType_e.swSolidBody, true) is object[] govdeler)
+                    foreach (Body2 g in govdeler.Cast<Body2>())
+                        if (g.GetMassProperties(1.0) is double[] mp && mp.Length > 3) toplam += mp[3];
+                return toplam;
+            }
+            catch { return 0; }
+        }
+
         // FeatureCut4 — HirdavatDelikUygulayici'de gerçek derlemede doğrulanan
         // 27 parametreli imza; burada uç koşulu Blind + derinlik.
+        // DİKKAT: 2. parametre Flip = "profilin DIŞINI kes" — önceden yön
+        // çevirmek için bu veriliyordu ve dairenin dışındaki tüm yüzey delik
+        // derinliği kadar sökülüyordu (panel 18 → 4 mm). Yön 3. parametredir (Dir).
         private static Feature KesimYap(ModelDoc2 belge, double derinlikM, bool ters)
         {
             var fm = (IFeatureManager)belge.FeatureManager;
             return fm.FeatureCut4(
-                true, ters, false, (int)swEndConditions_e.swEndCondBlind, 0,
+                true, false, ters, (int)swEndConditions_e.swEndCondBlind, 0,
                 derinlikM, 0.0,
                 false, false, false, false, 0.0, 0.0,
                 false, false, false, false, false,
