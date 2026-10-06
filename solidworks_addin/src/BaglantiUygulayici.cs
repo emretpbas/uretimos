@@ -586,7 +586,10 @@ namespace UretimOSKesim
             }
             int e = 0;
             app.ActivateDoc3(montaj.GetTitle(), false, (int)swRebuildOnActivation_e.swRebuildActiveDoc, ref e);
-            ModelleriYerlestir(app, mu, montaj, plan, uyarilar, kayit);
+            // Hiç delik açılamadıysa (ör. bağlantı aynı yere ikinci kez
+            // uygulandı) model de eklenmez — yoksa üst üste model birikiyordu.
+            if (acilan > 0) ModelleriYerlestir(app, mu, montaj, plan, uyarilar, kayit);
+            else if (plan.ModelVar) uyarilar.Add("Hiç delik açılamadı — 3B model eklenmedi.");
             try { montaj.EditRebuild3(); } catch { }
             Tanilama.Kaydet($"BaglantiUygulayici.Uygula: {acilan}/{plan.Delikler.Count} delik açıldı");
             return acilan;
@@ -645,15 +648,26 @@ namespace UretimOSKesim
                 // Kesim, sketch'in açıldığı yüzden malzemenin içine doğru
                 // gider; ters çıkarsa (null) yön çevrilip bir kez daha denenir.
                 double hacimOnce = Hacim(belge);
+                var sk = belge.FeatureByPositionReverse(0) as Feature; // az önce kapatılan sketch
                 var ozellik = KesimYap(belge, d.DerinlikMm * MM, false);
                 if (ozellik == null)
                 {
                     Tanilama.Kaydet($"BaglantiUygulayici.DelikKes: {d.Aciklama} ilk kesim null — yön çevrilip yeniden deneniyor");
-                    var sk = belge.FeatureByPositionReverse(0) as Feature;
                     belge.ClearSelection2(true);
                     if (sk != null && sk.Select2(false, 0)) ozellik = KesimYap(belge, d.DerinlikMm * MM, true);
                 }
-                if (ozellik == null) { hata = "kesim oluşturulamadı (FeatureCut4 null)"; return false; }
+                if (ozellik == null)
+                {
+                    // KULLANICI TESTİ: kesim iki yönde de açılamayınca sketch
+                    // ağaçta sahipsiz kalıyordu ("(-) Çizim87…98") — silinir.
+                    belge.ClearSelection2(true);
+                    if (sk != null && sk.GetTypeName2() == "ProfileFeature" && sk.Select2(false, 0))
+                        belge.Extension.DeleteSelection2(0);
+                    belge.ClearSelection2(true);
+                    Tanilama.Kaydet($"BaglantiUygulayici.DelikKes: {d.Aciklama} iki yönde de kesilemedi — sketch silindi");
+                    hata = "kesim oluşturulamadı (o noktada kesilecek malzeme yok — delik zaten açık olabilir)";
+                    return false;
+                }
                 // KULLANICI TESTİ: "uygulama yaptığımda ... yan tablanın
                 // kalınlığını 8mm ye düşürdü". Bir delik kesimi en fazla
                 // πr²·derinlik kadar malzeme götürür; fazlası (profil dışını
