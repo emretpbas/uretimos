@@ -409,6 +409,26 @@ namespace UretimOSKesim
             return false;
         }
 
+        // KULLANICI RAPORU: "üst üste binmiş ve düzlemsellikten ayrılmış
+        // çizgiler" — ALT TABLA'nın arka yüzünde kanal olduğu için referans,
+        // Linco ceplerinin açıldığı yüz oldu; ceplerin kenara açık çentikleri
+        // dış hatta karıştı (log: dishat=148 nokta, düz panelde 4), kenar eğik
+        // çizildi ve cep daireleri dış hatla üst üste bindi. Kör (boydan boya
+        // OLMAYAN) bir yüzey deliğinin çemberi üzerindeki ya da içindeki dış
+        // hat noktaları atılır — kenar köşeden köşeye düz kalır. Boydan boya
+        // delik/çentikler gerçek dış hattır, dokunulmaz.
+        private static List<double[]> DisHattanCentikleriAt(List<double[]> xy, ParcaGeometrisi sonuc)
+        {
+            var korDelikler = sonuc.Delikler.Where(d => d.YuzeyeDik && !d.TumBoyu).ToList();
+            if (korDelikler.Count == 0) return xy;
+            var temiz = xy.Where(n => !korDelikler.Any(d =>
+                Math.Sqrt((n[0] - d.XMm) * (n[0] - d.XMm) + (n[1] - d.YMm) * (n[1] - d.YMm)) < d.CapMm / 2.0 + DAIRE_UZERINDE_TOL_MM)).ToList();
+            if (temiz.Count < 3) return xy;
+            if (temiz.Count != xy.Count)
+                Tanilama.Kaydet($"DelikFormCikarici: dış hattan {xy.Count - temiz.Count} cep çentiği noktası atıldı ({xy.Count} → {temiz.Count})");
+            return temiz;
+        }
+
         // Loop'un tüm noktaları ya bulunmuş bir deliğin çemberi üzerinde ya da
         // parça çerçevesinin kenarında mı? Öyleyse loop, zaten delik olarak
         // çizilen dairelerin birleşiminden ibarettir (Linco cebi: iç içe 3×Ø18,
@@ -529,7 +549,7 @@ namespace UretimOSKesim
 
                     if (dis)
                     {
-                        sonuc.DisHat = xy;
+                        sonuc.DisHat = DisHattanCentikleriAt(xy, sonuc);
                         continue;
                     }
                     if (hepsiDaire)
