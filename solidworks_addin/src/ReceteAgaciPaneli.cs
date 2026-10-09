@@ -5512,7 +5512,7 @@ namespace UretimOSKesim
                 FileName = varsayilanAd + "_recete.xml"
             })
             {
-                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                if (kaydetDialog.ShowDialog(this) != DialogResult.OK) return;
                 try
                 {
                     new System.Xml.Linq.XDocument(
@@ -5774,7 +5774,33 @@ namespace UretimOSKesim
         // çıktısıdır; ReceteyiXmlOlarakDisaAktar (aşağıda) ise sunucudaki
         // GERÇEK kaydedilmiş reçeteyi dışa aktarır — ikisi BİLEREK ayrı
         // butonlar/dosyalardır.
+        // KULLANICI RAPORU: "BİLEŞEN AĞACINI XML OLARAK DIŞA AKTAR SEKMESİ
+        // ÇALIŞMIYOR" — günlükte HİÇ iz yoktu: gövdenin büyük kısmı try/catch
+        // dışındaydı (async void Click'te istisna sessizce kayboluyordu),
+        // teknik dosya bilgisi her kart için SIRAYLA ve zaman aşımı OLMADAN
+        // isteniyordu (büyük ağaçta dakikalarca "toplanıyor…"), kaydet
+        // penceresi sahipsiz açılıyordu (SolidWorks'ün arkasında kalabiliyor)
+        // ve await sonrası yanlış iş parçacığında çalışabiliyordu.
         private async System.Threading.Tasks.Task BilesenAgaciniXmlOlarakDisaAktar()
+        {
+            Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar basladi");
+            try
+            {
+                await BilesenAgaciniXmlOlarakDisaAktarIc();
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar HATA: " + ex);
+                AnaPencerede(() =>
+                {
+                    _durumEtiketi.ForeColor = Color.DarkRed;
+                    _durumEtiketi.Text = "Bileşen ağacı XML'i oluşturulamadı: " + ex.Message;
+                    MessageBox.Show(this, "Bileşen ağacı XML'i oluşturulamadı:\n" + ex.Message,"ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                });
+            }
+        }
+
+        private async System.Threading.Tasks.Task BilesenAgaciniXmlOlarakDisaAktarIc()
         {
             if (_bilesenKokListesi == null || _bilesenKokListesi.Count == 0)
             {
@@ -5804,18 +5830,40 @@ namespace UretimOSKesim
                     }
                 }
                 Topla(_bilesenKokListesi);
-                foreach (var (tip, refId, kod, ad) in toplanan.Distinct())
+                var benzersiz = toplanan.GroupBy(t => t.tip + "|" + t.refId).Select(g => g.First()).ToList();
+                Tanilama.Kaydet($"BilesenAgaciniXmlOlarakDisaAktar: {benzersiz.Count} kart için teknik dosya bilgisi isteniyor");
+                // En fazla 6 eşzamanlı istek; her biri 15 sn'de cevap vermezse
+                // o kart teknik dosyasız yazılır (XML yine de üretilir).
+                var sinir = new System.Threading.SemaphoreSlim(6);
+                var sure = System.Diagnostics.Stopwatch.StartNew();
+                var gorevler = benzersiz.Select(async t =>
                 {
-                    string anahtar = tip + "|" + refId;
-                    if (teknikDosyaHaritasi.ContainsKey(anahtar)) continue;
-                    try { teknikDosyaHaritasi[anahtar] = await _istemci.TeknikDosyalariGetir(tip, refId, kod, ad); }
+                    await sinir.WaitAsync();
+                    try
+                    {
+                        var istek = _istemci.TeknikDosyalariGetir(t.tip, t.refId, t.kod, t.ad);
+                        var biten = await System.Threading.Tasks.Task.WhenAny(istek, System.Threading.Tasks.Task.Delay(15000));
+                        if (biten != istek) { Tanilama.Kaydet($"BilesenAgaciniXmlOlarakDisaAktar (teknik dosya) ZAMAN AŞIMI: {t.kod}"); return (anahtar: t.tip + "|" + t.refId, dosyalar: new JArray()); }
+                        return (anahtar: t.tip + "|" + t.refId, dosyalar: await istek ?? new JArray());
+                    }
                     catch (Exception ex)
                     {
-                        Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar (teknik dosya) HATA: " + ex);
-                        teknikDosyaHaritasi[anahtar] = new JArray();
+                        Tanilama.Kaydet($"BilesenAgaciniXmlOlarakDisaAktar (teknik dosya) HATA {t.kod}: " + ex.Message);
+                        return (anahtar: t.tip + "|" + t.refId, dosyalar: new JArray());
                     }
-                }
+                    finally { sinir.Release(); }
+                }).ToList();
+                foreach (var (anahtar, dosyalar) in await System.Threading.Tasks.Task.WhenAll(gorevler))
+                    teknikDosyaHaritasi[anahtar] = dosyalar;
+                Tanilama.Kaydet($"BilesenAgaciniXmlOlarakDisaAktar: teknik dosya bilgisi toplandı ({sure.ElapsedMilliseconds} ms)");
             }
+
+            // Buradan sonrası (SolidWorks COM + pencere) UI iş parçacığında.
+            AnaPencerede(() => BilesenAgaciXmlYaz(teknikDosyaHaritasi));
+        }
+
+        private void BilesenAgaciXmlYaz(Dictionary<string, JArray> teknikDosyaHaritasi)
+        {
 
             System.Xml.Linq.XElement BilesenElemaniOlustur(BilesenDugumu d)
             {
@@ -5883,9 +5931,19 @@ namespace UretimOSKesim
                 new System.Xml.Linq.XAttribute("disaAktarmaTarihi", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")));
             foreach (var d in _bilesenKokListesi) kokEleman.Add(BilesenElemaniOlustur(d));
 
-            using (var kaydetDialog = new SaveFileDialog { Filter = "XML dosyası|*.xml", FileName = "bilesen_agaci.xml" })
+            Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar: XML oluşturuldu, kaydet penceresi açılıyor");
+            string varsayilanAd = _hedefModel != null ? Path.GetFileNameWithoutExtension(_hedefModel.GetPathName()) : "bilesen";
+            foreach (char c in Path.GetInvalidFileNameChars()) varsayilanAd = varsayilanAd.Replace(c, '_');
+            _durumEtiketi.ForeColor = Tema.MetinKoyu;
+            _durumEtiketi.Text = "Bileşen ağacı XML'i hazır — kaydedilecek yeri seçin.";
+            using (var kaydetDialog = new SaveFileDialog { Filter = "XML dosyası|*.xml", FileName = varsayilanAd + "_bilesen_agaci.xml" })
             {
-                if (kaydetDialog.ShowDialog() != DialogResult.OK) return;
+                if (kaydetDialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar: kullanıcı kaydetmekten vazgeçti");
+                    _durumEtiketi.Text = "Bileşen ağacı XML'i kaydedilmedi (vazgeçildi).";
+                    return;
+                }
                 try
                 {
                     new System.Xml.Linq.XDocument(
@@ -5894,6 +5952,7 @@ namespace UretimOSKesim
                     ).Save(kaydetDialog.FileName);
                     _durumEtiketi.ForeColor = Color.DarkGreen;
                     _durumEtiketi.Text = "✓ Bileşen ağacı XML olarak dışa aktarıldı: " + kaydetDialog.FileName;
+                    Tanilama.Kaydet("BilesenAgaciniXmlOlarakDisaAktar: kaydedildi " + kaydetDialog.FileName);
                 }
                 catch (Exception ex)
                 {
