@@ -423,7 +423,7 @@ namespace UretimOSKesim
             _paletTipKutusu.Items.AddRange(new object[] { "Ürün", "Paket", "Yarı Mamül", "Alt Montaj", "Hırdavat", "Plaka", "Kenar Bandı", "Sarf Malzeme" });
             _paletTipKutusu.SelectedIndexChanged += (s, e) => PaletiFiltrele();
             _paletAramaKutusu = new TextBox { Dock = DockStyle.Top };
-            _paletAramaKutusu.TextChanged += (s, e) => PaletiFiltrele();
+            AramaGecikmeliBagla(_paletAramaKutusu, PaletiFiltrele);
             var aramaEtiket = new Label { Text = "Kod/ad ara:", Dock = DockStyle.Top, Height = 18, AutoSize = false };
             _paletListesi = new ListBox { Dock = DockStyle.Fill, AllowDrop = false, IntegralHeight = false };
             _paletListesi.MouseDown += PaletListesi_MouseDown;
@@ -1107,7 +1107,11 @@ namespace UretimOSKesim
         private async System.Threading.Tasks.Task<bool> SunucuyaTopluYaz(string anahtar, List<object> ekle, List<object> guncelle)
         {
             bool basarili = await _istemci.ToplukaEkleGuncelle(anahtar, ekle, guncelle);
-            if (basarili) YerelVeriOnbelleginiYazmayiPlanla();
+            if (basarili)
+            {
+                AnaPencerede(AramaDizinleriniTemizle);
+                YerelVeriOnbelleginiYazmayiPlanla();
+            }
             return basarili;
         }
 
@@ -3073,22 +3077,12 @@ namespace UretimOSKesim
                 void Doldur()
                 {
                     string tip = tipKutu.SelectedItem as string;
-                    IEnumerable<PaletOgesi> kaynak = tip == "Hırdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
-                        : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
-                        : tip == "Kenar Bandı" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
-                        : tip == "Sarf Malzeme" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
-                        : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
-                        : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
-                        : tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
-                        : _urunler.Select(k => Ogeye(k, "urun", "Ürün"));
-                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
-                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
-                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    mevcutListe = KartAra(AramaAnahtari(tip), aramaKutu.Text);
                     liste.Items.Clear();
                     liste.Items.AddRange(mevcutListe.ToArray());
                 }
                 tipKutu.SelectedIndexChanged += (s, e) => Doldur();
-                aramaKutu.TextChanged += (s, e) => Doldur();
+                AramaGecikmeliBagla(aramaKutu, Doldur);
                 ekleBtn.Click += (s, e) =>
                 {
                     if (!(liste.SelectedItem is PaletOgesi secilen)) return;
@@ -3638,28 +3632,118 @@ namespace UretimOSKesim
             if (IsDisposed) return;
             if (!_verilerYuklendi) return;
             string secim = _paletTipKutusu.SelectedItem as string ?? "Paket";
-            string arama = (_paletAramaKutusu.Text ?? "").Trim().ToLowerInvariant();
-
-            IEnumerable<PaletOgesi> kaynak;
-            switch (secim)
-            {
-                case "Ürün": kaynak = _urunler.Select(k => Ogeye(k, "urun", "Ürün")); break;
-                case "Paket": kaynak = _paketler.Select(k => Ogeye(k, "paket", "Paket")); break;
-                case "Yarı Mamül": kaynak = _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül")); break;
-                case "Alt Montaj": kaynak = _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj")); break;
-                case "Hırdavat": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat")); break;
-                case "Plaka": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka")); break;
-                case "Kenar Bandı": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı")); break;
-                case "Sarf Malzeme": kaynak = _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme")); break;
-                default: kaynak = Enumerable.Empty<PaletOgesi>(); break;
-            }
-
-            _paletTumOgeler = kaynak.Where(o => o != null &&
-                (string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama)))
-                .OrderBy(o => o.Kod).Take(300).ToList();
+            // bkz. KartAra — dizinli, ilk 300 eşleşmede durur.
+            _paletTumOgeler = KartAra(AramaAnahtari(secim), _paletAramaKutusu.Text);
 
             _paletListesi.Items.Clear();
             _paletListesi.Items.AddRange(_paletTumOgeler.ToArray());
+        }
+
+        // ── KART ARAMA (tüm seçim pencereleri + sol palet) ───────────────────
+        // KULLANICI RAPORU: "96000 yarımamülden seçim çok yavaş oluyor" —
+        // KÖK NEDEN: her tuş vuruşunda listenin TAMAMI için PaletOgesi
+        // oluşturuluyordu; Ogeye() yarımamül/alt montaj için HER kartta
+        // NeredeKullaniliyor() ile TÜM reçeteleri tarıyordu (96.000 × reçete
+        // kalemleri), ardından eşleşenlerin hepsi sıralanıp ilk 300 alınıyordu.
+        // Artık her liste için kod sırasına dizilmiş, küçük harfli
+        // "kod\nad" metinlerinden oluşan bir dizin BİR KEZ kurulur; arama bu
+        // dizinde ilk 300 eşleşmede durur ve PaletOgesi (kullanım analizi
+        // dahil) yalnızca gösterilecek satırlar için üretilir.
+        private sealed class AramaKaydi
+        {
+            public JToken Kart;
+            public string Kod;
+            public string Metin;
+        }
+
+        private readonly Dictionary<string, (JArray kaynak, int sayi, List<AramaKaydi> kayitlar)> _aramaDizinleri
+            = new Dictionary<string, (JArray, int, List<AramaKaydi>)>();
+
+        // Kart eklenince/güncellenince (bkz. SunucuyaTopluYaz) dizinler
+        // bir sonraki aramada yeniden kurulur.
+        private void AramaDizinleriniTemizle() => _aramaDizinleri.Clear();
+
+        // Görünen etiket ("Yarı Mamül") ya da iç değer ("yarimamul") → dizin anahtarı.
+        private static string AramaAnahtari(string tipVeyaEtiket)
+        {
+            switch (tipVeyaEtiket)
+            {
+                case "Ürün": case "urun": return "urun";
+                case "Yarı Mamül": case "yarimamul": return "yarimamul";
+                case "Alt Montaj": case "altmontaj": return "altmontaj";
+                case "Paket": case "paket": return "paket";
+                case "Hırdavat": case "hirdavat": return "hirdavat";
+                case "Plaka": case "plaka": return "plaka";
+                case "Kenar Bandı": case "kenar_bandi": return "kenar_bandi";
+                case "Sarf Malzeme": case "sarf": return "sarf";
+                case "hammadde": return "hammadde";
+                default: return null;
+            }
+        }
+
+        private List<AramaKaydi> AramaDizini(string anahtar)
+        {
+            bool hammaddeMi = anahtar == "hirdavat" || anahtar == "plaka" || anahtar == "kenar_bandi" || anahtar == "sarf" || anahtar == "hammadde";
+            JArray kaynak = anahtar == "urun" ? _urunler
+                : anahtar == "yarimamul" ? _yarimamuller
+                : anahtar == "altmontaj" ? _altMontajlar
+                : anahtar == "paket" ? _paketler
+                : hammaddeMi ? _hammaddeler
+                : null;
+            if (kaynak == null) return new List<AramaKaydi>();
+            if (_aramaDizinleri.TryGetValue(anahtar, out var mevcut) && ReferenceEquals(mevcut.kaynak, kaynak) && mevcut.sayi == kaynak.Count)
+                return mevcut.kayitlar;
+
+            var sure = System.Diagnostics.Stopwatch.StartNew();
+            var kayitlar = new List<AramaKaydi>();
+            foreach (var k in kaynak)
+            {
+                if (k == null || k.Type != JTokenType.Object) continue;
+                if (hammaddeMi && anahtar != "hammadde" && (string)k["tip"] != anahtar) continue;
+                string id = (string)k["id"];
+                string kod = (hammaddeMi ? (string)k["stokKodu"] : (string)k["kod"]) ?? id ?? "";
+                string ad = (string)k["ad"] ?? "";
+                kayitlar.Add(new AramaKaydi { Kart = k, Kod = kod, Metin = (kod + "\n" + ad).ToLowerInvariant() });
+            }
+            // Eski OrderBy(o => o.Kod) ile AYNI sıralama (varsayılan karşılaştırıcı).
+            var karsilastirici = Comparer<string>.Default;
+            kayitlar.Sort((a, b) => karsilastirici.Compare(a.Kod, b.Kod));
+            _aramaDizinleri[anahtar] = (kaynak, kaynak.Count, kayitlar);
+            Tanilama.Kaydet($"AramaDizini '{anahtar}': {kayitlar.Count} kayıt, {sure.ElapsedMilliseconds} ms");
+            return kayitlar;
+        }
+
+        private List<PaletOgesi> KartAra(string anahtar, string arama, int enFazla = 300)
+        {
+            var sonuc = new List<PaletOgesi>();
+            if (anahtar == null) return sonuc;
+            arama = (arama ?? "").Trim().ToLowerInvariant();
+            foreach (var kayit in AramaDizini(anahtar))
+            {
+                if (arama.Length > 0 && kayit.Metin.IndexOf(arama, StringComparison.Ordinal) < 0) continue;
+                PaletOgesi oge;
+                switch (anahtar)
+                {
+                    case "urun": oge = Ogeye(kayit.Kart, "urun", "Ürün"); break;
+                    case "yarimamul": oge = Ogeye(kayit.Kart, "yarimamul", "Yarı Mamül"); break;
+                    case "altmontaj": oge = Ogeye(kayit.Kart, "altmontaj", "Alt Montaj"); break;
+                    case "paket": oge = Ogeye(kayit.Kart, "paket", "Paket"); break;
+                    default: oge = OgeyeHammadde(kayit.Kart, HammaddeGosterimTipi((string)kayit.Kart["tip"])); break;
+                }
+                sonuc.Add(oge);
+                if (sonuc.Count >= enFazla) break;
+            }
+            return sonuc;
+        }
+
+        // Arama kutusu her tuşta değil, yazma durduktan 250 ms sonra listeyi
+        // doldurur (art arda harflerde tekrar tekrar arama yapılmaz).
+        private static void AramaGecikmeliBagla(TextBox kutu, Action doldur)
+        {
+            var zamanlayici = new System.Windows.Forms.Timer { Interval = 250 };
+            zamanlayici.Tick += (s, e) => { zamanlayici.Stop(); doldur(); };
+            kutu.TextChanged += (s, e) => { zamanlayici.Stop(); zamanlayici.Start(); };
+            kutu.Disposed += (s, e) => zamanlayici.Dispose();
         }
 
         private PaletOgesi Ogeye(JToken k, string kalemTipi, string gosterimTipi)
@@ -3965,24 +4049,6 @@ namespace UretimOSKesim
             return true;
         }
 
-        // Sınıfa göre "mevcut kartlardan seç" listesinin kaynağı —
-        // KokKartSeciciAc'in Doldur()'ündeki AYNI eşleme, yalnızca dış
-        // görünüm etiketi yerine iç sınıf değerine göre anahtarlanmış.
-        private List<PaletOgesi> SinifKaynakListesi(string sinif)
-        {
-            IEnumerable<PaletOgesi> kaynak =
-                sinif == "urun" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
-                : sinif == "yarimamul" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
-                : sinif == "altmontaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
-                : sinif == "paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
-                : sinif == "plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
-                : sinif == "kenar_bandi" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
-                : sinif == "sarf" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
-                : sinif == "hirdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
-                : Enumerable.Empty<PaletOgesi>();
-            return kaynak.ToList();
-        }
-
         // Bir düğümü, ÜretimOS'ta ZATEN VAR olan bir karttan arayıp seçerek
         // eşleştirir. KokKartSeciciAc'ten BİLEREK AYRI: o, PANELİN KÖK
         // kartını (_kokKart/_kokTip, "Kaydet" butonu, rota paneli) değiştirir
@@ -3996,17 +4062,13 @@ namespace UretimOSKesim
                 var liste = new ListBox { Dock = DockStyle.Fill };
                 var tamamBtn = new Button { Text = "Seç", Dock = DockStyle.Bottom };
 
-                var kaynakListe = SinifKaynakListesi(dugum.Sinif);
                 void Doldur()
                 {
-                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
-                    var eslesenler = kaynakListe.Where(o => string.IsNullOrEmpty(arama)
-                        || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
-                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    var eslesenler = KartAra(AramaAnahtari(dugum.Sinif), aramaKutu.Text);
                     liste.Items.Clear();
                     liste.Items.AddRange(eslesenler.ToArray());
                 }
-                aramaKutu.TextChanged += (s, e) => Doldur();
+                AramaGecikmeliBagla(aramaKutu, Doldur);
 
                 void SeciliyiUygula()
                 {
@@ -4255,22 +4317,12 @@ namespace UretimOSKesim
                 void Doldur()
                 {
                     string tip = tipKutu.SelectedItem as string;
-                    IEnumerable<PaletOgesi> kaynak = tip == "Ürün" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
-                        : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
-                        : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
-                        : tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
-                        : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
-                        : tip == "Kenar Bandı" ? _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"))
-                        : tip == "Sarf Malzeme" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
-                        : _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"));
-                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
-                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
-                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    mevcutListe = KartAra(AramaAnahtari(tip), aramaKutu.Text);
                     liste.Items.Clear();
                     liste.Items.AddRange(mevcutListe.ToArray());
                 }
                 tipKutu.SelectedIndexChanged += (s, e) => Doldur();
-                aramaKutu.TextChanged += (s, e) => Doldur();
+                AramaGecikmeliBagla(aramaKutu, Doldur);
                 void SeciliyiUygula()
                 {
                     if (liste.SelectedItem is PaletOgesi secilen)
@@ -5046,18 +5098,11 @@ namespace UretimOSKesim
                 List<PaletOgesi> mevcutListe = new List<PaletOgesi>();
                 void Doldur()
                 {
-                    IEnumerable<PaletOgesi> kaynak = tip == "urun" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
-                        : tip == "yarimamul" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
-                        : tip == "altmontaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
-                        : tip == "paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
-                        : _hammaddeler.Select(k => OgeyeHammadde(k, HammaddeGosterimTipi((string)((JObject)k)["tip"])));
-                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
-                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
-                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    mevcutListe = KartAra(AramaAnahtari(tip), aramaKutu.Text);
                     liste.Items.Clear();
                     liste.Items.AddRange(mevcutListe.ToArray());
                 }
-                aramaKutu.TextChanged += (s, e) => Doldur();
+                AramaGecikmeliBagla(aramaKutu, Doldur);
                 tamamBtn.Click += (s, e) =>
                 {
                     if (liste.SelectedItem is PaletOgesi secilen)
@@ -5096,21 +5141,12 @@ namespace UretimOSKesim
                 void Doldur()
                 {
                     string tip = tipKutu.SelectedItem as string;
-                    IEnumerable<PaletOgesi> kaynak = tip == "Paket" ? _paketler.Select(k => Ogeye(k, "paket", "Paket"))
-                        : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
-                        : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
-                        : tip == "Hırdavat" ? _hammaddeler.Where(h => (string)h["tip"] == "hirdavat").Select(k => OgeyeHammadde(k, "Hırdavat"))
-                        : tip == "Plaka" ? _hammaddeler.Where(h => (string)h["tip"] == "plaka").Select(k => OgeyeHammadde(k, "Plaka"))
-                        : tip == "Sarf Malzeme" ? _hammaddeler.Where(h => (string)h["tip"] == "sarf").Select(k => OgeyeHammadde(k, "Sarf Malzeme"))
-                        : _hammaddeler.Where(h => (string)h["tip"] == "kenar_bandi").Select(k => OgeyeHammadde(k, "Kenar Bandı"));
-                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
-                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
-                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    mevcutListe = KartAra(AramaAnahtari(tip), aramaKutu.Text);
                     liste.Items.Clear();
                     liste.Items.AddRange(mevcutListe.ToArray());
                 }
                 tipKutu.SelectedIndexChanged += (s, e) => Doldur();
-                aramaKutu.TextChanged += (s, e) => Doldur();
+                AramaGecikmeliBagla(aramaKutu, Doldur);
                 ekleBtn.Click += (s, e) =>
                 {
                     if (liste.SelectedItem is PaletOgesi secilen)
@@ -5146,18 +5182,12 @@ namespace UretimOSKesim
                 void Doldur()
                 {
                     string tip = tipKutu.SelectedItem as string;
-                    IEnumerable<PaletOgesi> kaynak = tip == "Ürün" ? _urunler.Select(k => Ogeye(k, "urun", "Ürün"))
-                        : tip == "Yarı Mamül" ? _yarimamuller.Select(k => Ogeye(k, "yarimamul", "Yarı Mamül"))
-                        : tip == "Alt Montaj" ? _altMontajlar.Select(k => Ogeye(k, "altmontaj", "Alt Montaj"))
-                        : _paketler.Select(k => Ogeye(k, "paket", "Paket"));
-                    string arama = (aramaKutu.Text ?? "").Trim().ToLowerInvariant();
-                    mevcutListe = kaynak.Where(o => string.IsNullOrEmpty(arama) || (o.Kod ?? "").ToLowerInvariant().Contains(arama) || (o.Ad ?? "").ToLowerInvariant().Contains(arama))
-                        .OrderBy(o => o.Kod).Take(300).ToList();
+                    mevcutListe = KartAra(AramaAnahtari(tip), aramaKutu.Text);
                     liste.Items.Clear();
                     liste.Items.AddRange(mevcutListe.ToArray());
                 }
                 tipKutu.SelectedIndexChanged += (s, e) => Doldur();
-                aramaKutu.TextChanged += (s, e) => Doldur();
+                AramaGecikmeliBagla(aramaKutu, Doldur);
                 tasiBtn.Click += (s, e) =>
                 {
                     if (!(liste.SelectedItem is PaletOgesi secilen)) return;
