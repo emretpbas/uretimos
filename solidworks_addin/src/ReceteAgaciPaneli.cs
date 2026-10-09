@@ -2153,14 +2153,7 @@ namespace UretimOSKesim
 
                 string kartBirimi = KarttanBirim(dugum);
                 var birimKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 72, Margin = new Padding(2, 4, 6, 0) };
-                var birimler = new List<string>();
-                if (!string.IsNullOrWhiteSpace(kartBirimi)) birimler.Add(kartBirimi);
-                foreach (var b in StandartBirimler)
-                    if (!birimler.Contains(b, StringComparer.OrdinalIgnoreCase)) birimler.Add(b);
-                if (!string.IsNullOrWhiteSpace(dugum.Birim) && !birimler.Contains(dugum.Birim, StringComparer.OrdinalIgnoreCase)) birimler.Add(dugum.Birim);
-                birimKutusu.Items.AddRange(birimler.ToArray());
-                string seciliBirim = DugumBirimi(dugum);
-                birimKutusu.SelectedIndex = Math.Max(0, birimler.FindIndex(b => string.Equals(b, seciliBirim, StringComparison.OrdinalIgnoreCase)));
+                BirimKutusunuDoldur(birimKutusu, kartBirimi, dugum.Birim);
                 birimKutusu.SelectedIndexChanged += (s, e) =>
                 {
                     string secilen = birimKutusu.SelectedItem as string;
@@ -2316,10 +2309,22 @@ namespace UretimOSKesim
                 }
                 else if (e.Data.GetData(typeof(PaletOgesi)) is PaletOgesi secilen)
                 {
-                    var yeniDugum = BilesenSentetikCocukOlustur(secilen, dugum);
-                    if (yeniDugum == null) return;
-                    dugum.Cocuklar.Add(yeniDugum);
-                    BilesenAgaciniCiz();
+                    // Kullanıcı isteği: "her yeni ek kalem eklerken miktar ve
+                    // birim sor" — soru penceresi ve yeniden çizim, sürükle-
+                    // bırak (OLE) döngüsü bittikten SONRA açılır (bırakma
+                    // olayının içinde modal pencere/Dispose güvenli değil).
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (IsDisposed) return;
+                        var yeniDugum = BilesenSentetikCocukOlustur(secilen, dugum);
+                        if (yeniDugum == null) return;
+                        string kartBirimi = PaletOgesiBirimi(secilen);
+                        var cevap = MiktarBirimSor(secilen.Ad, kartBirimi);
+                        if (cevap == null) return;
+                        MiktarBirimUygula(yeniDugum, cevap.Value.miktar, cevap.Value.birim, kartBirimi);
+                        dugum.Cocuklar.Add(yeniDugum);
+                        BilesenAgaciniCiz();
+                    }));
                 }
             };
 
@@ -3170,6 +3175,76 @@ namespace UretimOSKesim
             return yeniDugum;
         }
 
+        // Birim açılır kutusu: kartın birimi en başta, ardından standart liste.
+        private static void BirimKutusunuDoldur(ComboBox kutu, string kartBirimi, string secili)
+        {
+            var birimler = new List<string>();
+            if (!string.IsNullOrWhiteSpace(kartBirimi)) birimler.Add(kartBirimi);
+            foreach (var b in StandartBirimler)
+                if (!birimler.Contains(b, StringComparer.OrdinalIgnoreCase)) birimler.Add(b);
+            if (!string.IsNullOrWhiteSpace(secili) && !birimler.Contains(secili, StringComparer.OrdinalIgnoreCase)) birimler.Add(secili);
+            kutu.Items.Clear();
+            kutu.Items.AddRange(birimler.ToArray());
+            string hedef = secili ?? kartBirimi ?? "ADET";
+            kutu.SelectedIndex = Math.Max(0, birimler.FindIndex(b => string.Equals(b, hedef, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private string PaletOgesiBirimi(PaletOgesi oge)
+        {
+            string birim = (string)FindKart(oge.KalemTipi, oge.Id)?["birim"];
+            return string.IsNullOrWhiteSpace(birim) ? null : birim;
+        }
+
+        private static bool MiktarOku(string metin, out double miktar)
+            => double.TryParse((metin ?? "").Trim().Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out miktar) && miktar > 0;
+
+        // Ek kalemin SolidWorks adedi yok (Miktar = 1) — girilen miktar 1'den
+        // farklıysa ElleMiktar'a, birim kartınkinden farklıysa Birim'e yazılır.
+        private static void MiktarBirimUygula(BilesenDugumu dugum, double miktar, string birim, string kartBirimi)
+        {
+            dugum.ElleMiktar = Math.Abs(miktar - dugum.Miktar) < 1e-9 ? (double?)null : miktar;
+            dugum.Birim = string.IsNullOrWhiteSpace(birim) || string.Equals(birim, kartBirimi ?? "ADET", StringComparison.OrdinalIgnoreCase) ? null : birim;
+        }
+
+        // Sol paletten sürükle-bırakla eklenen kalem için aynı soru — tek
+        // küçük pencerede miktar + birim (Vazgeç = kalem eklenmez).
+        private (double miktar, string birim)? MiktarBirimSor(string kalemAdi, string kartBirimi)
+        {
+            using (var f = new Form { Text = "Miktar ve Birim — " + kalemAdi, Width = 380, Height = 150, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
+            {
+                var satir = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(8, 6, 0, 0) };
+                var miktarKutu = new TextBox { Width = 70, Text = "1", TextAlign = HorizontalAlignment.Right, Margin = new Padding(3, 5, 12, 3) };
+                var birimKutu = new ComboBox { Width = 90, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(3, 4, 3, 3) };
+                BirimKutusunuDoldur(birimKutu, kartBirimi, null);
+                satir.Controls.Add(new Label { Text = "Miktar:", AutoSize = true, Padding = new Padding(0, 8, 0, 0) });
+                satir.Controls.Add(miktarKutu);
+                satir.Controls.Add(new Label { Text = "Birim:", AutoSize = true, Padding = new Padding(0, 8, 0, 0) });
+                satir.Controls.Add(birimKutu);
+                var tamamBtn = new Button { Text = "Ekle", Width = 90 };
+                var iptalBtn = new Button { Text = "Vazgeç", Width = 90, DialogResult = DialogResult.Cancel };
+                var altSatir = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft };
+                altSatir.Controls.Add(iptalBtn);
+                altSatir.Controls.Add(tamamBtn);
+                tamamBtn.Click += (s, e) =>
+                {
+                    if (!MiktarOku(miktarKutu.Text, out _))
+                    {
+                        MessageBox.Show("Geçerli bir miktar girin (0'dan büyük).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    f.DialogResult = DialogResult.OK;
+                };
+                f.AcceptButton = tamamBtn;
+                f.CancelButton = iptalBtn;
+                f.Controls.Add(satir);
+                f.Controls.Add(altSatir);
+                miktarKutu.SelectAll();
+                if (f.ShowDialog(this) != DialogResult.OK) return null;
+                MiktarOku(miktarKutu.Text, out double miktar);
+                return (miktar, birimKutu.SelectedItem as string);
+            }
+        }
+
         // "+ Ek Kalem" — gerçek bir SolidWorks bileşenine karşılık GELMEYEN,
         // mevcut bir ÜretimOS kartına doğrudan işaret eden sentetik bir alt
         // düğüm ekler (ör. modellenmemiş bir vida/tutkal kalemi).
@@ -3183,6 +3258,19 @@ namespace UretimOSKesim
                 var aramaKutu = new TextBox { Dock = DockStyle.Top };
                 var liste = new ListBox { Dock = DockStyle.Fill };
                 var ekleBtn = new Button { Text = "Ekle", Dock = DockStyle.Bottom };
+
+                // Kullanıcı isteği: "her yeni ek kalem eklerken miktar ve birim
+                // sor, aynı sayfada olsun" — birim, listede seçilen kartın kendi
+                // biriminden başlar.
+                var miktarBirimSatiri = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 34, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+                var miktarKutu = new TextBox { Width = 70, Text = "1", TextAlign = HorizontalAlignment.Right, Margin = new Padding(3, 5, 12, 3) };
+                var birimKutu = new ComboBox { Width = 90, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(3, 4, 3, 3) };
+                BirimKutusunuDoldur(birimKutu, null, null);
+                miktarBirimSatiri.Controls.Add(new Label { Text = "Miktar:", AutoSize = true, Padding = new Padding(0, 8, 0, 0) });
+                miktarBirimSatiri.Controls.Add(miktarKutu);
+                miktarBirimSatiri.Controls.Add(new Label { Text = "Birim:", AutoSize = true, Padding = new Padding(0, 8, 0, 0) });
+                miktarBirimSatiri.Controls.Add(birimKutu);
+
                 List<PaletOgesi> mevcutListe = new List<PaletOgesi>();
                 void Doldur()
                 {
@@ -3193,15 +3281,34 @@ namespace UretimOSKesim
                 }
                 tipKutu.SelectedIndexChanged += (s, e) => Doldur();
                 AramaGecikmeliBagla(aramaKutu, Doldur);
-                ekleBtn.Click += (s, e) =>
+                liste.SelectedIndexChanged += (s, e) =>
                 {
-                    if (!(liste.SelectedItem is PaletOgesi secilen)) return;
+                    if (liste.SelectedItem is PaletOgesi secilen)
+                        BirimKutusunuDoldur(birimKutu, PaletOgesiBirimi(secilen), null);
+                };
+                void Ekle()
+                {
+                    if (!(liste.SelectedItem is PaletOgesi secilen))
+                    {
+                        MessageBox.Show("Listeden bir kart seçin.", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+                    if (!MiktarOku(miktarKutu.Text, out double miktar))
+                    {
+                        MessageBox.Show("Geçerli bir miktar girin (0'dan büyük).", "ÜretimOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        miktarKutu.Focus();
+                        return;
+                    }
                     var yeniDugum = BilesenSentetikCocukOlustur(secilen, ustDugum);
                     if (yeniDugum == null) return;
+                    MiktarBirimUygula(yeniDugum, miktar, birimKutu.SelectedItem as string, PaletOgesiBirimi(secilen));
                     ustDugum.Cocuklar.Add(yeniDugum);
                     dlg.DialogResult = DialogResult.OK;
-                };
+                }
+                ekleBtn.Click += (s, e) => Ekle();
+                liste.DoubleClick += (s, e) => Ekle();
                 dlg.Controls.Add(liste);
+                dlg.Controls.Add(miktarBirimSatiri);
                 dlg.Controls.Add(ekleBtn);
                 dlg.Controls.Add(aramaKutu);
                 dlg.Controls.Add(tipKutu);
