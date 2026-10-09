@@ -188,6 +188,15 @@ namespace UretimOSKesim
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "UretimOSKesim", "veri_onbellek.json");
 
+        // Bu oturumda veriler yerel önbellekten mi geldi — geldiyse sunucuya
+        // başarıyla yazılan her kart/reçete önbellek dosyasına da işlenir
+        // (bkz. YerelVeriOnbelleginiYaz).
+        private bool _onbellektenYuklendi;
+        private string _onbellekKapsami, _onbellekIndirmeTarihi;
+        private System.Windows.Forms.Timer _onbellekYazmaZamanlayici;
+        // bkz. VerileriYukleVeBaslat / YerelAgacDurumunuKaydet
+        private bool _diskUrunYapisiniKoru;
+
         private string _kokTip;   // urun | yarimamul | altmontaj | paket
         private JObject _kokKart; // { id, kod, ad, ... }
 
@@ -927,6 +936,25 @@ namespace UretimOSKesim
                     Tanilama.Kaydet($"VerileriYukleVeBaslat: yerel disk onbellegi uygulandi, korunan={diskKorunan}, yeni={diskYeni}");
                 }
 
+                // Yerel veri önbelleği ⬇ İndir'den sonra oluşturulan kartları
+                // içermez (bkz. SunucuyaTopluYaz'daki KÖK NEDEN) — ağaçta,
+                // diskteki ağaç durumunda ya da kök montaj dosyasında kodu olup
+                // önbellekte BULUNAMAYAN kartlar sunucudan tamamlanır; yoksa
+                // ürün kartı penceresi yeniden açılıyor, eşleşmeler kayboluyordu.
+                if (_onbellektenYuklendi && girisBasarili)
+                {
+                    var kodlar = new List<string>();
+                    void KodTopla(IEnumerable<BilesenDugumu> liste)
+                    {
+                        foreach (var d in liste) { kodlar.Add(d.MevcutKod); KodTopla(d.Cocuklar); }
+                    }
+                    KodTopla(bilesenKokleri);
+                    if (eskiDiskDurumu != null) KodTopla(eskiDiskDurumu);
+                    try { kodlar.Add(KesimListesiCikarici.OzelAlanOku(_hedefModel, OzelAlanlar.KOD)); }
+                    catch (Exception ex) { Tanilama.Kaydet("VerileriYukleVeBaslat kök KOD okunamadı: " + ex); }
+                    await EksikKartlariSunucudanTamamla(kodlar);
+                }
+
                 // Kullanıcı isteği: "ürün ağacı komutunu açınca dosyanın adı
                 // ile yeni ürün kartı ekranı çıksın ve bu tüm ürünün en üst
                 // başlangıç kodu olsun, sonra yaptığım paket/yarımamül/
@@ -945,7 +973,29 @@ namespace UretimOSKesim
                 // TEKRAR sorulmaz — dialog kendi içindeki "Bu Adımı Geç" ile
                 // her durumda atlanabilir.
                 var paketKokleri = new List<BilesenDugumu>();
-                if (urunKoku != null)
+
+                // Bu ürün için diskte kurulmuş bir yapı (paketler + yerleşim)
+                // varsa ONU geri kur, paket sorusunu tekrar sorma — bkz.
+                // SentetikYapiyiGeriKur.
+                var eskiUrunKoku = eskiDiskDurumu != null && eskiDiskDurumu.Count == 1
+                    && eskiDiskDurumu[0].ElleEklendi && eskiDiskDurumu[0].Sinif == "urun" ? eskiDiskDurumu[0] : null;
+                bool yapiGeriKuruldu = urunKoku != null && eskiUrunKoku != null
+                    && string.Equals(eskiUrunKoku.MevcutKod, urunKoku.MevcutKod, StringComparison.OrdinalIgnoreCase);
+                int toplamBilesen = ToplamBilesenSayisi(bilesenKokleri);
+                // Diskte ürün yapısı varken bu açılışta ürün kökü kurulamadıysa
+                // (pencere iptal / kart bulunamadı), ürünsüz düz ağaç diskteki
+                // yapının ÜZERİNE YAZMASIN — bir sonraki açılışta geri gelsin.
+                _diskUrunYapisiniKoru = eskiUrunKoku != null && urunKoku == null;
+                if (_diskUrunYapisiniKoru)
+                    Tanilama.Kaydet("VerileriYukleVeBaslat: ürün kökü kurulamadı — diskteki ürün/paket yapısı bu oturumda üzerine yazılmayacak");
+                if (yapiGeriKuruldu)
+                {
+                    urunKoku.Genisletildi = eskiUrunKoku.Genisletildi;
+                    urunKoku.Cocuklar.AddRange(SentetikYapiyiGeriKur(eskiUrunKoku.Cocuklar, bilesenKokleri));
+                    Tanilama.Kaydet($"VerileriYukleVeBaslat: ürün yapısı diskten geri kuruldu, üst seviye={urunKoku.Cocuklar.Count}, paket={urunKoku.Cocuklar.Count(c => c.ElleEklendi && c.Sinif == "paket")}");
+                    bilesenKokleri = new List<BilesenDugumu> { urunKoku };
+                }
+                else if (urunKoku != null)
                 {
                     var mevcutRecete = ReceteGetir(_kokTip, _kokKart);
                     bool paketleriVarMi = mevcutRecete != null &&
@@ -955,8 +1005,7 @@ namespace UretimOSKesim
                 }
                 Tanilama.Kaydet($"VerileriYukleVeBaslat: PaketleriOlustur asamasi bitti, paket={paketKokleri.Count}");
 
-                int toplamBilesen = ToplamBilesenSayisi(bilesenKokleri);
-                if (urunKoku != null)
+                if (urunKoku != null && !yapiGeriKuruldu)
                 {
                     // "sonra mevcut componentler oluşan ürün kartı ve
                     // paketlerin altına gelsin ve paketlerin içine sürükleyip
@@ -1033,6 +1082,9 @@ namespace UretimOSKesim
                 _ayarlar = kok["ayarlar"] as JObject ?? new JObject();
                 kapsam = (string)kok["kapsam"] ?? "komple";
                 tarih = (string)kok["indirmeTarihi"] ?? "?";
+                _onbellektenYuklendi = true;
+                _onbellekKapsami = kapsam;
+                _onbellekIndirmeTarihi = tarih;
                 return true;
             }
             catch (Exception ex)
@@ -1040,6 +1092,138 @@ namespace UretimOSKesim
                 Tanilama.Kaydet("YerelOnbellektenYukle HATA (canlı veriye düşülüyor): " + ex);
                 return false;
             }
+        }
+
+        // KULLANICI RAPORU: "solidworkse kaydet diyorum kapatıp açınca
+        // herhangi bir kayıt yok yeniden başlıyorum" — GERÇEK KÖK NEDEN:
+        // veriler her açılışta veri_onbellek.json'dan okunuyor, ama bu dosya
+        // YALNIZCA ⬇ İndir ile yazılıyordu. Oturumda oluşturulan ürün/paket/
+        // yarımamül kartları ve reçeteler sunucuya gidiyor ama önbelleğe
+        // GİRMİYORDU — bir sonraki açılışta UrunKokuOlustur dosyadaki
+        // URETIMOS_KOD'u bulamayıp ürün kartı penceresini TEKRAR açıyor,
+        // eşleşmeler "eşleşmemiş" görünüyordu. Artık panelin sunucuya
+        // yaptığı HER başarılı yazma bu sarmalayıcıdan geçer ve önbellek
+        // dosyası (bellekteki güncel listelerle) yeniden yazılır.
+        private async System.Threading.Tasks.Task<bool> SunucuyaTopluYaz(string anahtar, List<object> ekle, List<object> guncelle)
+        {
+            bool basarili = await _istemci.ToplukaEkleGuncelle(anahtar, ekle, guncelle);
+            if (basarili) YerelVeriOnbelleginiYazmayiPlanla();
+            return basarili;
+        }
+
+        // Çağıran taraf kartı bellekteki listeye await SONRASI ekliyor — yazma
+        // bu yüzden kısa bir gecikmeyle (ve art arda gelen yazmalar tek
+        // seferde) UI iş parçacığında yapılır.
+        private void YerelVeriOnbelleginiYazmayiPlanla()
+        {
+            if (!_onbellektenYuklendi) return;
+            AnaPencerede(() =>
+            {
+                if (_onbellekYazmaZamanlayici == null)
+                {
+                    _onbellekYazmaZamanlayici = new System.Windows.Forms.Timer { Interval = 2000 };
+                    _onbellekYazmaZamanlayici.Tick += (s, e) =>
+                    {
+                        _onbellekYazmaZamanlayici.Stop();
+                        YerelVeriOnbelleginiYaz();
+                    };
+                }
+                _onbellekYazmaZamanlayici.Stop();
+                _onbellekYazmaZamanlayici.Start();
+            });
+        }
+
+        // MasterVeriyiYerelIndir ile AYNI dosya biçimi. Bellekteki JArray'ler
+        // bir JObject'e EKLENMEDEN (Json.NET ebeveyni olan token'ı klonlar —
+        // 40 MB'lık listede pahalı) doğrudan yazıcıya akıtılır. Henüz sunucuya
+        // kaydedilmemiş taslak reçeteler ("YENI-" kimlikli) yazılmaz.
+        private void YerelVeriOnbelleginiYaz()
+        {
+            if (!_onbellektenYuklendi || IsDisposed) return;
+            string geciciYol = YerelVeriOnbellekYolu + ".yaziliyor";
+            try
+            {
+                var sure = System.Diagnostics.Stopwatch.StartNew();
+                using (var akis = new StreamWriter(geciciYol, false, new System.Text.UTF8Encoding(false)))
+                using (var yazici = new Newtonsoft.Json.JsonTextWriter(akis) { Formatting = Newtonsoft.Json.Formatting.None })
+                {
+                    void Yaz(string ad, JToken deger)
+                    {
+                        yazici.WritePropertyName(ad);
+                        if (deger == null) yazici.WriteNull(); else deger.WriteTo(yazici);
+                    }
+                    yazici.WriteStartObject();
+                    Yaz("indirmeTarihi", _onbellekIndirmeTarihi);
+                    Yaz("yerelGuncellemeTarihi", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"));
+                    Yaz("kapsam", _onbellekKapsami ?? "komple");
+                    Yaz("hammaddeler", _hammaddeler);
+                    Yaz("urunler", _urunler);
+                    Yaz("yarimamuller", _yarimamuller);
+                    Yaz("paketler", _paketler);
+                    Yaz("altMontajlar", _altMontajlar);
+                    yazici.WritePropertyName("receteler");
+                    yazici.WriteStartArray();
+                    foreach (var r in (_receteler ?? new JArray()).OfType<JObject>())
+                        if (!((string)r["id"] ?? "").StartsWith("YENI-")) r.WriteTo(yazici);
+                    yazici.WriteEndArray();
+                    Yaz("rotalar", _rotalar);
+                    Yaz("hatlar", _hatlar);
+                    Yaz("ayarlar", _ayarlar);
+                    yazici.WriteEndObject();
+                }
+                File.Copy(geciciYol, YerelVeriOnbellekYolu, true);
+                File.Delete(geciciYol);
+                Tanilama.Kaydet($"YerelVeriOnbelleginiYaz: önbellek güncellendi ({sure.ElapsedMilliseconds} ms, {_urunler?.Count} ürün, {_yarimamuller?.Count} yarımamül, {_paketler?.Count} paket, {_receteler?.Count} reçete)");
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("YerelVeriOnbelleginiYaz HATA (yok sayılıyor): " + ex);
+            }
+        }
+
+        // Önbellek ⬇ İndir'den SONRA (ya da başka bir bilgisayarda) oluşturulan
+        // kartlar önbellekte yoktur. Ağaçta/dosyada kodu olup önbellekte
+        // bulunamayan HER kod için — yalnızca o zaman, bir kez — ilgili
+        // listeler sunucudan çekilip EKSİK kayıtlar (kimliğe göre) eklenir.
+        private async System.Threading.Tasks.Task EksikKartlariSunucudanTamamla(IEnumerable<string> kodlar)
+        {
+            var eksikler = kodlar.Where(k => !string.IsNullOrWhiteSpace(k))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(k => KodileKartBul(k).kart == null)
+                .ToList();
+            if (eksikler.Count == 0) return;
+            Tanilama.Kaydet($"EksikKartlariSunucudanTamamla: önbellekte olmayan {eksikler.Count} kod: {string.Join(", ", eksikler.Take(15))}");
+            AnaPencerede(() =>
+            {
+                _durumEtiketi.ForeColor = Tema.MetinKoyu;
+                _durumEtiketi.Text = $"Yerel önbellekte olmayan {eksikler.Count} kart ÜretimOS'tan tamamlanıyor…";
+            });
+
+            int eklenen = 0;
+            foreach (var (anahtar, liste) in new[] { ("urunler", _urunler), ("yarimamuller", _yarimamuller), ("paketler", _paketler), ("altMontajlar", _altMontajlar), ("hammaddeler", _hammaddeler), ("receteler", _receteler) })
+            {
+                if (liste == null) continue;
+                try
+                {
+                    var sunucuListesi = JArray.Parse(await _istemci.Getir(anahtar) ?? "[]");
+                    var mevcutIdler = new HashSet<string>(liste.OfType<JObject>().Select(k => (string)k["id"]).Where(i => i != null));
+                    foreach (var kayit in sunucuListesi.OfType<JObject>().ToList())
+                    {
+                        string id = (string)kayit["id"];
+                        if (id == null || !mevcutIdler.Add(id)) continue;
+                        kayit.Remove();
+                        liste.Add(kayit);
+                        eklenen++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Tanilama.Kaydet($"EksikKartlariSunucudanTamamla '{anahtar}' HATA (yok sayılıyor): " + ex);
+                }
+            }
+            int halaEksik = eksikler.Count(k => KodileKartBul(k).kart == null);
+            Tanilama.Kaydet($"EksikKartlariSunucudanTamamla: {eklenen} kayıt eklendi, hâlâ bulunamayan kod={halaEksik}");
+            if (eklenen > 0) YerelVeriOnbelleginiYazmayiPlanla();
         }
 
         // KULLANICI RAPORU: "her açtığımda alt kalemde olan satırlar (plaka
@@ -1086,7 +1270,7 @@ namespace UretimOSKesim
                 ["sinif"] = d.Sinif,
                 ["mevcutKod"] = d.MevcutKod,
                 ["gosterimAdi"] = d.GosterimAdi,
-                ["modelYolu"] = d.Model?.GetPathName(),
+                ["modelYolu"] = d.Model?.GetPathName() ?? d.ModelYoluOnbellek,
                 ["elleEklendi"] = d.ElleEklendi,
                 ["miktar"] = d.Miktar,
                 ["kenarOnId"] = d.KenarOnId,
@@ -1136,6 +1320,12 @@ namespace UretimOSKesim
                 if (_hedefModel == null || _bilesenKokListesi == null) return;
                 string modelYolu = _hedefModel.GetPathName();
                 if (string.IsNullOrWhiteSpace(modelYolu)) return;
+                if (_diskUrunYapisiniKoru)
+                {
+                    bool urunKokuVar = _bilesenKokListesi.Count == 1 && _bilesenKokListesi[0].ElleEklendi && _bilesenKokListesi[0].Sinif == "urun";
+                    if (!urunKokuVar) return;
+                    _diskUrunYapisiniKoru = false;
+                }
                 Directory.CreateDirectory(AgacDurumuKlasoru);
                 var kok = new JObject
                 {
@@ -1197,7 +1387,7 @@ namespace UretimOSKesim
                 bool basarili;
                 try
                 {
-                    basarili = await _istemci.ToplukaEkleGuncelle("urunler", new List<object> { urunKarti }, new List<object>());
+                    basarili = await SunucuyaTopluYaz("urunler", new List<object> { urunKarti }, new List<object>());
                 }
                 catch (Exception ex)
                 {
@@ -1214,7 +1404,7 @@ namespace UretimOSKesim
                 PaletiFiltrele();
 
                 // AnaPencerede: bkz. tanımındaki NOT ve EslesmeYazVeUygula'daki
-                // AYNI düzeltme — bu "await _istemci.ToplukaEkleGuncelle(...)"
+                // AYNI düzeltme — bu "await SunucuyaTopluYaz(...)"
                 // SONRASI kod bir SolidWorks COM çağrısı (OzelAlanYaz) içeriyor;
                 // sarmalanmadan çağırılması AYNI çökme riskini taşır. (Aşağıdaki
                 // KokKartAyarla çağrısı kendi İÇİNDE marshal ediyor, bkz. tanımı.)
@@ -1326,7 +1516,7 @@ namespace UretimOSKesim
                     bool basarili;
                     try
                     {
-                        basarili = await _istemci.ToplukaEkleGuncelle("paketler", yeniler.Cast<object>().ToList(), new List<object>());
+                        basarili = await SunucuyaTopluYaz("paketler", yeniler.Cast<object>().ToList(), new List<object>());
                     }
                     catch (Exception ex)
                     {
@@ -1411,20 +1601,35 @@ namespace UretimOSKesim
         // de AYNI mantıkla eşleştirilebilsin (bkz. BilesenDugumu.ModelYoluOnbellek).
         private void EskiDurumuUygula(List<BilesenDugumu> eskiKokListesi, List<BilesenDugumu> yeniBilesenler, out int korunanSayisi, out int yeniSayisi)
         {
-            string Kimlik(BilesenDugumu d) =>
-                !string.IsNullOrWhiteSpace(d.MevcutKod) ? "kod:" + d.MevcutKod
-                : "yol:" + (d.Model?.GetPathName() ?? d.ModelYoluOnbellek ?? "").ToLowerInvariant();
-
-            var eskiHarita = new Dictionary<string, BilesenDugumu>();
+            // Eşleştirme ÖNCE dosya yoluna (her bileşen için benzersiz), o
+            // tutmazsa koda göre yapılır. ESKİDEN kodu olan düğüm YALNIZCA
+            // "kod:" anahtarıyla aranıyordu: önbellekte kodu olan ama dosyasına
+            // kod yazılmamış (taze taramada kodu boş) bir parça hiç
+            // eşleşmiyor, sınıfı/ölçüsü/ek kalemleri kayboluyordu.
+            var yolHaritasi = new Dictionary<string, BilesenDugumu>();
+            var kodHaritasi = new Dictionary<string, BilesenDugumu>(StringComparer.OrdinalIgnoreCase);
             void EskiTara(List<BilesenDugumu> liste)
             {
                 foreach (var d in liste)
                 {
-                    if (!d.ElleEklendi && !d.BelgeYuklenemedi) eskiHarita[Kimlik(d)] = d;
+                    if (!d.ElleEklendi && !d.BelgeYuklenemedi)
+                    {
+                        string yol = DugumYolAnahtari(d);
+                        if (yol != null) yolHaritasi[yol] = d;
+                        if (!string.IsNullOrWhiteSpace(d.MevcutKod)) kodHaritasi[d.MevcutKod] = d;
+                    }
                     EskiTara(d.Cocuklar);
                 }
             }
             EskiTara(eskiKokListesi);
+
+            BilesenDugumu EskisiniBul(BilesenDugumu d)
+            {
+                string yol = DugumYolAnahtari(d);
+                if (yol != null && yolHaritasi.TryGetValue(yol, out var eski)) return eski;
+                if (!string.IsNullOrWhiteSpace(d.MevcutKod) && kodHaritasi.TryGetValue(d.MevcutKod, out eski)) return eski;
+                return null;
+            }
 
             int korunan = 0, yeni = 0;
             void Boya(List<BilesenDugumu> liste)
@@ -1433,8 +1638,13 @@ namespace UretimOSKesim
                 {
                     if (!d.ElleEklendi)
                     {
-                        if (eskiHarita.TryGetValue(Kimlik(d), out var eski))
+                        var eski = EskisiniBul(d);
+                        if (eski != null)
                         {
+                            // Dosyadaki kod (URETIMOS_KOD) her zaman önceliklidir;
+                            // dosyaya yazılmamışsa önbellekteki eşleşme korunur.
+                            if (string.IsNullOrWhiteSpace(d.MevcutKod) && !string.IsNullOrWhiteSpace(eski.MevcutKod))
+                                d.MevcutKod = eski.MevcutKod;
                             d.Sinif = eski.Sinif;
                             d.KenarOnId = eski.KenarOnId; d.KenarArkaId = eski.KenarArkaId;
                             d.KenarSolId = eski.KenarSolId; d.KenarSagId = eski.KenarSagId;
@@ -1456,6 +1666,90 @@ namespace UretimOSKesim
             }
             Boya(yeniBilesenler);
             korunanSayisi = korunan; yeniSayisi = yeni;
+        }
+
+        // Düğümün dosya yolundan eşleştirme anahtarı. Montaj içi SANAL
+        // parçaların yolu (…\Temp\swx35152\VC~~\ayak\Part7^ayak.SLDPRT) her
+        // SolidWorks oturumunda DEĞİŞİR (swx<işlem no>) — bu yüzden onlar
+        // için yalnızca "VC~~\" sonrası (montaj adı + parça adı) kullanılır.
+        private static string DugumYolAnahtari(BilesenDugumu d)
+        {
+            string yol = d.Model?.GetPathName() ?? d.ModelYoluOnbellek;
+            if (string.IsNullOrWhiteSpace(yol)) return null;
+            yol = yol.ToLowerInvariant();
+            int vc = yol.IndexOf("\\vc~~\\", StringComparison.Ordinal);
+            return vc >= 0 ? "vc:" + yol.Substring(vc + 6) : yol;
+        }
+
+        // KULLANICI RAPORU: "kapatıp açınca herhangi bir kayıt yok yeniden
+        // başlıyorum" — diskteki ağaç durumunda ürün kökü, paketler ve
+        // bileşenlerin paketlere sürükle-bırak ile yerleşimi VARDI, ama
+        // açılışta yalnızca gerçek bileşenlerin sınıf/ölçü bilgisi geri
+        // yükleniyordu (EskiDurumuUygula); ürün kökünün altındaki yapı hiç
+        // kurulmuyor, reçetede zaten paket olduğu için PaketleriOlustur da
+        // atlanıyordu — paketler kayboluyor, parçalar en üste dönüyordu.
+        // Bu metot eski ürün kökünün çocuk yapısını taze taramayla yeniden
+        // kurar: sentetik düğümler (paket, ek kalem) aynen alınır, içlerindeki
+        // gerçek bileşenler taze taramadaki karşılıklarıyla değiştirilir
+        // (bulunduğu yerden alınarak). Eski yapıda olmayan (yeni eklenmiş)
+        // üst seviye bileşenler sona eklenir; artık montajda olmayanlar düşer.
+        private static List<BilesenDugumu> SentetikYapiyiGeriKur(List<BilesenDugumu> eskiCocuklar, List<BilesenDugumu> yeniKokler)
+        {
+            var harita = new Dictionary<string, List<(BilesenDugumu dugum, List<BilesenDugumu> ust)>>();
+            void Indeksle(List<BilesenDugumu> liste)
+            {
+                foreach (var d in liste)
+                {
+                    if (!d.ElleEklendi)
+                    {
+                        string anahtar = DugumYolAnahtari(d);
+                        if (anahtar != null)
+                        {
+                            if (!harita.TryGetValue(anahtar, out var adaylar)) harita[anahtar] = adaylar = new List<(BilesenDugumu, List<BilesenDugumu>)>();
+                            adaylar.Add((d, liste));
+                        }
+                    }
+                    Indeksle(d.Cocuklar);
+                }
+            }
+            Indeksle(yeniKokler);
+
+            BilesenDugumu TazesiniAl(BilesenDugumu eski)
+            {
+                string anahtar = DugumYolAnahtari(eski);
+                if (anahtar == null || !harita.TryGetValue(anahtar, out var adaylar) || adaylar.Count == 0) return null;
+                var (dugum, ust) = adaylar[0];
+                adaylar.RemoveAt(0);
+                ust.Remove(dugum);
+                return dugum;
+            }
+
+            List<BilesenDugumu> Kur(List<BilesenDugumu> eskiListe)
+            {
+                var sonuc = new List<BilesenDugumu>();
+                foreach (var e in eskiListe)
+                {
+                    if (e.ElleEklendi)
+                    {
+                        var cocuklar = Kur(e.Cocuklar);
+                        e.Cocuklar.Clear();
+                        e.Cocuklar.AddRange(cocuklar);
+                        sonuc.Add(e);
+                    }
+                    else
+                    {
+                        // Gerçek bileşenin kendi alt dalı taze taramadan gelir
+                        // (ek kalemleri EskiDurumuUygula zaten taşıdı).
+                        var taze = TazesiniAl(e);
+                        if (taze != null) sonuc.Add(taze);
+                    }
+                }
+                return sonuc;
+            }
+
+            var yapi = Kur(eskiCocuklar);
+            yapi.AddRange(yeniKokler); // yerleştirilmeyen (yeni) üst seviye bileşenler
+            return yapi;
         }
 
         // "🔄 Ağacı Yenile" — bkz. buton tanımındaki NOT. SolidWorks'ü yeniden
@@ -1627,6 +1921,31 @@ namespace UretimOSKesim
             YerelAgacDurumunuKaydet();
         }
 
+        // Sınıf açılır kutusundaki seçimin devamı — bkz. sinifKutusu
+        // SelectedIndexChanged'deki GERÇEK ÇÖKME notu (BeginInvoke ile çağrılır).
+        private async void SinifSecimiSonrasiCiz(BilesenDugumu dugum)
+        {
+            if (IsDisposed) return;
+            try
+            {
+                BilesenAgaciniCiz();
+                // Kullanıcı isteği: "yarımamül seçtiğimde otomatik ekle
+                // yada yarımamül seç sekmesi gelsin ekle'de yeni yarımamül
+                // oluşturma ekranı açılsın ekle'de üretimostan yarımamül
+                // seçme ekranı" — HERHANGİ bir sınıf seçilince (yalnızca
+                // hammadde ailesi değil, artık yarımamül/alt montaj/paket/
+                // ürün de dahil) VE henüz bir kartla eşleşmemişse, "+ Yeni
+                // Kart Oluştur" / "🔍 Mevcut Karttan Seç" seçim penceresi
+                // HEMEN açılır (unutmayı önler).
+                if (!string.IsNullOrEmpty(dugum.Sinif) && KodileKartBul(dugum.MevcutKod).kart == null)
+                    await DugumEslestirmeSeciciAc(dugum);
+            }
+            catch (Exception ex)
+            {
+                Tanilama.Kaydet("SinifSecimiSonrasiCiz HATA: " + ex);
+            }
+        }
+
         private void BilesenSatirlariTopla(List<Control> hedefListe, BilesenDugumu dugum, int derinlik)
         {
             hedefListe.Add(BilesenAnaSatiriOlustur(dugum, derinlik));
@@ -1698,7 +2017,9 @@ namespace UretimOSKesim
                     Padding = new Padding(0, 6, 4, 0), ForeColor = Color.DimGray,
                     MinimumSize = new Size(16, 0)
                 };
-                katlaBtn.Click += (s, e) => { dugum.Genisletildi = !dugum.Genisletildi; BilesenAgaciniCiz(); };
+                // BeginInvoke: bkz. sinifKutusu'ndaki GERÇEK ÇÖKME notu — tıklanan
+                // kontrol kendi Click olayı içinde Dispose edilmesin.
+                katlaBtn.Click += (s, e) => { dugum.Genisletildi = !dugum.Genisletildi; BeginInvoke(new Action(() => BilesenAgaciniCiz())); };
                 satir.Controls.Add(katlaBtn);
             }
             else
@@ -1741,7 +2062,7 @@ namespace UretimOSKesim
                 var sinifKutusu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130, Margin = new Padding(3) };
                 sinifKutusu.Items.AddRange(SinifEtiketleri);
                 sinifKutusu.SelectedIndex = SinifIndexBul(dugum.Sinif);
-                sinifKutusu.SelectedIndexChanged += async (s, e) =>
+                sinifKutusu.SelectedIndexChanged += (s, e) =>
                 {
                     dugum.Sinif = SinifKarsilikBul(sinifKutusu.SelectedIndex);
                     // Kullanıcı isteği: "tüm yaptığım değişiklikleri aynen
@@ -1755,19 +2076,16 @@ namespace UretimOSKesim
                         try { KesimListesiCikarici.OzelAlanYaz(dugum.Model, OzelAlanlar.SINIF, dugum.Sinif ?? ""); }
                         catch (Exception ex) { Tanilama.Kaydet("Sinif ozel alani yazilamadi HATA: " + ex); }
                     }
-                    BilesenAgaciniCiz();
-                    // Kullanıcı isteği: "yarımamül seçtiğimde otomatik ekle
-                    // yada yarımamül seç sekmesi gelsin ekle'de yeni yarımamül
-                    // oluşturma ekranı açılsın ekle'de üretimostan yarımamül
-                    // seçme ekranı" — HERHANGİ bir sınıf seçilince (yalnızca
-                    // hammadde ailesi değil, artık yarımamül/alt montaj/paket/
-                    // ürün de dahil) VE henüz bir kartla eşleşmemişse, "+ Yeni
-                    // Kart Oluştur" / "🔍 Mevcut Karttan Seç" seçim penceresi
-                    // HEMEN açılır (unutmayı önler).
-                    if (!string.IsNullOrEmpty(dugum.Sinif) && KodileKartBul(dugum.MevcutKod).kart == null)
-                    {
-                        await DugumEslestirmeSeciciAc(dugum);
-                    }
+                    // GERÇEK ÇÖKME (kullanıcı raporu: "reçete ağacından
+                    // yarımamül seçerken yine kapandı" — günlük her seferinde
+                    // "BilesenAgaciniCiz: Controls.Add + ResumeLayout bitti"
+                    // satırında, hata kaydı OLMADAN bitiyordu): BilesenAgaciniCiz
+                    // TÜM satırları Dispose eder — BU ComboBox dahil. Olay
+                    // işleyicisi dönünce ComboBox'ın kendi yerel (native) seçim
+                    // işleyişi yok edilmiş pencere üzerinde devam edip
+                    // SolidWorks'ü düşürüyordu. Yeniden çizim BeginInvoke ile
+                    // ComboBox mesajını bitirdikten SONRAYA ertelenir.
+                    BeginInvoke(new Action(() => SinifSecimiSonrasiCiz(dugum)));
                 };
                 satir.Controls.Add(sinifKutusu);
 
@@ -1849,7 +2167,7 @@ namespace UretimOSKesim
                     if (MessageBox.Show(uyari, "ÜretimOS", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                     BilesenUstListesiniBul(dugum)?.Remove(dugum);
                     if (ReferenceEquals(_seciliBilesenDugumu, dugum)) _seciliBilesenDugumu = null;
-                    BilesenAgaciniCiz();
+                    BeginInvoke(new Action(() => BilesenAgaciniCiz()));
                 };
                 satir.Controls.Add(silBtn);
             }
@@ -2944,7 +3262,7 @@ namespace UretimOSKesim
 
                 foreach (var grup in yeniKartlar)
                 {
-                    bool basarili = await _istemci.ToplukaEkleGuncelle(grup.Key, grup.Value, new List<object>());
+                    bool basarili = await SunucuyaTopluYaz(grup.Key, grup.Value, new List<object>());
                     if (!basarili) throw new Exception($"Sunucu '{grup.Key}' kartlarını reddetti (HTTP hata / yetki sorunu olabilir).");
                 }
                 foreach (var grup in yeniKartlar)
@@ -3076,7 +3394,7 @@ namespace UretimOSKesim
 
                 if (etkilenenReceteler.Count > 0)
                 {
-                    bool receteBasarili = await _istemci.ToplukaEkleGuncelle("receteler", etkilenenReceteler, new List<object>());
+                    bool receteBasarili = await SunucuyaTopluYaz("receteler", etkilenenReceteler, new List<object>());
                     if (!receteBasarili) throw new Exception("Sunucu 'receteler' kaydını reddetti (HTTP hata).");
                     foreach (JObject r in etkilenenReceteler)
                         if (!_receteler.Contains(r)) _receteler.Add(r);
@@ -3387,7 +3705,7 @@ namespace UretimOSKesim
             try
             {
                 Tanilama.Kaydet($"KartApiyaKaydet: API'ye gönderiliyor, koleksiyon={koleksiyonAnahtari}, thread={System.Threading.Thread.CurrentThread.ManagedThreadId}");
-                basarili = await _istemci.ToplukaEkleGuncelle(koleksiyonAnahtari,
+                basarili = await SunucuyaTopluYaz(koleksiyonAnahtari,
                     new List<object> { yeniKart }, new List<object>());
             }
             catch (Exception ex)
@@ -3462,7 +3780,7 @@ namespace UretimOSKesim
             bool basarili;
             try
             {
-                basarili = await _istemci.ToplukaEkleGuncelle(koleksiyonAnahtari, new List<object>(), new List<object> { kart });
+                basarili = await SunucuyaTopluYaz(koleksiyonAnahtari, new List<object>(), new List<object> { kart });
             }
             catch (Exception ex)
             {
@@ -4120,13 +4438,13 @@ namespace UretimOSKesim
                         try
                         {
                             if (yeniMi)
-                                await _istemci.ToplukaEkleGuncelle("rotalar", new List<object> { sonuc }, new List<object>());
+                                await SunucuyaTopluYaz("rotalar", new List<object> { sonuc }, new List<object>());
                             else
-                                await _istemci.ToplukaEkleGuncelle("rotalar", new List<object>(), new List<object> { sonuc });
+                                await SunucuyaTopluYaz("rotalar", new List<object>(), new List<object> { sonuc });
                             if (editor.HatlarDegisti)
                             {
                                 _hatlar = editor.GuncelHatlar;
-                                await _istemci.Kaydet("hatlar", _hatlar);
+                                if (await _istemci.Kaydet("hatlar", _hatlar)) YerelVeriOnbelleginiYazmayiPlanla();
                             }
                             return sonuc;
                         }
@@ -4144,7 +4462,7 @@ namespace UretimOSKesim
                     kart["rotaId"] = secilenId;
                     try
                     {
-                        await _istemci.ToplukaEkleGuncelle(koleksiyon, new List<object>(), new List<object> { kart });
+                        await SunucuyaTopluYaz(koleksiyon, new List<object>(), new List<object> { kart });
                         degisti = true;
                         dlg.DialogResult = DialogResult.OK;
                     }
@@ -4182,7 +4500,7 @@ namespace UretimOSKesim
                     kart["rotaId"] = (string)yeniRota["id"];
                     try
                     {
-                        await _istemci.ToplukaEkleGuncelle(koleksiyon, new List<object>(), new List<object> { kart });
+                        await SunucuyaTopluYaz(koleksiyon, new List<object>(), new List<object> { kart });
                         _rotalar.Add(yeniRota);
                         degisti = true;
                         dlg.DialogResult = DialogResult.OK;
@@ -5882,7 +6200,7 @@ namespace UretimOSKesim
                         if (yeniKayit) recete["id"] = "RC-" + Guid.NewGuid().ToString("N").Substring(0, 12).ToUpperInvariant();
                         (yeniKayit ? ekle : guncelle).Add(recete);
                     }
-                    bool receteBasarili = await _istemci.ToplukaEkleGuncelle("receteler", ekle, guncelle);
+                    bool receteBasarili = await SunucuyaTopluYaz("receteler", ekle, guncelle);
                     if (!receteBasarili) throw new Exception("Sunucu 'receteler' kaydını reddetti (HTTP hata).");
                     receteSayisi = ekle.Count + guncelle.Count;
                     _degisenReceteler.Clear();
@@ -5902,7 +6220,7 @@ namespace UretimOSKesim
                         string koleksiyon = KoleksiyonAdiTipten(grup.Key);
                         if (koleksiyon == null) continue;
                         var guncelleListesi = grup.Select(v => (object)v.kart).ToList();
-                        bool basarili = await _istemci.ToplukaEkleGuncelle(koleksiyon, new List<object>(), guncelleListesi);
+                        bool basarili = await SunucuyaTopluYaz(koleksiyon, new List<object>(), guncelleListesi);
                         if (!basarili) throw new Exception($"Sunucu '{koleksiyon}' kaydını reddetti (HTTP hata).");
                         kartSayisi += guncelleListesi.Count;
                     }
