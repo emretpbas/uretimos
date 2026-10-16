@@ -364,10 +364,21 @@ PageModules.uretim_panel = (() => {
   // talep açabilmesi için Depo Paneli'ndeki mantığı kısa bir özet kartıyla
   // burada da gösteriyoruz (Depo VEYA Planlama, herhangi biri yeterli).
   function renderKritikStokOzet(hammaddeler, stokRaf, kritikStokSeviyeleri) {
+    // PERFORMANS: 12.224 hammaddenin HER biri için kritikStokSeviyeleri +
+    // stokRaf'ı (App.stokMiktarAmbar üzerinden) .find() ile DOĞRUSAL taramak
+    // — bu tab'ı açan her üretim/planlama çalışanında hissedilir gecikme
+    // yaratıyordu. Bu render'a ÖZEL, taze kurulan iki Map (davranış BİREBİR
+    // aynı — App.stokMiktarAmbar'ın "s ? s.miktar : 0" mantığı korunur).
+    const kritikByHammaddeId = new Map();
+    kritikStokSeviyeleri.forEach(k => { if (k && k.hammaddeId != null && !kritikByHammaddeId.has(k.hammaddeId)) kritikByHammaddeId.set(k.hammaddeId, k); });
+    const stokKaydiByHammaddeId = new Map();
+    stokRaf.forEach(s => { if (s && s.ambar === 'hammadde_deposu' && s.tip === 'hammadde' && !stokKaydiByHammaddeId.has(s.refId)) stokKaydiByHammaddeId.set(s.refId, s); });
+
     const altindakiler = hammaddeler.filter(h => {
-      const kritik = kritikStokSeviyeleri.find(k => k.hammaddeId === h.id);
+      const kritik = kritikByHammaddeId.get(h.id);
       if (!kritik) return false;
-      const stokMiktar = App.stokMiktarAmbar(stokRaf, 'hammadde_deposu', 'hammadde', h.id);
+      const kayit = stokKaydiByHammaddeId.get(h.id);
+      const stokMiktar = kayit ? kayit.miktar : 0;
       return stokMiktar < kritik.miktar;
     });
     if (!altindakiler.length) return '';
@@ -375,8 +386,9 @@ PageModules.uretim_panel = (() => {
       <div class="card-hdr"><div class="card-title" style="color:var(--red-text)">⚠ Kritik Stok Altındaki Hammaddeler (Planlama Onayıyla da Talep Açılabilir)</div></div>
       <table class="dtable">`;
     altindakiler.forEach(h => {
-      const stokMiktar = App.stokMiktarAmbar(stokRaf, 'hammadde_deposu', 'hammadde', h.id);
-      const kritik = kritikStokSeviyeleri.find(k => k.hammaddeId === h.id);
+      const kayit = stokKaydiByHammaddeId.get(h.id);
+      const stokMiktar = kayit ? kayit.miktar : 0;
+      const kritik = kritikByHammaddeId.get(h.id);
       html += `<tr><td>${App.escapeHtml(h.ad)}</td>
         <td class="r">${App.fmt(stokMiktar, 1)} / kritik: ${App.fmt(kritik.miktar, 1)} ${App.escapeHtml(h.birim)}</td>
         <td><button class="btn btn-sm btn-amber up-kritik-talep" data-id="${h.id}">Satınalmaya Talep Aç</button></td></tr>`;
@@ -604,12 +616,18 @@ PageModules.uretim_panel = (() => {
   }
 
   function renderHammaddeTab(hammaddeler, stokRaf, satinalmaTalepleri) {
+    // PERFORMANS: aynı 12.224 hammadde × stokRaf doğrusal tarama riski
+    // (bkz. renderKritikStokOzet) — bu tab TÜM hammadde listesini (filtresiz)
+    // gösterdiği için daha da büyük etkiliydi. Aynı taze-Map deseni.
+    const stokKaydiByHammaddeId = new Map();
+    stokRaf.forEach(s => { if (s && s.ambar === 'hammadde_deposu' && s.tip === 'hammadde' && !stokKaydiByHammaddeId.has(s.refId)) stokKaydiByHammaddeId.set(s.refId, s); });
     let html = `<div class="card">
       <div class="card-hdr"><div class="card-title">Tüm Hammadde Stokları (Hammadde Deposu — Görüntüleme)</div></div>
       <div class="tbl-wrap"><table class="dtable">
         <tr><th>Stok Kodu</th><th>Ad</th><th class="r">Stok Miktarı</th><th class="r">Birim Fiyat</th></tr>`;
     hammaddeler.forEach(h => {
-      const miktar = App.stokMiktarAmbar(stokRaf, 'hammadde_deposu', 'hammadde', h.id);
+      const kayit = stokKaydiByHammaddeId.get(h.id);
+      const miktar = kayit ? kayit.miktar : 0;
       const dvzSym = h.dvz === 'USD' ? '$' : h.dvz === 'EUR' ? '€' : '₺';
       html += `<tr><td class="mono" style="font-size:11px">${App.escapeHtml(h.stokKodu || '')}</td><td>${App.escapeHtml(h.ad)}</td>
         <td class="r">${App.fmt(miktar, 0)} ${App.escapeHtml(h.birim)}</td>
