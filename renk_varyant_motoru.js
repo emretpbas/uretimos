@@ -116,6 +116,40 @@ const RenkVaryantMotoru = (() => {
     return tip === 'urun' ? 'URN' : tip === 'yarimamul' ? 'YM' : tip === 'altmontaj' ? 'AM' : 'PKT';
   }
 
+  // PERFORMANS: olcu_varyant_motoru.js'teki AYNI id/kod indeksleme deseni
+  // (bkz. o dosyadaki ayrıntılı "GERÇEK ÜRETİMDE YAKALANDI" notu — bu iki
+  // motor BİLİNÇLİ kod tekrarıyla AYNI üst iskeleti kullanır). Burada
+  // tamSistemTaramasi benzeri bir orkestratör YOK (varyantPlaniOlustur
+  // yalnızca "🎨 Renk Varyantı Oluştur" düğmesiyle TEKİL bir kart için
+  // çağrılır) — ama 96.746 yarımamül/20.597 ürün ölçeğinde TEK bir karta
+  // ait ağacı gezerken bile her düğüm için TÜM koleksiyonu .find() ile
+  // doğrusal taramak (büyük bir ürün ağacında onlarca/yüzlerce düğüm)
+  // hissedilir bir gecikme yaratıyordu — id ile bulma HER ZAMAN O(1)'e
+  // iner, davranış BİREBİR aynı kalır.
+  const _indeksOnbellegi = new WeakMap(); // veri nesnesi -> indeks
+  function indeksAl(veri) {
+    let ind = _indeksOnbellegi.get(veri);
+    if (ind) return ind;
+    ind = { kartById: {}, receteByRef: {}, hammaddeById: new Map() };
+    ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
+      const liste = kartListesi(tip, veri) || [];
+      const idMap = new Map();
+      liste.forEach(k => { if (k && k.id != null) idMap.set(k.id, k); });
+      ind.kartById[tip] = idMap;
+      ind.receteByRef[tip] = new Map();
+    });
+    (veri.hammaddeler || []).forEach(h => { if (h && h.id != null) ind.hammaddeById.set(h.id, h); });
+    (veri.receteler || []).forEach(r => {
+      if (!r) return;
+      ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
+        const alan = idAlani(tip);
+        if (r[alan] != null) ind.receteByRef[tip].set(r[alan], r);
+      });
+    });
+    _indeksOnbellegi.set(veri, ind);
+    return ind;
+  }
+
   // Kök karttan başlayıp tüm alt ağacı hedef renge klonlayan asıl fonksiyon.
   // veri: {hammaddeler, yarimamuller, altMontajlar, paketler, urunler,
   //        receteler, renkKisaltmalari:[{renkKodu,renkAdi,kisaltma}]}
@@ -169,7 +203,7 @@ const RenkVaryantMotoru = (() => {
 
     function kalemKlonla(k) {
       if (k.tip === 'hammadde') {
-        const kaynakHm = (veri.hammaddeler || []).find(h => h.id === k.refId);
+        const kaynakHm = indeksAl(veri).hammaddeById.get(k.refId) || null;
         if (!kaynakHm || !kaynakHm.renkKartelaKodu || !kaynakHm.malzemeKategorisi) {
           return { ...k }; // renge bağımlı değil — dokunulmaz
         }
@@ -191,7 +225,7 @@ const RenkVaryantMotoru = (() => {
         // birbirine karışır). Kodu renk taşıyan parçalar HER ZAMAN kod
         // deseniyle (aşağı düşüp kartKlonla ile) eşleştirilir/klonlanır —
         // etiketli olsalar bile.
-        const kaynakYm = (veri.yarimamuller || []).find(y => y.id === k.refId);
+        const kaynakYm = indeksAl(veri).kartById.yarimamul.get(k.refId) || null;
         const kodKendiRenginiTasiyorMu = kaynakYm && kisaltmaIleRenkBul(kaynakYm.kod, veri.renkKisaltmalari);
         if (kaynakYm && !kodKendiRenginiTasiyorMu && kaynakYm.renkKartelaKodu && kaynakYm.malzemeKategorisi) {
           return etiketliTakasEt(k, kaynakYm, veri.yarimamuller, 'yarimamul');
@@ -205,8 +239,9 @@ const RenkVaryantMotoru = (() => {
     function kartKlonla(tip, eskiId) {
       const anahtar = tip + ':' + eskiId;
       if (idMap.has(anahtar)) return idMap.get(anahtar);
+      const ind = indeksAl(veri);
       const liste = kartListesi(tip, veri);
-      const kaynak = liste && liste.find(x => x.id === eskiId);
+      const kaynak = ind.kartById[tip].get(eskiId) || null;
       if (!kaynak) return null;
 
       let yeniId, yeniAd, mevcutKart = null;
@@ -215,7 +250,7 @@ const RenkVaryantMotoru = (() => {
           // KÖK için çağıran taraf hedefi ZATEN BİLİYOR (ör. ad benzerliğiyle
           // bulunmuş, kod yapısı FARKLI bir kart) — kod-yapısal aramayı
           // BYPASS ET, doğrudan bu id'yi kullan.
-          mevcutKart = liste.find(x => x.id === kokHedefId) || null;
+          mevcutKart = ind.kartById[tip].get(kokHedefId) || null;
         } else {
           const temelKod = temelKodCikar(kaynak.kod, veri.renkKisaltmalari);
           if (temelKod) {
@@ -245,12 +280,12 @@ const RenkVaryantMotoru = (() => {
         yeniAd = yeniKart.ad;
       }
 
-      const kaynakRecete = (veri.receteler || []).find(r => r[idAlani(tip)] === eskiId);
+      const kaynakRecete = ind.receteByRef[tip].get(eskiId) || null;
       if (kaynakRecete && (kaynakRecete.kalemler || []).length) {
         // mevcutKartiKullan modunda: hedef kartın KENDİ (dolu) bir reçetesi
         // zaten varsa — kullanıcının elle kurduğu bir yapı olabilir —
         // SESSİZCE ÜZERİNE YAZILMAZ. Sadece boş/yoksa master'dan kurulur.
-        const mevcutAltRecete = mevcutKart ? (veri.receteler || []).find(r => r[idAlani(tip)] === yeniId) : null;
+        const mevcutAltRecete = mevcutKart ? (ind.receteByRef[tip].get(yeniId) || null) : null;
         if (!mevcutAltRecete || !(mevcutAltRecete.kalemler || []).length) {
           const yeniKalemler = kaynakRecete.kalemler.map(kalemKlonla);
           yeniReceteler.push({
