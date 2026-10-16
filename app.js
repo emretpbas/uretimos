@@ -337,7 +337,7 @@ const App = (() => {
     }
   }
 
-  const UYGULAMA_SURUM = 'v125';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
+  const UYGULAMA_SURUM = 'v126';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
 
   // ── SESSİZ HATA AVCISI ────────────────────────────────────────────────────
   // Bir buton handler'ında hata oluşursa tarayıcı bunu sessizce yutar ve
@@ -434,6 +434,13 @@ const App = (() => {
   // KDV oranı eksik (null/undefined) olan hammaddeleri bulup otomatik %18
   // atar — böylece önceden kayıtlı eski hammaddeler de "KDV'siz" kalmaz.
   async function migrateHammaddeKdvOrani() {
+    // BAYRAKLA KORUMA: bu migration öncesinde bayrak YOKTU — hammaddeler
+    // koleksiyonunun TAMAMI her açılışta sırf bu kontrol için sunucudan
+    // çekiliyordu (sonsuza kadar tekrar eden gereksiz ağ isteği, kart
+    // oluşturma formu zaten her kayda kdvOraniYuzde yazıyor). Diğer tek
+    // seferlik migrationlarla (ör. migrateRdmGercekRecete) AYNI bayrak deseni.
+    const yapildiMi = await Store.get('_migrated_hammadde_kdv_v1', false);
+    if (yapildiMi) return;
     const hammaddeler = await Store.hammaddeler.all();
     let degisenSayisi = 0;
     hammaddeler.forEach(h => {
@@ -442,6 +449,7 @@ const App = (() => {
     if (degisenSayisi > 0) {
       await Store.hammaddeler.save(hammaddeler);
     }
+    await Store.set('_migrated_hammadde_kdv_v1', true);
   }
 
   // ── TEK SEFERLİK VERİ DÜZELTMESİ: RD.M.14080.S2.15.97'Yİ GERÇEK, ────────
@@ -468,6 +476,11 @@ const App = (() => {
   // bir varsayılan kategoriye eşlenir (plaka->Plaka, kenar_bandi->Kenar Bandı,
   // hirdavat->Hırdavat) — kullanıcı sonradan değiştirebilir.
   async function migrateHammaddeKategori() {
+    // BAYRAKLA KORUMA: migrateHammaddeKdvOrani'ndaki AYNI sorun — bayrak
+    // yoktu, hammaddeler koleksiyonunun TAMAMI her açılışta sırf bu kontrol
+    // için sunucudan çekiliyordu. Kart formu zaten her kayda kategori yazıyor.
+    const yapildiMi = await Store.get('_migrated_hammadde_kategori_v1', false);
+    if (yapildiMi) return;
     const mevcutListe = await Store.hammaddeKategorileriGetir();
     if (!mevcutListe || mevcutListe.length === 0) {
       await Store.hammaddeKategorileriKaydet([...(HAMMADDE_KATEGORI_SEED || [])]);
@@ -479,6 +492,7 @@ const App = (() => {
       if (!h.kategori) { h.kategori = tipToKategori[h.tip] || 'Diğer'; degisenSayisi++; }
     });
     if (degisenSayisi > 0) await Store.hammaddeler.save(hammaddeler);
+    await Store.set('_migrated_hammadde_kategori_v1', true);
   }
 
   async function migrateHatlar() {
