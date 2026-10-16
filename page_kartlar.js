@@ -55,6 +55,7 @@ PageModules.kartlar = (() => {
   let detayKartId = null; // { id, tip: 'urun'|'yarimamul'|'altmontaj'|'paket' }
   let activeTab = 'urunler';
   let kartlarArama = ''; // kt-arama kutusunun o anki metni (sekme değişince sıfırlanmaz)
+  let kartlarAramaZamanlayici = null;
 
   // GERÇEK ÜRETİM TESTİNDE YAKALANDI: 20.000+ ürün / 96.000+ yarı mamül
   // kartını TEK bir düz liste (grid) olarak basmak tarayıcıyı kilitliyordu
@@ -205,7 +206,16 @@ PageModules.kartlar = (() => {
     const [tip, liste] = tipMap[activeTab];
 
     const aramaKutu = document.getElementById('kt-arama');
-    aramaKutu.oninput = () => { kartlarArama = aramaKutu.value; kartGridCiz(main, tip, liste, receteOzet); };
+    aramaKutu.oninput = () => {
+      // DEBOUNCE: urunler+yarimamuller birleşik 116.000+ kayıt olabildiği
+      // için her tuş vuruşunda ANINDA liste.filter() çalıştırmak (Yarı
+      // Mamüller'deki AYNI düzeltme) gereksiz CPU harcıyordu — #kt-grid
+      // zaten en fazla KT_MAKS_ARAMA kart ÇİZDİĞİ için bu bir "donma" değil,
+      // yazarken hissedilebilir bir gecikme riskiydi.
+      const deger = aramaKutu.value;
+      clearTimeout(kartlarAramaZamanlayici);
+      kartlarAramaZamanlayici = setTimeout(() => { kartlarArama = deger; kartGridCiz(main, tip, liste, receteOzet); }, 150);
+    };
     // page_kalem_secici.js'teki AYNI "odak kaybetme" koruması: her tuş
     // vuruşunda yalnızca #kt-grid yeniden çizilir (bkz. kartGridCiz), bu
     // input kendisi asla yeniden oluşturulmaz.
