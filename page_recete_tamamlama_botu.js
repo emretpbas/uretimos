@@ -130,8 +130,13 @@ PageModules.recete_tamamlama_botu = (() => {
 
       const logKaydi = {
         id: App.uid('RTG'), zaman: new Date().toISOString(), tetikleyici,
+        // tamamlananSayisi TAM sayıyı taşır (KPI kolonunda doğru rakam
+        // görünsün); detaylar ise (ekranda tek hücrede nokta-ayraçlı
+        // basıldığı için) ilk 200 ile sınırlanır — büyük kurulumlarda bir
+        // taramanın BİNLERCE sonuç bulması, bu günlük kaydının kendisini
+        // (ve onu okuyan her sayfa açılışını) şişirmesin diye.
         tamamlananSayisi: sonuclar.length, yeniKartSayisi: yazma.toplamKart, yeniReceteSayisi: yazma.toplamRecete,
-        detaylar: sonuclar.map(s => ({ aileAdi: s.aileAdi, masterTip: s.masterTip, masterKod: s.masterKod, hedefKod: s.hedefKod, hedefOlcu: s.hedefOlcu })),
+        detaylar: sonuclar.slice(0, 200).map(s => ({ aileAdi: s.aileAdi, masterTip: s.masterTip, masterKod: s.masterKod, hedefKod: s.hedefKod, hedefOlcu: s.hedefOlcu })),
         eksikEslesmeler: eksikEslesmeler.slice(0, 200)
       };
       await Store.topluEkle('receteTamamlamaGunlugu', [logKaydi], 1);
@@ -206,7 +211,22 @@ PageModules.recete_tamamlama_botu = (() => {
             <td class="r">${g.tamamlananSayisi || 0}</td>
             <td class="r">${g.yeniKartSayisi || 0}</td>
             <td class="r">${(g.eksikEslesmeler || []).length ? `<span class="pill pill-amber">${g.eksikEslesmeler.length}</span>` : '—'}</td>
-          </tr>${(g.detaylar || []).length ? `<tr><td colspan="5" style="font-size:10px;color:var(--muted)">${g.detaylar.map(d => `${App.escapeHtml(d.aileAdi)}: ${App.escapeHtml(d.hedefKod)} (${App.escapeHtml(String(d.hedefOlcu))})`).join(' · ')}</td></tr>` : ''}`).join('')}
+          </tr>${(g.detaylar || []).length ? (() => {
+            // GERÇEK ÜRETİMDE YAKALANDI: büyük kurulumlarda bir tarama
+            // tek seferde yüzlerce/binlerce "tamamlandı" kaydı bulabiliyor
+            // (ör. 914) — hepsini TEK bir hücrede, nokta ile ayırıp basmak
+            // (ESKİ hal) o satırı mouse ÜZERİNE GELİNCE bile donduran kadar
+            // ağır bir metin/stil yeniden hesaplamasına yol açıyordu. Artık
+            // yalnızca ilk 20 gösterilir, kalanı özetlenir — eski (zaten
+            // kaydedilmiş) devasa kayıtlarda da bu sınır GERİYE DÖNÜK
+            // uygulanır, veri silinmez, sadece EKRANA basılan kısıtlanır.
+            const DETAY_GOSTERIM_SINIRI = 20;
+            const gosterilen = g.detaylar.slice(0, DETAY_GOSTERIM_SINIRI);
+            const kalan = g.detaylar.length - gosterilen.length;
+            const metin = gosterilen.map(d => `${App.escapeHtml(d.aileAdi)}: ${App.escapeHtml(d.hedefKod)} (${App.escapeHtml(String(d.hedefOlcu))})`).join(' · ')
+              + (kalan > 0 ? ` · … (+${kalan} daha)` : '');
+            return `<tr><td colspan="5" style="font-size:10px;color:var(--muted)">${metin}</td></tr>`;
+          })() : ''}`).join('')}
         </table>
       </div>`;
   }
@@ -330,7 +350,7 @@ PageModules.recete_tamamlama_botu = (() => {
     await Store.topluEkle('receteTamamlamaGunlugu', [{
       id: App.uid('RTG'), zaman: new Date().toISOString(), tetikleyici: 'manuel',
       tamamlananSayisi: sonuclar.length, yeniKartSayisi: yazma.toplamKart, yeniReceteSayisi: yazma.toplamRecete,
-      detaylar: sonuclar.map(s => ({ aileAdi: s.aileAdi, masterTip: s.masterTip, masterKod: s.masterKod, hedefKod: s.hedefKod, hedefOlcu: s.hedefOlcu })),
+      detaylar: sonuclar.slice(0, 200).map(s => ({ aileAdi: s.aileAdi, masterTip: s.masterTip, masterKod: s.masterKod, hedefKod: s.hedefKod, hedefOlcu: s.hedefOlcu })),
       eksikEslesmeler: eksikEslesmeler.slice(0, 200)
     }], 1);
 
