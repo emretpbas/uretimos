@@ -13,6 +13,7 @@ PageModules.hammadde = (() => {
   const SAYFA_BOYU = 100;
   let filterTip = 'hepsi';
   let searchTxt = '';
+  let aramaZamanlayici = null;
 
   // ── BAĞLANTI DELİK ŞABLONU (tip:'hirdavat' kartları için, opsiyonel) ───────
   // Kullanıcı isteği: "box'a eklediğimiz hırdavatların bağlantı deliklerini
@@ -67,7 +68,15 @@ PageModules.hammadde = (() => {
       <div class="card" id="hm-table-wrap"></div>
     `;
     document.getElementById('hm-new').onclick = () => openForm(null, () => render(main));
-    document.getElementById('hm-search').oninput = (e) => { searchTxt = e.target.value.toLowerCase(); renderTable(list); };
+    document.getElementById('hm-search').oninput = (e) => {
+      // DEBOUNCE: 12.000+ hammadde kaydında her tuş vuruşunda filtre+sayfalama
+      // yeniden hesaplanması gereksiz CPU harcıyordu (Yarı Mamüller'deki AYNI
+      // düzeltme — bkz. page_yarimamul.js) — tablo zaten sayfalı olduğundan
+      // burada bir "donma" değil, sadece gereksiz tekrar hesaplama riski var.
+      const deger = e.target.value;
+      clearTimeout(aramaZamanlayici);
+      aramaZamanlayici = setTimeout(() => { searchTxt = deger.toLowerCase(); sayfa = 1; renderTable(list); }, 200);
+    };
     main.querySelectorAll('.tip-filter').forEach(b => b.onclick = () => { filterTip = b.dataset.tip; render(main); });
     renderTable(list);
 
