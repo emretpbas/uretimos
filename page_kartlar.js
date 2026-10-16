@@ -1815,6 +1815,7 @@ PageModules.kartlar = (() => {
       if (!file) return;
       document.getElementById('ei-status').textContent = 'Dosya okunuyor…';
       try {
+        await App.xlsxYukle();
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
 

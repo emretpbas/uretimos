@@ -139,6 +139,7 @@ PageModules.tiger_aktarim = (() => {
       const durum = document.getElementById('tg-durum');
       durum.innerHTML = '<span class="muted">Dosya okunuyor…</span>';
       try {
+        await App.xlsxYukle();
         const buf = await f.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];

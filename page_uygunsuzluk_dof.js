@@ -226,7 +226,8 @@ PageModules.uygunsuzluk_dof = (() => {
   }
 
   // ── KUSUR FORMU ÇIKTILARI (PDF / Excel) ─────────────────────────────────
-  function kusurFormuExcel(n) {
+  async function kusurFormuExcel(n) {
+    await App.xlsxYukle();
     const wb = XLSX.utils.book_new();
     const rows = [
       ['UYGUNSUZLUK / KUSUR FORMU'],

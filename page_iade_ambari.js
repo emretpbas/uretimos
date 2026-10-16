@@ -294,7 +294,8 @@ PageModules.iade_ambari = (() => {
   }
 
   // ── ÇIKTILAR ────────────────────────────────────────────────────────────
-  function kusurFormuExcel(i) {
+  async function kusurFormuExcel(i) {
+    await App.xlsxYukle();
     const wb = XLSX.utils.book_new();
     const [kl] = KALITE_ETIKET[i.kalite] || ['—'];
     const rows = [
@@ -314,7 +315,8 @@ PageModules.iade_ambari = (() => {
     App.toast('Excel indirildi', 'ok');
   }
 
-  function satisListesiExcel(list) {
+  async function satisListesiExcel(list) {
+    await App.xlsxYukle();
     const wb = XLSX.utils.book_new();
     const header = ['Kod', 'Ad', 'Kalite Sınıfı', 'Miktar', 'Birim', 'Satış Fiyatı', 'Döviz', 'Kusur', 'Not'];
     const rows = [header];

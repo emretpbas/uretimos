@@ -253,7 +253,8 @@ ${k.adimlar.map(a => `
   }
 
   // BOM'u Excel'e aktar
-  function excelIndir(k) {
+  async function excelIndir(k) {
+    await App.xlsxYukle();
     if (!window.XLSX) throw new Error('Excel kütüphanesi yüklenemedi.');
     const S = [[k.urunAdi + ' — Montaj Parça Listesi'],
       ['Tarih', new Date().toLocaleDateString('tr')],

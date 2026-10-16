@@ -104,7 +104,8 @@ PageModules.acik_satinalma_siparisleri = (() => {
     cardEl.querySelector('.ass-yazdir').onclick = () => downloadGrupPdf(grup, true);
   }
 
-  function downloadGrupExcel(grup) {
+  async function downloadGrupExcel(grup) {
+    await App.xlsxYukle();
     const wsData = [
       ['AÇIK SATINALMA SİPARİŞLERİ — ' + grup.tedarikciAdi],
       [],

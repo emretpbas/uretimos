@@ -307,8 +307,9 @@ PageModules.hammadde = (() => {
     return '<span class="pill pill-gray">Yönsüz</span>';
   }
   // Süzülmüş listeyi Excel'e aktarır — ekranda ne görüyorsanız o iner.
-  function excelAktar(liste) {
+  async function excelAktar(liste) {
     try {
+      await App.xlsxYukle();
       const TIP_AD = { plaka: 'Plaka', hirdavat: 'Hırdavat', kenar_bandi: 'Kenar Bandı', sarf: 'Sarf' };
       const veri = liste.map(h => ({
         'Tip': TIP_AD[h.tip] || h.tip || '',

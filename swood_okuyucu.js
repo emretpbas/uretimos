@@ -120,6 +120,7 @@ const SwoodOkuyucu = (() => {
 
   // ── ZIP'İ OKU (tarayıcıya özgü — JSZip kullanır) ──────────────────────────
   async function oku(file) {
+    try { await App.jszipYukle(); } catch (e) { /* aşağıdaki kontrol yakalar */ }
     if (typeof JSZip === 'undefined') throw new Error('JSZip yüklenemedi — sayfayı yenileyip tekrar deneyin.');
     const uyarilar = [];
     const buf = await file.arrayBuffer();

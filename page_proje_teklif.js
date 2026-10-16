@@ -896,13 +896,13 @@ PageModules.proje_teklif = (() => {
     document.getElementById('pt-excel').onclick = async () => {
       try {
         const { firma, musteri } = await antetVerisi(p);
-        TeklifExcel.indir(t, h, firma, musteri);
+        await TeklifExcel.indir(t, h, firma, musteri);
         App.toast('Excel teklif indirildi.', 'ok');
       } catch (e) { App.toast('İndirilemedi: ' + (e && e.message ? e.message : e), 'err'); }
     };
-    document.getElementById('pt-icmal').onclick = () => {
+    document.getElementById('pt-icmal').onclick = async () => {
       try {
-        TeklifExcel.icmalIndir(t, h, _maliyetSoz, { gygYuzde: (App.state && App.state.ayarlar && App.state.ayarlar.fiyatGygYuzde) || 10 });
+        await TeklifExcel.icmalIndir(t, h, _maliyetSoz, { gygYuzde: (App.state && App.state.ayarlar && App.state.ayarlar.fiyatGygYuzde) || 10 });
         App.toast('Yönetim maliyet icmali indirildi.', 'ok');
       } catch (e) { App.toast('İndirilemedi: ' + (e && e.message ? e.message : e), 'err'); }
     };

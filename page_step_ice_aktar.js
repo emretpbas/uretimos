@@ -400,8 +400,8 @@ PageModules.step_ice_aktar = (() => {
     });
 
     document.getElementById('mk-kapat').onclick = App.closeModal;
-    document.getElementById('mk-excel').onclick = () => {
-      try { MontajKilavuzu.excelIndir(k); App.toast('Parça listesi indirildi.', 'ok'); }
+    document.getElementById('mk-excel').onclick = async () => {
+      try { await MontajKilavuzu.excelIndir(k); App.toast('Parça listesi indirildi.', 'ok'); }
       catch (e) { App.toast('İndirilemedi: ' + ((e && e.message) || e), 'err'); }
     };
     document.getElementById('mk-yazdir').onclick = async () => {

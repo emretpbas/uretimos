@@ -129,7 +129,8 @@ const TeklifExcel = (() => {
     return wb;
   }
 
-  function indir(teklif, hesap, firma, musteri) {
+  async function indir(teklif, hesap, firma, musteri) {
+    await App.xlsxYukle();
     const wb = excelUret(teklif, hesap, firma, musteri);
     const ad = (teklif.kod || 'teklif').replace(/[^\w.-]/g, '_');
     XLSX.writeFile(wb, ad + '_teklif.xlsx');
@@ -343,7 +344,8 @@ const TeklifExcel = (() => {
     return wb;
   }
 
-  function icmalIndir(teklif, hesap, maliyetSoz, ayar) {
+  async function icmalIndir(teklif, hesap, maliyetSoz, ayar) {
+    await App.xlsxYukle();
     const wb = icmalUret(teklif, hesap, maliyetSoz, ayar);
     const ad = (teklif.kod || 'teklif').replace(/[^\w.-]/g, '_');
     XLSX.writeFile(wb, ad + '_maliyet_icmali.xlsx');
