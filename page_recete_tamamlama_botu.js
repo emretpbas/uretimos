@@ -110,14 +110,14 @@ PageModules.recete_tamamlama_botu = (() => {
   // Büyük kurulumlarda OTOMATİK tetikleyiciler (manuel HARİÇ — kullanıcı
   // "Şimdi Tekrar Tara"ya basarken bilerek bekler) bu eşik üstünde atlanır.
   const BUYUK_KOLEKSIYON_ESIGI = 3000;
-  async function otomatikTetikleyiciIcinBuyukMu() {
+  async function koleksiyonlarBuyukMu() {
     const sayilar = await Promise.all(['urunler', 'yarimamuller', 'altMontajlar', 'paketler'].map(k => Store.sayim(k)));
     return sayilar.some(adet => adet > BUYUK_KOLEKSIYON_ESIGI);
   }
 
   async function botCalistirVeUygula(tetikleyici) {
     try {
-      if (tetikleyici !== 'manuel' && await otomatikTetikleyiciIcinBuyukMu()) {
+      if (tetikleyici !== 'manuel' && await koleksiyonlarBuyukMu()) {
         console.warn('Reçete Tamamlama Botu (' + tetikleyici + '): büyük koleksiyon tespit edildi, otomatik tarama atlanıyor (donma riski). Manuel çalıştırmak için bu ekrandaki "Şimdi Tekrar Tara" düğmesini kullanın.');
         return null;
       }
@@ -237,6 +237,19 @@ PageModules.recete_tamamlama_botu = (() => {
   // (ör. "hedef ölçü tanımsız" -> Ölçü Eşleştirme Anahtarı). Bu, günlükten
   // AYRIDIR — günlük GEÇMİŞİ, bu bölüm ŞU ANKİ durumu gösterir.
   async function elleGerekenleriCiz() {
+    // GERÇEK ÜRETİMDE YAKALANDI: bu fonksiyon SADECE "şu anki durumu önceden
+    // göster" amaçlı bir kolaylıktı ama botCalistirVeUygula ile AYNI ağır
+    // işi (veriTopla + tamSistemTaramasi, 117.000+ kart) yapıyordu — VE,
+    // botCalistirVeUygula'nın aksine, HİÇBİR büyüklük korumasından
+    // geçmeden render()'da HER SAYFA AÇILIŞINDA koşulsuz çalışıyordu. Yani
+    // "Reçete Tamamlama Botu" ekranını sadece KONTROL ETMEK İÇİN açmak bile
+    // tek başına donmaya yetiyordu. Büyük kurulumlarda bu önizleme atlanır;
+    // güncel durumu görmek isteyen kullanıcı "Şimdi Tekrar Tara"ya basar
+    // (o akış kullanıcının BİLEREK beklediği, ayrı bir yoldur).
+    if (await koleksiyonlarBuyukMu()) {
+      document.getElementById('rtb-rapor').innerHTML = `<div class="fhint" style="margin-bottom:12px">Kart sayısı yüksek olduğu için "elle kontrol gerekenler" önizlemesi otomatik gösterilmiyor (donma riski) — görmek için "Şimdi Tekrar Tara"ya basın.</div>`;
+      return;
+    }
     const veri = await veriTopla();
     const { eksikEslesmeler } = OlcuVaryantMotoru.tamSistemTaramasi(veri, () => '__onizleme__');
     if (!eksikEslesmeler.length) return;
