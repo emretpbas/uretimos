@@ -205,12 +205,16 @@ const ReceteYapimRaporuMotoru = (() => {
       // farklı olduğu için) ve YANLIŞLIKLA yeni bir ürün kartı yaratırdı.
       const plan = RVM.varyantPlaniOlustur(masterKart.id, 'urun', aday.hedefRenkKodu, aday.hedefRenkAdi, calismaVerisi, idUret, { mevcutKartiKullan: true, kokHedefId: aday.urun.id });
 
-      // Bu adayın ürettiği yeni kartları/reçeteleri ÇALIŞMA KOPYASINA ekle.
-      plan.yeniKartlar.forEach(({ tip, kart }) => kartListesiAl(tip).push(kart));
-      plan.yeniReceteler.forEach(yeniRecete => {
-        const idx = calismaVerisi.receteler.findIndex(r => r.id === yeniRecete.id);
-        if (idx >= 0) calismaVerisi.receteler[idx] = yeniRecete; else calismaVerisi.receteler.push(yeniRecete);
-      });
+      // Bu adayın ürettiği yeni kartları/reçeteleri ÇALIŞMA KOPYASINA ekle —
+      // RVM.indeksKartEkle/indeksReceteEkleVeyaDegistir ile (ham push/
+      // findIndex DEĞİL): RenkVaryantMotoru bu `calismaVerisi` için bir
+      // indeks ÖNBELLEĞİ tutuyor (varyantPlaniOlustur çağrıları arasında id
+      // bakışlarını O(1)'e indirmek için) — ham dizi mutasyonu bu önbelleği
+      // GÜNCELLEMEZ, bir SONRAKİ aday aynı alt bileşeni paylaşırsa (ör. iki
+      // aday AYNI hedef renge düşerse) "zaten reçetesi var mı" kontrolü eski/
+      // boş indeksten yapılıp MÜKERRER reçete yaratabilirdi.
+      plan.yeniKartlar.forEach(({ tip, kart }) => { kartListesiAl(tip).push(kart); RVM.indeksKartEkle(calismaVerisi, tip, kart); });
+      plan.yeniReceteler.forEach(yeniRecete => RVM.indeksReceteEkleVeyaDegistir(calismaVerisi, yeniRecete));
 
       return {
         hedefUrunId: plan.kokYeniId, hedefUrunYeniMi: plan.yeniKartlar.some(x => x.tip === 'urun' && x.kart.id === plan.kokYeniId),

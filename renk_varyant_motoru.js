@@ -130,7 +130,7 @@ const RenkVaryantMotoru = (() => {
   function indeksAl(veri) {
     let ind = _indeksOnbellegi.get(veri);
     if (ind) return ind;
-    ind = { kartById: {}, receteByRef: {}, hammaddeById: new Map() };
+    ind = { kartById: {}, receteByRef: {}, receteIdToIndex: new Map(), hammaddeById: new Map() };
     ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
       const liste = kartListesi(tip, veri) || [];
       const idMap = new Map();
@@ -139,8 +139,9 @@ const RenkVaryantMotoru = (() => {
       ind.receteByRef[tip] = new Map();
     });
     (veri.hammaddeler || []).forEach(h => { if (h && h.id != null) ind.hammaddeById.set(h.id, h); });
-    (veri.receteler || []).forEach(r => {
+    (veri.receteler || []).forEach((r, i) => {
       if (!r) return;
+      if (r.id != null) ind.receteIdToIndex.set(r.id, i);
       ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
         const alan = idAlani(tip);
         if (r[alan] != null) ind.receteByRef[tip].set(r[alan], r);
@@ -148,6 +149,35 @@ const RenkVaryantMotoru = (() => {
     });
     _indeksOnbellegi.set(veri, ind);
     return ind;
+  }
+  // "Reçete Yapım Raporu"nun sistem geneli akışı (sistemGenelindeReceteRaporu)
+  // AYNI `calismaVerisi` üzerinde varyantPlaniOlustur'u BİRDEN FAZLA aday için
+  // ARDIŞIK çağırır ve her adaydan sonra sonucu HAM push/findIndex ile diziye
+  // ekler — ama indeksAl bu veri nesnesi için bir kez (WeakMap) ÖNBELLEĞE
+  // alındığından, ham dizi mutasyonları indekse YANSIMAZ. Bu da BİR adayın
+  // yarattığı kart/reçeteyi BAŞKA bir adayın `mevcutKart` ile bulup (liste
+  // CANLI tarandığı için bulunur) sonra "zaten reçetesi var mı" kontrolünü
+  // (ind.receteByRef) ESKİ/boş indeksten yapması riskiyle MÜKERRER reçete
+  // yaratılmasına yol açabilir. Bu iki yardımcı — olcu_varyant_motoru.js'teki
+  // AYNI isimli/AYNI amaçlı fonksiyonlarla BİREBİR aynı mantıkla — ham push/
+  // findIndex'in YERİNE geçip indeksi dizi ile senkron tutar.
+  function indeksKartEkle(veri, tip, kart) {
+    const ind = indeksAl(veri);
+    if (kart.id != null) ind.kartById[tip].set(kart.id, kart);
+  }
+  function indeksReceteEkleVeyaDegistir(veri, yeniRecete) {
+    const ind = indeksAl(veri);
+    const mevcutIdx = ind.receteIdToIndex.get(yeniRecete.id);
+    if (mevcutIdx !== undefined) {
+      veri.receteler[mevcutIdx] = yeniRecete;
+    } else {
+      ind.receteIdToIndex.set(yeniRecete.id, veri.receteler.length);
+      veri.receteler.push(yeniRecete);
+    }
+    ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
+      const alan = idAlani(tip);
+      if (yeniRecete[alan] != null) ind.receteByRef[tip].set(yeniRecete[alan], yeniRecete);
+    });
   }
 
   // Kök karttan başlayıp tüm alt ağacı hedef renge klonlayan asıl fonksiyon.
@@ -304,7 +334,7 @@ const RenkVaryantMotoru = (() => {
 
   return {
     kisaltmaIleRenkBul, temelKodCikar, varyantKoduUret, varyantAdUret, hammaddeEslesenBul,
-    varyantPlaniOlustur
+    varyantPlaniOlustur, indeksKartEkle, indeksReceteEkleVeyaDegistir
   };
 })();
 
