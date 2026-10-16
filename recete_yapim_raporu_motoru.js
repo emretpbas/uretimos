@@ -48,15 +48,38 @@ const ReceteYapimRaporuMotoru = (() => {
 
     const benzersizKodlar = [...new Set(masterStokKodlari || [])];
 
+    // PERFORMANS: 96.746 yarımamül ölçeğinde her masterStokKod için TÜM
+    // koleksiyonu .find()/.filter() ile taramak (bir ürünün reçete ağacında
+    // yüzlerce parça geçebilir) O(masterKod sayısı × yarımamül sayısı)
+    // olurdu. `kodToYarimamul`: kod -> kart, TEK geçişte kurulur, .find()
+    // ile BİREBİR aynı "ilk eşleşen" davranışını O(1) bakışla verir.
+    // `prefixIndeksi`: her kartın kodu için nokta-sınırlı TÜM önekler bu
+    // önekle başlayan kartların listesine eklenir — `y.kod.startsWith(
+    // temelKod + '.')` ile ÜRETTİĞİ kümeyle TAM AYNI (iç içe/derin kod
+    // yapıları dahil), yalnızca O(1) bakışla. DAVRANIŞ DEĞİŞMEZ.
+    const yarimamuller = veri.yarimamuller || [];
+    const kodToYarimamul = new Map();
+    const prefixIndeksi = new Map();
+    yarimamuller.forEach(y => {
+      if (!y || y.kod == null) return;
+      if (!kodToYarimamul.has(y.kod)) kodToYarimamul.set(y.kod, y);
+      const parcalar = String(y.kod).split('.');
+      let onek = parcalar[0];
+      for (let i = 1; i < parcalar.length; i++) {
+        if (!prefixIndeksi.has(onek)) prefixIndeksi.set(onek, []);
+        prefixIndeksi.get(onek).push(y);
+        onek += '.' + parcalar[i];
+      }
+    });
+
     benzersizKodlar.forEach(masterStokKod => {
-      const masterKart = (veri.yarimamuller || []).find(y => y.kod === masterStokKod);
+      const masterKart = kodToYarimamul.get(masterStokKod) || null;
       if (!masterKart) return; // master kart ÜretimOS'ta bir YARI MAMÜL olarak yok (hammadde/paket olabilir) — atla
 
       const temelKod = RVM.temelKodCikar(masterKart.kod, veri.renkKisaltmalari);
       if (!temelKod) return; // bu kodun kendisi bir renk ailesine ait değil (son eki tanınmıyor)
 
-      const kardesler = (veri.yarimamuller || []).filter(y =>
-        y.id !== masterKart.id && y.kod.startsWith(temelKod + '.'));
+      const kardesler = (prefixIndeksi.get(temelKod) || []).filter(y => y.id !== masterKart.id);
       if (!kardesler.length) return; // kardeş yok, yayılacak bir şey yok
 
       if (!masterKart.malzemeKategorisi) {
