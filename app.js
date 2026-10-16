@@ -2541,9 +2541,53 @@ const App = (() => {
   // Bir kenarın bant maliyetini hesaplar: (net ölçü + 50mm) × metre fiyatı.
   // netOlcuMM: o kenarın net uzunluğu (mm). bandHammaddeId: hammaddeler
   // listesinden seçilen kenar_bandi tipi kartın id'si.
+  // PERFORMANS: 12.224 hammadde / 107.044 reçete / 96.746 yarımamül
+  // ölçeğinde, maliyet hesabı reçete ağacının HER düğümünde (recursive,
+  // kartMaliyetHesapla) + her kenar bandında bu dizileri .find() ile
+  // doğrusal taramak — ve bu, TÜM katalog üzerinde (ör. Fiyatlama'nın
+  // "Otomatik Hesapla"sı veya Proje Teklifi'nin HER render'ında) tekrar
+  // tekrar çağrılınca — O(düğüm×koleksiyon) hatta O(ürün×düğüm×koleksiyon)
+  // olup saniyeler/dakikalar sürebiliyordu (olcu_varyant_motoru.js'teki
+  // KÖK NEDENLE AYNI desen). Aşağıdaki indeksler dizi REFERANSINA (WeakMap)
+  // bağlıdır — bir "hesaplama turu" boyunca (tek kart veya TÜM katalog
+  // sweep'i) AYNI receteler/hammaddeler dizisi tekrar tekrar geçildiğinden
+  // bir KEZ kurulup HEP yeniden kullanılır. DAVRANIŞ DEĞİŞMEZ, yalnızca HIZ.
+  const _hammaddeIndeksOnbellegi = new WeakMap(); // hammaddeler dizisi -> Map(id->hammadde)
+  function hammaddeIdIndeksi(hammaddeler) {
+    let m = _hammaddeIndeksOnbellegi.get(hammaddeler);
+    if (m) return m;
+    m = new Map();
+    (hammaddeler || []).forEach(h => { if (h && h.id != null && !m.has(h.id)) m.set(h.id, h); });
+    _hammaddeIndeksOnbellegi.set(hammaddeler, m);
+    return m;
+  }
+  const _maliyetIndeksOnbellegi = new WeakMap(); // receteler dizisi -> {receteByRef, kartById, rotaById}
+  function maliyetIndeksiAl(receteler, yarimamuller, altMontajlar, urunler, rotalar, paketler) {
+    let ind = _maliyetIndeksOnbellegi.get(receteler);
+    if (ind) return ind;
+    ind = {
+      receteByRef: { urun: new Map(), yarimamul: new Map(), altmontaj: new Map(), paket: new Map() },
+      kartById: { yarimamul: new Map(), urun: new Map(), altmontaj: new Map(), paket: new Map() },
+      rotaById: new Map()
+    };
+    (receteler || []).forEach(r => {
+      if (!r) return;
+      if (r.urunId != null && !ind.receteByRef.urun.has(r.urunId)) ind.receteByRef.urun.set(r.urunId, r);
+      if (r.yarimamulId != null && !ind.receteByRef.yarimamul.has(r.yarimamulId)) ind.receteByRef.yarimamul.set(r.yarimamulId, r);
+      if (r.altMontajId != null && !ind.receteByRef.altmontaj.has(r.altMontajId)) ind.receteByRef.altmontaj.set(r.altMontajId, r);
+      if (r.paketId != null && !ind.receteByRef.paket.has(r.paketId)) ind.receteByRef.paket.set(r.paketId, r);
+    });
+    (yarimamuller || []).forEach(k => { if (k && k.id != null && !ind.kartById.yarimamul.has(k.id)) ind.kartById.yarimamul.set(k.id, k); });
+    (urunler || []).forEach(k => { if (k && k.id != null && !ind.kartById.urun.has(k.id)) ind.kartById.urun.set(k.id, k); });
+    (altMontajlar || []).forEach(k => { if (k && k.id != null && !ind.kartById.altmontaj.has(k.id)) ind.kartById.altmontaj.set(k.id, k); });
+    (paketler || []).forEach(k => { if (k && k.id != null && !ind.kartById.paket.has(k.id)) ind.kartById.paket.set(k.id, k); });
+    (rotalar || []).forEach(r => { if (r && r.id != null && !ind.rotaById.has(r.id)) ind.rotaById.set(r.id, r); });
+    _maliyetIndeksOnbellegi.set(receteler, ind);
+    return ind;
+  }
   function kenarBandiMaliyetHesapla(netOlcuMM, bandHammaddeId, hammaddeler, ayarlar) {
     if (!bandHammaddeId || !netOlcuMM) return { maliyet: 0, metre: 0, hammadde: null };
-    const hm = hammaddeler.find(h => h.id === bandHammaddeId);
+    const hm = hammaddeIdIndeksi(hammaddeler).get(bandHammaddeId) || null;
     if (!hm) return { maliyet: 0, metre: 0, hammadde: null };
     const metre = (netOlcuMM + 50) / 1000; // net ölçüye 50mm ilave edilir, mm -> metre
     const fiyatTRY = hammaddeBirimFiyatTRY(hm, ayarlar);   // kargo payı dahil
@@ -2571,10 +2615,8 @@ const App = (() => {
     }
     const yeniGezilenler = new Set(gezilenler); yeniGezilenler.add(kendiAnahtar);
 
-    const recete = kartTipi === 'urun' ? receteler.find(r => r.urunId === kart.id)
-      : kartTipi === 'yarimamul' ? receteler.find(r => r.yarimamulId === kart.id)
-      : kartTipi === 'altmontaj' ? receteler.find(r => r.altMontajId === kart.id)
-      : receteler.find(r => r.paketId === kart.id);
+    const ind = maliyetIndeksiAl(receteler, yarimamuller, altMontajlar, urunler, rotalar, paketler);
+    const recete = ind.receteByRef[kartTipi].get(kart.id) || null;
 
     let kalemToplami = 0;
     const detay = [];
@@ -2583,7 +2625,7 @@ const App = (() => {
     if (recete && recete.kalemler.length) {
       recete.kalemler.forEach(k => {
         if (k.tip === 'hammadde') {
-          const hm = hammaddeler.find(h => h.id === k.refId);
+          const hm = hammaddeIdIndeksi(hammaddeler).get(k.refId) || null;
           if (!hm) { eksikKalemler.push({ ad: k.refId, kaynak: 'yok' }); return; }
           const fiyatTRY = hammaddeBirimFiyatTRY(hm, ayarlar);   // kargo payı dahil
           let birimMaliyet;
@@ -2613,8 +2655,7 @@ const App = (() => {
           kalemToplami += satirMaliyet;
           detay.push({ tip: 'hammadde', ad: hm.ad, kod: hm.stokKodu, miktar: k.miktar, birimMaliyet, satirMaliyet, kenarDetaylari, kaynak: 'hammadde' });
         } else if (k.tip === 'yarimamul' || k.tip === 'urun' || k.tip === 'altmontaj' || k.tip === 'paket') {
-          const liste = k.tip === 'yarimamul' ? yarimamuller : (k.tip === 'urun' ? urunler : (k.tip === 'altmontaj' ? altMontajlar : paketler));
-          const altKart = liste.find(x => x.id === k.refId);
+          const altKart = ind.kartById[k.tip].get(k.refId) || null;
           if (!altKart) { eksikKalemler.push({ ad: k.refId, kaynak: 'yok' }); return; }
           const sonuc = kartMaliyetHesapla(altKart, k.tip, receteler, yarimamuller, altMontajlar, urunler, hammaddeler, rotalar, ayarlar, yeniGezilenler, paketler);
           if (sonuc.kaynak === 'yok' || sonuc.eksikKalemler.length) eksikKalemler.push({ ad: altKart.ad, kaynak: 'kismi' });
@@ -2625,7 +2666,7 @@ const App = (() => {
       });
     } else if (kartTipi === 'yarimamul' && kart.hammaddeId) {
       // Eski/basit tek-hammadde bağlantısı (geriye dönük uyumluluk)
-      const hm = hammaddeler.find(h => h.id === kart.hammaddeId);
+      const hm = hammaddeIdIndeksi(hammaddeler).get(kart.hammaddeId) || null;
       if (hm) {
         let birimMaliyet;
         const fiyatTRY = hammaddeBirimFiyatTRY(hm, ayarlar);   // kargo payı dahil
@@ -2650,7 +2691,7 @@ const App = (() => {
     // Rota maliyeti (işçilik) — kartın kendi rotaId'si üzerinden
     let rotaMaliyeti = 0;
     if (kart.rotaId) {
-      const rota = rotalar.find(r => r.id === kart.rotaId);
+      const rota = ind.rotaById.get(kart.rotaId) || null;
       if (rota) rotaMaliyeti = rota.toplamMaliyet || 0;
     }
 
@@ -2688,15 +2729,13 @@ const App = (() => {
       if (gezilenler.has(anahtar)) return;
       const yeniGezilenler = new Set(gezilenler); yeniGezilenler.add(anahtar);
 
-      const recete = refTip === 'urun' ? receteler.find(r => r.urunId === refKart.id)
-        : refTip === 'yarimamul' ? receteler.find(r => r.yarimamulId === refKart.id)
-        : refTip === 'altmontaj' ? receteler.find(r => r.altMontajId === refKart.id)
-        : receteler.find(r => r.paketId === refKart.id);
+      const kirilimInd = maliyetIndeksiAl(receteler, yarimamuller, altMontajlar, urunler, rotalar, paketler);
+      const recete = kirilimInd.receteByRef[refTip].get(refKart.id) || null;
       if (!recete || !recete.kalemler || !recete.kalemler.length) return;
 
       recete.kalemler.forEach(k => {
         if (k.tip === 'hammadde') {
-          const hm = hammaddeler.find(h => h.id === k.refId);
+          const hm = hammaddeIdIndeksi(hammaddeler).get(k.refId) || null;
           if (!hm) return;
           const fiyatTRY = hammaddeBirimFiyatTRY(hm, ayarlar);   // kargo payı dahil
           let birimMaliyet, olcuMetni = '';
@@ -2768,8 +2807,7 @@ const App = (() => {
             });
           }
         } else if (k.tip === 'yarimamul' || k.tip === 'urun' || k.tip === 'altmontaj' || k.tip === 'paket') {
-          const liste = k.tip === 'yarimamul' ? yarimamuller : (k.tip === 'urun' ? urunler : (k.tip === 'altmontaj' ? altMontajlar : paketler));
-          const altKart = liste.find(x => x.id === k.refId);
+          const altKart = kirilimInd.kartById[k.tip].get(k.refId) || null;
           if (!altKart) return;
           const sonuc = kartMaliyetHesapla(altKart, k.tip, receteler, yarimamuller, altMontajlar, urunler, hammaddeler, rotalar, ayarlar, new Set(), paketler);
           const satirMaliyet = sonuc.toplam * (k.miktar || 1);
