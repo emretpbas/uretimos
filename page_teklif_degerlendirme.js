@@ -343,9 +343,8 @@ PageModules.teklif_degerlendirme = (() => {
     document.getElementById('td-excel').onclick = () => raporExcel(tumu, veri);
   }
 
-  async function raporExcel(tumu, veri) {
+  function raporExcel(tumu, veri) {
     try {
-      await App.xlsxYukle();
       const oz = TeklifTakipMotor.ozet(tumu);
       const S = [['TEKLİF DEĞERLENDİRME RAPORU'], ['Tarih', new Date().toLocaleDateString('tr')], []];
       S.push(['GENEL DURUM']);

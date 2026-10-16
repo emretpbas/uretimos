@@ -6,10 +6,8 @@
 // model sunar. Aynı hesap verisini (geo bilgisi) kullanır — tek doğruluk
 // kaynağı yine dolap_hesap.js'tir.
 //
-// three.min.js (UMD, global THREE) index.html'de artık eagerly YÜKLENMEZ —
-// ciz() çağrıldığı anda App.threeYukle() ile dinamik olarak yüklenir (açılışta
-// ~670 KB'lık, çoğu oturumda hiç kullanılmayan bir kütüphaneyi boşuna
-// taşımamak için). OrbitControls kütüphanesi dahil edilmedi; döndürme/zoom pointer olaylarıyla
+// three.min.js (UMD, global THREE) index.html'de bu dosyadan ÖNCE yüklenir.
+// OrbitControls kütüphanesi dahil edilmedi; döndürme/zoom pointer olaylarıyla
 // elle yazıldı (ek bağımlılık olmasın diye).
 //
 // Sınır: Bu fotogerçekçi bir render değil. Basit ışık + düz renkli paneller;
@@ -249,17 +247,14 @@ const Dolap3D = (() => {
   }
 
   // Dış API: bir kaba 3D görünümü çizer. hedefKap bir DOM elemanı.
-  async function ciz(kap, h, dekor) {
+  function ciz(kap, h, dekor) {
     hedefKap = kap;
-    if (!h || !h.paneller || !h.paneller.length) {
-      kap.innerHTML = `<div class="fhint" style="padding:16px">Önce geçerli ölçü girin.</div>`;
-      return;
-    }
-    try {
-      await App.threeYukle();
-    } catch (e) { /* aşağıdaki window.THREE kontrolü yakalar */ }
     if (!window.THREE) {
       kap.innerHTML = `<div class="fhint" style="padding:16px">3D kütüphanesi (three.js) yüklenemedi. Sayfayı yenileyin; sorun sürerse tarayıcınız WebGL desteklemiyor olabilir.</div>`;
+      return;
+    }
+    if (!h || !h.paneller || !h.paneller.length) {
+      kap.innerHTML = `<div class="fhint" style="padding:16px">Önce geçerli ölçü girin.</div>`;
       return;
     }
     try {

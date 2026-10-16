@@ -979,8 +979,7 @@ PageModules.is_emri_formu = (() => {
   // ── EXCEL ÇIKTISI ────────────────────────────────────────────────────────
   // Çalışma kitabını kurar (indirme VE karta dosya olarak ekleme tarafından
   // ortak kullanılır) — sadece hazırlar, dosyayı diske YAZMAZ.
-  async function excelKitabiOlustur() {
-    await App.xlsxYukle();
+  function excelKitabiOlustur() {
     if (!window.XLSX) throw new Error('Excel kütüphanesi yüklenemedi.');
     if (!form.satirlar.length) throw new Error('Önce satır ekleyin.');
     const S = [];
@@ -1034,9 +1033,9 @@ PageModules.is_emri_formu = (() => {
     return wb;
   }
 
-  async function excelIndir() {
+  function excelIndir() {
     try {
-      const wb = await excelKitabiOlustur();
+      const wb = excelKitabiOlustur();
       XLSX.writeFile(wb, (form.isEmriKodu || 'is_emri').replace(/[^\w.-]/g, '_') + '.xlsx');
       App.toast('İş emri Excel\'e aktarıldı.', 'ok');
     } catch (e) { App.toast('Aktarılamadı: ' + ((e && e.message) || e), 'err'); }
@@ -1174,7 +1173,7 @@ PageModules.is_emri_formu = (() => {
         el.querySelectorAll('.ke-ekle').forEach(b => b.onclick = async () => {
           const taban = 'IsEmri_' + (form.isEmriKodu || 'form').replace(/[^\w.-]/g, '_');
           try {
-            const wb = await excelKitabiOlustur();
+            const wb = excelKitabiOlustur();
             const excelB64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
             await Store.teknikDosyaYukle({ tip: tipDef.tip, refId: b.dataset.id, kod: b.dataset.kod, ad: b.dataset.ad, dosyaAdi: taban + '.xlsx', icerikB64: excelB64 });
           } catch (e) { App.toast('Excel karta eklenemedi: ' + ((e && e.message) || e), 'err'); return; }
@@ -1208,7 +1207,6 @@ PageModules.is_emri_formu = (() => {
   // seçilen karta yükler. Yazdırma/önizleme için ayrı olan pdfYazdir() (aşağıda)
   // tarayıcının yazdırma diyaloğunu kullanmaya devam ediyor.
   async function pdfKitabiOlustur() {
-    await App.jspdfYukle();
     if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF kütüphanesi yüklenemedi.');
     if (!form.satirlar.length) throw new Error('Önce satır ekleyin.');
     const { jsPDF } = window.jspdf;

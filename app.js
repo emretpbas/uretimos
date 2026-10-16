@@ -28,34 +28,6 @@ const App = (() => {
     { id: 'yonetim', label: 'Üst Yönetim (Fiyat & Onaylar)', icon: '✓' }
   ];
 
-  // ── AĞIR KÜTÜPHANELERİ İHTİYAÇ ANINDA YÜKLEME ───────────────────────────
-  // xlsx/jspdf/jszip/three.js index.html'de HER açılışta, HER sayfada
-  // zorunlu olarak yükleniyordu (toplam ~2 MB, sadece belirli özelliklerde
-  // kullanılıyor) — "açılışta donma" şikâyetinin büyük bölümü buydu.
-  // Bu dört kütüphane artık index.html'den ÇIKARILDI; ilk gerçekten
-  // kullanıldıkları anda (örn. Excel'e aktar düğmesi) bu fonksiyonla
-  // dinamik <script> olarak yüklenir. Aynı url bir daha İSTENMEZ — ikinci
-  // çağrı önbellekteki AYNI promise'i döner (script tekrar eklenmez).
-  const _kutuphaneSozleri = {};
-  function kutuphaneYukle(url) {
-    if (_kutuphaneSozleri[url]) return _kutuphaneSozleri[url];
-    const p = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = url;
-      s.onload = () => resolve();
-      s.onerror = () => { delete _kutuphaneSozleri[url]; reject(new Error('Kütüphane yüklenemedi: ' + url)); };
-      document.head.appendChild(s);
-    });
-    _kutuphaneSozleri[url] = p;
-    return p;
-  }
-  const xlsxYukle = () => kutuphaneYukle('xlsx.full.min.js?v=24');
-  const jszipYukle = () => kutuphaneYukle('jszip.min.js?v=1');
-  const threeYukle = () => kutuphaneYukle('three.min.js?v=1');
-  // jspdf-autotable eklentisi, jsPDF'in GLOBAL'de hazır olmasını bekler —
-  // bu yüzden art arda (paralel değil) yüklenir.
-  const jspdfYukle = () => kutuphaneYukle('jspdf.umd.min.js?v=1').then(() => kutuphaneYukle('jspdf.plugin.autotable.min.js?v=1'));
-
   // İK modülünde "hangi bölümde kaç personel" için departman listesi — mevcut
   // roller ile birebir eşleşir, ayrıca rol sistemine dahil olmayan "İdari/Genel
   // Yönetim" bölümü de eklenmiştir (yönetim/muhasebe gibi rolsüz personel için).
@@ -365,7 +337,7 @@ const App = (() => {
     }
   }
 
-  const UYGULAMA_SURUM = 'v127';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
+  const UYGULAMA_SURUM = 'v126';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
 
   // ── SESSİZ HATA AVCISI ────────────────────────────────────────────────────
   // Bir buton handler'ında hata oluşursa tarayıcı bunu sessizce yutar ve
@@ -2296,8 +2268,7 @@ const App = (() => {
   // Tek bir satınalma siparişi VEYA aynı tedarikçiye ait birden fazla sipariş
   // için ortak çıktı üretir. siparisListesi her zaman bir dizi olarak gelir
   // (tek sipariş bile [siparis] şeklinde sarmalanır).
-  async function satinalmaCiktiExcel(siparisListesi, tedarikciAdi) {
-    await xlsxYukle();
+  function satinalmaCiktiExcel(siparisListesi, tedarikciAdi) {
     const wsData = [
       ['SATINALMA SİPARİŞİ' + (siparisListesi.length > 1 ? ' (TOPLU)' : '')],
       [],
@@ -2775,10 +2746,9 @@ const App = (() => {
 
   // SheetJS ile, kartAltKirilimSatirlariUret çıktısını örnek formattaki
   // (renkli, girintili, paket gruplu) bir Excel dosyasına dönüştürüp indirir.
-  async function receteAltKirilimExcelIndir(kart, kartTipi, receteler, yarimamuller, altMontajlar, urunler, hammaddeler, rotalar, ayarlar, paketler) {
+  function receteAltKirilimExcelIndir(kart, kartTipi, receteler, yarimamuller, altMontajlar, urunler, hammaddeler, rotalar, ayarlar, paketler) {
     const { satirlar, paketSayisi } = kartAltKirilimSatirlariUret(kart, kartTipi, receteler, yarimamuller, altMontajlar, urunler, hammaddeler, rotalar, ayarlar, paketler);
     if (!satirlar.length) { toast('Bu kartın hiç reçete kalemi yok, dökülecek bir şey bulunamadı', 'err'); return; }
-    await xlsxYukle();
 
     const genelToplamTRY = satirlar.filter(s => s.seviye === 0).reduce((a, s) => a + s.toplamFiyat, 0);
     const genelRotaTRY   = satirlar.filter(s => s.rotaMaliyeti).reduce((a, s) => a + (s.rotaMaliyeti || 0), 0);
@@ -6068,8 +6038,7 @@ const App = (() => {
     kartAltKirilimSatirlariUret, receteAltKirilimExcelIndir,
     istasyonKisaltmasi, irsaliyeKesilinceFaturaOlustur, siparisIcerikVeOdemeFormuAc,
     get BOLUMLER() { return BOLUMLER; },
-    get state() { return state; },
-    kutuphaneYukle, xlsxYukle, jszipYukle, threeYukle, jspdfYukle
+    get state() { return state; }
   };
 })();
 

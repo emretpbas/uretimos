@@ -23,19 +23,12 @@ const SwoodOkuyucu = require('../swood_okuyucu.js');
 const IsEmriUretici = require('../is_emri_uretici.js');
 const pageSrc = fs.readFileSync(path.join(__dirname, '..', 'page_is_emri_formu.js'), 'utf8');
 const indexSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const appSrcJszip = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
-const swoodSrc = fs.readFileSync(path.join(__dirname, '..', 'swood_okuyucu.js'), 'utf8');
 let ok = 0, bad = 0;
 const t = (a, k) => { if (k) { ok++; console.log('  GECTI ' + a); } else { bad++; console.log('  KALDI ' + a); } };
 
-console.log('\n-- index.html: JSZip artık ihtiyaç anında (App.jszipYukle), swood_okuyucu.js hâlâ eagerly yükleniyor --');
-// jszip.min.js (97 KB) açılışta HER sayfada zorunlu yüklenmek yerine artık
-// App.jszipYukle() ile sadece SWOOD raporu okunurken dinamik yükleniyor —
-// bu yüzden index.html'de eagerly bir <script> etiketi OLMAMALI.
-t('jszip.min.js index.html\'de artık eagerly YOK (lazy-load\'a taşındı)', !/<script[^>]*src="jszip\.min\.js/.test(indexSrc));
-t('app.js App.jszipYukle fonksiyonunu dışa açıyor', /jszipYukle/.test(appSrcJszip));
-t('swood_okuyucu.js ilk kullanımda App.jszipYukle() çağırıyor', /App\.jszipYukle\(\)/.test(swoodSrc));
-t('swood_okuyucu.js script etiketi var (defer)', /<script defer src="swood_okuyucu\.js\?v=\d+">/.test(indexSrc));
+console.log('\n-- index.html: JSZip ve swood_okuyucu.js yükleniyor --');
+t('jszip.min.js script etiketi var', /<script src="jszip\.min\.js">/.test(indexSrc));
+t('swood_okuyucu.js script etiketi var', /<script src="swood_okuyucu\.js\?v=\d+">/.test(indexSrc));
 
 console.log('\n-- swood_okuyucu.js: CSV ayrıştırma (saf fonksiyon) --');
 {
@@ -459,7 +452,7 @@ console.log('\n-- CNC Takım Kütüphanesi (CAM modülü) altyapısı: koleksiyo
   t('setBreadcrumb etiketinde cnc_takimlari var', /cnc_takimlari: 'CNC Takım Kütüphanesi'/.test(appSrc));
 
   const indexSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-  t('index.html page_cnc_takimlari.js\'i yüklüyor', /<script defer src="page_cnc_takimlari\.js\?v=\d+"><\/script>/.test(indexSrc));
+  t('index.html page_cnc_takimlari.js\'i yüklüyor', /<script src="page_cnc_takimlari\.js\?v=\d+"><\/script>/.test(indexSrc));
 
   const apiSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'api.php'), 'utf8');
   t('CAD_ENT_OKUNABILIR cncTakimlari içeriyor (salt okunur — takım kütüphanesi eklentiden değiştirilemez)',

@@ -65,7 +65,6 @@ PageModules.recete_yapim_raporu = (() => {
       const statusEl = document.getElementById('ryr-status');
       statusEl.textContent = 'Dosya okunuyor…';
       try {
-        await App.xlsxYukle();
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];

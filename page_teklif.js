@@ -784,9 +784,8 @@ PageModules.teklif = (() => {
   }
 
   // Çeki listesini Excel (xlsx) olarak indirir
-  async function cekiListesiExcel(t, liste) {
+  function cekiListesiExcel(t, liste) {
     try {
-      await App.xlsxYukle();
       const satirlar = [['ÇEKİ LİSTESİ'], [t.kod, t.musteriAdi, new Date().toLocaleDateString('tr-TR')], [],
         ['#', 'Ürün Kodu', 'Ürün Adı', 'Paket Kodu', 'Paket Adı', 'Ambalaj', 'Adet',
          'En (cm)', 'Boy (cm)', 'Yükseklik (cm)', 'Birim m³', 'Birim Brüt kg',
