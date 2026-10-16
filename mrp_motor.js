@@ -25,6 +25,49 @@ const MrpMotor = (() => {
   const gunEkle = (t, g) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() + g); return d.toISOString().slice(0, 10); };
   const gunFark = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);
 
+  // PERFORMANS: hammaddeIhtiyaci her mps kalemi için BOM ağacını recursive
+  // gezerken receteler (107.044)/hammaddeler (12.224) dizilerini .find() ile
+  // doğrusal taradı (olcu_varyant_motoru.js'teki KÖK NEDENLE AYNI desen) —
+  // açık sipariş/iş emri sayısı arttıkça hissedilir gecikme. İndeks `v`
+  // nesne REFERANSINA (WeakMap) bağlı — TEK bir calistir() çağrısı boyunca
+  // (mps.forEach içindeki TÜM kalemler + recursive alt çağrılar) AYNI `v`
+  // kullanıldığından bir KEZ kurulup hep yeniden kullanılır.
+  const _mrpIndeksOnbellegi = new WeakMap();
+  function mrpIndeksiAl(v) {
+    let ind = _mrpIndeksOnbellegi.get(v);
+    if (ind) return ind;
+    ind = {
+      receteByRef: { urun: new Map(), yarimamul: new Map(), altmontaj: new Map(), paket: new Map() },
+      hammaddeById: new Map(), urunByKod: new Map(), yarimamulById: new Map(), yarimamulByKod: new Map(),
+      eldekiByHammaddeId: new Map()
+    };
+    (v.receteler || []).forEach(r => {
+      if (!r) return;
+      if (r.urunId != null && !ind.receteByRef.urun.has(r.urunId)) ind.receteByRef.urun.set(r.urunId, r);
+      if (r.yarimamulId != null && !ind.receteByRef.yarimamul.has(r.yarimamulId)) ind.receteByRef.yarimamul.set(r.yarimamulId, r);
+      if (r.altMontajId != null && !ind.receteByRef.altmontaj.has(r.altMontajId)) ind.receteByRef.altmontaj.set(r.altMontajId, r);
+      if (r.paketId != null && !ind.receteByRef.paket.has(r.paketId)) ind.receteByRef.paket.set(r.paketId, r);
+    });
+    (v.hammaddeler || []).forEach(h => { if (h && h.id != null && !ind.hammaddeById.has(h.id)) ind.hammaddeById.set(h.id, h); });
+    (v.urunler || []).forEach(u => { if (u && u.kod != null && !ind.urunByKod.has(u.kod)) ind.urunByKod.set(u.kod, u); });
+    (v.yarimamuller || []).forEach(y => {
+      if (!y) return;
+      if (y.id != null && !ind.yarimamulById.has(y.id)) ind.yarimamulById.set(y.id, y);
+      if (y.kod != null && !ind.yarimamulByKod.has(y.kod)) ind.yarimamulByKod.set(y.kod, y);
+    });
+    // "hammadde_deposu" ambarındaki (üretimde kullanılabilir TEK gerçek
+    // stok kaynağı) eldeki miktar hammaddeId bazında ÖNCEDEN toplanır —
+    // v.stokRaf.filter(...).reduce(...) ile HER hammadde için TEKRAR TEKRAR
+    // taramanın YERİNE geçer, davranış (toplam) birebir aynı.
+    (v.stokRaf || []).forEach(s => {
+      if (s && s.tip === 'hammadde' && s.ambar === 'hammadde_deposu') {
+        ind.eldekiByHammaddeId.set(s.refId, (ind.eldekiByHammaddeId.get(s.refId) || 0) + (s.miktar || 0));
+      }
+    });
+    _mrpIndeksOnbellegi.set(v, ind);
+    return ind;
+  }
+
   // Bir tarihin ait olduğu haftanın PAZARTESİ'si (hafta kovası anahtarı)
   function haftaBasi(tarih) {
     const d = new Date(tarih + 'T00:00:00');
@@ -70,7 +113,7 @@ const MrpMotor = (() => {
     // page_hat_takip.js'deki aynı düzeltme).
     v.isemirleri.filter(ie => ie.durum === 'uretimde').forEach(ie => {
       (ie.uretimListesi || []).filter(k => k.tip === 'yarimamul').forEach(k => {
-        const ym = v.yarimamuller.find(y => y.id === k.refId);
+        const ym = mrpIndeksiAl(v).yarimamulById.get(k.refId) || null;
         if (!ym) return;
         kalemler.push({
           kaynakTip: 'ie', kaynakId: ie.id, kaynakKod: ie.kod, musteriAdi: '',
@@ -94,15 +137,13 @@ const MrpMotor = (() => {
     if (gorulen.has(anahtar)) return sonuc;
     gorulen.add(anahtar);
 
-    const rc = tip === 'urun' ? v.receteler.find(r => r.urunId === id)
-      : tip === 'yarimamul' ? v.receteler.find(r => r.yarimamulId === id)
-      : tip === 'altmontaj' ? v.receteler.find(r => r.altMontajId === id)
-      : tip === 'paket' ? v.receteler.find(r => r.paketId === id) : null;
+    const ind = mrpIndeksiAl(v);
+    const rc = ind.receteByRef[tip] ? ind.receteByRef[tip].get(id) || null : null;
 
     (rc ? rc.kalemler : []).forEach(k => {
       const miktar = (k.miktar || 0) * (carpan || 1);
       if (k.tip === 'hammadde') {
-        const hm = v.hammaddeler.find(h => h.id === k.refId);
+        const hm = ind.hammaddeById.get(k.refId) || null;
         // Fire payı: 100 birim gerekiyorsa ve fire %8 ise 108,7 birim alınmalı
         const fire = (hm && hm.fireYuzde) || 0;
         const fireliMiktar = fire > 0 ? miktar / (1 - fire / 100) : miktar;
@@ -141,12 +182,12 @@ const MrpMotor = (() => {
       if (hi < 0) return;  // planlama ufku dışında
       let ihtiyaclar;
       if (m.grup === 'urun') {
-        const urun = v.urunler.find(u => u.kod === m.kod);
+        const urun = mrpIndeksiAl(v).urunByKod.get(m.kod) || null;
         if (!urun) return;
         ihtiyaclar = hammaddeIhtiyaci('urun', urun.id, v, m.adet, 0);
       } else if (m.grup === 'yarimamul') {
-        const ym = m.refId ? v.yarimamuller.find(y => y.id === m.refId)
-                           : v.yarimamuller.find(y => y.kod === m.kod);
+        const ym = m.refId ? mrpIndeksiAl(v).yarimamulById.get(m.refId) || null
+                           : mrpIndeksiAl(v).yarimamulByKod.get(m.kod) || null;
         if (!ym) return;
         ihtiyaclar = hammaddeIhtiyaci('yarimamul', ym.id, v, m.adet, 0);
       } else return;
@@ -179,7 +220,7 @@ const MrpMotor = (() => {
     // ── SATIRLARI HESAPLA
     const satirlar = [];
     brut.forEach((brutDizi, hmId) => {
-      const hm = v.hammaddeler.find(h => h.id === hmId);
+      const hm = mrpIndeksiAl(v).hammaddeById.get(hmId) || null;
       if (!hm) return;
       // BULGU: ambar filtresi YOKTU — iade_ambari'ndaki (kalite reddi, tedarikçiye
       // iade bekleyen, ÜRETİMDE KULLANILAMAZ) miktar da "elde stok" sayılıp net
@@ -187,8 +228,7 @@ const MrpMotor = (() => {
       // kendi kritik stok/karşılama sekmeleri zaten yalnızca hammadde_deposu'nu
       // sayıyor (App.stokMiktarAmbar(stokRaf, 'hammadde_deposu', ...)) — MRP de
       // aynı, tek gerçek kullanılabilir stok kaynağıyla hesaplamalı.
-      const eldeki = v.stokRaf.filter(s => s.tip === 'hammadde' && s.refId === hmId && s.ambar === 'hammadde_deposu')
-        .reduce((a, s) => a + (s.miktar || 0), 0);
+      const eldeki = mrpIndeksiAl(v).eldekiByHammaddeId.get(hmId) || 0;
       const emniyet = hm.emniyetStogu || 0;
       const tedarikSuresi = hm.tedarikSuresiGun != null ? hm.tedarikSuresiGun : o.varsayilanTedarikSuresi;
       const minSiparis = hm.minSiparisMiktari || 0;

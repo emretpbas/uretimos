@@ -21,8 +21,15 @@ const t = (a, k) => { if (k) { ok++; console.log('  GECTI ' + a); } else { bad++
 console.log('\n-- Kaynak kilit: kritik stok hesabı artık ambar filtresi kullanıyor --');
 t('ai_denetci.js: kritikDusenler hesabı yalnızca hammadde_deposu\'nu sayıyor',
   /s\.tip === 'hammadde' && s\.refId === ks\.hammaddeId && s\.ambar === 'hammadde_deposu'/.test(aiSrc));
-t('mrp_motor.js: eldeki hesabı yalnızca hammadde_deposu\'nu sayıyor',
-  /s\.tip === 'hammadde' && s\.refId === hmId && s\.ambar === 'hammadde_deposu'/.test(mrpSrc));
+// NOT: eldeki hesabı artık performans için (bkz. mrpIndeksiAl) HER hammadde
+// için v.stokRaf.filter(...) ile TEKRAR TEKRAR taramak YERİNE, ÖNCE TEK
+// geçişte hammaddeId -> toplam Map'i kurup SONRA o Map'ten okur — ambar
+// filtresinin KENDİSİ (davranış) aynı kaldı, sadece ne zaman/nerede
+// uygulandığı değişti. Regex bu iki parçayı (kurulum + okuma) ayrı ayrı kilitler.
+t('mrp_motor.js: eldeki indeksi SADECE hammadde_deposu ambarındaki satırları topluyor',
+  /s\.tip === 'hammadde' && s\.ambar === 'hammadde_deposu'/.test(mrpSrc));
+t('mrp_motor.js: eldeki, bu indeksten hammaddeId (hmId) ile okunuyor',
+  /eldekiByHammaddeId\.get\(hmId\)/.test(mrpSrc));
 
 console.log('\n-- Kaynak kilit: yeni "eksik teslimat" bulgusu doğru koşullarla tanımlı --');
 t('eksikTeslimatlar filtresi eksikMiktar>0 VE durum tamamlandi/reddedildi DEĞİL şartını arıyor',
