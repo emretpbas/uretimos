@@ -29,6 +29,20 @@ const AnalitikMotor = (() => {
   const gunFark = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);
   const gunEkle = (t, g) => { const d = new Date(t + 'T00:00:00'); d.setDate(d.getDate() + g); return tarihStr(d); };
 
+  // PERFORMANS: 12.224 hammadde / 96.746 yarımamül / 20.597 ürün / 107.044
+  // reçete ölçeğinde, stokRaf/stokHareketleri/istasyonIsleri (envanter/
+  // üretim geçmişi, zamanla büyüyen) üzerinde dönüp HER satır için bu
+  // koleksiyonları .find() ile taramak — maliKpi/stokYaslandirma/
+  // malzemeVerimi'nin HER çağrısında (Analitik/Mali Rapor sayfası
+  // açıldığında) olcu_varyant_motoru.js'teki KÖK NEDENLE AYNI şekilde
+  // O(satır×koleksiyon) idi. idIndeksle TEK geçişte id->kayıt Map'i kurar
+  // (.find() ile BİREBİR aynı "ilk eşleşen" davranışı, O(1) bakış).
+  function idIndeksle(liste) {
+    const m = new Map();
+    (liste || []).forEach(x => { if (x && x.id != null && !m.has(x.id)) m.set(x.id, x); });
+    return m;
+  }
+
   async function veriYukle() {
     const [siparisler, teklifler, faturalar, tahsilatlar, musteriler, tedarikciler,
            tedarikciOdemeleri, satinalmaSiparisleri, stokRaf, stokHareketleri,
@@ -291,17 +305,20 @@ const AnalitikMotor = (() => {
     // Bu, stok devir hızı/CCC gibi mali KPI'ları önemli miktarda yarımamul
     // stoğu olan üreticilerde yapay olarak iyi (düşük stok, hızlı devir)
     // gösteriyordu.
+    const hammaddeByIdMk = idIndeksle(v.hammaddeler);
+    const yarimamulByIdMk = idIndeksle(v.yarimamuller);
+    const urunByIdMk = idIndeksle(v.urunler);
     const stokDegeri = (v.stokRaf || []).reduce((a, s) => {
       if (s.tip === 'hammadde') {
-        const hm = v.hammaddeler.find(h => h.id === s.refId);
+        const hm = hammaddeByIdMk.get(s.refId) || null;
         return a + (s.miktar || 0) * ((hm && hm.birimFiyat) || 0);
       }
       if (s.tip === 'yarimamul') {
-        const ym = (v.yarimamuller || []).find(y => y.id === s.refId);
+        const ym = yarimamulByIdMk.get(s.refId) || null;
         return a + (s.miktar || 0) * ((ym && ym.referansFiyat) || 0);
       }
       if (s.tip === 'urun') {
-        const u = (v.urunler || []).find(x => x.id === s.refId);
+        const u = urunByIdMk.get(s.refId) || null;
         return a + (s.miktar || 0) * ((u && u.referansFiyat) || 0);
       }
       return a;
@@ -403,6 +420,9 @@ const AnalitikMotor = (() => {
       const ad = h.kalemAdi || '';
       if (!sonHareket.has(ad) || (h.tarih || '') > sonHareket.get(ad)) sonHareket.set(ad, h.tarih || '');
     });
+    const hammaddeByIdSy = idIndeksle(v.hammaddeler);
+    const yarimamulByIdSy = idIndeksle(v.yarimamuller);
+    const urunByIdSy = idIndeksle(v.urunler);
     const satirlar = (v.stokRaf || []).filter(s => (s.miktar || 0) > 0).map(s => {
       const son = sonHareket.get(s.refAd) || sonHareket.get(s.refKod) || null;
       const gun = son ? gunFark(bugun(), son) : null;
@@ -413,13 +433,13 @@ const AnalitikMotor = (() => {
       // yol açıyordu.
       let deger = 0;
       if (s.tip === 'hammadde') {
-        const hm = v.hammaddeler.find(h => h.id === s.refId);
+        const hm = hammaddeByIdSy.get(s.refId) || null;
         deger = (s.miktar || 0) * ((hm && hm.birimFiyat) || 0);
       } else if (s.tip === 'yarimamul') {
-        const ym = (v.yarimamuller || []).find(y => y.id === s.refId);
+        const ym = yarimamulByIdSy.get(s.refId) || null;
         deger = (s.miktar || 0) * ((ym && ym.referansFiyat) || 0);
       } else if (s.tip === 'urun') {
-        const u = (v.urunler || []).find(x => x.id === s.refId);
+        const u = urunByIdSy.get(s.refId) || null;
         deger = (s.miktar || 0) * ((u && u.referansFiyat) || 0);
       }
       return { kod: s.refKod, ad: s.refAd, tip: s.tip, ambar: s.ambar,
@@ -441,12 +461,27 @@ const AnalitikMotor = (() => {
   // Teorik ihtiyaç (reçeteden) vs fiili tüketim (stok çıkışlarından).
   // Aradaki fark = fire + kayıp. Panel mobilyada en kritik maliyet göstergesi.
   function malzemeVerimi(v) {
+    const hammaddeByIdMv = idIndeksle(v.hammaddeler);
+    // "x.ad === anahtar || x.stokKodu === anahtar" ile ARANAN .find()'ın
+    // BİREBİR aynısı: dizi sırasıyla geçilir, bir hammaddenin ad VEYA
+    // stokKodu alanlarından biri bir anahtarı İLK KEZ üstleniyorsa o anahtar
+    // o karta bağlanır (sonraki bir kart aynı anahtarı tekrar ele alamaz) —
+    // tam olarak .find()'ın soldan sağa "ilk eşleşen" önceliğini korur.
+    const hammaddeByAdVeyaKod = new Map();
+    (v.hammaddeler || []).forEach(h => {
+      if (!h) return;
+      if (h.ad != null && !hammaddeByAdVeyaKod.has(h.ad)) hammaddeByAdVeyaKod.set(h.ad, h);
+      if (h.stokKodu != null && !hammaddeByAdVeyaKod.has(h.stokKodu)) hammaddeByAdVeyaKod.set(h.stokKodu, h);
+    });
+    const receteByYarimamulId = new Map();
+    (v.receteler || []).forEach(r => { if (r && r.yarimamulId != null && !receteByYarimamulId.has(r.yarimamulId)) receteByYarimamulId.set(r.yarimamulId, r); });
+
     // Teorik: üretilen yarı mamüller × reçete miktarı
     const teorik = new Map(); // hammaddeId -> miktar
     (v.istasyonIsleri || []).filter(k => k.durum === 'tamamlandi').forEach(k => {
       const uretilen = (k.gelenAdet || 0) - (k.fireAdet || 0);
       if (uretilen <= 0) return;
-      const rc = v.receteler.find(r => r.yarimamulId === k.yarimamulId);
+      const rc = receteByYarimamulId.get(k.yarimamulId) || null;
       (rc ? rc.kalemler : []).forEach(rk => {
         if (rk.tip !== 'hammadde') return;
         teorik.set(rk.refId, (teorik.get(rk.refId) || 0) + (rk.miktar || 0) * uretilen);
@@ -456,14 +491,14 @@ const AnalitikMotor = (() => {
     const fiili = new Map();
     (v.stokHareketleri || []).filter(h => h.tip === 'cikis' &&
       /sarf|tüket|üretim/i.test(h.aciklama || '')).forEach(h => {
-      const hm = v.hammaddeler.find(x => x.ad === h.kalemAdi || x.stokKodu === h.kalemAdi);
+      const hm = hammaddeByAdVeyaKod.get(h.kalemAdi) || null;
       if (hm) fiili.set(hm.id, (fiili.get(hm.id) || 0) + (h.miktar || 0));
     });
 
     const satirlar = [];
     const tumIdler = new Set([...teorik.keys(), ...fiili.keys()]);
     tumIdler.forEach(id => {
-      const hm = v.hammaddeler.find(h => h.id === id);
+      const hm = hammaddeByIdMv.get(id) || null;
       if (!hm) return;
       const t = teorik.get(id) || 0, f = fiili.get(id) || 0;
       if (t === 0 && f === 0) return;
