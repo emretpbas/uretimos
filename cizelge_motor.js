@@ -43,6 +43,28 @@ const CizelgeMotor = (() => {
     return t;
   };
 
+  // PERFORMANS: operasyonlariCikar/terminOner, işlediği HER açık iş emri/
+  // sipariş kalemi için v.yarimamuller (96.746) ve v.rotalar'ı .find() ile
+  // doğrusal taradı — olcu_varyant_motoru.js'teki KÖK NEDENLE AYNI desen.
+  // İndeks `v` nesne REFERANSINA (WeakMap) bağlı: aynı veriYukle() çağrısının
+  // ürettiği `v` tek bir operasyonlariCikar/terminOner çağrısı boyunca
+  // TUTARLI kullanıldığından bir KEZ kurulup hep yeniden kullanılır.
+  const _cizelgeIndeksOnbellegi = new WeakMap();
+  function cizelgeIndeksiAl(v) {
+    let ind = _cizelgeIndeksOnbellegi.get(v);
+    if (ind) return ind;
+    ind = { ymById: new Map(), ymByKod: new Map(), rotaById: new Map(), urunByKod: new Map() };
+    (v.yarimamuller || []).forEach(y => {
+      if (!y) return;
+      if (y.id != null && !ind.ymById.has(y.id)) ind.ymById.set(y.id, y);
+      if (y.kod != null && !ind.ymByKod.has(y.kod)) ind.ymByKod.set(y.kod, y);
+    });
+    (v.rotalar || []).forEach(r => { if (r && r.id != null && !ind.rotaById.has(r.id)) ind.rotaById.set(r.id, r); });
+    (v.urunler || []).forEach(u => { if (u && u.kod != null && !ind.urunByKod.has(u.kod)) ind.urunByKod.set(u.kod, u); });
+    _cizelgeIndeksOnbellegi.set(v, ind);
+    return ind;
+  }
+
   // Hat başına GÜNLÜK NET kapasite (dk) — vardiyalardan hesaplanır
   function hatKapasiteleri(vardiyalar, hatlar) {
     const kap = new Map();
@@ -106,8 +128,9 @@ const CizelgeMotor = (() => {
     });
 
     const isEkle = (kaynakTip, kaynakId, kaynakKod, ymId, adet, rotaId, termin, oncelik) => {
-      const ym = (v.yarimamuller || []).find(y => y.id === ymId);
-      const rota = (v.rotalar || []).find(r => r.id === (rotaId || (ym && ym.rotaId)));
+      const cizInd = cizelgeIndeksiAl(v);
+      const ym = cizInd.ymById.get(ymId) || null;
+      const rota = cizInd.rotaById.get(rotaId || (ym && ym.rotaId)) || null;
       if (!rota || !ym) return;
       const adimlar = (rota.steps || []).filter(s => s.hat && s.hat !== 'TAŞIMA');
       adimlar.forEach((st, si) => {
@@ -151,10 +174,10 @@ const CizelgeMotor = (() => {
       (s.kalemler || []).forEach(kalem => {
         if (kalem.ikinciKalite) return;
         if (kalem.grup === 'yarimamul') {
-          const ym = (v.yarimamuller || []).find(y => y.kod === kalem.kod);
+          const ym = cizelgeIndeksiAl(v).ymByKod.get(kalem.kod) || null;
           if (ym) ymAdet.set(ym.id, (ymAdet.get(ym.id) || 0) + (kalem.miktar || 1));
         } else if (kalem.grup === 'urun') {
-          const urun = (v.urunler || []).find(u => u.kod === kalem.kod);
+          const urun = cizelgeIndeksiAl(v).urunByKod.get(kalem.kod) || null;
           if (!urun) return;
           App.receteAltYarimamulleri('urun', urun.id, v.receteler, { carpan: kalem.miktar || 1 })
             .forEach((mik, ymId) => ymAdet.set(ymId, (ymAdet.get(ymId) || 0) + mik));
@@ -297,18 +320,18 @@ const CizelgeMotor = (() => {
     const ymAdet = new Map();
     (kalemler || []).forEach(kalem => {
       if (kalem.grup === 'yarimamul') {
-        const ym = (v.yarimamuller || []).find(y => y.kod === kalem.kod);
+        const ym = cizelgeIndeksiAl(v).ymByKod.get(kalem.kod) || null;
         if (ym) ymAdet.set(ym.id, (ymAdet.get(ym.id) || 0) + (kalem.miktar || 1));
       } else if (kalem.grup === 'urun') {
-        const urun = (v.urunler || []).find(u => u.kod === kalem.kod);
+        const urun = cizelgeIndeksiAl(v).urunByKod.get(kalem.kod) || null;
         if (!urun) return;
         App.receteAltYarimamulleri('urun', urun.id, v.receteler, { carpan: kalem.miktar || 1 })
           .forEach((mik, ymId) => ymAdet.set(ymId, (ymAdet.get(ymId) || 0) + mik));
       }
     });
     ymAdet.forEach((adet, ymId) => {
-      const ym = (v.yarimamuller || []).find(y => y.id === ymId);
-      const rota = (v.rotalar || []).find(r => r.id === (ym && ym.rotaId));
+      const ym = cizelgeIndeksiAl(v).ymById.get(ymId) || null;
+      const rota = cizelgeIndeksiAl(v).rotaById.get(ym && ym.rotaId) || null;
       if (!rota || !ym) return;
       (rota.steps || []).filter(s => s.hat && s.hat !== 'TAŞIMA').forEach((st, si, arr) => {
         yeniOps.push({

@@ -4837,6 +4837,30 @@ const App = (() => {
     return Store.hatSifresiDogrula(hatAdi, girilen || '');
   }
 
+  // PERFORMANS: receteAltYarimamulleri (cizelge_motor.js, page_hat_takip.js,
+  // page_uretim_panel.js, analitik_motor.js'in HEPSİ bu TEK fonksiyonu
+  // paylaşır) her RECURSIVE düğümde receteler (107.044) dizisini .find() ile
+  // doğrusal taradı — bir sipariş/iş emri taramasında ürün sayısı kadar
+  // tekrar tekrar. İndeks `receteler` dizi REFERANSINA (WeakMap) bağlı —
+  // SADECE receteler'den türetildiği için (başka bir koleksiyona bağımlı
+  // DEĞİL) hangi çağıran kullanırsa kullansın GÜVENLE paylaşılır/yeniden
+  // kullanılır. DAVRANIŞ DEĞİŞMEZ.
+  const _receteByRefOnbellegi = new WeakMap();
+  function receteByRefIndeksiAl(receteler) {
+    let ind = _receteByRefOnbellegi.get(receteler);
+    if (ind) return ind;
+    ind = { urun: new Map(), yarimamul: new Map(), altmontaj: new Map(), paket: new Map() };
+    (receteler || []).forEach(r => {
+      if (!r) return;
+      if (r.urunId != null && !ind.urun.has(r.urunId)) ind.urun.set(r.urunId, r);
+      if (r.yarimamulId != null && !ind.yarimamul.has(r.yarimamulId)) ind.yarimamul.set(r.yarimamulId, r);
+      if (r.altMontajId != null && !ind.altmontaj.has(r.altMontajId)) ind.altmontaj.set(r.altMontajId, r);
+      if (r.paketId != null && !ind.paket.has(r.paketId)) ind.paket.set(r.paketId, r);
+    });
+    _receteByRefOnbellegi.set(receteler, ind);
+    return ind;
+  }
+
   // ── REÇETE ALT KIRILIMI: TÜM YARI MAMÜLLERİ REKÜRSİF TOPLA ──────────────
   // Reçete ağacı ürün → paket → alt montaj → yarı mamül → hammadde şeklinde
   // kırılabilir. Bu yüzden bir ürünün yarı mamülleri YALNIZCA birinci seviyeye
@@ -4845,12 +4869,8 @@ const App = (() => {
   function receteAltYarimamulleri(kokTip, kokId, receteler, opts) {
     const sonuc = new Map();
     const gorulen = new Set(); // döngü koruması
-    const receteBul = (tip, id) =>
-      tip === 'urun' ? receteler.find(r => r.urunId === id)
-      : tip === 'yarimamul' ? receteler.find(r => r.yarimamulId === id)
-      : tip === 'altmontaj' ? receteler.find(r => r.altMontajId === id)
-      : tip === 'paket' ? receteler.find(r => r.paketId === id)
-      : null;
+    const ind = receteByRefIndeksiAl(receteler);
+    const receteBul = (tip, id) => ind[tip] ? (ind[tip].get(id) || null) : null;
     const gez = (tip, id, carpan) => {
       const anahtar = tip + ':' + id;
       if (gorulen.has(anahtar)) return;
