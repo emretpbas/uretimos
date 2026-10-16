@@ -1966,6 +1966,34 @@ try {
         respond(['key' => $key, 'adet' => is_array($arr) ? count($arr) : 0]);
     }
 
+    elseif ($action === 'hammaddeOzet') {
+        // GERÇEK ÜRETİM TESTİNDE YAKALANDI: Panel (dashboard) ekranı hammadde
+        // sayısını VE plaka/hırdavat kırılımını göstermek için Store.hammaddeler
+        // .all() ile TÜM koleksiyonu indirip istemcide filter() çalıştırıyordu —
+        // receteOzet/sayim ile AYNI kök neden (ör. LOGO toplu aktarım sonrası
+        // on binlerce hammadde kaydı birikince bu tam indirme, panel açılışını
+        // dakikalarca bloklayan bir donmaya dönüşüyordu). Bu uç, sunucuda
+        // 'hammaddeler' blobunu bir kez çözüp YALNIZCA toplam/plaka/hırdavat
+        // SAYILARINI döner — asıl kayıtların içeriği hiç gönderilmez.
+        $oturum = oturumZorunlu($pdo);
+        if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array('hammaddeler', HAT_OP_OKUNABILIR, true)) {
+            respond(['error' => 'Operatör oturumu bu veriye erişemez'], 403);
+        }
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array('hammaddeler', CAD_ENT_OKUNABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
+        }
+        koleksiyonYetkiKontrol($oturum, 'hammaddeler', 'oku');
+        $hammaddeler = kvOku($pdo, 'hammaddeler', []);
+        $toplam = 0; $plaka = 0; $hirdavat = 0;
+        foreach ((is_array($hammaddeler) ? $hammaddeler : []) as $h) {
+            if (!is_array($h)) continue;
+            $toplam++;
+            if (($h['tip'] ?? '') === 'plaka') $plaka++;
+            elseif (($h['tip'] ?? '') === 'hirdavat') $hirdavat++;
+        }
+        respond(['toplam' => $toplam, 'plaka' => $plaka, 'hirdavat' => $hirdavat]);
+    }
+
     elseif ($action === 'receteOzet') {
         // GERÇEK İHTİYAÇ: "Ürün Kartları & Reçete" ekranı 20.000+ ürün/
         // 96.000+ yarı mamül kartını hangilerinin reçetesi (BOM) olduğuna

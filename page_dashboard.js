@@ -10,10 +10,13 @@ PageModules.dashboard = (() => {
     // ayrıştırmak girişi gözle görülür yavaşlatıyordu. Bu ikisi burada
     // GERÇEKTEN yalnızca adet için kullanılıyor — Store.sayim() ile
     // sunucudan doğrudan sayı istiyoruz, tüm koleksiyonu indirmiyoruz.
-    // hammaddeler burada kalıyor çünkü plaka/hırdavat kırılımı için gerçek
-    // kayıt alanlarına (tip) ihtiyaç var, salt sayıya değil.
-    const [hammaddeler, yarimamulSayisi, urunSayisi, isemirleri, rotalar, fiyatListeleri] = await Promise.all([
-      Store.hammaddeler.all(), Store.sayim('yarimamuller'), Store.sayim('urunler'),
+    // hammaddeler de AYNI nedenle artık tam indirilmiyor: plaka/hırdavat
+    // kırılımı sunucuda hesaplanıp Store.hammaddeOzetGetir() ile yalnızca
+    // 3 sayı (toplam/plaka/hırdavat) olarak geliyor — GERÇEK ÜRETİMDE
+    // hammaddeler de on binlerce kayda çıkabildiği için bu da AYNI donma
+    // riskini taşıyordu (bkz. storage.js'teki hammaddeOzetGetir yorumu).
+    const [hammaddeOzet, yarimamulSayisi, urunSayisi, isemirleri, rotalar, fiyatListeleri] = await Promise.all([
+      Store.hammaddeOzetGetir(), Store.sayim('yarimamuller'), Store.sayim('urunler'),
       Store.isemirleri.all(), Store.rotalar.all(), Store.fiyatListeleri.all()
     ]);
 
@@ -21,8 +24,8 @@ PageModules.dashboard = (() => {
     // tutulmuyordu — sistemin kendi iptal ekranı zaten 'iptal'i "açık"
     // saymıyor, burada da tutarlı olması gerekir.
     const acikIsEmri = isemirleri.filter(i => i.durum !== 'tamamlandi' && i.durum !== 'iptal').length;
-    const plakaSayisi = hammaddeler.filter(h => h.tip === 'plaka').length;
-    const hirdavatSayisi = hammaddeler.filter(h => h.tip === 'hirdavat').length;
+    const plakaSayisi = hammaddeOzet.plaka;
+    const hirdavatSayisi = hammaddeOzet.hirdavat;
 
     main.innerHTML = `
       <div class="page-hdr">
@@ -39,7 +42,7 @@ PageModules.dashboard = (() => {
       <div class="grid grid-4">
         <div class="kpi"><div class="kpi-lbl">Bitmiş Ürün Kartı</div><div class="kpi-val blue">${urunSayisi}</div><div class="kpi-sub">Tanımlı ürün</div></div>
         <div class="kpi"><div class="kpi-lbl">Yarı Mamül</div><div class="kpi-val purple">${yarimamulSayisi}</div><div class="kpi-sub">Tanımlı yarı mamül</div></div>
-        <div class="kpi"><div class="kpi-lbl">Hammadde</div><div class="kpi-val green">${hammaddeler.length}</div><div class="kpi-sub">${plakaSayisi} plaka · ${hirdavatSayisi} hırdavat</div></div>
+        <div class="kpi"><div class="kpi-lbl">Hammadde</div><div class="kpi-val green">${hammaddeOzet.toplam}</div><div class="kpi-sub">${plakaSayisi} plaka · ${hirdavatSayisi} hırdavat</div></div>
         <div class="kpi"><div class="kpi-lbl">Açık İş Emri</div><div class="kpi-val amber">${acikIsEmri}</div><div class="kpi-sub">${isemirleri.length} toplam iş emri</div></div>
       </div>
 

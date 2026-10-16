@@ -207,6 +207,23 @@ const Store = (() => {
     }
   }
 
+  // GERÇEK ÜRETİM TESTİNDE YAKALANDI: Panel (dashboard), hammadde SAYISI ve
+  // plaka/hırdavat kırılımı için Store.hammaddeler.all() ile TÜM koleksiyonu
+  // indirip filter() çalıştırıyordu — on binlerce hammadde kaydı birikince bu
+  // panel açılışını donduran bir performans hatasıydı (receteOzetGetir ile
+  // AYNI kök neden). Sunucu artık yalnızca {toplam,plaka,hirdavat} döner.
+  async function hammaddeOzetGetir(fallback = { toplam: 0, plaka: 0, hirdavat: 0 }) {
+    try {
+      const res = await apiFetch(API_URL + '?action=hammaddeOzet');
+      if (!res.ok) return fallback;
+      const data = await res.json();
+      return (data && typeof data.toplam === 'number') ? data : fallback;
+    } catch (e) {
+      console.error('Store.hammaddeOzetGetir hatası:', e);
+      return fallback;
+    }
+  }
+
   // GERÇEK İHTİYAÇ: "Ürün Kartları & Reçete" ekranı 20.000+ ürün/96.000+
   // yarı mamül kartını "reçetesi var mı" bilgisine göre gruplamak istiyor —
   // Store.receteler.all() ile TÜM reçeteleri (en ağır koleksiyon, her biri
@@ -840,7 +857,7 @@ const Store = (() => {
 
   return {
     get, set, del, listKeys, setIfAbsent,
-    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, receteOzetGetir, receteBul, hatVerisiGetir, sunucuModu,
+    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, hammaddeOzetGetir, receteOzetGetir, receteBul, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifresiDogrula, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,

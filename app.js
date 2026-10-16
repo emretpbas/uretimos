@@ -231,6 +231,24 @@ const App = (() => {
       const ayar = await Store.ayarlar();
       if (ayar && ayar.kartDosyalariQrAktarildi) return;
 
+      // GERÇEK ÜRETİMDE YAKALANDI: bu göç, bayrağı (kartDosyalariQrAktarildi)
+      // kendisi yazana kadar HER oturum açılışında tekrar deniyordu — urun/
+      // yarimamul koleksiyonları 20.000-96.000+ kayda çıktığında, tek bir
+      // .all() + kart döngüsü bile dakikalarca sürüp uygulamayı donduruyordu
+      // (migrateHammaddeKdvOrani'ndaki AYNI kök neden). Büyük kurulumlarda bu
+      // isteğe bağlı/ikincil temizlik GÜVENLE atlanır — bayrak yine de
+      // yazılır, bir daha denenmez; donma riski bu özelliğin değerinden
+      // kesinlikle ağır basar.
+      const BUYUK_KOLEKSIYON_ESIGI = 3000;
+      const sayilar = await Promise.all(['yarimamuller', 'urunler', 'altMontajlar', 'paketler'].map(k => Store.sayim(k)));
+      if (sayilar.some(adet => adet > BUYUK_KOLEKSIYON_ESIGI)) {
+        console.warn('migrateKartDosyalariniQrAlaninaAktar: büyük koleksiyon tespit edildi, atlanıyor (donma riski).');
+        const guncelAyar = await Store.ayarlar();
+        guncelAyar.kartDosyalariQrAktarildi = true;
+        await Store.setAyarlar(guncelAyar);
+        return;
+      }
+
       const kaynaklar = [
         ['yarimamul', Store.yarimamuller], ['urun', Store.urunler],
         ['altmontaj', Store.altMontajlar], ['paket', Store.paketler]
@@ -274,6 +292,19 @@ const App = (() => {
     try {
       const ayar = await Store.ayarlar();
       if (ayar && ayar.gorsellerBlobdanCikarildi) return;
+
+      // GERÇEK ÜRETİMDE YAKALANDI: migrateKartDosyalariniQrAlaninaAktar'daki
+      // AYNI donma riski (bkz. o fonksiyondaki ayrıntılı not) — büyük
+      // koleksiyonlarda bu isteğe bağlı temizlik atlanır.
+      const BUYUK_KOLEKSIYON_ESIGI = 3000;
+      const sayilar = await Promise.all(['yarimamuller', 'urunler', 'altMontajlar', 'paketler', 'hammaddeler'].map(k => Store.sayim(k)));
+      if (sayilar.some(adet => adet > BUYUK_KOLEKSIYON_ESIGI)) {
+        console.warn('migrateGorselleriBlobdanCikar: büyük koleksiyon tespit edildi, atlanıyor (donma riski).');
+        const guncelAyar = await Store.ayarlar();
+        guncelAyar.gorsellerBlobdanCikarildi = true;
+        await Store.setAyarlar(guncelAyar);
+        return;
+      }
 
       const kaynaklar = [
         ['yarimamul', Store.yarimamuller], ['urun', Store.urunler],
@@ -337,7 +368,7 @@ const App = (() => {
     }
   }
 
-  const UYGULAMA_SURUM = 'v126';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
+  const UYGULAMA_SURUM = 'v127';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
 
   // ── SESSİZ HATA AVCISI ────────────────────────────────────────────────────
   // Bir buton handler'ında hata oluşursa tarayıcı bunu sessizce yutar ve
@@ -441,6 +472,21 @@ const App = (() => {
     // seferlik migrationlarla (ör. migrateRdmGercekRecete) AYNI bayrak deseni.
     const yapildiMi = await Store.get('_migrated_hammadde_kdv_v1', false);
     if (yapildiMi) return;
+    // GERÇEK ÜRETİMDE YAKALANDI: LOGO toplu aktarımı sonrası hammaddeler
+    // on binlerce kayda çıkabiliyor (bkz. page_dashboard.js/api.php'deki AYNI
+    // not) — bu durumda TEK BİR .all() çağrısı bile dakikalarca sürüp
+    // uygulama açılışını (baslangicHazirliklari, HER oturumda çalışır)
+    // donduruyordu. Koleksiyon büyükse bu tek seferlik düzeltme GÜVENLE
+    // atlanır (yeni kayıtlar zaten kart formundan kdvOraniYuzde ile gelir) —
+    // eksik kalan çok eski kayıtlar varsa kullanıcı Hammaddeler ekranından
+    // elle düzeltebilir; bu, tüm uygulamayı kilitlemekten KESİNLİKLE iyidir.
+    const BUYUK_KOLEKSIYON_ESIGI = 3000;
+    const adet = await Store.sayim('hammaddeler');
+    if (adet > BUYUK_KOLEKSIYON_ESIGI) {
+      console.warn('migrateHammaddeKdvOrani: hammaddeler ' + adet + ' kayıt — büyük koleksiyon, tam tarama atlanıyor (donma riski).');
+      await Store.set('_migrated_hammadde_kdv_v1', true);
+      return;
+    }
     const hammaddeler = await Store.hammaddeler.all();
     let degisenSayisi = 0;
     hammaddeler.forEach(h => {
@@ -484,6 +530,16 @@ const App = (() => {
     const mevcutListe = await Store.hammaddeKategorileriGetir();
     if (!mevcutListe || mevcutListe.length === 0) {
       await Store.hammaddeKategorileriKaydet([...(HAMMADDE_KATEGORI_SEED || [])]);
+    }
+    // GERÇEK ÜRETİMDE YAKALANDI: migrateHammaddeKdvOrani'ndaki AYNI donma
+    // riski — büyük koleksiyonda tam tarama atlanır (bkz. o fonksiyondaki
+    // ayrıntılı not).
+    const BUYUK_KOLEKSIYON_ESIGI = 3000;
+    const adet = await Store.sayim('hammaddeler');
+    if (adet > BUYUK_KOLEKSIYON_ESIGI) {
+      console.warn('migrateHammaddeKategori: hammaddeler ' + adet + ' kayıt — büyük koleksiyon, tam tarama atlanıyor (donma riski).');
+      await Store.set('_migrated_hammadde_kategori_v1', true);
+      return;
     }
     const hammaddeler = await Store.hammaddeler.all();
     const tipToKategori = { plaka: 'Plaka', kenar_bandi: 'Kenar Bandı', hirdavat: 'Hırdavat' };
