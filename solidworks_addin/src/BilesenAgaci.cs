@@ -82,6 +82,13 @@ namespace UretimOSKesim
         // kaç kez tekrarlandığı burada tutulur (bkz. AyniTanimliKardesleriBirlestir).
         public int Miktar = 1;
 
+        // Kullanıcı isteği: "reçete ağacında kalemlerde miktar ve birim de
+        // gelsin, birim ürün kartından seçilsin" — ElleMiktar null ise
+        // SolidWorks'teki tekrar sayısı (Miktar) kullanılır; Birim null ise
+        // eşleşen kartın kendi 'birim' alanı (yoksa ADET) kullanılır.
+        public double? ElleMiktar;
+        public string Birim;
+
         // Kullanıcı isteği: "satır doluyor... alt kırılımı olan satırları
         // akordion sekme gibi açıp kapatabileyim" — büyük ağaçlarda hem
         // görsel kalabalığı azaltmak hem de uzak bir üst satıra sürükle-

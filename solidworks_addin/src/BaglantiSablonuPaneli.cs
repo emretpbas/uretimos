@@ -36,6 +36,9 @@ namespace UretimOSKesim
             public BaglantiSablonu Sablon; // şablonun kopyası; dizi ayarları bu birleşime özel
             public BaglantiUygulamaSecenekleri Sec = new BaglantiUygulamaSecenekleri();
             public BaglantiPlani SonPlan;
+            // KULLANICI TESTİ: "uygulama yaptığımda arkalığa da delik attı" —
+            // işaretsiz birleşim önizlenmez ve uygulanmaz.
+            public bool Dahil = true;
         }
 
         private readonly ISldWorks _app;
@@ -57,7 +60,9 @@ namespace UretimOSKesim
         private ComboBox _bSablonKutu, _bModKutu;
         private NumericUpDown _bElemanSayisi;
         private TextBox _bSolOfset, _bSagOfset, _bAraliklar, _sonucKutu;
-        private CheckBox _bGovdeTers, _bIcYuzTers, _bYonTers, _canliOnizleme;
+        private CheckBox _bGovdeTers, _bIcYuzTers, _bYonTers, _canliOnizleme, _bBilesik;
+        private readonly List<ComboBox> _bEksenKutulari = new List<ComboBox>();
+        private ComboBox _bDizilisKutu, _bDizilisAralik;
         private Label _bBilgi;
         private TableLayoutPanel _bAyarlar;
 
@@ -71,7 +76,12 @@ namespace UretimOSKesim
         private Label _modelEtiketi;
 
         private static readonly string[] TUR_ADLARI = { "Gövde yüzey", "Gövde kenar", "Karşı yüzey" };
-        private static readonly string[] MOD_ADLARI = { "Soldan (sol ofset + aralıklar)", "Sağdan (sağ ofset + aralıklar)", "Eşit dağıt (sol..sağ ofset arası)" };
+        private static readonly string[] MOD_ADLARI = { "Soldan (sol ofset + aralıklar)", "Sağdan (sağ ofset + aralıklar)", "Eşit dağıt (sol..sağ ofset arası)", "İki uçtan (soldaki grup sağa aynalanır)" };
+        // Kullanıcı isteği: "kavela minifix kavela, minifix kavela olacak
+        // şekilde değişsin ayrıca kavela deliği minifixten önde yada arkada
+        // olacak şekilde ayarlansın". K = Kavela, M = Minifix.
+        private static readonly string[] DIZILIS_ADLARI = { "Kavela – Minifix – Kavela", "Minifix – Kavela (kavela arkada)", "Kavela – Minifix (kavela önde)" };
+        private static readonly string[][] DIZILISLER = { new[] { "K", "M", "K" }, new[] { "M", "K" }, new[] { "K", "M" } };
 
         public BaglantiSablonuPaneli(ISldWorks app)
         {
@@ -191,6 +201,37 @@ namespace UretimOSKesim
                 OnizlemeIste();
             };
             Satir("Şablon", _bSablonKutu);
+
+            // Bileşik şablon: C1..C7 eksenlerine kütüphaneden eleman (SWOOD
+            // LINCO SABLON ile aynı mantık). Eksen sayısı = Eleman sayısı.
+            var eksenSatiri = new FlowLayoutPanel { AutoSize = true, WrapContents = true };
+            _bBilesik = new CheckBox { Text = "Eksenlere eleman ata", AutoSize = true, Padding = new Padding(0, 4, 8, 0) };
+            _bBilesik.CheckedChanged += (s, e) => BilesikDegisti();
+            eksenSatiri.Controls.Add(_bBilesik);
+            for (int i = 0; i < BaglantiSablonu.EKSEN_SAYISI; i++)
+            {
+                eksenSatiri.Controls.Add(new Label { Text = $"C{i + 1}", AutoSize = true, Padding = new Padding(4, 6, 0, 0) });
+                var kutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
+                kutu.SelectedIndexChanged += (s, e) => BirlesimAyariDegisti();
+                _bEksenKutulari.Add(kutu);
+                eksenSatiri.Controls.Add(kutu);
+            }
+            Satir("Eksenler", eksenSatiri);
+
+            var dizilisSatiri = new FlowLayoutPanel { AutoSize = true, WrapContents = true };
+            _bDizilisKutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
+            _bDizilisKutu.Items.AddRange(DIZILIS_ADLARI);
+            _bDizilisKutu.SelectedIndex = 0;
+            dizilisSatiri.Controls.Add(_bDizilisKutu);
+            dizilisSatiri.Controls.Add(new Label { Text = "Kavela–Minifix arası (mm)", AutoSize = true, Padding = new Padding(8, 6, 0, 0) });
+            // 32'nin katları listelenir, elle de değer yazılabilir.
+            _bDizilisAralik = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 70 };
+            for (int k = 1; k <= 20; k++) _bDizilisAralik.Items.Add((32 * k).ToString(CultureInfo.InvariantCulture));
+            _bDizilisAralik.Text = "32";
+            dizilisSatiri.Controls.Add(_bDizilisAralik);
+            dizilisSatiri.Controls.Add(Buton("Dizilişi Uygula", (s, e) => DizilisUygula()));
+            Satir("Hazır diziliş", dizilisSatiri);
+
             _bModKutu = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
             _bModKutu.Items.AddRange(MOD_ADLARI);
             _bModKutu.SelectedIndexChanged += (s, e) => BirlesimAyariDegisti();
@@ -204,7 +245,8 @@ namespace UretimOSKesim
             Satir("Sağ ofset (mm)", _bSagOfset);
             _bAraliklar = new TextBox(); _bAraliklar.TextChanged += (s, e) => BirlesimAyariDegisti();
             Satir("Aralıklar (mm)", _bAraliklar);
-            Satir("", new Label { AutoSize = true, ForeColor = Color.DimGray, Text = "Aralıklar ';' ile: 224 ya da 224;192;224 — eksikse son değer tekrar eder." });
+            Satir("", new Label { AutoSize = true, ForeColor = Color.DimGray, Text = "Aralıklar ';' ile: 224 ya da 224;192;224 — eksikse son değer tekrar eder.\n" +
+                "Eksenlerde: 1. aralık C1–C2, 2. aralık C2–C3 … (SWOOD AR1..AR6). Kavela ile minifix aynı hizada (kalınlık ortası) delinir." });
             var secenekler = new FlowLayoutPanel { AutoSize = true };
             _bGovdeTers = new CheckBox { Text = "Gövde/karşı paneli değiştir", AutoSize = true };
             _bIcYuzTers = new CheckBox { Text = "Diğer yüze al", AutoSize = true };
@@ -235,9 +277,67 @@ namespace UretimOSKesim
             _yukleniyor = true;
             _bSablonKutu.Items.Clear();
             foreach (var s in _sablonlar) _bSablonKutu.Items.Add(s.Ad);
+            foreach (var kutu in _bEksenKutulari)
+            {
+                kutu.Items.Clear();
+                kutu.Items.Add("—");
+                foreach (var s in _sablonlar.Where(x => !x.BilesikMi)) kutu.Items.Add(s.Ad);
+            }
             _yukleniyor = false;
             BirlesimAyarlariniGoster();
         }
+
+        private static readonly CultureInfo TR = new CultureInfo("tr-TR");
+
+        // Arkalık birleşimleri varsayılan olarak hariç (adında "ARKAL" geçen panel).
+        private static bool ArkalikMi(BirlesimSecimi s) =>
+            new[] { s.A?.Name2, s.B?.Name2 }.Any(a => a != null && a.ToUpper(TR).Contains("ARKAL"));
+
+        private void BilesikDegisti()
+        {
+            if (_yukleniyor || _aktifBirlesim == null) return;
+            var s = _aktifBirlesim.Sablon;
+            if (_bBilesik.Checked && !s.BilesikMi)
+            {
+                // Başlangıçta her eksende seçili şablonun kendisi (bileşik değilse).
+                var temel = _sablonlar.FirstOrDefault(x => x.Ad == _aktifBirlesim.SablonAdi && !x.BilesikMi);
+                int n = Math.Max(1, Math.Min(BaglantiSablonu.EKSEN_SAYISI, s.ElemanSayisi));
+                s.Eksenler = Enumerable.Repeat(temel?.Ad ?? "", n).ToList();
+                s.ElemanSayisi = n;
+            }
+            else if (!_bBilesik.Checked) s.Eksenler = null;
+            BirlesimAyarlariniGoster();
+            BirlesimSeridiniYenile();
+            OnizlemeIste();
+        }
+
+        private void DizilisUygula()
+        {
+            if (_aktifBirlesim == null) { _sonucKutu.Text = "Önce bir birleşim seçin."; return; }
+            var minifix = _sablonlar.FirstOrDefault(x => !x.BilesikMi && x.Ad.ToUpper(TR).Contains("MİNİFİX"));
+            var kavela = _sablonlar.FirstOrDefault(x => !x.BilesikMi && x.Ad.ToUpper(TR).Contains("KAVELA"));
+            if (minifix == null || kavela == null)
+            {
+                _sonucKutu.Text = "Kütüphanede adında 'Minifix' ve 'Kavela' geçen şablonlar olmalı.";
+                return;
+            }
+            double aralik = Oku(_bDizilisAralik.Text);
+            if (aralik <= 0) { _sonucKutu.Text = "Kavela–Minifix arası 0'dan büyük olmalı."; return; }
+            var s = _aktifBirlesim.Sablon;
+            s.Eksenler = DIZILISLER[Math.Max(0, _bDizilisKutu.SelectedIndex)].Select(k => k == "M" ? minifix.Ad : kavela.Ad).ToList();
+            s.ElemanSayisi = s.Eksenler.Count;
+            s.AraliklarMm = new List<double> { aralik };
+            if (s.Mod == DiziModu.EsitDagit) s.Mod = DiziModu.Soldan;
+            BirlesimAyarlariniGoster();
+            BirlesimSeridiniYenile();
+            OnizlemeIste();
+        }
+
+        // Birleşim düğmesindeki kısa şablon özeti: bileşikse "Kavela–Minifix–Kavela".
+        private static string SablonOzeti(BirlesimAyari b) =>
+            b.Sablon.BilesikMi
+                ? string.Join("–", b.Sablon.Eksenler.Select(a => string.IsNullOrWhiteSpace(a) ? "·" : a.Split(' ')[0]))
+                : b.SablonAdi;
 
         // Seçili PANELLER (bileşenler; herhangi bir yüzüne/kenarına tıklanmış
         // ya da ağaçtan seçilmiş olabilir) diğer panellere dayandığı tüm
@@ -321,7 +421,7 @@ namespace UretimOSKesim
             var sablon = _aktifBirlesim != null ? _sablonlar.FirstOrDefault(s => s.Ad == _aktifBirlesim.SablonAdi) : null;
             sablon = sablon ?? _secili ?? _sablonlar.FirstOrDefault();
             if (sablon == null) return false;
-            var yeni = new BirlesimAyari { Secim = secim, SablonAdi = sablon.Ad, Sablon = sablon.Kopya() };
+            var yeni = new BirlesimAyari { Secim = secim, SablonAdi = sablon.Ad, Sablon = sablon.Kopya(), Dahil = !ArkalikMi(secim) };
             _birlesimler.Add(yeni);
             _aktifBirlesim = yeni;
             return true;
@@ -367,17 +467,27 @@ namespace UretimOSKesim
             for (int i = 0; i < _birlesimler.Count; i++)
             {
                 var b = _birlesimler[i];
+                // Onay kutusu: birleşim uygulansın mı (arkalık varsayılan işaretsiz).
+                var dahil = new CheckBox { AutoSize = true, Checked = b.Dahil, Margin = new Padding(6, 8, 0, 3) };
                 var rb = new RadioButton
                 {
                     Appearance = Appearance.Button, AutoSize = true, Checked = ReferenceEquals(b, _aktifBirlesim),
-                    Text = $"{i + 1}  {b.Secim.Ad}  [{b.SablonAdi}]", Margin = new Padding(3), Padding = new Padding(4, 2, 4, 2)
+                    Text = $"{i + 1}  {b.Secim.Ad}  [{SablonOzeti(b)}]", Margin = new Padding(0, 3, 3, 3), Padding = new Padding(4, 2, 4, 2),
+                    ForeColor = b.Dahil ? SystemColors.ControlText : Color.Gray
+                };
+                dahil.CheckedChanged += (s, e) =>
+                {
+                    b.Dahil = dahil.Checked;
+                    rb.ForeColor = b.Dahil ? SystemColors.ControlText : Color.Gray;
+                    OnizlemeIste();
                 };
                 rb.CheckedChanged += (s, e) => { if (rb.Checked && !_yukleniyor) { _aktifBirlesim = b; BirlesimAyarlariniGoster(); OnizlemeYenile(); } };
+                _birlesimSeridi.Controls.Add(dahil);
                 _birlesimSeridi.Controls.Add(rb);
             }
             if (_birlesimler.Count == 0)
                 _birlesimSeridi.Controls.Add(new Label { AutoSize = true, ForeColor = Color.DimGray, Padding = new Padding(4, 8, 0, 0),
-                    Text = "Panelleri seçip '🔎 Seçili Panellerin Birleşimlerini Bul'a basın (seçili birleşim turuncu, diğerleri mavi gösterilir)." });
+                    Text = "Panelleri seçip '🔎 Seçili Panellerin Birleşimlerini Bul'a basın (seçili birleşim turuncu, diğerleri mavi gösterilir; işaretsiz birleşim uygulanmaz)." });
             _birlesimSeridi.ResumeLayout();
             BirlesimAyarlariniGoster();
         }
@@ -391,7 +501,18 @@ namespace UretimOSKesim
             {
                 _bSablonKutu.SelectedIndex = _sablonlar.FindIndex(s => s.Ad == b.SablonAdi);
                 _bModKutu.SelectedIndex = (int)b.Sablon.Mod;
-                _bElemanSayisi.Value = Math.Max(1, Math.Min(50, b.Sablon.ElemanSayisi));
+                bool bilesik = b.Sablon.BilesikMi;
+                _bBilesik.Checked = bilesik;
+                _bElemanSayisi.Maximum = bilesik ? BaglantiSablonu.EKSEN_SAYISI : 50;
+                _bElemanSayisi.Value = Math.Max(1, Math.Min(_bElemanSayisi.Maximum, bilesik ? b.Sablon.Eksenler.Count : b.Sablon.ElemanSayisi));
+                for (int i = 0; i < _bEksenKutulari.Count; i++)
+                {
+                    var kutu = _bEksenKutulari[i];
+                    string ad = bilesik && i < b.Sablon.Eksenler.Count ? b.Sablon.Eksenler[i] : null;
+                    int idx = string.IsNullOrWhiteSpace(ad) ? 0 : kutu.Items.IndexOf(ad);
+                    kutu.SelectedIndex = kutu.Items.Count == 0 ? -1 : Math.Max(0, idx);
+                    kutu.Enabled = bilesik && i < (int)_bElemanSayisi.Value;
+                }
                 _bSolOfset.Text = Sayi(b.Sablon.SolOfsetMm);
                 _bSagOfset.Text = Sayi(b.Sablon.SagOfsetMm);
                 _bAraliklar.Text = string.Join(";", (b.Sablon.AraliklarMm ?? new List<double>()).Select(Sayi));
@@ -421,6 +542,17 @@ namespace UretimOSKesim
             var s = _aktifBirlesim.Sablon;
             s.Mod = (DiziModu)Math.Max(0, _bModKutu.SelectedIndex);
             s.ElemanSayisi = (int)_bElemanSayisi.Value;
+            if (s.BilesikMi)
+            {
+                int n = Math.Min(BaglantiSablonu.EKSEN_SAYISI, s.ElemanSayisi);
+                s.Eksenler = Enumerable.Range(0, n)
+                    .Select(i => _bEksenKutulari[i].SelectedIndex <= 0 ? "" : (string)_bEksenKutulari[i].SelectedItem).ToList();
+                for (int i = 0; i < _bEksenKutulari.Count; i++) _bEksenKutulari[i].Enabled = i < n;
+                // Şeritteki özet (Kavela–Minifix–…) güncellensin.
+                int sira = _birlesimler.IndexOf(_aktifBirlesim);
+                foreach (var rb in _birlesimSeridi.Controls.OfType<RadioButton>().Where(r => r.Checked))
+                    rb.Text = $"{sira + 1}  {_aktifBirlesim.Secim.Ad}  [{SablonOzeti(_aktifBirlesim)}]";
+            }
             s.SolOfsetMm = Oku(_bSolOfset.Text);
             s.SagOfsetMm = Oku(_bSagOfset.Text);
             s.AraliklarMm = _bAraliklar.Text.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(t => Oku(t)).ToList();
@@ -444,14 +576,15 @@ namespace UretimOSKesim
             Cursor = Cursors.WaitCursor;
             try
             {
-                foreach (var b in _birlesimler) b.SonPlan = BaglantiUygulayici.Hesapla(_app, b.Secim, b.Sablon, b.Sec);
+                foreach (var b in _birlesimler) b.SonPlan = BaglantiUygulayici.Hesapla(_app, b.Secim, b.Sablon, b.Sec, _sablonlar);
                 BaglantiUygulayici.OnizlemeTemizle(_montaj, _onizleme);
-                _onizleme = BaglantiUygulayici.OnizlemeGoster(_app, _montaj, _birlesimler.Where(b => b.SonPlan?.Hata == null).Select(b => b.SonPlan), _aktifBirlesim?.SonPlan);
+                _onizleme = BaglantiUygulayici.OnizlemeGoster(_app, _montaj, _birlesimler.Where(b => b.Dahil && b.SonPlan?.Hata == null).Select(b => b.SonPlan), _aktifBirlesim?.SonPlan);
                 if (_aktifBirlesim != null) { _yukleniyor = true; BilgiYaz(_aktifBirlesim); _yukleniyor = false; }
                 _sonucKutu.Text = string.Join(System.Environment.NewLine, _birlesimler.Select((b, i) =>
                 {
                     var p = b.SonPlan;
                     string bas = $"{i + 1}  {b.Secim.Ad}: ";
+                    if (!b.Dahil) return bas + "— hariç (işaretsiz, uygulanmayacak)";
                     if (p.Hata != null) return bas + "✗ " + p.Hata;
                     return bas + $"{p.Delikler.Count} delik, konumlar {string.Join(", ", p.ElemanKonumlariMm.Select(Sayi))}" +
                            string.Concat(p.Uyarilar.Select(u => System.Environment.NewLine + "   ⚠ " + u));
@@ -514,10 +647,10 @@ namespace UretimOSKesim
             if (_birlesimler.Count == 0 || _montaj == null) { _sonucKutu.Text = "Önce birleşimleri ekleyin."; return; }
             bool duzenleme = _duzenlenenOzellik != null && _duzenlenenVeri != null;
             OnizlemeYenile();
-            var uygulanabilir = _birlesimler.Where(b => b.SonPlan != null && b.SonPlan.Hata == null && b.SonPlan.Delikler.Count > 0).ToList();
-            if (uygulanabilir.Count == 0) { _sonucKutu.Text = "Uygulanabilir birleşim yok (önizleme sonuçlarına bakın)."; return; }
+            var uygulanabilir = _birlesimler.Where(b => b.Dahil && b.SonPlan != null && b.SonPlan.Hata == null && b.SonPlan.Delikler.Count > 0).ToList();
+            if (uygulanabilir.Count == 0) { _sonucKutu.Text = "Uygulanabilir birleşim yok (önizleme sonuçlarına bakın; işaretsiz birleşimler uygulanmaz)."; return; }
             int toplamDelik = uygulanabilir.Sum(b => b.SonPlan.Delikler.Count);
-            int modelli = uygulanabilir.Count(b => b.SonPlan.ModelYolu != null);
+            int modelli = uygulanabilir.Count(b => b.SonPlan.ModelVar);
             string onay = (duzenleme ? $"'{_duzenlenenOzellik.Name}' güncellenecek: önceki {_duzenlenenVeri.Kesimler.Count} kesim ve {_duzenlenenVeri.Bilesenler.Count} model silinip " : "") +
                           $"{uygulanabilir.Count} birleşimde toplam {toplamDelik} delik gerçek kesim olarak açılacak" +
                           (modelli > 0 ? $", {modelli} birleşime 3B model yerleştirilecek" : "") +
@@ -535,7 +668,7 @@ namespace UretimOSKesim
                     var silmeUyarilari = new List<string>();
                     BaglantiOzelligi.UrunleriSil(_app, _montaj, _duzenlenenVeri, silmeUyarilari);
                     satirlar.AddRange(silmeUyarilari.Select(u => "   ⚠ " + u));
-                    foreach (var b in uygulanabilir) b.SonPlan = BaglantiUygulayici.Hesapla(_app, b.Secim, b.Sablon, b.Sec);
+                    foreach (var b in uygulanabilir) b.SonPlan = BaglantiUygulayici.Hesapla(_app, b.Secim, b.Sablon, b.Sec, _sablonlar);
                     uygulanabilir = uygulanabilir.Where(b => b.SonPlan.Hata == null && b.SonPlan.Delikler.Count > 0).ToList();
                 }
 

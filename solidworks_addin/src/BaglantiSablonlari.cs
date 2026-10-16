@@ -46,7 +46,11 @@ namespace UretimOSKesim
     {
         Soldan,   // ilk eleman sol uçtan SolOfset'te, sonrakiler Aralıklar kadar ilerler
         Sagdan,   // ilk eleman sağ uçtan SagOfset'te, sonrakiler geriye doğru
-        EsitDagit // SolOfset..SagOfset arasında eşit aralıklı (1 eleman = orta)
+        EsitDagit, // SolOfset..SagOfset arasında eşit aralıklı (1 eleman = orta)
+        // KULLANICI İSTEĞİ (Minifix + Kavela): Soldan dizilen eleman grubu sağ
+        // uca ayna olarak da konur (sağ grup SagOfset'ten, aralıklar geriye).
+        // Boy kısaysa iki grubun 1 mm'ye kadar çakışan elemanları tek sayılır.
+        IkiUctan
     }
 
     public class BaglantiSablonu
@@ -69,18 +73,44 @@ namespace UretimOSKesim
         // Z gövdenin iç yüzüne doğru.
         public string ModelDosyasi;
 
+        // BİLEŞİK ŞABLON — kullanıcı isteği: "minifix ile kavela şablonunu
+        // birlikte çalıştırmamız gerekli ... linco şablonda c1 c2-c7 linco
+        // bağlantı attık ya" (SWOOD LINCO SABLON: C1..C7 eksen, AR1..AR6
+        // aralık). Doluysa her eksen (C1..C7) adı verilen kütüphane şablonunun
+        // TEK elemanını (delikleri + 3B modeli) taşır; "" = boş eksen. Ölçüler
+        // kopyalanmaz, her hesapta kütüphaneden okunur — kütüphanede Kavela
+        // ölçüsü değişince bileşik şablon da onu kullanır. Boşsa (null) şablon
+        // eskisi gibi kendi Delikler'ini her elemanda tekrarlar.
+        public List<string> Eksenler;
+        public const int EKSEN_SAYISI = 7;
+
+        public bool BilesikMi => Eksenler != null && Eksenler.Count > 0;
+
         public string ModelYolu() =>
             string.IsNullOrWhiteSpace(ModelDosyasi) ? null : Path.Combine(BaglantiSablonKutuphanesi.ModelKlasoru, ModelDosyasi);
 
         public BaglantiSablonu Kopya() =>
             JsonConvert.DeserializeObject<BaglantiSablonu>(JsonConvert.SerializeObject(this));
 
+        // Verilen eksendeki elemanın şablonu: bileşik değilse kendisi; boş
+        // eksen ya da kütüphanede bulunamayan ad için null.
+        public BaglantiSablonu EksenSablonu(int eksen, IEnumerable<BaglantiSablonu> kutuphane)
+        {
+            if (!BilesikMi) return this;
+            if (eksen < 0 || eksen >= Eksenler.Count || string.IsNullOrWhiteSpace(Eksenler[eksen])) return null;
+            return kutuphane?.FirstOrDefault(s => !s.BilesikMi && string.Equals(s.Ad, Eksenler[eksen], StringComparison.OrdinalIgnoreCase));
+        }
+
         // Birleşim boyunca eleman merkezleri — [0, uzunluk] aralığında, "sol"
         // uçtan ölçülen mm. Aralık dışına düşenler de döner; çağıran uyarır.
-        public List<double> ElemanKonumlari(double uzunlukMm)
+        public List<double> ElemanKonumlari(double uzunlukMm) => Elemanlar(uzunlukMm).Select(e => e.Konum).ToList();
+
+        // Eleman konumları + her elemanın eksen sırası (C1 = 0). İki uçtan
+        // modunda sağ grup aynalanır: sağ uçtaki eleman da C1'dir.
+        public List<(double Konum, int Eksen)> Elemanlar(double uzunlukMm)
         {
-            var sonuc = new List<double>();
-            int n = Math.Max(0, ElemanSayisi);
+            var sonuc = new List<(double, int)>();
+            int n = Math.Max(0, BilesikMi ? Math.Min(Eksenler.Count, EKSEN_SAYISI) : ElemanSayisi);
             if (n == 0) return sonuc;
             double Aralik(int i) => AraliklarMm == null || AraliklarMm.Count == 0 ? 0 : AraliklarMm[Math.Min(i, AraliklarMm.Count - 1)];
 
@@ -89,20 +119,33 @@ namespace UretimOSKesim
                 case DiziModu.Sagdan:
                     {
                         double p = uzunlukMm - SagOfsetMm;
-                        for (int i = 0; i < n; i++) { sonuc.Add(p); p -= Aralik(i); }
+                        for (int i = 0; i < n; i++) { sonuc.Add((p, i)); p -= Aralik(i); }
                         break;
                     }
                 case DiziModu.EsitDagit:
                     {
                         double bas = SolOfsetMm, son = uzunlukMm - SagOfsetMm;
-                        if (n == 1) sonuc.Add((bas + son) / 2.0);
-                        else for (int i = 0; i < n; i++) sonuc.Add(bas + (son - bas) * i / (n - 1));
+                        if (n == 1) sonuc.Add(((bas + son) / 2.0, 0));
+                        else for (int i = 0; i < n; i++) sonuc.Add((bas + (son - bas) * i / (n - 1), i));
+                        break;
+                    }
+                case DiziModu.IkiUctan:
+                    {
+                        double p = SolOfsetMm;
+                        for (int i = 0; i < n; i++) { sonuc.Add((p, i)); p += Aralik(i); }
+                        p = uzunlukMm - SagOfsetMm;
+                        for (int i = 0; i < n; i++)
+                        {
+                            double k = p;
+                            if (!sonuc.Any(s => Math.Abs(s.Item1 - k) < 1)) sonuc.Add((k, i));
+                            p -= Aralik(i);
+                        }
                         break;
                     }
                 default:
                     {
                         double p = SolOfsetMm;
-                        for (int i = 0; i < n; i++) { sonuc.Add(p); p += Aralik(i); }
+                        for (int i = 0; i < n; i++) { sonuc.Add((p, i)); p += Aralik(i); }
                         break;
                     }
             }
