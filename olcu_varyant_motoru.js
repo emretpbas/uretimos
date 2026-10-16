@@ -55,6 +55,52 @@ const OlcuVaryantMotoru = (() => {
 
   function olculer(aile) { return Array.isArray(aile && aile.olculer) ? aile.olculer : []; }
 
+  // PERFORMANS (GERÇEK ÜRETİMDE YAKALANDI, KRİTİK): bu fonksiyon HER kart
+  // için (117.000+ ölçekte, ağaç gezintisinde TEKRAR TEKRAR) çağrılıyor ve
+  // eskiden TÜM aileleri (gerçek ölçekte 50.000+) baştan tarıyordu — tek
+  // başına O(kart × aile) demekti, aile sayısı arttıkça (her Ölçü
+  // Eşleştirme taraması kod örüntüsünden TAZE aile çıkardığından, büyük
+  // kurulumlarda aile sayısı da büyük olur) bu KODLARINI ÇOK GEÇ (dakikalar
+  // sonra bile) bitirmeyen asıl darboğazdı.
+  //
+  // kodParcasi değerleri HER ZAMAN 2+ haneli SAF RAKAM dizileridir (bkz.
+  // kodSablonVeRakamlariCikar) — yani `kod` içinde ANCAK `kod`'un kendi
+  // RAKAM BLOKLARININ (digit run) bir ALT DİZESİ olarak geçebilirler (bir
+  // rakam dizesi harf içeren bir karakterin ortasından GEÇEMEZ). Bu yüzden
+  // "TÜM aileleri tara, her biri kod içinde mi bak" yerine TERSİNE çeviriyoruz:
+  // `kod`'un rakam bloklarından TÜM 2+ haneli alt dizelerini (tipik olarak
+  // birkaç tane, HER ZAMAN aile sayısından BAĞIMSIZ, sabit küçük bir sayı)
+  // çıkarıp, bunları bir token->aile İNDEKSİNDE O(1) ARIYORUZ. Matematiksel
+  // olarak BİREBİR AYNI soruyu sorar (hangi KAYITLI token `kod` içinde geçer),
+  // sadece yönü ters çevirip aile sayısına bağımlılığı ORTADAN KALDIRIR.
+  const _tokenIndeksOnbellegi = new WeakMap(); // olcuAnahtari dizisi -> Map(token -> [{aile,olcu,kodParcasi}])
+  function tokenIndeksiOlustur(olcuAnahtari) {
+    let idx = _tokenIndeksOnbellegi.get(olcuAnahtari);
+    if (idx) return idx;
+    idx = new Map();
+    (olcuAnahtari || []).forEach(aile => {
+      olculer(aile).forEach(o => {
+        const parca = String(o.kodParcasi || '');
+        if (!parca) return;
+        if (!idx.has(parca)) idx.set(parca, []);
+        idx.get(parca).push({ aile, olcu: o.olcu, kodParcasi: parca });
+      });
+    });
+    _tokenIndeksOnbellegi.set(olcuAnahtari, idx);
+    return idx;
+  }
+  // `kod`'daki rakam bloklarının TÜM 2+ haneli alt dizelerini (tekrarsız) döner.
+  function kodRakamAltDizeleriCikar(kod) {
+    const digitRuns = String(kod || '').match(/\d+/g) || [];
+    const adaylar = new Set();
+    digitRuns.forEach(run => {
+      for (let i = 0; i < run.length; i++) {
+        for (let j = i + 2; j <= run.length; j++) adaylar.add(run.slice(i, j));
+      }
+    });
+    return adaylar;
+  }
+
   // Bir kodun İÇİNDE (herhangi bir konumda) geçen, Ölçü Eşleştirme
   // Anahtarı'nda KAYITLI bir kodParcasi'nı bulur. Birden fazla aile/token
   // eşleşirse EN UZUN token tercih edilir (ör. "0060" hem kendi başına hem
@@ -63,18 +109,19 @@ const OlcuVaryantMotoru = (() => {
   // BELİRSİZ kabul edilip null döner (asla tahmin edilmez).
   function kodParcasiIleOlcuBul(kod, olcuAnahtari) {
     const k = String(kod || '');
+    const tokenIndeks = tokenIndeksiOlustur(olcuAnahtari);
     let enIyi = null;
-    for (const aile of (olcuAnahtari || [])) {
-      for (const o of olculer(aile)) {
-        const parca = String(o.kodParcasi || '');
-        if (!parca || k.indexOf(parca) === -1) continue;
-        if (!enIyi || parca.length > enIyi.kodParcasi.length) {
-          enIyi = { aile, olcu: o.olcu, kodParcasi: parca, cakisma: false };
-        } else if (parca.length === enIyi.kodParcasi.length && parca !== enIyi.kodParcasi) {
+    kodRakamAltDizeleriCikar(k).forEach(parca => {
+      const girdiler = tokenIndeks.get(parca);
+      if (!girdiler) return;
+      girdiler.forEach(({ aile, olcu, kodParcasi }) => {
+        if (!enIyi || kodParcasi.length > enIyi.kodParcasi.length) {
+          enIyi = { aile, olcu, kodParcasi, cakisma: false };
+        } else if (kodParcasi.length === enIyi.kodParcasi.length && kodParcasi !== enIyi.kodParcasi) {
           enIyi.cakisma = true;
         }
-      }
-    }
+      });
+    });
     if (!enIyi || enIyi.cakisma) return null;
     return enIyi;
   }
@@ -102,13 +149,32 @@ const OlcuVaryantMotoru = (() => {
   // farklı) hammadde kartlarını bulur — "stokta olan hammaddeye göre sarf"
   // isteğinin veri modeli temeli: refId BİRİNCİL kalır, bunlar ALTERNATIF
   // olarak eklenir (hiçbir mevcut maliyet/MRP kodu kırılmaz).
+  //
+  // PERFORMANS: bu fonksiyon ağaç gezintisinde HER hammadde kalemi için
+  // (binlerce kez) çağrılıyor; her çağrıda TÜM hammaddeler dizisini (gerçek
+  // ölçekte 12.000+) baştan taramak yerine, aynı `tumHammaddeler` dizisi
+  // için AD'A GÖRE gruplama bir kez yapılıp (WeakMap ile) önbelleklenir —
+  // davranış birebir aynı, yalnızca tekrar eden taramalar O(1)'e iner.
+  const _hammaddeAdGrubuOnbellegi = new WeakMap();
+  function hammaddeAdGrubu(tumHammaddeler) {
+    let m = _hammaddeAdGrubuOnbellegi.get(tumHammaddeler);
+    if (m) return m;
+    m = new Map();
+    (tumHammaddeler || []).forEach(h => {
+      const ad = normalizeAciklama(h && h.ad);
+      if (!ad) return;
+      if (!m.has(ad)) m.set(ad, []);
+      m.get(ad).push(h);
+    });
+    _hammaddeAdGrubuOnbellegi.set(tumHammaddeler, m);
+    return m;
+  }
   function alternatifHammaddeleriBul(hammadde, tumHammaddeler) {
     if (!hammadde) return [];
     const ad = normalizeAciklama(hammadde.ad);
     if (!ad) return [];
-    return (tumHammaddeler || []).filter(h =>
-      h.id !== hammadde.id && normalizeAciklama(h.ad) === ad &&
-      (h.en !== hammadde.en || h.boy !== hammadde.boy));
+    const grup = hammaddeAdGrubu(tumHammaddeler).get(ad) || [];
+    return grup.filter(h => h.id !== hammadde.id && (h.en !== hammadde.en || h.boy !== hammadde.boy));
   }
 
   function kartListesi(tip, veri) {
@@ -121,6 +187,74 @@ const OlcuVaryantMotoru = (() => {
   }
   function kartPrefix(tip) {
     return tip === 'urun' ? 'URN' : tip === 'yarimamul' ? 'YM' : tip === 'altmontaj' ? 'AM' : 'PKT';
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // PERFORMANS — id/kod İNDEKSLERİ (GERÇEK ÜRETİMDE YAKALANDI, KRİTİK):
+  // kartKlonla/kalemKlonla ve sistemGenelindeOlcuTamamlama/tamSistemTaramasi
+  // içindeki HER .find()/.findIndex()/.some() çağrısı, koleksiyonun
+  // TAMAMINDA (gerçek ölçekte 96.746 yarımamül + 20.597 ürün + receteler)
+  // DOĞRUSAL ARAMA yapıyordu — ve bu aramalar ağaç gezintisinde HER düğüm
+  // için, HER aile×ölçü kombinasyonu için TEKRAR TEKRAR çağrılıyordu. Bu,
+  // pratikte O(n²) (hatta daha kötü) bir maliyetti: 117.000+ kart ölçeğinde
+  // "Şimdi Tekrar Tara" dakikalarca sürüyor, hatta hiç bitmiyordu (kullanıcı
+  // raporu: tıklayınca sayfa süresiz donuyor).
+  //
+  // Aşağıdaki indeks, belirli bir `veri`/`calismaVerisi` NESNE REFERANSINI
+  // temsil eden id/kod -> kayıt Map'leridir (WeakMap ile o nesneye bağlı);
+  // O(n) arama yerine O(1) bakışa indirger. DAVRANIŞ DEĞİŞMEZ — yalnızca
+  // HIZ değişir. Taramada YENİ oluşturulan kartlar/reçeteler de hemen
+  // aranabilir olsun diye, indeks dizi MUTASYONLARIYLA (push/replace) AYNI
+  // noktada senkron tutulur (bkz. indeksKartEkle / indeksReceteEkleVeyaDegistir
+  // çağrıları — ham push/findIndex'in YERİNE geçerler, yanlarına değil).
+  // ══════════════════════════════════════════════════════════════════════
+  const _indeksOnbellegi = new WeakMap(); // veri nesnesi -> indeks
+  function indeksAl(veri) {
+    let ind = _indeksOnbellegi.get(veri);
+    if (ind) return ind;
+    ind = { kartById: {}, kartByKod: {}, receteByRef: {}, receteIdToIndex: new Map(), hammaddeById: new Map() };
+    ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
+      const liste = kartListesi(tip, veri) || [];
+      const idMap = new Map(), kodMap = new Map();
+      liste.forEach(k => { if (k) { if (k.id != null) idMap.set(k.id, k); if (k.kod != null) kodMap.set(k.kod, k); } });
+      ind.kartById[tip] = idMap; ind.kartByKod[tip] = kodMap;
+      ind.receteByRef[tip] = new Map();
+    });
+    (veri.hammaddeler || []).forEach(h => { if (h && h.id != null) ind.hammaddeById.set(h.id, h); });
+    (veri.receteler || []).forEach((r, i) => {
+      if (!r) return;
+      if (r.id != null) ind.receteIdToIndex.set(r.id, i);
+      ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
+        const alan = idAlani(tip);
+        if (r[alan] != null) ind.receteByRef[tip].set(r[alan], r);
+      });
+    });
+    _indeksOnbellegi.set(veri, ind);
+    return ind;
+  }
+  // Yeni oluşturulan bir kartı HEM diziye (kartListesiAl(tip).push ÇAĞIRANDA
+  // ZATEN yapılır) HEM indekse ekler — bu fonksiyon SADECE indeksi günceller.
+  function indeksKartEkle(veri, tip, kart) {
+    const ind = indeksAl(veri);
+    if (kart.id != null) ind.kartById[tip].set(kart.id, kart);
+    if (kart.kod != null) ind.kartByKod[tip].set(kart.kod, kart);
+  }
+  // Eski kodun `findIndex + (varsa) değiştir, (yoksa) push` desenini O(1)
+  // indeks bakışıyla birebir aynı davranışta uygular; HEM diziyi (veri.
+  // receteler) HEM indeksi günceller — eski iki ayrı adımın YERİNE geçer.
+  function indeksReceteEkleVeyaDegistir(veri, yeniRecete) {
+    const ind = indeksAl(veri);
+    const mevcutIdx = ind.receteIdToIndex.get(yeniRecete.id);
+    if (mevcutIdx !== undefined) {
+      veri.receteler[mevcutIdx] = yeniRecete;
+    } else {
+      ind.receteIdToIndex.set(yeniRecete.id, veri.receteler.length);
+      veri.receteler.push(yeniRecete);
+    }
+    ['urun', 'yarimamul', 'altmontaj', 'paket'].forEach(tip => {
+      const alan = idAlani(tip);
+      if (yeniRecete[alan] != null) ind.receteByRef[tip].set(yeniRecete[alan], yeniRecete);
+    });
   }
 
   // Kök karttan başlayıp tüm alt ağacı hedef ölçüye klonlayan/tamamlayan
@@ -155,7 +289,7 @@ const OlcuVaryantMotoru = (() => {
         // Hammadde refId'si ölçüye göre DEĞİŞTİRİLMEZ (bkz. dosya başı
         // yorumu) — yalnızca AYNI açıklamalı farklı ölçülü kartlar varsa
         // alternatif olarak eklenir, kalem aksi halde AYNEN kopyalanır.
-        const kaynakHm = (veri.hammaddeler || []).find(h => h.id === k.refId);
+        const kaynakHm = indeksAl(veri).hammaddeById.get(k.refId) || null;
         const alternatifler = alternatifHammaddeleriBul(kaynakHm, veri.hammaddeler);
         const yeniKalem = { ...k };
         if (alternatifler.length) yeniKalem.alternatifRefIdler = alternatifler.map(a => a.id);
@@ -175,8 +309,8 @@ const OlcuVaryantMotoru = (() => {
     function kartKlonla(tip, eskiId) {
       const anahtar = tip + ':' + eskiId;
       if (idMap.has(anahtar)) return idMap.get(anahtar);
-      const liste = kartListesi(tip, veri);
-      const kaynak = liste && liste.find(x => x.id === eskiId);
+      const ind = indeksAl(veri);
+      const kaynak = ind.kartById[tip].get(eskiId) || null;
       if (!kaynak) return null;
 
       const kaynakEslesme = kodParcasiIleOlcuBul(kaynak.kod, veri.olcuEslestirmeAnahtari);
@@ -194,7 +328,7 @@ const OlcuVaryantMotoru = (() => {
       let yeniId, yeniAd, mevcutKart = null;
       let hedefKodParcasi = null;
       if (tip === kokTip && eskiId === kokId && kokHedefId) {
-        mevcutKart = liste.find(x => x.id === kokHedefId) || null;
+        mevcutKart = ind.kartById[tip].get(kokHedefId) || null;
       } else if (kaynakEslesme) {
         hedefKodParcasi = hedefKodParcasiBul(kaynakEslesme.aile, hedefOlcu);
         if (!hedefKodParcasi) {
@@ -209,7 +343,12 @@ const OlcuVaryantMotoru = (() => {
         }
         if (mevcutKartiKullan) {
           const hedefKod = olcuVaryantKoduUret(kaynak.kod, kaynakEslesme.kodParcasi, hedefKodParcasi);
-          mevcutKart = liste.find(x => x.id !== kaynak.id && x.kod === hedefKod) || null;
+          // Kod benzersiz kabul edilir (sistemde zaten her yerde doğal
+          // anahtar olarak kullanılıyor) — kodByIndex'ten TEK aday gelir,
+          // yalnızca kaynağın KENDİSİ olup olmadığı (eski .find'daki aynı
+          // dışlama) kontrol edilir.
+          const aday = ind.kartByKod[tip].get(hedefKod);
+          mevcutKart = (aday && aday.id !== kaynak.id) ? aday : null;
         }
       }
 
@@ -235,9 +374,9 @@ const OlcuVaryantMotoru = (() => {
         yeniAd = yeniKart.ad;
       }
 
-      const kaynakRecete = (veri.receteler || []).find(r => r[idAlani(tip)] === eskiId);
+      const kaynakRecete = ind.receteByRef[tip].get(eskiId) || null;
       if (kaynakRecete && (kaynakRecete.kalemler || []).length) {
-        const mevcutAltRecete = mevcutKart ? (veri.receteler || []).find(r => r[idAlani(tip)] === yeniId) : null;
+        const mevcutAltRecete = mevcutKart ? (ind.receteByRef[tip].get(yeniId) || null) : null;
         if (!mevcutAltRecete || !(mevcutAltRecete.kalemler || []).length) {
           const buKartinKaynakOlcusu = kaynakEslesme ? kaynakEslesme.olcu : null;
           const yeniKalemler = kaynakRecete.kalemler.map(k => kalemKlonla(k, buKartinKaynakOlcusu));
@@ -260,9 +399,8 @@ const OlcuVaryantMotoru = (() => {
   // ve tamamlar. recete_yapim_raporu_motoru.js'in sistemGenelindeReceteRaporu
   // ile AYNI çalışma-kopyası deseni (paylaşılan alt bileşenler mükerrer
   // yaratılmasın diye bir sonraki adayda GÖRÜNÜR olur).
-  function sistemGenelindeOlcuTamamlama(masterKartKodu, masterTip, veri, idUret) {
-    const liste = kartListesi(masterTip, veri);
-    const masterKart = (liste || []).find(k => k.kod === masterKartKodu);
+  function sistemGenelindeOlcuTamamlama(masterKartKodu, masterTip, veri, idUret, paylasimliCalismaVerisi) {
+    const masterKart = indeksAl(veri).kartByKod[masterTip].get(masterKartKodu) || null;
     if (!masterKart) return { masterBulunamadi: true, sonuclar: [], eksikEslesmeler: [] };
 
     const masterEslesme = kodParcasiIleOlcuBul(masterKart.kod, veri.olcuEslestirmeAnahtari);
@@ -271,7 +409,22 @@ const OlcuVaryantMotoru = (() => {
     // Aynı ailenin BİLİNEN tüm diğer ölçüleri — master'ın KENDİ ölçüsü hariç.
     const digerOlculer = olculer(masterEslesme.aile).filter(o => String(o.olcu) !== String(masterEslesme.olcu));
 
-    const calismaVerisi = {
+    // PERFORMANS (GERÇEK ÜRETİMDE YAKALANDI, KRİTİK): tamSistemTaramasi
+    // (bu fonksiyonun TEK gerçek çağıranı) HER "master" aday kart için bunu
+    // tekrar tekrar çağırır — binlerce master'lık bir taramada, her çağrıda
+    // dizileri BAŞTAN kopyalayıp ([...dizi]) İNDEKSİ DE BAŞTAN kurmak
+    // (indeksAl, yeni nesne referansı yüzünden önbelleğe İSABET ETMEZ),
+    // kendisi tek başına O(masterSayısı × n) demekti — orijinal .find()
+        // zincirinden DAHA YAVAŞ bile olabiliyordu. tamSistemTaramasi kendi
+    // KALICI çalışma kopyasını 5. parametre olarak verirse, burada YENİ bir
+    // kopya/indeks KURULMAZ — DOĞRUDAN paylaşılan nesne üzerinde çalışılır
+    // (çağıran zaten bu nesneyi tutuyor ve sonuçları kendisi uygulamaz,
+    // bkz. tamSistemTaramasi'deki AYNI nottaki "ARTIK TEKRAR UYGULAMIYORUZ").
+    // Paylaşılmazsa (ör. bu fonksiyon DOĞRUDAN/tek başına çağrılıyorsa —
+    // testler, olası başka orkestratörler) ESKİ güvenli davranış (kendi
+    // bağımsız kopyasını çıkarır, girdi `veri`ye ASLA DOKUNMAZ) BİREBİR
+    // korunur — dışa açık imza/davranış geriye dönük TAM UYUMLU.
+    const calismaVerisi = paylasimliCalismaVerisi || {
       hammaddeler: veri.hammaddeler || [],
       yarimamuller: [...(veri.yarimamuller || [])],
       altMontajlar: [...(veri.altMontajlar || [])],
@@ -287,19 +440,16 @@ const OlcuVaryantMotoru = (() => {
     const eksikEslesmeler = [];
     digerOlculer.forEach(({ olcu: hedefOlcu, kodParcasi: hedefKodParcasi }) => {
       const hedefKod = olcuVaryantKoduUret(masterKart.kod, masterEslesme.kodParcasi, hedefKodParcasi);
-      const hedefListe = kartListesiAl(masterTip);
-      const hedefKart = hedefListe.find(k => k.kod === hedefKod);
+      const hedefKart = indeksAl(calismaVerisi).kartByKod[masterTip].get(hedefKod) || null;
       if (!hedefKart) return; // bu ölçüde sistemde ürün/kart yok — tamamlanacak bir şey yok
 
-      const hedefReceteVar = calismaVerisi.receteler.some(r => r[idAlani(masterTip)] === hedefKart.id && (r.kalemler || []).length);
+      const hedefRecete = indeksAl(calismaVerisi).receteByRef[masterTip].get(hedefKart.id);
+      const hedefReceteVar = !!(hedefRecete && (hedefRecete.kalemler || []).length);
       if (hedefReceteVar) return; // zaten tam bir reçetesi var — dokunulmaz
 
       const plan = olcuVaryantPlaniOlustur(masterKart.id, masterTip, hedefOlcu, calismaVerisi, idUret, { mevcutKartiKullan: true, kokHedefId: hedefKart.id });
-      plan.yeniKartlar.forEach(({ tip, kart }) => kartListesiAl(tip).push(kart));
-      plan.yeniReceteler.forEach(yeniRecete => {
-        const idx = calismaVerisi.receteler.findIndex(r => r.id === yeniRecete.id);
-        if (idx >= 0) calismaVerisi.receteler[idx] = yeniRecete; else calismaVerisi.receteler.push(yeniRecete);
-      });
+      plan.yeniKartlar.forEach(({ tip, kart }) => { kartListesiAl(tip).push(kart); indeksKartEkle(calismaVerisi, tip, kart); });
+      plan.yeniReceteler.forEach(yeniRecete => indeksReceteEkleVeyaDegistir(calismaVerisi, yeniRecete));
       eksikEslesmeler.push(...plan.eksikEslesmeler);
 
       sonuclar.push({
@@ -441,19 +591,24 @@ const OlcuVaryantMotoru = (() => {
         if (!eslesme) return;
         const anahtarIslem = tip + ':' + (eslesme.aile.aileAdi || eslesme.aile.id) + ':' + eslesme.olcu;
         if (islenenAileOlcu.has(anahtarIslem)) return;
-        const kendiRecetesi = calismaVerisi.receteler.find(r => r[idAlani(tip)] === kart.id);
+        const kendiRecetesi = indeksAl(calismaVerisi).receteByRef[tip].get(kart.id);
         if (!kendiRecetesi || !(kendiRecetesi.kalemler || []).length) return; // reçetesi eksik -> master OLAMAZ
 
-        const rapor = sistemGenelindeOlcuTamamlama(kart.kod, tip, calismaVerisi, idUret);
+        // PERFORMANS: paylaşılan calismaVerisi'ni 5. parametre olarak
+        // veriyoruz — bkz. sistemGenelindeOlcuTamamlama'daki ayrıntılı not.
+        // Bu sayede o fonksiyon kendi kopyasını/indeksini YENİDEN KURMAZ,
+        // DOĞRUDAN bu nesne üzerinde okur/yazar.
+        const rapor = sistemGenelindeOlcuTamamlama(kart.kod, tip, calismaVerisi, idUret, calismaVerisi);
         if (rapor.masterBulunamadi || rapor.masterOlcuAilesineAitDegil) return;
         islenenAileOlcu.add(anahtarIslem);
 
+        // ARTIK yeniKartlar/yeniReceteler'i TEKRAR UYGULAMIYORUZ —
+        // sistemGenelindeOlcuTamamlama paylaşılan calismaVerisi'ne (yukarıdaki
+        // 5. parametre) ZATEN DOĞRUDAN yazdı; burada sadece RAPORLAMA için
+        // sonuç listesi toplanıyor (ikinci kez push edersek kayıt
+        // MÜKERRERLEŞİR — bu yüzden burada ARTIK kartListesiAl(t).push
+        // ÇAĞRILMIYOR).
         rapor.sonuclar.forEach(sonuc => {
-          sonuc.yeniKartlar.forEach(({ tip: t, kart: k }) => kartListesiAl(t).push(k));
-          sonuc.yeniReceteler.forEach(yeniRecete => {
-            const idx = calismaVerisi.receteler.findIndex(r => r.id === yeniRecete.id);
-            if (idx >= 0) calismaVerisi.receteler[idx] = yeniRecete; else calismaVerisi.receteler.push(yeniRecete);
-          });
           tumSonuclar.push({
             masterTip: tip, masterKod: kart.kod, masterAd: kart.ad, aileAdi: rapor.aileAdi,
             hedefOlcu: sonuc.hedefOlcu, hedefKod: sonuc.hedefKod, hedefAd: sonuc.hedefAd,

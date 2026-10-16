@@ -98,18 +98,24 @@ PageModules.recete_tamamlama_botu = (() => {
   // yaptığını" bu günlükten (bu sayfanın "Son Çalışmalar" bölümü) görür.
   // Yapacak bir şey bulunamazsa (sonuç VE eksik eşleşme ikisi de boş) HİÇBİR
   // ŞEY yazmaz — günlük sessiz/gereksiz kayıtlarla şişmez.
-  // GERÇEK ÜRETİMDE YAKALANDI (KRİTİK): "arka planda (EKRANI BLOKLAMADAN)"
-  // varsayımı YANLIŞTI — JS tek iş parçacıklıdır; .catch() ile "arka
-  // planda" çağırmak, İÇERİDEKİ senkron işi (urun/yarimamul/altMontaj/
-  // paket/receteler TAMAMINI indirip OlcuVaryantMotoru.tamSistemTaramasi
-  // ile kod-örüntüsü eşleştirmesi) ana iş parçacığından ÇIKARMAZ. Gerçek
-  // ölçekte (117.000+ kart) bu, otomatik tetiklendiği HER an (oturum
-  // başlangıcı/sayfa yenileme VE her içe aktarma sonrası) tarayıcıyı
-  // dakikalarca tepkisiz bırakıyordu — tarama hiç bitmediği için günlüğe
-  // de hiç yazılmıyor, bir SONRAKİ tetiklemede AYNI şey tekrarlanıyordu.
-  // Büyük kurulumlarda OTOMATİK tetikleyiciler (manuel HARİÇ — kullanıcı
-  // "Şimdi Tekrar Tara"ya basarken bilerek bekler) bu eşik üstünde atlanır.
-  const BUYUK_KOLEKSIYON_ESIGI = 3000;
+  // GERÇEK ÜRETİMDE YAKALANDI (KRİTİK, SONRADAN KÖKTEN DÜZELTİLDİ): "arka
+  // planda (EKRANI BLOKLAMADAN)" varsayımı YANLIŞTI — JS tek iş parçacıklıdır;
+  // .catch() ile "arka planda" çağırmak İÇERİDEKİ senkron işi ana iş
+  // parçacığından ÇIKARMAZ. OlcuVaryantMotoru.tamSistemTaramasi eskiden
+  // O(kart²) civarı bir karmaşıklığa sahipti (her kart için TÜM aileleri/
+  // kartları/reçeteleri DOĞRUSAL arıyordu) — gerçek ölçekte (117.000+ kart)
+  // bu, dakikalarca/süresiz donmaya yol açıyordu. olcu_varyant_motoru.js'e
+  // id/kod/token İNDEKSLERİ eklenerek bu KÖKTEN düzeltildi — aynı gerçek
+  // ölçek artık ~3 SANİYEDE tamamlanıyor (bkz. o dosyadaki PERFORMANS notu).
+  //
+  // Yine de otomatik tetikleyicilerde (oturum başlangıcı/sayfa yenileme VE
+  // içe aktarma sonrası) birkaç saniyelik bir ana-iş-parçacığı duraksaması
+  // kullanıcıya hissettirmemesi için GERÇEKTEN AŞIRI (bugünkü gerçek
+  // ölçeğin ~2 katı) bir eşik üstünde hâlâ bir güvenlik sigortası var —
+  // kademeli büyümeye yetecek pay bırakır, ama sınırsız değildir. Manuel
+  // "Şimdi Tekrar Tara" bu eşikten HİÇ etkilenmez (kullanıcı zaten bilerek
+  // bekler).
+  const BUYUK_KOLEKSIYON_ESIGI = 200000;
   async function koleksiyonlarBuyukMu() {
     const sayilar = await Promise.all(['urunler', 'yarimamuller', 'altMontajlar', 'paketler'].map(k => Store.sayim(k)));
     return sayilar.some(adet => adet > BUYUK_KOLEKSIYON_ESIGI);
