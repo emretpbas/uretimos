@@ -98,8 +98,29 @@ PageModules.recete_tamamlama_botu = (() => {
   // yaptığını" bu günlükten (bu sayfanın "Son Çalışmalar" bölümü) görür.
   // Yapacak bir şey bulunamazsa (sonuç VE eksik eşleşme ikisi de boş) HİÇBİR
   // ŞEY yazmaz — günlük sessiz/gereksiz kayıtlarla şişmez.
+  // GERÇEK ÜRETİMDE YAKALANDI (KRİTİK): "arka planda (EKRANI BLOKLAMADAN)"
+  // varsayımı YANLIŞTI — JS tek iş parçacıklıdır; .catch() ile "arka
+  // planda" çağırmak, İÇERİDEKİ senkron işi (urun/yarimamul/altMontaj/
+  // paket/receteler TAMAMINI indirip OlcuVaryantMotoru.tamSistemTaramasi
+  // ile kod-örüntüsü eşleştirmesi) ana iş parçacığından ÇIKARMAZ. Gerçek
+  // ölçekte (117.000+ kart) bu, otomatik tetiklendiği HER an (oturum
+  // başlangıcı/sayfa yenileme VE her içe aktarma sonrası) tarayıcıyı
+  // dakikalarca tepkisiz bırakıyordu — tarama hiç bitmediği için günlüğe
+  // de hiç yazılmıyor, bir SONRAKİ tetiklemede AYNI şey tekrarlanıyordu.
+  // Büyük kurulumlarda OTOMATİK tetikleyiciler (manuel HARİÇ — kullanıcı
+  // "Şimdi Tekrar Tara"ya basarken bilerek bekler) bu eşik üstünde atlanır.
+  const BUYUK_KOLEKSIYON_ESIGI = 3000;
+  async function otomatikTetikleyiciIcinBuyukMu() {
+    const sayilar = await Promise.all(['urunler', 'yarimamuller', 'altMontajlar', 'paketler'].map(k => Store.sayim(k)));
+    return sayilar.some(adet => adet > BUYUK_KOLEKSIYON_ESIGI);
+  }
+
   async function botCalistirVeUygula(tetikleyici) {
     try {
+      if (tetikleyici !== 'manuel' && await otomatikTetikleyiciIcinBuyukMu()) {
+        console.warn('Reçete Tamamlama Botu (' + tetikleyici + '): büyük koleksiyon tespit edildi, otomatik tarama atlanıyor (donma riski). Manuel çalıştırmak için bu ekrandaki "Şimdi Tekrar Tara" düğmesini kullanın.');
+        return null;
+      }
       const veri = await veriTopla();
       const { sonuclar, eksikEslesmeler } = OlcuVaryantMotoru.tamSistemTaramasi(veri, App.uid);
       if (!sonuclar.length && !eksikEslesmeler.length) return null;

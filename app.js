@@ -368,7 +368,7 @@ const App = (() => {
     }
   }
 
-  const UYGULAMA_SURUM = 'v127';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
+  const UYGULAMA_SURUM = 'v128';  // Çalışan sürüm — konsola ve ekrana damgalanır (önbellek teşhisi)
 
   // ── SESSİZ HATA AVCISI ────────────────────────────────────────────────────
   // Bir buton handler'ında hata oluşursa tarayıcı bunu sessizce yutar ve
@@ -1223,6 +1223,9 @@ const App = (() => {
       const gunluk = await Store.receteTamamlamaGunlugu.all();
       const sonZaman = gunluk.reduce((en, g) => (!en || (g.zaman || '') > en) ? (g.zaman || '') : en, '');
       if (sonZaman && (Date.now() - new Date(sonZaman).getTime()) < BOT_BEKLEME_SAATI * 3600 * 1000) return;
+      // GÜVENLİK KONTROLÜ (büyük koleksiyon → donma riski) artık
+      // botCalistirVeUygula'nın İÇİNDE, tüm otomatik tetikleyiciler için
+      // TEK yerde yapılıyor — bkz. page_recete_tamamlama_botu.js.
       PageModules.recete_tamamlama_botu.botCalistirVeUygula('oturum_baslangici')
         .catch(e => console.error('Reçete Tamamlama Botu (oturum başlangıcı) hatası:', e));
     } catch (e) { console.error('Reçete Tamamlama Botu zamanlama kontrolü:', e); }
