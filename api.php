@@ -1966,6 +1966,68 @@ try {
         respond(['key' => $key, 'adet' => is_array($arr) ? count($arr) : 0]);
     }
 
+    elseif ($action === 'koleksiyonSayfala') {
+        // GERÇEK ÜRETİM TESTİNDE YAKALANDI (en kritik bulgu): Yarı Mamüller
+        // ekranı, kart sayısı/arama kutusu ne olursa olsun Store.yarimamuller
+        // .all() ile koleksiyonun TAMAMINI (gerçek ölçekte 96.746 kayıt!)
+        // indirip sonra istemcide ilk 60'ını gösteriyordu — DOM çizimi daha
+        // önce sayfalanmıştı ama AĞ İSTEĞİ hâlâ tüm koleksiyonu çekiyordu, bu
+        // da uygulamayı dakikalarca/süresiz donduran asıl darboğazdı. Bu uç,
+        // yalnızca KV_ITEMS (satır satır saklanan, bkz. KV_ITEMS_KOLEKSIYONLAR)
+        // koleksiyonlar için, SQL seviyesinde arama+sayfalama yapar — istemciye
+        // ASLA istenen sayfadan fazlası gönderilmez.
+        $oturum = oturumZorunlu($pdo);
+        $key = $_GET['key'] ?? '';
+        if (!in_array($key, KV_ITEMS_KOLEKSIYONLAR, true)) {
+            respond(['error' => 'koleksiyonSayfala yalnızca satır satır saklanan koleksiyonlarda çalışır: ' . implode(',', KV_ITEMS_KOLEKSIYONLAR)], 400);
+        }
+        if (($oturum['rol'] ?? '') === 'hat_operator' && !in_array($key, HAT_OP_OKUNABILIR, true)) {
+            respond(['error' => 'Operatör oturumu bu veriye erişemez'], 403);
+        }
+        if (($oturum['rol'] ?? '') === 'cad_entegrasyon' && !in_array($key, CAD_ENT_OKUNABILIR, true)) {
+            respond(['error' => 'CAD entegrasyon oturumu bu veriye erişemez'], 403);
+        }
+        koleksiyonYetkiKontrol($oturum, $key, 'oku');
+        kvItemsGocEttirGerekirse($pdo, $key);
+
+        $ara = trim((string)($_GET['ara'] ?? ''));
+        $limit = max(1, min(200, (int)($_GET['limit'] ?? 60)));
+        $offset = max(0, (int)($_GET['offset'] ?? 0));
+
+        // DÜRÜST SINIR: arama yalnızca kod/ad alanlarında, SQLite LIKE ile
+        // (Türkçe büyük/küçük harf katlaması TAM doğru değildir — İ/ı/Ş/ğ
+        // gibi harflerde istemci tarafındaki arama kadar hassas olmayabilir,
+        // ama bu sayfalama olmadan 96.000+ kaydı indirmekten kıyaslanamayacak
+        // kadar iyidir). Sunucu paramları BAĞLANMIŞ (prepared) — SQL
+        // enjeksiyonu riski yok.
+        $where = 'store_key = :k';
+        $params = [':k' => $key];
+        if ($ara !== '') {
+            $where .= " AND (json_extract(item_json,'$.kod') LIKE :like ESCAPE '\\' OR json_extract(item_json,'$.ad') LIKE :like ESCAPE '\\')";
+            $kacis = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $ara);
+            $params[':like'] = '%' . $kacis . '%';
+        }
+
+        $cstmt = $pdo->prepare("SELECT COUNT(*) adet FROM kv_items WHERE $where");
+        $cstmt->execute($params);
+        $toplamEslesen = (int)$cstmt->fetch(PDO::FETCH_ASSOC)['adet'];
+
+        $params[':limit'] = $limit;
+        $params[':offset'] = $offset;
+        $stmt = $pdo->prepare("SELECT item_json FROM kv_items WHERE $where ORDER BY sira ASC LIMIT :limit OFFSET :offset");
+        foreach ($params as $p => $v) {
+            if ($p === ':limit' || $p === ':offset') $stmt->bindValue($p, $v, PDO::PARAM_INT);
+            else $stmt->bindValue($p, $v);
+        }
+        $stmt->execute();
+        $kayitlar = [];
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $d = json_decode($r['item_json'], true);
+            if (is_array($d)) $kayitlar[] = $d;
+        }
+        respond(['kayitlar' => $kayitlar, 'toplamEslesen' => $toplamEslesen, 'offset' => $offset, 'limit' => $limit]);
+    }
+
     elseif ($action === 'hammaddeOzet') {
         // GERÇEK ÜRETİM TESTİNDE YAKALANDI: Panel (dashboard) ekranı hammadde
         // sayısını VE plaka/hırdavat kırılımını göstermek için Store.hammaddeler

@@ -207,6 +207,26 @@ const Store = (() => {
     }
   }
 
+  // GERÇEK ÜRETİM TESTİNDE YAKALANDI (en kritik bulgu): Yarı Mamüller ekranı
+  // DOM'u sayfalıyordu ama Store.yarimamuller.all() hâlâ koleksiyonun
+  // TAMAMINI (96.746 kayıt!) indiriyordu — asıl donma buydu. Bu fonksiyon,
+  // sunucuda SQL seviyesinde arama+sayfalama yapan 'koleksiyonSayfala'
+  // ucunu çağırır; istemciye YALNIZCA istenen sayfa kadar kayıt gelir.
+  // Sadece satır satır saklanan (KV_ITEMS) büyük koleksiyonlarda çalışır:
+  // yarimamuller/urunler/hammaddeler/altMontajlar/paketler/receteler.
+  async function koleksiyonSayfala(key, { ara = '', limit = 60, offset = 0 } = {}, fallback = { kayitlar: [], toplamEslesen: 0 }) {
+    try {
+      const qs = new URLSearchParams({ action: 'koleksiyonSayfala', key, ara, limit, offset });
+      const res = await apiFetch(API_URL + '?' + qs.toString());
+      if (!res.ok) return fallback;
+      const data = await res.json();
+      return (data && Array.isArray(data.kayitlar)) ? data : fallback;
+    } catch (e) {
+      console.error('Store.koleksiyonSayfala hatası:', key, e);
+      return fallback;
+    }
+  }
+
   // GERÇEK ÜRETİM TESTİNDE YAKALANDI: Panel (dashboard), hammadde SAYISI ve
   // plaka/hırdavat kırılımı için Store.hammaddeler.all() ile TÜM koleksiyonu
   // indirip filter() çalıştırıyordu — on binlerce hammadde kaydı birikince bu
@@ -857,7 +877,7 @@ const Store = (() => {
 
   return {
     get, set, del, listKeys, setIfAbsent,
-    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, hammaddeOzetGetir, receteOzetGetir, receteBul, hatVerisiGetir, sunucuModu,
+    login, logout, oturumVarMi, sifreDegistir, sifreleriSifirla, auditGetir, auditDonemleri, auditBirimOzeti, topluEkle, topluGuncelle, topluSil, sayim, koleksiyonSayfala, hammaddeOzetGetir, receteOzetGetir, receteBul, hatVerisiGetir, sunucuModu,
     hatListesiGetir, hatOperatorGiris, hatSifresiDogrula, hatSifreTalepGonder, hesapTalepEt, hesapTalepiKarar,
     hammaddeKurKarsilastir, hammaddePiyasaArama,
     qrKayitGetir, teknikDosyaYukle, teknikDosyaSil, qrBaglantiGetir, sifreHashle, montajSemasiOku, montajSemasiOkuBaidu, montajSemasiOkuGoogle,

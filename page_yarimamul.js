@@ -3,18 +3,20 @@
 // ════════════════════════════════════════════════════════════════════════════
 PageModules.yarimamul = (() => {
   let searchTxt = '';
-  // SAYFALAMA: binlerce yarımamül kartı birikince liste HER açılışta ve HER
-  // arama tuşunda TAMAMI yeniden çiziliyordu (tek seferde binlerce <div> için
-  // innerHTML + querySelectorAll) — bu, tarayıcıyı gerçek anlamda kilitleyen
-  // (ana iş parçacığını saniyelerce bloklayan) bir performans hatasıydı.
-  // Şimdi varsayılan olarak az sayıda kart basılır, "Daha Fazla Göster" ile
-  // kademeli olarak büyütülür; arama da debounce edilir (her tuşta değil).
+  // SAYFALAMA — GERÇEK ÜRETİM TESTİNDE YAKALANDI (en kritik bulgu): bu
+  // koleksiyon gerçek ölçekte 96.746 kayda çıkıyor. DOM çizimini daha önce
+  // sayfalamıştık (ilk 60 kart) ama Store.yarimamuller.all() HÂLÂ
+  // koleksiyonun TAMAMINI ağdan indirip JSON.parse ediyordu — uygulamayı
+  // dakikalarca/süresiz donduran asıl darboğaz BUYDU, DOM çizimi değildi.
+  // Şimdi Store.koleksiyonSayfala ile arama+sayfalama SUNUCUDA (SQL LIMIT/
+  // OFFSET) yapılıyor; istemciye ASLA görünen sayfadan fazlası gelmiyor.
   const SAYFA_BOYUTU = 60;
   let gosterilenSayisi = SAYFA_BOYUTU;
   let aramaZamanlayici = null;
+  let mevcutSayfa = []; // o an ekranda olan kartlar — kart tıklamalarında bakılır
 
   async function render(main) {
-    const [list, hammaddeler, rotalar] = await Promise.all([Store.yarimamuller.all(), Store.hammaddeler.all(), Store.rotalar.all()]);
+    const [hammaddeler, rotalar] = await Promise.all([Store.hammaddeler.all(), Store.rotalar.all()]);
     main.innerHTML = `
       <div class="page-hdr">
         <div>
@@ -38,24 +40,30 @@ PageModules.yarimamul = (() => {
       aramaZamanlayici = setTimeout(() => {
         searchTxt = deger.toLowerCase();
         gosterilenSayisi = SAYFA_BOYUTU; // yeni aramada baştan say
-        renderGrid(list);
+        sayfayiYukle();
       }, 200);
     };
-    renderGrid(list);
+    sayfayiYukle();
 
-    function renderGrid(list) {
+    async function sayfayiYukle() {
       const grid = document.getElementById('ym-grid');
       const dahaFazlaKap = document.getElementById('ym-daha-fazla');
-      let filtered = list;
-      if (searchTxt) filtered = filtered.filter(y => (y.kod || '').toLowerCase().includes(searchTxt) || (y.ad || '').toLowerCase().includes(searchTxt));
-      if (!filtered.length) {
+      grid.style.display = 'block';
+      grid.innerHTML = `<div style="padding:30px;text-align:center"><div class="loading-spin" style="margin:0 auto"></div></div>`;
+      const { kayitlar, toplamEslesen } = await Store.koleksiyonSayfala('yarimamuller', { ara: searchTxt, limit: gosterilenSayisi, offset: 0 });
+      mevcutSayfa = kayitlar;
+      renderGrid(kayitlar, toplamEslesen);
+    }
+
+    function renderGrid(gosterilecekler, toplamEslesen) {
+      const grid = document.getElementById('ym-grid');
+      const dahaFazlaKap = document.getElementById('ym-daha-fazla');
+      if (!gosterilecekler.length) {
         grid.style.display = 'block';
         grid.innerHTML = `<div class="empty-state"><div class="eicon">◫</div><div class="etitle">Yarı mamül bulunamadı</div><div class="edesc">Yeni yarı mamül oluşturarak BOM ağacınızı kurmaya başlayın.</div></div>`;
         dahaFazlaKap.innerHTML = '';
         return;
       }
-      const toplamEslesen = filtered.length;
-      const gosterilecekler = filtered.slice(0, gosterilenSayisi);
       grid.style.display = 'grid';
       grid.innerHTML = gosterilecekler.map(y => {
         const hm = hammaddeler.find(h => h.id === y.hammaddeId);
@@ -86,18 +94,18 @@ PageModules.yarimamul = (() => {
       }).join('');
       grid.querySelectorAll('.ym-card').forEach(c => c.onclick = (e) => {
         if (e.target.classList.contains('ym-etiket') || e.target.classList.contains('ym-agac')) return;
-        const item = list.find(x => x.id === c.dataset.id);
+        const item = mevcutSayfa.find(x => x.id === c.dataset.id);
         openForm(main, item, hammaddeler, rotalar, () => render(main));
       });
       grid.querySelectorAll('.ym-etiket').forEach(b => b.onclick = (e) => {
         e.stopPropagation();
-        const item = list.find(x => x.id === b.dataset.id);
+        const item = mevcutSayfa.find(x => x.id === b.dataset.id);
         const rota = rotalar.find(r => r.id === item.rotaId);
         yazdirQrEtiketi(item, rota);
       });
       grid.querySelectorAll('.ym-agac').forEach(b => b.onclick = (e) => {
         e.stopPropagation();
-        const item = list.find(x => x.id === b.dataset.id);
+        const item = mevcutSayfa.find(x => x.id === b.dataset.id);
         PageModules.recete_agac.ac(main, item, 'yarimamul', () => render(main));
       });
 
@@ -106,7 +114,7 @@ PageModules.yarimamul = (() => {
         ? `<button class="btn" id="ym-daha-fazla-btn">Daha Fazla Göster (${gosterilecekler.length} / ${toplamEslesen}, kalan ${kalan})</button>`
         : (toplamEslesen > SAYFA_BOYUTU ? `<div class="fhint">${toplamEslesen} kaydın tamamı gösteriliyor.</div>` : '');
       const dahaFazlaBtn = document.getElementById('ym-daha-fazla-btn');
-      if (dahaFazlaBtn) dahaFazlaBtn.onclick = () => { gosterilenSayisi += SAYFA_BOYUTU; renderGrid(list); };
+      if (dahaFazlaBtn) dahaFazlaBtn.onclick = () => { gosterilenSayisi += SAYFA_BOYUTU; sayfayiYukle(); };
     }
   }
 
