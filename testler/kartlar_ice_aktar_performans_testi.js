@@ -32,29 +32,22 @@ console.log('\n-- KOD KONTROLU: önizlemede indirilen diziler kayıt adımında 
 t('renderImportPreview başında mevcutHammaddeler/mevcutYarimamuller/mevcutUrunler/mevcutAltMontajlar/mevcutPaketler TEK SEFERDE (Promise.all) indiriliyor',
   fonksiyonGovdesi.includes('const [mevcutHammaddeler, mevcutYarimamuller, mevcutUrunler, mevcutAltMontajlar, mevcutPaketler] = await Promise.all('));
 
-t('kayıt adımında hammaddeler artık mevcutHammaddeler\'DEN atanıyor (await Store.hammaddeler.all() TEKRARI YOK)',
-  fonksiyonGovdesi.includes('const hammaddeler = mevcutHammaddeler;') &&
-  !fonksiyonGovdesi.includes('const hammaddeler = await Store.hammaddeler.all();'));
-
-t('kayıt adımında yarimamuller artık mevcutYarimamuller\'DEN atanıyor (tekrar indirme YOK)',
-  fonksiyonGovdesi.includes('const yarimamuller = mevcutYarimamuller;') &&
-  !fonksiyonGovdesi.includes('const yarimamuller = await Store.yarimamuller.all();'));
-
-t('kayıt adımında altMontajlar artık mevcutAltMontajlar\'DAN atanıyor (tekrar indirme YOK)',
-  fonksiyonGovdesi.includes('const altMontajlar = mevcutAltMontajlar;') &&
-  !fonksiyonGovdesi.includes('const altMontajlar = await Store.altMontajlar.all();'));
-
-t('kayıt adımında paketler artık mevcutPaketler\'DEN atanıyor (tekrar indirme YOK)',
-  fonksiyonGovdesi.includes('const paketler = mevcutPaketler;') &&
-  !fonksiyonGovdesi.includes('const paketler = await Store.paketler.all();'));
-
-t('kayıt adımında urunler artık mevcutUrunler\'DEN atanıyor (tekrar indirme YOK)',
-  fonksiyonGovdesi.includes('const urunler = mevcutUrunler;') &&
-  !fonksiyonGovdesi.includes('const urunler = await Store.urunler.all();'));
+// Kayıt mantığı tek dosyalık ve toplu içe aktarmada ortak kullanılsın diye
+// kartlariUygula/kartlariKaydet/receteleriUygula'ya taşındı; önizlemede
+// indirilen diziler kayıt adımına "d" nesnesiyle AYNEN geçiriliyor.
+t('kayıt adımında 5 kart koleksiyonu önizlemede indirilen dizilerden atanıyor (tekrar indirme YOK)',
+  fonksiyonGovdesi.includes('const d = { hammaddeler: mevcutHammaddeler, yarimamuller: mevcutYarimamuller, altMontajlar: mevcutAltMontajlar, paketler: mevcutPaketler, urunler: mevcutUrunler };') &&
+  ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler'].every(ad =>
+    fonksiyonGovdesi.includes('const ' + ad + ' = d.' + ad + ';') &&
+    !fonksiyonGovdesi.includes('const ' + ad + ' = await Store.' + ad + '.all();')));
 
 t('receteler artık TAM indirilmiyor (Store.receteler.all() çağrısı YOK) — yerine hedefli Store.receteBul kullanılıyor',
   !fonksiyonGovdesi.includes('await Store.receteler.all()') &&
-  fonksiyonGovdesi.includes("Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] })"));
+  fonksiyonGovdesi.includes("Store.receteBul({ ids: h.altReceteIdleri, urunIds: [h.urun.id] })"));
+
+t('kayıtta yalnızca DEĞİŞEN kartlar yazılıyor (parcaliKaydet\'e degisen kümesi geçiliyor)',
+  fonksiyonGovdesi.includes('degisen.add(kayit.id);') &&
+  fonksiyonGovdesi.includes("parcaliKaydet('yarimamuller', d.yarimamuller, onceki.yarimamuller, degisen),"));
 
 t('receteBul için istenen id listesi, yarı mamül/alt montaj/paket tipine göre DOĞRU sabit ön ek (RC-YM-/RC-AM-/RC-PKT-) ile üretiliyor',
   fonksiyonGovdesi.includes("return (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;"));
@@ -101,13 +94,12 @@ console.log('\n-- KOD KONTROLU: "yine tepkisiz" (4. tur) — göç sonrası bile
 // indirilmiş veri + istemci tarafında üretilmiş id'ler kullanıyor), artık
 // Promise.all ile EŞZAMANLI gönderiliyor.
 t('hammaddeler/yarımamuller/altMontajlar/paketler/ürünler/receteBul artık TEK bir Promise.all içinde EŞZAMANLI gönderiliyor (sıralı await ZİNCİRİ YOK)',
-  fonksiyonGovdesi.includes("const [, , , , , receteler] = await Promise.all([") &&
-  fonksiyonGovdesi.includes("parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler),") &&
-  fonksiyonGovdesi.includes("parcaliKaydet('yarimamuller', yarimamuller, _onceki_yarimamuller),") &&
-  fonksiyonGovdesi.includes("parcaliKaydet('altMontajlar', altMontajlar, _onceki_altMontajlar),") &&
-  fonksiyonGovdesi.includes("parcaliKaydet('paketler', paketler, _onceki_paketler),") &&
-  fonksiyonGovdesi.includes("parcaliKaydet('urunler', urunler, _onceki_urunler),") &&
-  fonksiyonGovdesi.includes("Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] })"));
+  fonksiyonGovdesi.includes("const [receteler] = await Promise.all([") &&
+  fonksiyonGovdesi.includes("Store.receteBul({ ids: h.altReceteIdleri, urunIds: [h.urun.id] }),") &&
+  fonksiyonGovdesi.includes("kartlariKaydet(d, onceki, degisen)") &&
+  /function kartlariKaydet\(d, onceki, degisen\) \{\s*return Promise\.all\(\[/.test(fonksiyonGovdesi) &&
+  ['hammaddeler', 'yarimamuller', 'altMontajlar', 'paketler', 'urunler'].every(ad =>
+    fonksiyonGovdesi.includes("parcaliKaydet('" + ad + "', d." + ad + ', onceki.' + ad + ', degisen)')));
 t('hammaddeler artık urunler/receteBul\'dan ÖNCE tek başına await EDİLMİYOR (sıralı zincir kırıldı)',
   !fonksiyonGovdesi.includes("await parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler);"));
 t('yarımamuller/altMontajlar/paketler artık ayrı ayrı await EDİLMİYOR (sıralı zincir kırıldı)',

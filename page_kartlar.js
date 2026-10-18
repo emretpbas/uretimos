@@ -1811,9 +1811,11 @@ PageModules.kartlar = (() => {
         ürün farklı sayfalarda olabilir, tüm sayfalar taranır).<br>
         <b>2) Hiyerarşik reçete/BOM</b> — LevelNo, PathKod, LineType, StokKod, Miktar, en, Boy sütunlu.<br>
         <b>3) SolidWorks PVC'li BOM</b> — PARÇA KODU, PANEL/HAMMADDE KODU, PARÇA ADI, ADET, NET BOY/EN, PVC bant kolonlu.<br>
-        Sistem formatı otomatik algılar, kaydetmeden önce önizleme gösterir.
+        Sistem formatı otomatik algılar, kaydetmeden önce önizleme gösterir.<br>
+        <b>Toplu:</b> birden fazla hiyerarşik reçete dosyası seçilirse (ör. Cost'tan toplu çıkarılan,
+        her ürün için bir dosya) hepsi tek seferde aktarılır.
       </div>
-      <input type="file" id="ei-file" accept=".xlsx,.xls" style="font-size:12px">
+      <input type="file" id="ei-file" accept=".xlsx,.xls" multiple style="font-size:12px">
       <div id="ei-status" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
     `;
     const footer = `<button class="btn" id="ei-cancel">Vazgeç</button>`;
@@ -1821,7 +1823,9 @@ PageModules.kartlar = (() => {
     document.getElementById('ei-cancel').onclick = App.closeModal;
 
     document.getElementById('ei-file').onchange = async (e) => {
-      const file = e.target.files[0];
+      const dosyalar = Array.from(e.target.files || []);
+      if (dosyalar.length > 1) return topluIceAktar(main, dosyalar);
+      const file = dosyalar[0];
       if (!file) return;
       document.getElementById('ei-status').textContent = 'Dosya okunuyor…';
       try {
@@ -1865,6 +1869,126 @@ PageModules.kartlar = (() => {
         renderImportPreview(main, parsed);
       } catch (err) {
         document.getElementById('ei-status').innerHTML = '<span style="color:var(--red-text)">Dosya okunamadı: ' + App.escapeHtml(err.message) + '</span>';
+      }
+    };
+  }
+
+  // ── TOPLU İÇE AKTARMA (çok dosya) ───────────────────────────────────────
+  // Cost'tan toplu çıkarılan hiyerarşik reçete dosyaları (her ürün bir dosya,
+  // LevelNo/PathKod formatı) tek seferde: koleksiyonlar BİR KEZ indirilir,
+  // tüm dosyalar bellekte uygulanır, sonra yalnızca değişen kayıtlar BİR KEZ
+  // yazılır. Yüzlerce dosyayı tek tek önizleyip kaydetmek (her biri ayrı
+  // yazma turu) saatler sürerdi.
+  async function topluIceAktar(main, dosyalar) {
+    const durum = document.getElementById('ei-status');
+    const okunan = [], atlanan = [];
+    for (const [i, file] of dosyalar.entries()) {
+      durum.textContent = `Dosyalar okunuyor: ${i + 1}/${dosyalar.length}`;
+      try {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+        const parsed = HiyerarsikReceteParser.parseExceleReceteRows(rows, file.name);
+        if (!parsed.level0.length) { atlanan.push(file.name + ': hiyerarşik reçete satırı yok'); continue; }
+        // Cost çıkarma betiği kök ürünün adını ek "KokStokAd" kolonunda taşır
+        // (parser fazla kolonları yok sayar); yoksa dosya adına düşülür.
+        const adKolonu = (rows[0] || []).indexOf('KokStokAd');
+        const kokAd = adKolonu >= 0 ? String((rows[1] || [])[adKolonu] || '').trim() : '';
+        okunan.push({ parsed, urunKod: parsed.rootKod, urunAd: kokAd || parsed.rootAd });
+      } catch (err) {
+        atlanan.push(file.name + ': ' + err.message);
+      }
+    }
+    if (!okunan.length) {
+      durum.innerHTML = '<span style="color:var(--red-text)">Seçilen dosyaların hiçbirinde hiyerarşik reçete bulunamadı.</span>';
+      return;
+    }
+
+    const kodlar = new Set();
+    const tekrarlar = okunan.filter(o => kodlar.has(o.urunKod) || !kodlar.add(o.urunKod));
+    const satirSayisi = okunan.reduce((t, o) => t + o.parsed.items.length, 0);
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="grid grid-2" style="margin-bottom:14px">
+        <div class="kpi"><div class="kpi-lbl">Okunan Ürün Reçetesi</div><div class="kpi-val blue">${okunan.length}</div><div class="muted" style="font-size:10px">${satirSayisi} satır</div></div>
+        <div class="kpi"><div class="kpi-lbl">Atlanan Dosya</div><div class="kpi-val ${atlanan.length ? 'amber' : 'green'}">${atlanan.length}</div></div>
+      </div>
+      <div class="fhint" style="margin-bottom:10px">Var olan stok kodlu kartlar güncellenir, yeniler açılır; aynı koda sahip ürünün reçetesi
+        üzerine yazılır. Mevcut hammaddelerin tipi korunur, yenilerinki addan tahmin edilir; paket önerisi tek dosyalık aktarımla aynıdır.</div>
+      ${tekrarlar.length ? `<div class="fhint" style="color:var(--amber-text)">⚠ Aynı ürün kodu birden fazla dosyada: ${tekrarlar.map(o => App.escapeHtml(o.urunKod)).join(', ')} — son dosya geçerli olur.</div>` : ''}
+      ${atlanan.length ? `<div class="tbl-wrap" style="max-height:120px;overflow:auto;font-size:11px;margin-bottom:10px">${atlanan.map(a => App.escapeHtml(a)).join('<br>')}</div>` : ''}
+      <div class="tbl-wrap" style="max-height:300px;overflow:auto"><table class="dtable" style="font-size:11px">
+        <tr><th>Ürün Kodu</th><th>Ürün Adı</th><th class="r">Satır</th><th class="r">Yarı Mamül</th><th class="r">Hammadde</th></tr>
+        ${okunan.map(o => `<tr><td class="mono">${App.escapeHtml(o.urunKod)}</td><td>${App.escapeHtml(o.urunAd)}</td>
+          <td class="r">${o.parsed.items.length}</td><td class="r">${o.parsed.yarimamuller.length}</td><td class="r">${o.parsed.hammaddeler.length}</td></tr>`).join('')}
+      </table></div>
+    `;
+    const footer = `<button class="btn" id="ei-back">Vazgeç</button><button class="btn btn-green" id="ei-confirm">${okunan.length} Reçeteyi İçe Aktar</button>`;
+    App.openModal({ title: 'Toplu Reçete İçe Aktarma', sub: dosyalar.length + ' dosya seçildi', body, footer, xwide: true });
+    document.getElementById('ei-back').onclick = App.closeModal;
+
+    document.getElementById('ei-confirm').onclick = async () => {
+      const btn = document.getElementById('ei-confirm');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const asama = (metin) => { btn.textContent = metin; };
+      try {
+        asama('Mevcut kartlar indiriliyor...');
+        const [hm, ym, ur, am, pk] = await Promise.all([
+          Store.hammaddeler.all(), Store.yarimamuller.all(), Store.urunler.all(), Store.altMontajlar.all(), Store.paketler.all()
+        ]);
+        await App.persist(async () => {
+          const d = { hammaddeler: hm, yarimamuller: ym, altMontajlar: am, paketler: pk, urunler: ur };
+          const onceki = oncekiIdleriAl(d);
+          const degisen = new Set();
+          const isler = [];
+          for (const [i, o] of okunan.entries()) {
+            if (i % 10 === 0) { asama(`Kartlar hazırlanıyor: ${i + 1}/${okunan.length}`); await new Promise(r => setTimeout(r)); }
+            const hmEslesme = o.parsed.hammaddeler.map(h => {
+              const mevcut = d.hammaddeler.find(x => x.stokKodu === h.stokKod);
+              return { ...h, tip: (mevcut && mevcut.tip) || guessHammaddeTip(h.stokAd, h.birim) };
+            });
+            const ymEslesme = o.parsed.yarimamuller;
+            const h = kartlariUygula(o.parsed, hmEslesme, ymEslesme, o.urunKod, o.urunAd, d, degisen);
+            isler.push({ o, ymEslesme, h });
+          }
+
+          asama('Kartlar kaydediliyor...');
+          await kartlariKaydet(d, onceki, degisen);
+
+          // receteBul hata alırsa varsayılan olarak BOŞ liste döner; bu durumda
+          // var olan reçeteler "yeni" sanılıp aynı id ile ikinci kez eklenirdi —
+          // bu yüzden fallback null verilip hata açıkça durdurulur. İstek
+          // gövdesi büyümesin diye id'ler parçalara bölünür.
+          const altIdler = [...new Set(isler.flatMap(x => x.h.altReceteIdleri))];
+          const urunIdler = [...new Set(isler.map(x => x.h.urun.id))];
+          const toplam = Math.max(altIdler.length, urunIdler.length);
+          const PARCA = 500;
+          const receteMap = new Map();
+          for (let i = 0; i < toplam; i += PARCA) {
+            asama(`Mevcut reçeteler okunuyor: ${Math.min(i + PARCA, toplam)}/${toplam}`);
+            const parca = await Store.receteBul({ ids: altIdler.slice(i, i + PARCA), urunIds: urunIdler.slice(i, i + PARCA) }, null);
+            if (!parca) throw new Error('Mevcut reçeteler okunamadı — kartlar kaydedildi ama reçeteler YAZILMADI. Aynı dosyalarla tekrar deneyin.');
+            parca.forEach(r => receteMap.set(r.id, r));
+          }
+          const receteler = [...receteMap.values()];
+          const _onceki_receteler = new Set(receteler.map(x => x && x.id));
+
+          asama('Reçeteler kaydediliyor...');
+          isler.forEach(({ o, ymEslesme, h }) => receteleriUygula(o.parsed, ymEslesme, o.urunKod, o.urunAd, h, receteler));
+          await parcaliKaydet('receteler', receteler, _onceki_receteler);
+        });
+        App.toast(`İçe aktarma tamamlandı: ${okunan.length} ürün reçetesi (toplu)`, 'ok');
+        App.closeModal();
+        detayKartId = null;
+        render(main);
+        if (PageModules.recete_tamamlama_botu) {
+          PageModules.recete_tamamlama_botu.botCalistirVeUygula('ice_aktar_sonrasi')
+            .catch(e => console.error('Reçete Tamamlama Botu (toplu içe aktarma sonrası) hatası:', e));
+        }
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = `${okunan.length} Reçeteyi İçe Aktar`;
+        throw e;
       }
     };
   }
@@ -2421,203 +2545,22 @@ PageModules.kartlar = (() => {
 
       try {
       await App.persist(async () => {
-        // PERFORMANS (3. tur — göç sonrası bile 2-3 dakika sürdüğü bildirildi):
-        // kv_items göçü yazma maliyetini koleksiyon boyutundan bağımsız hale
-        // getirdi, ama bu akış hâlâ hammaddeler/yarımamuller/altMontajlar/
-        // paketler/ürünler/receteBul/receteler için 6-7 isteği BİRBİRİ
-        // ARDINA (sequential await) gönderiyordu. GoDaddy'nin paylaşımlı
-        // sunucusunda her isteğin kendi ağ gidiş-dönüş + PHP başlatma
-        // maliyeti olduğundan (saniyeler mertebesinde), 7 sıralı istek kolayca
-        // 2-3 dakikaya ulaşabiliyordu — kayıtların TEKRAR indirilmesi/ÇİFT
-        // yazılması gibi bir sorun YOKTU, sadece gereksiz yere SIRAYLA
-        // bekleniyordu. Aşağıdaki 6 işlemin (5 koleksiyon yazması + receteBul
-        // okuması) HİÇBİRİ diğerinin SONUCUNA bağımlı değil — hepsi yalnızca
-        // önizlemede zaten indirilmiş verileri ve İSTEMCİ TARAFINDA üretilen
-        // id'leri (App.uid) kullanıyor. Bu yüzden hepsi Promise.all ile
-        // EŞZAMANLI gönderiliyor; yalnızca reçete kaydı (receteBul'un SONUCUNA
-        // ihtiyaç duyduğu için) ayrı ve ondan SONRA çalışıyor.
-        const hammaddeler = mevcutHammaddeler;
-    const _onceki_hammaddeler = new Set(hammaddeler.map(x => x && x.id));
-        const stokKodToHmId = new Map();
-        const stokKodToHmTip = new Map(); // stokKod -> 'plaka'|'hirdavat'|... (kalem oluşturulurken olcu ekleneceği zaman lazım)
-        hmEslesme.forEach(h => {
-          let kayit = hammaddeler.find(x => x.stokKodu === h.stokKod);
-          if (kayit) {
-            kayit.ad = h.stokAd; kayit.birimFiyat = h.birimFiyat; kayit.dvz = h.dvz;
-            kayit.birim = h.tip === 'plaka' ? 'M2' : (h.birim || 'ADET');
-            kayit.tip = h.tip;
-          } else {
-            kayit = {
-              id: App.uid('HM'), tip: h.tip, stokKodu: h.stokKod, ad: h.stokAd,
-              birim: h.tip === 'plaka' ? 'M2' : (h.birim || 'ADET'),
-              birimFiyat: h.birimFiyat, dvz: h.dvz, fireYuzde: h.tip === 'plaka' ? 8 : 2,
-              grainYonu: 'yok', en: h.tip === 'plaka' ? 1830 : null, boy: h.tip === 'plaka' ? 3660 : null,
-              sonAlisTarihi: new Date().toISOString().slice(0, 10)
-            };
-            hammaddeler.push(kayit);
-          }
-          stokKodToHmId.set(h.stokKod, kayit.id);
-          stokKodToHmTip.set(h.stokKod, kayit.tip || h.tip || 'hirdavat');
-        });
-
-        // 2) Yarı Mamül / Alt Montaj / Paket: her kalem, KULLANICININ ÖNİZLEMEDE
-        // SEÇTİĞİ TİPE göre DOĞRU koleksiyona (yarimamuller/altMontajlar/paketler)
-        // yazılır. PKT kodlu veya açıklamasında "paket" geçenler varsayılan
-        // olarak Paket önerilmişti, ama kullanıcı her satırı değiştirebilir.
-        const yarimamuller = mevcutYarimamuller;
-    const _onceki_yarimamuller = new Set(yarimamuller.map(x => x && x.id));
-        const altMontajlar = mevcutAltMontajlar;
-    const _onceki_altMontajlar = new Set(altMontajlar.map(x => x && x.id));
-        const paketler = mevcutPaketler;
-    const _onceki_paketler = new Set(paketler.map(x => x && x.id));
-        const stokKodToId = new Map();   // her tipten kart için ortak id haritası
-        const stokKodToTip = new Map();  // stokKod -> 'yarimamul'|'altmontaj'|'paket'
-
-        ymEslesme.forEach(y => {
-          const tip = y.secilenTip || y.onerilenTip || 'yarimamul';
-          stokKodToTip.set(y.stokKod, tip);
-          const kalemler = parsed.receteKalemleri.get(y.stokKod) || [];
-          const hmKalem = kalemler.find(k => stokKodToHmId.has(k.stokKod) && (k.en || k.boy));
-
-          if (tip === 'altmontaj') {
-            let kayit = altMontajlar.find(x => x.kod === y.stokKod);
-            if (kayit) { kayit.ad = y.stokAd; }
-            else {
-              kayit = { id: App.uid('AM'), kod: y.stokKod, ad: y.stokAd, aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, rotaId: null, amortismanGideri: 0, gygOraniYuzde: 0, gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
-              altMontajlar.push(kayit);
-            }
-            stokKodToId.set(y.stokKod, kayit.id);
-          } else if (tip === 'paket') {
-            let kayit = paketler.find(x => x.kod === y.stokKod);
-            if (kayit) { kayit.ad = y.stokAd; }
-            else {
-              kayit = { id: App.uid('PKT'), kod: y.stokKod, ad: y.stokAd, aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, ambalajTipi: 'Koli', koliIciAdet: 1, rotaId: null, amortismanGideri: 0, gygOraniYuzde: 0, gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
-              paketler.push(kayit);
-            }
-            stokKodToId.set(y.stokKod, kayit.id);
-          } else {
-            let kayit = mevcutYarimamuller_ref(yarimamuller, y.stokKod);
-            if (kayit) {
-              kayit.ad = y.stokAd;
-              kayit.referansFiyat = y.birimFiyat || kayit.referansFiyat;
-              kayit.referansDvz = y.dvz || kayit.referansDvz;
-              if (hmKalem) { kayit.netEn = hmKalem.en || kayit.netEn; kayit.netBoy = hmKalem.boy || kayit.netBoy; kayit.hammaddeId = stokKodToHmId.get(hmKalem.stokKod) || kayit.hammaddeId; }
-            } else {
-              kayit = {
-                id: App.uid('YM'), kod: y.stokKod, ad: y.stokAd,
-                netEn: hmKalem ? hmKalem.en : null, netBoy: hmKalem ? hmKalem.boy : null,
-                kabaEn: hmKalem ? hmKalem.en : null, kabaBoy: hmKalem ? hmKalem.boy : null,
-                adet: 1, renk: '', hammaddeId: hmKalem ? stokKodToHmId.get(hmKalem.stokKod) : null,
-                rotaId: null, referansFiyat: y.birimFiyat || null, referansDvz: y.dvz || 'TL',
-                aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, gorseller: []
-              };
-              yarimamuller.push(kayit);
-            }
-            stokKodToId.set(y.stokKod, kayit.id);
-          }
-        });
-
-        // 3) Ürün: kök seviyedeki (level=0) kalemler bu ürünün doğrudan reçete kalemleridir
-        const urunler = mevcutUrunler;
-    const _onceki_urunler = new Set(urunler.map(x => x && x.id));
-        let urun = urunler.find(u => u.kod === urunKod);
-        if (urun) { urun.ad = urunAd; }
-        else {
-          urun = { id: App.uid('URN'), kod: urunKod, ad: urunAd, tip: 'bitmis_urun', aciklama: 'Excelden içe aktarıldı', gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
-          urunler.push(urun);
-        }
-
-        // Excel'deki en/boy verilerini reçete kalemine olcu objesi olarak yaz.
-        // Sadece plaka tipi hammadde kalemleri için geçerlidir; diğerlerinde null.
-        function olcuObjesiOlustur(k) {
-          if (!k.en && !k.boy) return null;
-          const isHmPlaka = stokKodToHmId.has(k.stokKod) && stokKodToHmTip.get(k.stokKod) === 'plaka';
-          if (!isHmPlaka) return null;
-          return { kabaEn: k.en || null, kabaBoy: k.boy || null, netEn: k.en || null, netBoy: k.boy || null };
-        }
-
-        // PERFORMANS: bu aşamada sadece KÖK ürünün reçetesi (urunId ile) ve
-        // içindeki yarı mamül/alt montaj/paketlerin KENDİ alt reçeteleri
-        // (sabit id: RC-YM-/RC-AM-/RC-PKT-) ilgilendiriyor — toplamda en
-        // fazla düzinelerce kayıt. receteler koleksiyonunun TAMAMINI (96.000+
-        // yarı mamül ölçeğinde en ağır koleksiyon) indirip
-        // istemcide JSON.parse etmek yerine, sunucudan YALNIZCA bu id'lerle
-        // eşleşenler istenir (bkz. Store.receteBul) — "içe aktar yine
-        // tepkisiz" raporunun kök nedeni buydu: önceki düzeltme diğer 5
-        // koleksiyonun ÇİFT indirilmesini durdurmuştu ama receteler zaten
-        // ÖNİZLEMEDE çekilmediğinden burada hâlâ TAM indiriliyordu.
-        const altReceteIdleri = ymEslesme.map(y => {
-          const tip = stokKodToTip.get(y.stokKod) || 'yarimamul';
-          const kartId = stokKodToId.get(y.stokKod);
-          if (!kartId) return null;
-          return (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;
-        }).filter(Boolean);
-
-        // HEPSİ BİRDEN: yukarıdaki 5 koleksiyonun hiçbiri birbirinin SONUCUNA
-        // bağımlı değil (yalnızca önizlemede indirilmiş veri + App.uid ile
-        // istemci tarafında üretilmiş id'ler kullanıyorlar) — bu yüzden tek
-        // tek sırayla beklemek yerine Promise.all ile AYNI ANDA gönderiliyor.
-        // receteBul de urun.id'ye (zaten senkron/istemci tarafında biliniyor)
-        // ihtiyaç duyduğundan aynı anda çalışabilir; yalnızca reçete YAZMASI
-        // (receteBul'un SONUCUNU birleştirmesi gerektiği için) bu grubun
-        // tamamlanmasını bekler.
+        // PERFORMANS: kart koleksiyonlarının yazması ve receteBul okuması
+        // birbirine bağımlı değil (yalnızca önizlemede indirilmiş veri + App.uid
+        // ile istemcide üretilmiş id'ler) — Promise.all ile eşzamanlı gider;
+        // yalnızca reçete yazması receteBul'un SONUCUNU beklemek zorunda.
+        const d = { hammaddeler: mevcutHammaddeler, yarimamuller: mevcutYarimamuller, altMontajlar: mevcutAltMontajlar, paketler: mevcutPaketler, urunler: mevcutUrunler };
+        const onceki = oncekiIdleriAl(d);
+        const degisen = new Set();
+        const h = kartlariUygula(parsed, hmEslesme, ymEslesme, urunKod, urunAd, d, degisen);
         asamaGoster('Kaydediliyor: Tüm veriler eşzamanlı...');
-        const [, , , , , receteler] = await Promise.all([
-          parcaliKaydet('hammaddeler', hammaddeler, _onceki_hammaddeler),
-          parcaliKaydet('yarimamuller', yarimamuller, _onceki_yarimamuller),
-          parcaliKaydet('altMontajlar', altMontajlar, _onceki_altMontajlar),
-          parcaliKaydet('paketler', paketler, _onceki_paketler),
-          parcaliKaydet('urunler', urunler, _onceki_urunler),
-          Store.receteBul({ ids: altReceteIdleri, urunIds: [urun.id] })
+        const [receteler] = await Promise.all([
+          Store.receteBul({ ids: h.altReceteIdleri, urunIds: [h.urun.id] }),
+          kartlariKaydet(d, onceki, degisen)
         ]);
-    const _onceki_receteler = new Set(receteler.map(x => x && x.id));
-        let recete = receteler.find(r => r.urunId === urun.id);
-        const kokKalemler = (parsed.level0 || []).map(k => {
-          if (k.stokKod === urunKod) return null; // ürünün kendisi kendi reçetesinde olamaz
-          const tip = stokKodToTip.get(k.stokKod) || 'hammadde';
-          const refId = stokKodToId.get(k.stokKod) || stokKodToHmId.get(k.stokKod);
-          const olcu = olcuObjesiOlustur(k);
-          const kalem = { tip: stokKodToId.has(k.stokKod) ? tip : 'hammadde', refId, miktar: k.miktar, birim: k.birim };
-          if (olcu) kalem.olcu = olcu;
-          return kalem;
-        }).filter(k => k && k.refId);
-        if (recete) { recete.kalemler = kokKalemler; }
-        else { recete = { id: 'RC-' + urun.kod, urunId: urun.id, ad: urunAd + ' Reçetesi', kalemler: kokKalemler }; receteler.push(recete); }
+        const _onceki_receteler = new Set(receteler.map(x => x && x.id));
         asamaGoster('Kaydediliyor: Reçeteler...');
-
-        // 4) Her yarımamül/alt montaj/paketin KENDİ alt reçetesini de kaydet
-        // (montaj hiyerarşisi) — kart tipine göre DOĞRU alana (yarimamulId/
-        // altMontajId/paketId) bağlanır. NOT: kök reçete ile alt reçeteler
-        // TEK bir parcaliKaydet çağrısında (döngü sonunda) birlikte
-        // yazılır — receteler en ağır koleksiyon olduğundan, bu akışta
-        // İKİ AYRI yazma (önce kök, sonra alt reçeteler) sunucu tarafında
-        // aynı koleksiyonun TAMAMINI gereksiz yere İKİ KEZ okuyup
-        // yeniden yazdırıyordu (bkz. api.php 'patch' ucu — tek JSON blob).
-        for (const y of ymEslesme) {
-          const tip = stokKodToTip.get(y.stokKod) || 'yarimamul';
-          const kalemler = (parsed.receteKalemleri.get(y.stokKod) || []).map(k => {
-            // KENDİNE REFERANS KORUMASI: Bazı ERP exportlarında bir kart,
-            // kendi alt reçetesinde KENDİSİNİ kalem olarak içerebiliyor
-            // (örn. TFM..PKT05 altında yine TFM..PKT05 satırı). Bu döngü,
-            // maliyet hesabında "hesaplanamayan kalem" hatasına yol açar —
-            // bu tür satırlar sessizce atlanır.
-            if (k.stokKod === y.stokKod) return null;
-            const altTip = stokKodToTip.get(k.stokKod);
-            const refId = stokKodToId.get(k.stokKod) || stokKodToHmId.get(k.stokKod);
-            if (!refId) return null;
-            const olcu = olcuObjesiOlustur(k);
-            const kalem = { tip: altTip || (stokKodToHmId.has(k.stokKod) ? 'hammadde' : 'yarimamul'), refId, miktar: k.miktar, birim: k.birim };
-            if (olcu) kalem.olcu = olcu;
-            return kalem;
-          }).filter(Boolean);
-          if (!kalemler.length) continue;
-          const kartId = stokKodToId.get(y.stokKod);
-          const alanAdi = tip === 'altmontaj' ? 'altMontajId' : tip === 'paket' ? 'paketId' : 'yarimamulId';
-          const altReceteId = (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;
-          let altRecete = receteler.find(r => r.id === altReceteId);
-          if (altRecete) { altRecete.kalemler = kalemler; }
-          else { receteler.push({ id: altReceteId, [alanAdi]: kartId, ad: y.stokAd + ' Alt Reçete', kalemler }); }
-        }
+        receteleriUygula(parsed, ymEslesme, urunKod, urunAd, h, receteler);
         await parcaliKaydet('receteler', receteler, _onceki_receteler);
       });
 
@@ -2648,6 +2591,197 @@ PageModules.kartlar = (() => {
         throw e;
       }
     };
+  }
+
+  // Tek dosyalık ve toplu (çok dosyalı) içe aktarmanın ORTAK adımları. Kart
+  // koleksiyonları (d) bellekte güncellenir; dokunulan her kaydın id'si
+  // "degisen" kümesine eklenir ki kaydetmede koleksiyonun TAMAMI değil yalnızca
+  // değişen kayıtlar yazılsın (96.000+ yarı mamül ölçeğinde fark dakikalar).
+  function oncekiIdleriAl(d) {
+    const s = {};
+    Object.keys(d).forEach(k => { s[k] = new Set(d[k].map(x => x && x.id)); });
+    return s;
+  }
+
+  function kartlariKaydet(d, onceki, degisen) {
+    return Promise.all([
+      parcaliKaydet('hammaddeler', d.hammaddeler, onceki.hammaddeler, degisen),
+      parcaliKaydet('yarimamuller', d.yarimamuller, onceki.yarimamuller, degisen),
+      parcaliKaydet('altMontajlar', d.altMontajlar, onceki.altMontajlar, degisen),
+      parcaliKaydet('paketler', d.paketler, onceki.paketler, degisen),
+      parcaliKaydet('urunler', d.urunler, onceki.urunler, degisen)
+    ]);
+  }
+
+  function kartlariUygula(parsed, hmEslesme, ymEslesme, urunKod, urunAd, d, degisen) {
+    const hammaddeler = d.hammaddeler;
+    const stokKodToHmId = new Map();
+    const stokKodToHmTip = new Map(); // stokKod -> 'plaka'|'hirdavat'|... (kalem oluşturulurken olcu ekleneceği zaman lazım)
+    hmEslesme.forEach(h => {
+      let kayit = hammaddeler.find(x => x.stokKodu === h.stokKod);
+      if (kayit) {
+        kayit.ad = h.stokAd; kayit.birimFiyat = h.birimFiyat; kayit.dvz = h.dvz;
+        kayit.birim = h.tip === 'plaka' ? 'M2' : (h.birim || 'ADET');
+        kayit.tip = h.tip;
+      } else {
+        kayit = {
+          id: App.uid('HM'), tip: h.tip, stokKodu: h.stokKod, ad: h.stokAd,
+          birim: h.tip === 'plaka' ? 'M2' : (h.birim || 'ADET'),
+          birimFiyat: h.birimFiyat, dvz: h.dvz, fireYuzde: h.tip === 'plaka' ? 8 : 2,
+          grainYonu: 'yok', en: h.tip === 'plaka' ? 1830 : null, boy: h.tip === 'plaka' ? 3660 : null,
+          sonAlisTarihi: new Date().toISOString().slice(0, 10)
+        };
+        hammaddeler.push(kayit);
+      }
+      degisen.add(kayit.id);
+      stokKodToHmId.set(h.stokKod, kayit.id);
+      stokKodToHmTip.set(h.stokKod, kayit.tip || h.tip || 'hirdavat');
+    });
+
+    // 2) Yarı Mamül / Alt Montaj / Paket: her kalem, KULLANICININ ÖNİZLEMEDE
+    // SEÇTİĞİ TİPE göre DOĞRU koleksiyona (yarimamuller/altMontajlar/paketler)
+    // yazılır. PKT kodlu veya açıklamasında "paket" geçenler varsayılan
+    // olarak Paket önerilmişti, ama kullanıcı her satırı değiştirebilir.
+    const yarimamuller = d.yarimamuller;
+    const altMontajlar = d.altMontajlar;
+    const paketler = d.paketler;
+    const stokKodToId = new Map();   // her tipten kart için ortak id haritası
+    const stokKodToTip = new Map();  // stokKod -> 'yarimamul'|'altmontaj'|'paket'
+
+    ymEslesme.forEach(y => {
+      const tip = y.secilenTip || y.onerilenTip || 'yarimamul';
+      stokKodToTip.set(y.stokKod, tip);
+      const kalemler = parsed.receteKalemleri.get(y.stokKod) || [];
+      const hmKalem = kalemler.find(k => stokKodToHmId.has(k.stokKod) && (k.en || k.boy));
+
+      if (tip === 'altmontaj') {
+        let kayit = altMontajlar.find(x => x.kod === y.stokKod);
+        if (kayit) { kayit.ad = y.stokAd; }
+        else {
+          kayit = { id: App.uid('AM'), kod: y.stokKod, ad: y.stokAd, aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, rotaId: null, amortismanGideri: 0, gygOraniYuzde: 0, gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
+          altMontajlar.push(kayit);
+        }
+        degisen.add(kayit.id);
+        stokKodToId.set(y.stokKod, kayit.id);
+      } else if (tip === 'paket') {
+        let kayit = paketler.find(x => x.kod === y.stokKod);
+        if (kayit) { kayit.ad = y.stokAd; }
+        else {
+          kayit = { id: App.uid('PKT'), kod: y.stokKod, ad: y.stokAd, aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, ambalajTipi: 'Koli', koliIciAdet: 1, rotaId: null, amortismanGideri: 0, gygOraniYuzde: 0, gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
+          paketler.push(kayit);
+        }
+        degisen.add(kayit.id);
+        stokKodToId.set(y.stokKod, kayit.id);
+      } else {
+        let kayit = mevcutYarimamuller_ref(yarimamuller, y.stokKod);
+        if (kayit) {
+          kayit.ad = y.stokAd;
+          kayit.referansFiyat = y.birimFiyat || kayit.referansFiyat;
+          kayit.referansDvz = y.dvz || kayit.referansDvz;
+          if (hmKalem) { kayit.netEn = hmKalem.en || kayit.netEn; kayit.netBoy = hmKalem.boy || kayit.netBoy; kayit.hammaddeId = stokKodToHmId.get(hmKalem.stokKod) || kayit.hammaddeId; }
+        } else {
+          kayit = {
+            id: App.uid('YM'), kod: y.stokKod, ad: y.stokAd,
+            netEn: hmKalem ? hmKalem.en : null, netBoy: hmKalem ? hmKalem.boy : null,
+            kabaEn: hmKalem ? hmKalem.en : null, kabaBoy: hmKalem ? hmKalem.boy : null,
+            adet: 1, renk: '', hammaddeId: hmKalem ? stokKodToHmId.get(hmKalem.stokKod) : null,
+            rotaId: null, referansFiyat: y.birimFiyat || null, referansDvz: y.dvz || 'TL',
+            aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, gorseller: []
+          };
+          yarimamuller.push(kayit);
+        }
+        degisen.add(kayit.id);
+        stokKodToId.set(y.stokKod, kayit.id);
+      }
+    });
+
+    // 3) Ürün: kök seviyedeki (level=0) kalemler bu ürünün doğrudan reçete kalemleridir
+    const urunler = d.urunler;
+    let urun = urunler.find(u => u.kod === urunKod);
+    if (urun) { urun.ad = urunAd; }
+    else {
+      urun = { id: App.uid('URN'), kod: urunKod, ad: urunAd, tip: 'bitmis_urun', aciklama: 'Excelden içe aktarıldı', gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
+      urunler.push(urun);
+    }
+    degisen.add(urun.id);
+
+    // PERFORMANS: bu aşamada sadece KÖK ürünün reçetesi (urunId ile) ve
+    // içindeki yarı mamül/alt montaj/paketlerin KENDİ alt reçeteleri
+    // (sabit id: RC-YM-/RC-AM-/RC-PKT-) ilgilendiriyor — toplamda en
+    // fazla düzinelerce kayıt. receteler koleksiyonunun TAMAMINI (96.000+
+    // yarı mamül ölçeğinde en ağır koleksiyon) indirip
+    // istemcide JSON.parse etmek yerine, sunucudan YALNIZCA bu id'lerle
+    // eşleşenler istenir (bkz. Store.receteBul) — "içe aktar yine
+    // tepkisiz" raporunun kök nedeni buydu: önceki düzeltme diğer 5
+    // koleksiyonun ÇİFT indirilmesini durdurmuştu ama receteler zaten
+    // ÖNİZLEMEDE çekilmediğinden burada hâlâ TAM indiriliyordu.
+    const altReceteIdleri = ymEslesme.map(y => {
+      const tip = stokKodToTip.get(y.stokKod) || 'yarimamul';
+      const kartId = stokKodToId.get(y.stokKod);
+      if (!kartId) return null;
+      return (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;
+    }).filter(Boolean);
+
+    return { stokKodToHmId, stokKodToHmTip, stokKodToId, stokKodToTip, urun, altReceteIdleri };
+  }
+
+  function receteleriUygula(parsed, ymEslesme, urunKod, urunAd, h, receteler) {
+    const { stokKodToHmId, stokKodToHmTip, stokKodToId, stokKodToTip, urun } = h;
+    // Excel'deki en/boy verilerini reçete kalemine olcu objesi olarak yaz.
+    // Sadece plaka tipi hammadde kalemleri için geçerlidir; diğerlerinde null.
+    function olcuObjesiOlustur(k) {
+      if (!k.en && !k.boy) return null;
+      const isHmPlaka = stokKodToHmId.has(k.stokKod) && stokKodToHmTip.get(k.stokKod) === 'plaka';
+      if (!isHmPlaka) return null;
+      return { kabaEn: k.en || null, kabaBoy: k.boy || null, netEn: k.en || null, netBoy: k.boy || null };
+    }
+
+    let recete = receteler.find(r => r.urunId === urun.id);
+    const kokKalemler = (parsed.level0 || []).map(k => {
+      if (k.stokKod === urunKod) return null; // ürünün kendisi kendi reçetesinde olamaz
+      const tip = stokKodToTip.get(k.stokKod) || 'hammadde';
+      const refId = stokKodToId.get(k.stokKod) || stokKodToHmId.get(k.stokKod);
+      const olcu = olcuObjesiOlustur(k);
+      const kalem = { tip: stokKodToId.has(k.stokKod) ? tip : 'hammadde', refId, miktar: k.miktar, birim: k.birim };
+      if (olcu) kalem.olcu = olcu;
+      return kalem;
+    }).filter(k => k && k.refId);
+    if (recete) { recete.kalemler = kokKalemler; }
+    else { recete = { id: 'RC-' + urun.kod, urunId: urun.id, ad: urunAd + ' Reçetesi', kalemler: kokKalemler }; receteler.push(recete); }
+
+    // 4) Her yarımamül/alt montaj/paketin KENDİ alt reçetesini de kaydet
+    // (montaj hiyerarşisi) — kart tipine göre DOĞRU alana (yarimamulId/
+    // altMontajId/paketId) bağlanır. NOT: kök reçete ile alt reçeteler
+    // TEK bir parcaliKaydet çağrısında (döngü sonunda) birlikte
+    // yazılır — receteler en ağır koleksiyon olduğundan, bu akışta
+    // İKİ AYRI yazma (önce kök, sonra alt reçeteler) sunucu tarafında
+    // aynı koleksiyonun TAMAMINI gereksiz yere İKİ KEZ okuyup
+    // yeniden yazdırıyordu (bkz. api.php 'patch' ucu — tek JSON blob).
+    for (const y of ymEslesme) {
+      const tip = stokKodToTip.get(y.stokKod) || 'yarimamul';
+      const kalemler = (parsed.receteKalemleri.get(y.stokKod) || []).map(k => {
+        // KENDİNE REFERANS KORUMASI: Bazı ERP exportlarında bir kart,
+        // kendi alt reçetesinde KENDİSİNİ kalem olarak içerebiliyor
+        // (örn. TFM..PKT05 altında yine TFM..PKT05 satırı). Bu döngü,
+        // maliyet hesabında "hesaplanamayan kalem" hatasına yol açar —
+        // bu tür satırlar sessizce atlanır.
+        if (k.stokKod === y.stokKod) return null;
+        const altTip = stokKodToTip.get(k.stokKod);
+        const refId = stokKodToId.get(k.stokKod) || stokKodToHmId.get(k.stokKod);
+        if (!refId) return null;
+        const olcu = olcuObjesiOlustur(k);
+        const kalem = { tip: altTip || (stokKodToHmId.has(k.stokKod) ? 'hammadde' : 'yarimamul'), refId, miktar: k.miktar, birim: k.birim };
+        if (olcu) kalem.olcu = olcu;
+        return kalem;
+      }).filter(Boolean);
+      if (!kalemler.length) continue;
+      const kartId = stokKodToId.get(y.stokKod);
+      const alanAdi = tip === 'altmontaj' ? 'altMontajId' : tip === 'paket' ? 'paketId' : 'yarimamulId';
+      const altReceteId = (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;
+      let altRecete = receteler.find(r => r.id === altReceteId);
+      if (altRecete) { altRecete.kalemler = kalemler; }
+      else { receteler.push({ id: altReceteId, [alanAdi]: kartId, ad: y.stokAd + ' Alt Reçete', kalemler }); }
+    }
   }
 
   function mevcutYarimamuller_ref(arr, kod) {
