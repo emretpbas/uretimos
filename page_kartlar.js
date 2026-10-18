@@ -1944,7 +1944,7 @@ PageModules.kartlar = (() => {
           for (const [i, o] of okunan.entries()) {
             if (i % 10 === 0) { asama(`Kartlar hazırlanıyor: ${i + 1}/${okunan.length}`); await new Promise(r => setTimeout(r)); }
             const hmEslesme = o.parsed.hammaddeler.map(h => {
-              const mevcut = d.hammaddeler.find(x => x.stokKodu === h.stokKod);
+              const mevcut = koduBul(d.hammaddeler, 'stokKodu', h.stokKod);
               return { ...h, tip: (mevcut && mevcut.tip) || guessHammaddeTip(h.stokAd, h.birim) };
             });
             const ymEslesme = o.parsed.yarimamuller;
@@ -2613,12 +2613,31 @@ PageModules.kartlar = (() => {
     ]);
   }
 
+  // Toplu içe aktarmada binlerce dosya × kalem için her seferinde diziyi
+  // baştan taramak (find) 96.000+ kayıtlı koleksiyonlarda tarayıcıyı
+  // dakikalarca kilitler. Bunun yerine dizi+alan başına bir değer→kayıt
+  // indeksi tutulur; diziler bu akışta yalnızca SONA eklendiği için yeni
+  // kayıtlar bir sonraki aramada indekse katılır. Sonuç find ile aynıdır
+  // (aynı değere sahip İLK kayıt).
+  const _kodIndeksleri = new WeakMap();
+  function koduBul(dizi, alan, deger) {
+    let alanlar = _kodIndeksleri.get(dizi);
+    if (!alanlar) { alanlar = new Map(); _kodIndeksleri.set(dizi, alanlar); }
+    let ix = alanlar.get(alan);
+    if (!ix) { ix = { map: new Map(), boy: 0 }; alanlar.set(alan, ix); }
+    for (; ix.boy < dizi.length; ix.boy++) {
+      const k = dizi[ix.boy];
+      if (k && !ix.map.has(k[alan])) ix.map.set(k[alan], k);
+    }
+    return ix.map.get(deger);
+  }
+
   function kartlariUygula(parsed, hmEslesme, ymEslesme, urunKod, urunAd, d, degisen) {
     const hammaddeler = d.hammaddeler;
     const stokKodToHmId = new Map();
     const stokKodToHmTip = new Map(); // stokKod -> 'plaka'|'hirdavat'|... (kalem oluşturulurken olcu ekleneceği zaman lazım)
     hmEslesme.forEach(h => {
-      let kayit = hammaddeler.find(x => x.stokKodu === h.stokKod);
+      let kayit = koduBul(hammaddeler, 'stokKodu', h.stokKod);
       if (kayit) {
         kayit.ad = h.stokAd; kayit.birimFiyat = h.birimFiyat; kayit.dvz = h.dvz;
         kayit.birim = h.tip === 'plaka' ? 'M2' : (h.birim || 'ADET');
@@ -2655,7 +2674,7 @@ PageModules.kartlar = (() => {
       const hmKalem = kalemler.find(k => stokKodToHmId.has(k.stokKod) && (k.en || k.boy));
 
       if (tip === 'altmontaj') {
-        let kayit = altMontajlar.find(x => x.kod === y.stokKod);
+        let kayit = koduBul(altMontajlar, 'kod', y.stokKod);
         if (kayit) { kayit.ad = y.stokAd; }
         else {
           kayit = { id: App.uid('AM'), kod: y.stokKod, ad: y.stokAd, aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, rotaId: null, amortismanGideri: 0, gygOraniYuzde: 0, gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
@@ -2664,7 +2683,7 @@ PageModules.kartlar = (() => {
         degisen.add(kayit.id);
         stokKodToId.set(y.stokKod, kayit.id);
       } else if (tip === 'paket') {
-        let kayit = paketler.find(x => x.kod === y.stokKod);
+        let kayit = koduBul(paketler, 'kod', y.stokKod);
         if (kayit) { kayit.ad = y.stokAd; }
         else {
           kayit = { id: App.uid('PKT'), kod: y.stokKod, ad: y.stokAd, aciklama: 'Excelden içe aktarıldı: ' + parsed.rootKod, ambalajTipi: 'Koli', koliIciAdet: 1, rotaId: null, amortismanGideri: 0, gygOraniYuzde: 0, gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
@@ -2673,7 +2692,7 @@ PageModules.kartlar = (() => {
         degisen.add(kayit.id);
         stokKodToId.set(y.stokKod, kayit.id);
       } else {
-        let kayit = mevcutYarimamuller_ref(yarimamuller, y.stokKod);
+        let kayit = koduBul(yarimamuller, 'kod', y.stokKod);
         if (kayit) {
           kayit.ad = y.stokAd;
           kayit.referansFiyat = y.birimFiyat || kayit.referansFiyat;
@@ -2697,7 +2716,7 @@ PageModules.kartlar = (() => {
 
     // 3) Ürün: kök seviyedeki (level=0) kalemler bu ürünün doğrudan reçete kalemleridir
     const urunler = d.urunler;
-    let urun = urunler.find(u => u.kod === urunKod);
+    let urun = koduBul(urunler, 'kod', urunKod);
     if (urun) { urun.ad = urunAd; }
     else {
       urun = { id: App.uid('URN'), kod: urunKod, ad: urunAd, tip: 'bitmis_urun', aciklama: 'Excelden içe aktarıldı', gorseller: [], olusturmaTarihi: new Date().toISOString().slice(0, 10) };
@@ -2736,7 +2755,7 @@ PageModules.kartlar = (() => {
       return { kabaEn: k.en || null, kabaBoy: k.boy || null, netEn: k.en || null, netBoy: k.boy || null };
     }
 
-    let recete = receteler.find(r => r.urunId === urun.id);
+    let recete = koduBul(receteler, 'urunId', urun.id);
     const kokKalemler = (parsed.level0 || []).map(k => {
       if (k.stokKod === urunKod) return null; // ürünün kendisi kendi reçetesinde olamaz
       const tip = stokKodToTip.get(k.stokKod) || 'hammadde';
@@ -2778,7 +2797,7 @@ PageModules.kartlar = (() => {
       const kartId = stokKodToId.get(y.stokKod);
       const alanAdi = tip === 'altmontaj' ? 'altMontajId' : tip === 'paket' ? 'paketId' : 'yarimamulId';
       const altReceteId = (tip === 'altmontaj' ? 'RC-AM-' : tip === 'paket' ? 'RC-PKT-' : 'RC-YM-') + kartId;
-      let altRecete = receteler.find(r => r.id === altReceteId);
+      let altRecete = koduBul(receteler, 'id', altReceteId);
       if (altRecete) { altRecete.kalemler = kalemler; }
       else { receteler.push({ id: altReceteId, [alanAdi]: kartId, ad: y.stokAd + ' Alt Reçete', kalemler }); }
     }
