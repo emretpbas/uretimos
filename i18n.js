@@ -298,6 +298,8 @@ const I18N = (() => {
     'Excele Aktar': 'Export to Excel',
     'Excelden İçe Aktar': 'Import from Excel',
     'Excelden Reçete İçe Aktar': 'Import BOM from Excel',
+    'Reçete İçe Aktar (Excel / XML)': 'Import BOM (Excel / XML)',
+    'Reçete İçe Aktar': 'Import BOM',
     'Ürün Kartı Oluştur': 'Create Product Card',
     'Yarı Mamül Kartı Oluştur': 'Create Semi-Finished Card',
     'Alt Montaj Kartı Oluştur': 'Create Sub-Assembly Card',

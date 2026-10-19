@@ -164,7 +164,7 @@ PageModules.kartlar = (() => {
           <button class="btn" id="kt-masa-liste">📐 Kayıtlı Masa Tasarımları</button>
           <button class="btn btn-green" id="kt-mekan">🏠 Mekan Yerleşim</button>
           <button class="btn" id="kt-mekan-liste">📂 Kayıtlı Mekanlar</button>
-          <button class="btn" id="kt-excel-import">⬆ Excelden Reçete İçe Aktar</button>
+          <button class="btn" id="kt-excel-import">⬆ Reçete İçe Aktar (Excel / XML)</button>
         </div>
       </div>
       <div class="tabs">
@@ -1805,6 +1805,21 @@ PageModules.kartlar = (() => {
   function openExcelImport(main) {
     const body = document.createElement('div');
     body.innerHTML = `
+      <div class="tabs" style="margin-bottom:12px">
+        <div class="tab active" data-ei-sekme="excel">📊 Excel</div>
+        <div class="tab" data-ei-sekme="xml">🧩 SolidWorks XML</div>
+      </div>
+      <div id="ei-sekme-xml" style="display:none">
+        <div class="fhint" style="margin-bottom:10px">
+          SolidWorks eklentisindeki Reçete Ağacı panelinden <b>"XML olarak dışa aktar"</b> ile alınan
+          ürün ağacı dosyaları (<span class="mono">*_recete.xml</span>). Yarı mamül / alt montaj / paket / hammadde
+          tipleri, plaka kesim ölçüleri ve kenar bantları (ön/arka/sol/sağ) dosyadan okunur; kök kart ürün olarak
+          açılır veya güncellenir. Dosyada fiyat olmadığından mevcut kartların fiyatı değiştirilmez.<br>
+          <b>Toplu:</b> birden fazla XML seçilirse hepsi tek seferde aktarılır.
+        </div>
+        <input type="file" id="ei-xml-file" accept=".xml" multiple style="font-size:12px">
+      </div>
+      <div id="ei-sekme-excel">
       <div class="fhint" style="margin-bottom:10px">
         Üç format desteklenir:<br>
         <b>1) LOGO düz reçete</b> — Mamul Kodu, Stok Kod, Stok Türü, Miktar, Birim sütunlu (birden fazla
@@ -1816,11 +1831,42 @@ PageModules.kartlar = (() => {
         her ürün için bir dosya) hepsi tek seferde aktarılır.
       </div>
       <input type="file" id="ei-file" accept=".xlsx,.xls" multiple style="font-size:12px">
+      </div>
       <div id="ei-status" style="margin-top:10px;font-size:12px;color:var(--text2)"></div>
     `;
     const footer = `<button class="btn" id="ei-cancel">Vazgeç</button>`;
-    App.openModal({ title: 'Excelden Reçete İçe Aktar', body, footer, wide: true });
+    App.openModal({ title: 'Reçete İçe Aktar', body, footer, wide: true });
     document.getElementById('ei-cancel').onclick = App.closeModal;
+
+    body.querySelectorAll('[data-ei-sekme]').forEach(t => t.onclick = () => {
+      body.querySelectorAll('[data-ei-sekme]').forEach(x => x.classList.toggle('active', x === t));
+      document.getElementById('ei-sekme-excel').style.display = t.dataset.eiSekme === 'excel' ? '' : 'none';
+      document.getElementById('ei-sekme-xml').style.display = t.dataset.eiSekme === 'xml' ? '' : 'none';
+      document.getElementById('ei-status').textContent = '';
+    });
+
+    document.getElementById('ei-xml-file').onchange = async (e) => {
+      const dosyalar = Array.from(e.target.files || []);
+      if (!dosyalar.length) return;
+      const durum = document.getElementById('ei-status');
+      const okunan = [], atlanan = [];
+      for (const [i, file] of dosyalar.entries()) {
+        durum.textContent = `XML okunuyor: ${i + 1}/${dosyalar.length}`;
+        try {
+          const parsed = parseSolidworksReceteXml(await file.text(), file.name);
+          if (!parsed.items.length) { atlanan.push(file.name + ': reçete kalemi yok'); continue; }
+          okunan.push({ parsed, urunKod: parsed.rootKod, urunAd: parsed.rootAd });
+        } catch (err) {
+          atlanan.push(file.name + ': ' + err.message);
+        }
+      }
+      if (!okunan.length) {
+        durum.innerHTML = '<span style="color:var(--red-text)">Okunabilir reçete bulunamadı.<br>' + atlanan.map(a => App.escapeHtml(a)).join('<br>') + '</span>';
+        return;
+      }
+      if (dosyalar.length === 1) return renderImportPreview(main, okunan[0].parsed);
+      topluOnizle(main, okunan, atlanan, dosyalar.length);
+    };
 
     document.getElementById('ei-file').onchange = async (e) => {
       const dosyalar = Array.from(e.target.files || []);
@@ -1902,7 +1948,12 @@ PageModules.kartlar = (() => {
       durum.innerHTML = '<span style="color:var(--red-text)">Seçilen dosyaların hiçbirinde hiyerarşik reçete bulunamadı.</span>';
       return;
     }
+    topluOnizle(main, okunan, atlanan, dosyalar.length);
+  }
 
+  // Okunmuş (Excel veya SolidWorks XML) reçetelerin toplu önizleme + kayıt
+  // turu; okunan: [{ parsed, urunKod, urunAd }].
+  function topluOnizle(main, okunan, atlanan, dosyaSayisi) {
     const kodlar = new Set();
     const tekrarlar = okunan.filter(o => kodlar.has(o.urunKod) || !kodlar.add(o.urunKod));
     const satirSayisi = okunan.reduce((t, o) => t + o.parsed.items.length, 0);
@@ -1923,7 +1974,7 @@ PageModules.kartlar = (() => {
       </table></div>
     `;
     const footer = `<button class="btn" id="ei-back">Vazgeç</button><button class="btn btn-green" id="ei-confirm">${okunan.length} Reçeteyi İçe Aktar</button>`;
-    App.openModal({ title: 'Toplu Reçete İçe Aktarma', sub: dosyalar.length + ' dosya seçildi', body, footer, xwide: true });
+    App.openModal({ title: 'Toplu Reçete İçe Aktarma', sub: dosyaSayisi + ' dosya seçildi', body, footer, xwide: true });
     document.getElementById('ei-back').onclick = App.closeModal;
 
     document.getElementById('ei-confirm').onclick = async () => {
@@ -1945,7 +1996,7 @@ PageModules.kartlar = (() => {
             if (i % 10 === 0) { asama(`Kartlar hazırlanıyor: ${i + 1}/${okunan.length}`); await new Promise(r => setTimeout(r)); }
             const hmEslesme = o.parsed.hammaddeler.map(h => {
               const mevcut = koduBul(d.hammaddeler, 'stokKodu', h.stokKod);
-              return { ...h, tip: (mevcut && mevcut.tip) || guessHammaddeTip(h.stokAd, h.birim) };
+              return { ...h, tip: (mevcut && mevcut.tip) || h.tip || guessHammaddeTip(h.stokAd, h.birim) };
             });
             const ymEslesme = o.parsed.yarimamuller;
             const h = kartlariUygula(o.parsed, hmEslesme, ymEslesme, o.urunKod, o.urunAd, d, degisen);
@@ -1990,6 +2041,100 @@ PageModules.kartlar = (() => {
         btn.textContent = `${okunan.length} Reçeteyi İçe Aktar`;
         throw e;
       }
+    };
+  }
+
+  // ── SolidWorks REÇETE XML ─────────────────────────────────────────────────
+  // SolidWorks eklentisinin ReceteyiXmlOlarakDisaAktar çıktısı (bkz.
+  // ReceteAgaciPaneli.cs KalemElemaniOlustur): <Recete kokKod kokAd> altında
+  // iç içe <Kalem tip kod ad miktar birim>. Excel parser'ıyla AYNI yapı
+  // (items/level0/yarimamuller/hammaddeler/receteKalemleri) üretilir ki
+  // kayıt adımları (kartlariUygula/receteleriUygula) ortak kalsın. Farklar:
+  // tip dosyada açık yazılı (tahmin yok), plaka kalemleri KesimOlcusu'nu
+  // (olcu) ve kenar bantlarını (kenarBantKodlari: on/arka/sol/sag -> stok
+  // kodu) taşır, fiyat yoktur (birimFiyat null -> mevcut fiyat korunur).
+  function parseSolidworksReceteXml(metin, fileName) {
+    const doc = new DOMParser().parseFromString(String(metin || '').replace(/^﻿/, ''), 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) throw new Error('XML okunamadı (bozuk dosya)');
+    const kok = doc.documentElement;
+    if (!kok || kok.tagName !== 'Recete') throw new Error('kök eleman <Recete> değil — SolidWorks reçete XML\'i bekleniyor');
+
+    const dosyaKod = String(fileName || 'SW_URUN').replace(/\.xml$/i, '').replace(/_recete$/i, '');
+    const rootKod = (kok.getAttribute('kokKod') || '').trim() || dosyaKod;
+    const rootAd = (kok.getAttribute('kokAd') || '').trim() || rootKod;
+    const sayi = v => { const n = parseFloat(String(v || '').replace(',', '.')); return isNaN(n) ? 0 : n; };
+    const oz = (el, ad) => (el.getAttribute(ad) || '').trim();
+    const cocuklar = (el, ad) => Array.from(el.children).filter(c => c.tagName === ad);
+    const ALT_TIPLER = { yarimamul: 'yarimamul', altmontaj: 'altmontaj', paket: 'paket', urun: 'altmontaj' };
+    const KENARLAR = [['On', 'on'], ['Arka', 'arka'], ['Sol', 'sol'], ['Sag', 'sag']];
+
+    const items = [], level0 = [], receteKalemleri = new Map();
+    const hmMap = new Map(), ymMap = new Map(), acilan = new Set();
+
+    function gez(el, parentKod, level) {
+      // Aynı kart ağaçta birden çok yerde geçebilir; alt reçetesi bir kez okunur
+      if (parentKod) {
+        if (acilan.has(parentKod)) return;
+        acilan.add(parentKod);
+      }
+      for (const k of cocuklar(el, 'Kalem')) {
+        const tip = oz(k, 'tip');
+        const kod = oz(k, 'kod');
+        if (!kod) continue;
+        const item = {
+          level: String(level), stokKod: kod, stokAd: oz(k, 'ad') || kod,
+          miktar: sayi(k.getAttribute('miktar')) || 1, birim: oz(k, 'birim') || 'ADET',
+          birimFiyat: null, dvz: null, en: 0, boy: 0
+        };
+        if (tip === 'hammadde') {
+          const kesim = cocuklar(k, 'KesimOlcusu')[0];
+          const stok = cocuklar(k, 'StokOlcusu')[0];
+          if (kesim) {
+            const netEn = sayi(kesim.getAttribute('netEn')), netBoy = sayi(kesim.getAttribute('netBoy'));
+            item.en = netEn; item.boy = netBoy;
+            if (netEn || netBoy) {
+              item.olcu = {
+                kabaEn: sayi(kesim.getAttribute('kabaEn')) || netEn || null, kabaBoy: sayi(kesim.getAttribute('kabaBoy')) || netBoy || null,
+                netEn: netEn || null, netBoy: netBoy || null
+              };
+            }
+          }
+          const bantlar = cocuklar(k, 'KenarBantlari')[0];
+          if (bantlar) {
+            item.kenarBantKodlari = {};
+            KENARLAR.forEach(([etiket, alan]) => {
+              const b = cocuklar(bantlar, etiket)[0];
+              const bantKod = b ? oz(b, 'kod') : '';
+              if (!bantKod) return;
+              item.kenarBantKodlari[alan] = bantKod;
+              if (!hmMap.has(bantKod)) {
+                hmMap.set(bantKod, { stokKod: bantKod, stokAd: oz(b, 'ad') || bantKod, birim: 'M', birimFiyat: null, dvz: null, tip: 'kenar_bandi' });
+              }
+            });
+          }
+          if (!hmMap.has(kod)) {
+            hmMap.set(kod, {
+              ...item, tip: (stok || item.olcu) ? 'plaka' : null,
+              stokEn: stok ? sayi(stok.getAttribute('en')) : 0, stokBoy: stok ? sayi(stok.getAttribute('boy')) : 0
+            });
+          }
+        } else {
+          if (!ymMap.has(kod)) ymMap.set(kod, { ...item, onerilenTip: ALT_TIPLER[tip] || 'yarimamul' });
+          gez(k, kod, level + 1);
+        }
+        items.push(item);
+        if (!parentKod) level0.push(item);
+        else {
+          if (!receteKalemleri.has(parentKod)) receteKalemleri.set(parentKod, []);
+          receteKalemleri.get(parentKod).push(item);
+        }
+      }
+    }
+    gez(kok, null, 0);
+
+    return {
+      items, level0, receteKalemleri, rootKod, rootAd, kokTip: oz(kok, 'kokTip'),
+      yarimamuller: [...ymMap.values()], hammaddeler: [...hmMap.values()]
     };
   }
 
@@ -2449,7 +2594,7 @@ PageModules.kartlar = (() => {
     ]);
 
     const hmEslesme = parsed.hammaddeler.map(h => ({
-      ...h, mevcut: mevcutHammaddeler.find(x => x.stokKodu === h.stokKod), tip: guessHammaddeTip(h.stokAd, h.birim)
+      ...h, mevcut: mevcutHammaddeler.find(x => x.stokKodu === h.stokKod), tip: h.tip || guessHammaddeTip(h.stokAd, h.birim)
     }));
     const ymEslesme = parsed.yarimamuller.map(y => ({
       ...y, mevcut: mevcutYarimamuller.find(x => x.kod === y.stokKod) || mevcutAltMontajlar.find(x => x.kod === y.stokKod) || mevcutPaketler.find(x => x.kod === y.stokKod)
@@ -2487,7 +2632,7 @@ PageModules.kartlar = (() => {
             <option value="kenar_bandi" ${h.tip === 'kenar_bandi' ? 'selected' : ''}>📏 Kenar Bandı (m)</option>
             <option value="hirdavat" ${h.tip === 'hirdavat' ? 'selected' : ''}>🔩 Hırdavat/Diğer</option>
           </select></td>
-          <td class="r">${App.fmt(h.birimFiyat, 2)} ${App.escapeHtml(h.dvz)}</td>
+          <td class="r">${h.birimFiyat == null ? '—' : App.fmt(h.birimFiyat, 2) + ' ' + App.escapeHtml(h.dvz)}</td>
         </tr>`).join('')}
       </table></div>
 
@@ -2504,7 +2649,7 @@ PageModules.kartlar = (() => {
             <option value="altmontaj" ${y.onerilenTip === 'altmontaj' ? 'selected' : ''}>Alt Montaj</option>
             <option value="paket" ${y.onerilenTip === 'paket' ? 'selected' : ''}>📦 Paket</option>
           </select></td>
-          <td class="r">${App.fmt(y.birimFiyat, 2)} ${App.escapeHtml(y.dvz)}</td>
+          <td class="r">${y.birimFiyat == null ? '—' : App.fmt(y.birimFiyat, 2) + ' ' + App.escapeHtml(y.dvz)}</td>
         </tr>`).join('')}
       </table></div>
     `;
@@ -2639,15 +2784,17 @@ PageModules.kartlar = (() => {
     hmEslesme.forEach(h => {
       let kayit = koduBul(hammaddeler, 'stokKodu', h.stokKod);
       if (kayit) {
-        kayit.ad = h.stokAd; kayit.birimFiyat = h.birimFiyat; kayit.dvz = h.dvz;
+        kayit.ad = h.stokAd;
+        // SolidWorks XML'inde fiyat yok (null) — mevcut fiyat korunur
+        if (h.birimFiyat != null) { kayit.birimFiyat = h.birimFiyat; kayit.dvz = h.dvz; }
         kayit.birim = h.tip === 'plaka' ? 'M2' : (h.birim || 'ADET');
         kayit.tip = h.tip;
       } else {
         kayit = {
           id: App.uid('HM'), tip: h.tip, stokKodu: h.stokKod, ad: h.stokAd,
           birim: h.tip === 'plaka' ? 'M2' : (h.birim || 'ADET'),
-          birimFiyat: h.birimFiyat, dvz: h.dvz, fireYuzde: h.tip === 'plaka' ? 8 : 2,
-          grainYonu: 'yok', en: h.tip === 'plaka' ? 1830 : null, boy: h.tip === 'plaka' ? 3660 : null,
+          birimFiyat: h.birimFiyat ?? 0, dvz: h.dvz || 'TL', fireYuzde: h.tip === 'plaka' ? 8 : 2,
+          grainYonu: 'yok', en: h.tip === 'plaka' ? (h.stokEn || 1830) : null, boy: h.tip === 'plaka' ? (h.stokBoy || 3660) : null,
           sonAlisTarihi: new Date().toISOString().slice(0, 10)
         };
         hammaddeler.push(kayit);
@@ -2749,10 +2896,22 @@ PageModules.kartlar = (() => {
     // Excel'deki en/boy verilerini reçete kalemine olcu objesi olarak yaz.
     // Sadece plaka tipi hammadde kalemleri için geçerlidir; diğerlerinde null.
     function olcuObjesiOlustur(k) {
+      if (k.olcu) return { ...k.olcu }; // SolidWorks XML: KesimOlcusu (kaba ayrı)
       if (!k.en && !k.boy) return null;
       const isHmPlaka = stokKodToHmId.has(k.stokKod) && stokKodToHmTip.get(k.stokKod) === 'plaka';
       if (!isHmPlaka) return null;
       return { kabaEn: k.en || null, kabaBoy: k.boy || null, netEn: k.en || null, netBoy: k.boy || null };
+    }
+    // SolidWorks XML: kenar bandı stok kodları -> hammadde id'leri (reçete
+    // kaleminin kenarBantlari alanı, ReceteAgaciPaneli ile aynı yapı)
+    function kenarBantlariEkle(k, kalem) {
+      if (!k.kenarBantKodlari) return;
+      const kb = {};
+      Object.entries(k.kenarBantKodlari).forEach(([kenar, kod]) => {
+        const id = stokKodToHmId.get(kod);
+        if (id) kb[kenar] = id;
+      });
+      if (Object.keys(kb).length) kalem.kenarBantlari = kb;
     }
 
     let recete = koduBul(receteler, 'urunId', urun.id);
@@ -2763,6 +2922,7 @@ PageModules.kartlar = (() => {
       const olcu = olcuObjesiOlustur(k);
       const kalem = { tip: stokKodToId.has(k.stokKod) ? tip : 'hammadde', refId, miktar: k.miktar, birim: k.birim };
       if (olcu) kalem.olcu = olcu;
+      kenarBantlariEkle(k, kalem);
       return kalem;
     }).filter(k => k && k.refId);
     if (recete) { recete.kalemler = kokKalemler; }
@@ -2791,6 +2951,7 @@ PageModules.kartlar = (() => {
         const olcu = olcuObjesiOlustur(k);
         const kalem = { tip: altTip || (stokKodToHmId.has(k.stokKod) ? 'hammadde' : 'yarimamul'), refId, miktar: k.miktar, birim: k.birim };
         if (olcu) kalem.olcu = olcu;
+        kenarBantlariEkle(k, kalem);
         return kalem;
       }).filter(Boolean);
       if (!kalemler.length) continue;
