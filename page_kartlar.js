@@ -122,19 +122,34 @@ PageModules.kartlar = (() => {
     kapsayici.querySelectorAll('.kt-card').forEach(c => c.onclick = () => { detayKartId = { id: c.dataset.id, tip: c.dataset.tip }; render(main); });
   }
 
+  // tip <-> koleksiyon adı eşlemesi (hem detay arama hem grid sekmeleri için)
+  const KT_TIP_KOLEKSIYON = { urun: 'urunler', yarimamul: 'yarimamuller', altmontaj: 'altMontajlar', paket: 'paketler' };
+  const KT_SEKME_KOLEKSIYON = { urunler: 'urunler', yarimamuller: 'yarimamuller', altmontajlar: 'altMontajlar', paketler: 'paketler' };
+
   async function render(main) {
-    const [urunler, yarimamuller, altMontajlar, paketler, receteOzet] = await Promise.all([
-      Store.urunler.all(), Store.yarimamuller.all(), Store.altMontajlar.all(), Store.paketler.all(), Store.receteOzetGetir()
-    ]);
+    // PERFORMANS: urunler (20.597) + yarimamuller (96.746) + altMontajlar +
+    // paketler'in DÖRDÜNÜ BİRDEN her render()'da (= her sekme değişiminde,
+    // her karttan geri dönüşte) TAM indirmek — renderGrid'in aslında SADECE
+    // aktif sekmenin TAM listesine ve diğer üçünün yalnızca SAYISINA
+    // (sekme rozeti) ihtiyacı olduğu halde — gereksiz ~117.000+ kayıtlık
+    // bir indirme/JSON.parse'tı. Detay görünümünde de SADECE aranan kartın
+    // tipine ait koleksiyon gerekir, dördü değil.
     if (detayKartId) {
-      let kart = urunler.find(x => x.id === detayKartId.id && detayKartId.tip === 'urun');
-      if (!kart) kart = yarimamuller.find(x => x.id === detayKartId.id && detayKartId.tip === 'yarimamul');
-      if (!kart) kart = altMontajlar.find(x => x.id === detayKartId.id && detayKartId.tip === 'altmontaj');
-      if (!kart) kart = paketler.find(x => x.id === detayKartId.id && detayKartId.tip === 'paket');
+      const kolAdi = KT_TIP_KOLEKSIYON[detayKartId.tip];
+      const liste = kolAdi ? await Store[kolAdi].all() : [];
+      const kart = liste.find(x => x.id === detayKartId.id);
       if (kart) { renderDetay(main, kart, detayKartId.tip); return; }
       detayKartId = null;
     }
-    renderGrid(main, urunler, yarimamuller, altMontajlar, paketler, receteOzet);
+    const aktifKol = KT_SEKME_KOLEKSIYON[activeTab];
+    const digerSekmeler = Object.keys(KT_SEKME_KOLEKSIYON).filter(s => s !== activeTab);
+    const [aktifListe, receteOzet, ...digerSayilar] = await Promise.all([
+      Store[aktifKol].all(), Store.receteOzetGetir(),
+      ...digerSekmeler.map(s => Store.sayim(KT_SEKME_KOLEKSIYON[s]))
+    ]);
+    const sayilar = { [activeTab]: aktifListe.length };
+    digerSekmeler.forEach((s, i) => { sayilar[s] = digerSayilar[i]; });
+    renderGrid(main, aktifListe, sayilar, receteOzet);
   }
 
   // Kullanıcı isteği: "ürünleri yüklendiği yer 1. kademe, alt kırılım ve
@@ -145,7 +160,7 @@ PageModules.kartlar = (() => {
   // kademe (binlerce farklı model adı olabilen 3.) GERÇEK bir akordeon —
   // kapalı başlar, bir modelin kartları yalnızca O satır tıklanınca
   // tembel (lazy) üretilir (bkz. kartHtmlUret/kartTiklamalariBagla).
-  function renderGrid(main, urunler, yarimamuller, altMontajlar, paketler, receteOzet) {
+  function renderGrid(main, aktifListe, sayilar, receteOzet) {
     main.innerHTML = `
       <div class="page-hdr">
         <div>
@@ -168,10 +183,10 @@ PageModules.kartlar = (() => {
         </div>
       </div>
       <div class="tabs">
-        <div class="tab ${activeTab === 'urunler' ? 'active' : ''}" data-tab="urunler">Bitmiş Ürünler ${urunler.length ? '<span class="pill pill-gray" style="margin-left:4px">' + urunler.length + '</span>' : ''}</div>
-        <div class="tab ${activeTab === 'yarimamuller' ? 'active' : ''}" data-tab="yarimamuller">Yarı Mamüller ${yarimamuller.length ? '<span class="pill pill-gray" style="margin-left:4px">' + yarimamuller.length + '</span>' : ''}</div>
-        <div class="tab ${activeTab === 'altmontajlar' ? 'active' : ''}" data-tab="altmontajlar">Alt Montajlar ${altMontajlar.length ? '<span class="pill pill-gray" style="margin-left:4px">' + altMontajlar.length + '</span>' : ''}</div>
-        <div class="tab ${activeTab === 'paketler' ? 'active' : ''}" data-tab="paketler">Paketler ${paketler.length ? '<span class="pill pill-gray" style="margin-left:4px">' + paketler.length + '</span>' : ''}</div>
+        <div class="tab ${activeTab === 'urunler' ? 'active' : ''}" data-tab="urunler">Bitmiş Ürünler ${sayilar.urunler ? '<span class="pill pill-gray" style="margin-left:4px">' + sayilar.urunler + '</span>' : ''}</div>
+        <div class="tab ${activeTab === 'yarimamuller' ? 'active' : ''}" data-tab="yarimamuller">Yarı Mamüller ${sayilar.yarimamuller ? '<span class="pill pill-gray" style="margin-left:4px">' + sayilar.yarimamuller + '</span>' : ''}</div>
+        <div class="tab ${activeTab === 'altmontajlar' ? 'active' : ''}" data-tab="altmontajlar">Alt Montajlar ${sayilar.altmontajlar ? '<span class="pill pill-gray" style="margin-left:4px">' + sayilar.altmontajlar + '</span>' : ''}</div>
+        <div class="tab ${activeTab === 'paketler' ? 'active' : ''}" data-tab="paketler">Paketler ${sayilar.paketler ? '<span class="pill pill-gray" style="margin-left:4px">' + sayilar.paketler + '</span>' : ''}</div>
       </div>
       <div class="fgroup" style="margin:14px 0 6px">
         <input class="finput" id="kt-arama" placeholder="Kod veya ada göre ara…" value="${App.escapeHtml(kartlarArama)}">
@@ -202,8 +217,9 @@ PageModules.kartlar = (() => {
     document.getElementById('kt-excel-import').onclick = () => openExcelImport(main);
     main.querySelectorAll('.tab').forEach(t => t.onclick = () => { activeTab = t.dataset.tab; render(main); });
 
-    const tipMap = { urunler: ['urun', urunler], yarimamuller: ['yarimamul', yarimamuller], altmontajlar: ['altmontaj', altMontajlar], paketler: ['paket', paketler] };
-    const [tip, liste] = tipMap[activeTab];
+    const tipMap = { urunler: 'urun', yarimamuller: 'yarimamul', altmontajlar: 'altmontaj', paketler: 'paket' };
+    const tip = tipMap[activeTab];
+    const liste = aktifListe;
 
     const aramaKutu = document.getElementById('kt-arama');
     aramaKutu.oninput = () => {
